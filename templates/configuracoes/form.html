@@ -1,0 +1,100 @@
+{% extends "base.html" %}
+{% block title %}Configurações - Controle de Serviços{% endblock %}
+{% block content %}
+<h4 class="mb-3"><i class="bi bi-gear"></i> Configurações da Empresa</h4>
+
+<form method="post" class="row g-3" enctype="multipart/form-data">
+    <div class="col-12">
+        <h6 class="text-secondary"><i class="bi bi-building"></i> Dados da Empresa</h6>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Razão Social</label>
+        <input type="text" class="form-control" name="razao_social" value="{{ empresa.razao_social if empresa else '' }}">
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Nome Fantasia</label>
+        <input type="text" class="form-control" name="nome_fantasia" value="{{ empresa.nome_fantasia if empresa else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">CNPJ</label>
+        <input type="text" class="form-control" name="cnpj" value="{{ empresa.cnpj if empresa else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">Inscrição Estadual</label>
+        <input type="text" class="form-control" name="inscricao_estadual" value="{{ empresa.inscricao_estadual if empresa else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">Inscrição Municipal</label>
+        <input type="text" class="form-control" name="inscricao_municipal" value="{{ empresa.inscricao_municipal if empresa else '' }}">
+    </div>
+    <div class="col-12">
+        <h6 class="text-secondary mt-2"><i class="bi bi-geo-alt"></i> Endereço</h6>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Endereço</label>
+        <input type="text" class="form-control" name="endereco" value="{{ empresa.endereco if empresa else '' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Bairro</label>
+        <input type="text" class="form-control" name="bairro" value="{{ empresa.bairro if empresa else '' }}">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Cidade</label>
+        <input type="text" class="form-control" name="cidade" value="{{ empresa.cidade if empresa else '' }}">
+    </div>
+    <div class="col-md-1">
+        <label class="form-label">UF</label>
+        <input type="text" class="form-control" name="estado" maxlength="2" value="{{ empresa.estado if empresa else '' }}">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">CEP</label>
+        <input type="text" class="form-control" name="cep" value="{{ empresa.cep if empresa else '' }}">
+    </div>
+    <div class="col-12">
+        <h6 class="text-secondary mt-2"><i class="bi bi-telephone"></i> Contato</h6>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">Telefone</label>
+        <input type="text" class="form-control" name="telefone" value="{{ empresa.telefone if empresa else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">WhatsApp / Celular</label>
+        <input type="text" class="form-control" name="celular" value="{{ empresa.celular if empresa else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-control" name="email" value="{{ empresa.email if empresa else '' }}">
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">Site</label>
+        <input type="text" class="form-control" name="site" value="{{ empresa.site if empresa else '' }}">
+    </div>
+    <div class="col-12">
+        <h6 class="text-secondary mt-2"><i class="bi bi-image"></i> Logotipo</h6>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Logo (JPG ou PNG)</label>
+        <input type="file" class="form-control" name="logo" accept=".jpg,.jpeg,.png">
+    </div>
+    <div class="col-md-6 d-flex align-items-center">
+        {% if empresa and empresa.logo %}
+            <img src="{{ url_for('static', path=empresa.logo.split('static/')[1]) }}" alt="Logo" class="img-thumbnail" style="max-height: 100px;">
+            <small class="ms-2 text-secondary">Logo atual</small>
+        {% endif %}
+    </div>
+    <div class="col-12">
+        <h6 class="text-secondary mt-2"><i class="bi bi-shield-lock"></i> Segurança</h6>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">Senha de Administrador</label>
+        <input type="password" class="form-control" name="senha_admin" placeholder="Deixe em branco para manter a atual">
+    </div>
+    <div class="col-12">
+        <label class="form-label">Observação</label>
+        <textarea class="form-control" name="observacao" rows="3">{{ empresa.observacao if empresa else '' }}</textarea>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+    </div>
+</form>
+{% endblock %}

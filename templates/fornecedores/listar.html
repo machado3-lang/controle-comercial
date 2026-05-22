@@ -1,0 +1,51 @@
+{% extends "base.html" %}
+{% block title %}Fornecedores - Controle de Serviços{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-building"></i> Fornecedores</h4>
+    <a href="/fornecedores/novo" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Novo Fornecedor</a>
+</div>
+
+<form class="mb-3">
+    <div class="input-group">
+        <input type="text" class="form-control" name="busca" placeholder="Buscar por nome ou CPF/CNPJ..." value="{{ busca }}">
+        <button class="btn btn-outline-primary" type="submit"><i class="bi bi-search"></i></button>
+        <a href="/fornecedores" class="btn btn-outline-secondary"><i class="bi bi-x-circle"></i></a>
+    </div>
+</form>
+
+<div class="btn-group mb-3">
+    <a href="/fornecedores{% if busca %}?busca={{ busca }}{% endif %}" class="btn btn-sm {{ 'btn-primary' if not filtro_situacao else 'btn-outline-primary' }}">Todos</a>
+    <a href="/fornecedores?situacao=A{% if busca %}&busca={{ busca }}{% endif %}" class="btn btn-sm {{ 'btn-primary' if filtro_situacao == 'A' else 'btn-outline-primary' }}">Ativos</a>
+    <a href="/fornecedores?situacao=I{% if busca %}&busca={{ busca }}{% endif %}" class="btn btn-sm {{ 'btn-primary' if filtro_situacao == 'I' else 'btn-outline-primary' }}">Inativos</a>
+    <a href="/fornecedores?situacao=S{% if busca %}&busca={{ busca }}{% endif %}" class="btn btn-sm {{ 'btn-primary' if filtro_situacao == 'S' else 'btn-outline-primary' }}">Sem Movimento</a>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover">
+        <thead>
+            <tr><th>Código</th><th>Nome</th><th>Fantasia</th><th>Situação</th><th>CPF/CNPJ</th><th>Telefone</th><th>Contato</th><th>Cadastro</th><th>Ações</th></tr>
+        </thead>
+        <tbody>
+            {% for f in fornecedores %}
+            <tr>
+                <td><code>{{ f.codigo or '-' }}</code></td>
+                <td><a href="/fornecedores/{{ f.id }}">{{ f.nome }}</a></td>
+                <td>{{ f.fantasia or '-' }}</td>
+                <td>{% if f.situacao == 'A' %}<span class="badge bg-success">Ativo</span>{% elif f.situacao == 'I' %}<span class="badge bg-danger">Inativo</span>{% elif f.situacao == 'S' %}<span class="badge bg-warning text-dark">Sem Mov.</span>{% else %}<span class="badge bg-secondary">{{ f.situacao }}</span>{% endif %}</td>
+                <td>{{ f.cpf_cnpj|format_cpf_cnpj or '-' }}</td>
+                <td>{{ f.telefone or '-' }}</td>
+                <td>{{ f.contato or '-' }}</td>
+                <td><small class="text-muted">{{ f.created_at.strftime('%d/%m/%Y') if f.created_at else '-' }}</small></td>
+                <td>
+                    <a href="/fornecedores/{{ f.id }}/editar" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil"></i></a>
+                    <button class="btn btn-sm btn-outline-danger" onclick="confirmarExclusao('/fornecedores/{{ f.id }}/excluir', 'Excluir {{ f.nome }}?')"><i class="bi bi-trash"></i></button>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="9" class="text-center text-muted">Nenhum fornecedor</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

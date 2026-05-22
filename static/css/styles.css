@@ -1,0 +1,92 @@
+body {
+    background-color: #1a1d21;
+    color: #e0e0e0;
+}
+
+.navbar-brand i, .nav-link i {
+    margin-right: 5px;
+}
+
+.card {
+    background-color: #212529;
+    border-color: #2c3034;
+}
+
+.card-header {
+    background-color: #2c3034;
+    border-bottom-color: #373b3e;
+}
+
+.list-group-item {
+    background-color: #212529;
+    border-color: #2c3034;
+    color: #e0e0e0;
+}
+
+.list-group-item:hover {
+    background-color: #2c3034;
+}
+
+.table {
+    color: #e0e0e0;
+}
+
+.table > :not(caption) > * > * {
+    background-color: transparent;
+    border-bottom-color: #2c3034;
+}
+
+.table-hover tbody tr:hover {
+    background-color: #2c3034;
+}
+
+.form-control, .form-select {
+    background-color: #1a1d21;
+    border-color: #373b3e;
+    color: #e0e0e0;
+}
+
+.form-control:focus, .form-select:focus {
+    background-color: #1a1d21;
+    color: #e0e0e0;
+}
+
+.modal-content {
+    background-color: #212529;
+    border-color: #373b3e;
+}
+
+.btn-close {
+    filter: invert(1);
+}
+
+.dropdown-menu {
+    background-color: #212529;
+    border-color: #373b3e;
+}
+
+.dropdown-item {
+    color: #e0e0e0;
+}
+
+.dropdown-item:hover {
+    background-color: #373b3e;
+    color: #fff;
+}
+
+a {
+    color: #6ea8fe;
+}
+
+.text-muted {
+    color: #9ca3af !important;
+}
+
+.badge {
+    font-weight: 500;
+}
+
+pre {
+    color: #e0e0e0;
+    white-space: pre-wrap;
+}

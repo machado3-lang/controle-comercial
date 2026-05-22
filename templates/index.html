@@ -1,0 +1,157 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Controle de Serviços{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-people display-3"></i>
+                <h5 class="mt-2">Clientes</h5>
+                <h2>{{ total_clientes }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-building display-3"></i>
+                <h5 class="mt-2">Fornecedores</h5>
+                <h2>{{ total_fornecedores }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-dark h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-calendar-check display-3"></i>
+                <h5 class="mt-2">Assinaturas Ativas</h5>
+                <h2>{{ assinaturas_ativas }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-wrench display-3"></i>
+                <h5 class="mt-2">OS Abertas</h5>
+                <h2>{{ ordens_abertas }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if bling_token_configurado %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex align-items-center gap-2 text-muted small">
+            <i class="bi bi-cloud-arrow-up"></i>
+            <span>Bling:</span>
+            {% if bling_pending > 0 %}
+                <span class="badge bg-warning text-dark">{{ bling_pending }} pendente(s) de sincronia</span>
+                <form method="post" action="/bling/sincronizar-pendentes" style="display:inline">
+                    <button type="submit" class="btn btn-sm btn-outline-warning">Sincronizar</button>
+                </form>
+            {% else %}
+                <span class="badge bg-success">Sincronizado</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-3 mb-4">
+    <div class="col-md-6">
+        <div class="card bg-danger text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-arrow-up-circle display-3"></i>
+                <h5 class="mt-2">Contas a Pagar Pendentes</h5>
+                <h2>R$ {{ "%.2f"|format(contas_pagar_pendentes) }}</h2>
+                <small>{{ contas_vencidas }} vencida(s)</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-arrow-down-circle display-3"></i>
+                <h5 class="mt-2">Contas a Receber Pendentes</h5>
+                <h2>R$ {{ "%.2f"|format(contas_receber_pendentes) }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-clock"></i> Últimas OS</span>
+                <a href="/ordens-servico" class="btn btn-sm btn-outline-primary">Ver todas</a>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for os in ultimas_ordens %}
+                <a href="/ordens-servico/{{ os.id }}" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <strong>{{ os.equipamento }}</strong>
+                        {% if os.status == StatusOS.ABERTA.value %}
+                            <span class="badge bg-warning">Aberta</span>
+                        {% elif os.status == StatusOS.EM_ANDAMENTO.value %}
+                            <span class="badge bg-info">Em andamento</span>
+                        {% elif os.status == StatusOS.FINALIZADA.value %}
+                            <span class="badge bg-success">Finalizada</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Cancelada</span>
+                        {% endif %}
+                    </div>
+                    <small class="text-muted">{{ os.cliente.nome }} - {{ os.data_entrada }}</small>
+                </a>
+                {% else %}
+                <div class="list-group-item text-muted">Nenhuma OS ainda</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-arrow-up-circle"></i> Contas a Pagar</span>
+                <a href="/contas/pagar" class="btn btn-sm btn-outline-primary">Ver todas</a>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for c in contas_pagar_proximas %}
+                <div class="list-group-item">
+                    <div class="d-flex w-100 justify-content-between">
+                        <span>{{ c.descricao }}</span>
+                        <strong>R$ {{ "%.2f"|format(c.valor) }}</strong>
+                    </div>
+                    <small class="text-muted">Vence: {{ c.data_vencimento }}</small>
+                </div>
+                {% else %}
+                <div class="list-group-item text-muted">Nenhuma conta pendente</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-arrow-down-circle"></i> Contas a Receber</span>
+                <a href="/contas/receber" class="btn btn-sm btn-outline-primary">Ver todas</a>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for c in contas_receber_proximas %}
+                <div class="list-group-item">
+                    <div class="d-flex w-100 justify-content-between">
+                        <span>{{ c.descricao }}</span>
+                        <strong>R$ {{ "%.2f"|format(c.valor) }}</strong>
+                    </div>
+                    <small class="text-muted">Vence: {{ c.data_vencimento }}</small>
+                </div>
+                {% else %}
+                <div class="list-group-item text-muted">Nenhuma conta pendente</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

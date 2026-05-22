@@ -1,0 +1,198 @@
+{% extends "base.html" %}
+{% block title %}Integração Bling{% endblock %}
+{% block content %}
+<h4 class="mb-3"><i class="bi bi-cloud-arrow-up"></i> Integração Bling</h4>
+
+<div class="row g-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h6><i class="bi bi-shield-lock"></i> Autenticação OAuth 2.0</h6>
+                <p class="text-muted small">
+                    A API v3 do Bling exige autenticação via OAuth 2.0.
+                    Crie um <strong>aplicativo</strong> em
+                    <a href="https://developer.bling.com.br/aplicativos" target="_blank">developer.bling.com.br/aplicativos</a>
+                    e informe os dados abaixo.
+                </p>
+                <form method="post" action="/bling/salvar-credenciais" class="row g-2">
+                    <div class="col-12">
+                        <label class="form-label">Client ID</label>
+                        <input type="text" class="form-control" name="bling_client_id" value="{{ bling_client_id }}" placeholder="Cole o Client ID do seu aplicativo">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Client Secret</label>
+                        <input type="text" class="form-control" name="bling_client_secret" value="{{ bling_client_secret }}" placeholder="Cole o Client Secret do seu aplicativo">
+                    </div>
+                    <div class="col-12">
+                        <button type="submit" class="btn btn-primary w-100"><i class="bi bi-save"></i> Salvar Credenciais</button>
+                    </div>
+                </form>
+
+                {% if bling_client_id %}
+                <hr>
+                <p class="small text-muted mb-1"><strong>URL de Redirecionamento (callback):</strong></p>
+                <div class="input-group mb-2">
+                    <input type="text" class="form-control" id="callbackUrl" value="{{ callback_url }}" readonly>
+                    <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('callbackUrl').value)">Copiar</button>
+                </div>
+                <p class="small text-muted">
+                    <i class="bi bi-info-circle"></i> Configure esta URL no seu aplicativo no Bling em
+                    <strong>Link de Redirecionamento</strong>.
+                </p>
+                <a href="/bling/autorizar" class="btn btn-success w-100">
+                    <i class="bi bi-person-check"></i> Autorizar com Bling
+                </a>
+                {% endif %}
+
+                {% if token_valido %}
+                <div class="mt-2">
+                    <span class="badge bg-success fs-6 w-100 py-2"><i class="bi bi-check-circle"></i> Conectado ao Bling</span>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6><i class="bi bi-webhook"></i> Webhook (Sincronia Automática)</h6>
+                <p class="text-muted small">Recebe notificações do Bling em tempo real.</p>
+                {% if webhook_secret %}
+                <div class="mb-2">
+                    <label class="form-label">Sua URL pública (ngrok ou domínio)</label>
+                    <div class="input-group">
+                        <input type="url" class="form-control" id="publicUrl" placeholder="https://seudominio.com" value="{{ base_url }}">
+                        <button class="btn btn-outline-secondary" onclick="gerarWebhookUrl()">Gerar</button>
+                    </div>
+                    <div class="input-group mt-1">
+                        <input type="text" class="form-control" id="webhookUrl" value="{{ base_url }}/bling/webhook?secret={{ webhook_secret }}" readonly>
+                        <button class="btn btn-outline-secondary" onclick="navigator.clipboard.writeText(document.getElementById('webhookUrl').value)">Copiar</button>
+                    </div>
+                </div>
+                <p class="text-muted small mb-0">
+                    <i class="bi bi-check-circle text-success"></i> Webhook configurado.
+                </p>
+                {% else %}
+                <p class="text-warning small"><i class="bi bi-exclamation-triangle"></i> Webhook não configurado.</p>
+                {% endif %}
+                <form method="post" action="/bling/gerar-webhook-secret" class="mt-2">
+                    <button type="submit" class="btn btn-{{ 'danger' if not webhook_secret else 'secondary' }} btn-sm">
+                        <i class="bi bi-{{ 'plus-circle' if not webhook_secret else 'arrow-clockwise' }}"></i>
+                        {{ 'Gerar Webhook Secret' if not webhook_secret else 'Regenerar Secret' }}
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-body">
+                <h6><i class="bi bi-arrow-repeat"></i> Status da Sincronia</h6>
+                <div class="row text-center mt-3">
+                    <div class="col-6 mb-3">
+                        <div class="border rounded p-3">
+                            <div class="h5 mb-1">{{ synced_clientes }}</div>
+                            <small class="text-muted">Clientes sincronizados</small>
+                            {% if pending_clientes > 0 %}
+                            <div class="mt-1"><span class="badge bg-warning">{{ pending_clientes }} pendente(s)</span></div>
+                            {% endif %}
+                        </div>
+                    </div>
+                    <div class="col-6 mb-3">
+                        <div class="border rounded p-3">
+                            <div class="h5 mb-1">{{ synced_fornecedores }}</div>
+                            <small class="text-muted">Fornecedores sincronizados</small>
+                            {% if pending_fornecedores > 0 %}
+                            <div class="mt-1"><span class="badge bg-warning">{{ pending_fornecedores }} pendente(s)</span></div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+
+                {% if token_valido %}
+                <hr>
+                <h6 class="mb-2"><i class="bi bi-people"></i> Contatos (Clientes/Fornecedores)</h6>
+                {% if pending_clientes > 0 or pending_fornecedores > 0 %}
+                <form method="post" action="/bling/sincronizar-pendentes">
+                    <button type="submit" class="btn btn-success w-100 mb-2">
+                        <i class="bi bi-send"></i> Enviar {{ pending_clientes + pending_fornecedores }} pendente(s) para o Bling
+                    </button>
+                </form>
+                {% endif %}
+                <form method="post" action="/bling/importar-contatos">
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-download"></i> Importar Contatos do Bling
+                    </button>
+                </form>
+                <form method="post" action="/bling/limpar-importar" onsubmit="return confirm('Limpar todos os clientes e fornecedores locais e reimportar do Bling? Esta operação não pode ser desfeita.');">
+                    <button type="submit" class="btn btn-outline-danger w-100 mt-2">
+                        <i class="bi bi-arrow-repeat"></i> Limpar Tudo e Reimportar
+                    </button>
+                </form>
+
+                <hr>
+                <h6 class="mb-2"><i class="bi bi-file-text"></i> Contratos (Assinaturas)</h6>
+                {% if pending_assinaturas > 0 %}
+                <form method="post" action="/bling/sincronizar-assinaturas">
+                    <button type="submit" class="btn btn-success w-100 mb-2">
+                        <i class="bi bi-send"></i> Enviar {{ pending_assinaturas }} assinatura(s) pendente(s)
+                    </button>
+                </form>
+                {% endif %}
+                <form method="post" action="/bling/importar-contratos">
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-download"></i> Importar Contratos do Bling
+                    </button>
+                </form>
+
+                <hr>
+                <h6 class="mb-2"><i class="bi bi-wrench"></i> Ordens de Serviço</h6>
+                {% if pending_ordens > 0 %}
+                <form method="post" action="/bling/sincronizar-ordens">
+                    <button type="submit" class="btn btn-success w-100 mb-2">
+                        <i class="bi bi-send"></i> Enviar {{ pending_ordens }} OS pendente(s)
+                    </button>
+                </form>
+                {% endif %}
+                <form method="post" action="/bling/importar-ordens-servico">
+                    <button type="submit" class="btn btn-outline-primary w-100">
+                        <i class="bi bi-download"></i> Importar Ordens de Serviço do Bling
+                    </button>
+                </form>
+                {% else %}
+                <p class="text-muted text-center">
+                    <i class="bi bi-lock"></i> Autorize com o Bling ao lado para sincronizar.
+                </p>
+                {% endif %}
+            </div>
+        </div>
+
+        <div class="card mt-3">
+            <div class="card-body">
+                <h6><i class="bi bi-info-circle"></i> Como configurar</h6>
+                <ol class="small mb-0">
+                    <li>Acesse <a href="https://developer.bling.com.br/aplicativos" target="_blank">developer.bling.com.br/aplicativos</a></li>
+                    <li>Crie um <strong>novo aplicativo</strong> (nome qualquer, ex: "Controle de Serviços")</li>
+                    <li>Em <strong>Link de Redirecionamento</strong>, cole a URL de callback gerada acima</li>
+                    <li>Copie o <strong>Client ID</strong> e <strong>Client Secret</strong> e cole nos campos ao lado</li>
+                    <li>Clique em <strong>Salvar Credenciais</strong></li>
+                    <li>Clique em <strong>Autorizar com Bling</strong> — você será redirecionado ao Bling</li>
+                    <li>Faça login e autorize o acesso. Pronto!</li>
+                </ol>
+                <p class="small text-muted mt-2 mb-0">
+                    <i class="bi bi-lightbulb"></i> O token expira em 6 horas. O sistema renova automaticamente usando o refresh_token.
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+{% block scripts %}
+<script>
+function gerarWebhookUrl() {
+    const base = document.getElementById('publicUrl').value.replace(/\/+$/, '');
+    const secret = '{{ webhook_secret }}';
+    document.getElementById('webhookUrl').value = base + '/bling/webhook?secret=' + secret;
+}
+</script>
+{% endblock %}

@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}Editar Assinatura{% endblock %}
+{% block content %}
+<h4 class="mb-3"><i class="bi bi-calendar-check"></i> Editar Assinatura</h4>
+
+<form method="post" class="row g-3">
+    <div class="col-md-6">
+        <label class="form-label">Cliente *</label>
+        <select class="form-select" name="cliente_id" required>
+            {% for c in clientes %}
+            <option value="{{ c.id }}" {{ 'selected' if assinatura.cliente_id == c.id }}>{{ c.nome }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Periodicidade *</label>
+        <select class="form-select" name="periodicidade" required>
+            <option value="1" {{ 'selected' if assinatura.periodicidade == 1 }}>Mensal</option>
+            <option value="2" {{ 'selected' if assinatura.periodicidade == 2 }}>Bimestral</option>
+            <option value="3" {{ 'selected' if assinatura.periodicidade == 3 }}>Trimestral</option>
+            <option value="4" {{ 'selected' if assinatura.periodicidade == 4 }}>Semestral</option>
+            <option value="5" {{ 'selected' if assinatura.periodicidade == 5 }}>Anual</option>
+            <option value="6" {{ 'selected' if assinatura.periodicidade == 6 }}>Bianual</option>
+            <option value="7" {{ 'selected' if assinatura.periodicidade == 7 }}>Trianual</option>
+        </select>
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Situação</label>
+        <select class="form-select" name="situacao">
+            <option value="0" {{ 'selected' if assinatura.situacao == 0 }}>Inativo</option>
+            <option value="1" {{ 'selected' if assinatura.situacao == 1 }}>Ativo</option>
+            <option value="2" {{ 'selected' if assinatura.situacao == 2 }}>Baixado</option>
+            <option value="3" {{ 'selected' if assinatura.situacao == 3 }}>Isento</option>
+            <option value="4" {{ 'selected' if assinatura.situacao == 4 }}>Em Avaliação</option>
+        </select>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Descrição *</label>
+        <input type="text" class="form-control" name="descricao" required value="{{ assinatura.descricao }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Valor da Mensalidade *</label>
+        <input type="number" step="0.01" class="form-control" name="valor" required value="{{ assinatura.valor }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Quantidade</label>
+        <input type="number" class="form-control" name="quantidade" value="{{ assinatura.quantidade if assinatura.quantidade else '' }}" placeholder="Nº de pessoas">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Dia Vencimento *</label>
+        <input type="number" class="form-control" name="dia_vencimento" min="1" max="31" required value="{{ assinatura.dia_vencimento }}">
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Data Início *</label>
+        <input type="date" class="form-control" name="data_inicio" required value="{{ assinatura.data_inicio }}">
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Data Fim</label>
+        <input type="date" class="form-control" name="data_fim" value="{{ assinatura.data_fim if assinatura.data_fim else '' }}">
+    </div>
+    <div class="col-12">
+        <h6 class="text-secondary mt-2"><i class="bi bi-shop"></i> Revenda (Fornecedor terceirizado)</h6>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Fornecedor / Revenda</label>
+        <select class="form-select" name="fornecedor_id">
+            <option value="">Selecione...</option>
+            {% for f in fornecedores %}
+            <option value="{{ f.id }}" {{ 'selected' if assinatura.fornecedor_id == f.id }}>{{ f.nome }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Custo da Revenda (valor de referência)</label>
+        <input type="number" step="0.01" class="form-control" name="valor_revenda" value="{{ assinatura.valor_revenda if assinatura.valor_revenda else '' }}">
+    </div>
+    <div class="col-12">
+        <label class="form-label">Observação</label>
+        <textarea class="form-control" name="observacao" rows="3">{{ assinatura.observacao if assinatura.observacao else '' }}</textarea>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+        <a href="/assinaturas" class="btn btn-secondary">Cancelar</a>
+    </div>
+</form>
+
+{% if historico %}
+<hr>
+<h5 class="mb-3"><i class="bi bi-clock-history"></i> Histórico de Alterações</h5>
+<div class="table-responsive">
+    <table class="table table-sm table-hover">
+        <thead><tr><th>Data</th><th>Valor Anterior</th><th>Valor Novo</th><th>Custo Revenda Ant.</th><th>Custo Revenda Novo</th><th>Qtd Ant.</th><th>Qtd Nova</th><th></th></tr></thead>
+        <tbody>
+            {% for h in historico %}
+            <tr>
+                <td><small>{{ h.data_alteracao.strftime('%d/%m/%Y %H:%M') }}</small></td>
+                <td>{% if h.valor_anterior is not none %}R$ {{ "%.2f"|format(h.valor_anterior) }}{% else %}-{% endif %}</td>
+                <td>{% if h.valor_novo is not none %}R$ {{ "%.2f"|format(h.valor_novo) }}{% else %}-{% endif %}</td>
+                <td>{% if h.valor_revenda_anterior is not none %}R$ {{ "%.2f"|format(h.valor_revenda_anterior) }}{% else %}-{% endif %}</td>
+                <td>{% if h.valor_revenda_novo is not none %}R$ {{ "%.2f"|format(h.valor_revenda_novo) }}{% else %}-{% endif %}</td>
+                <td>{{ h.quantidade_anterior if h.quantidade_anterior is not none else '-' }}</td>
+                <td>{{ h.quantidade_novo if h.quantidade_novo is not none else '-' }}</td>
+                <td>
+                    {% if senha_definida %}
+                    <button class="btn btn-sm btn-outline-danger" onclick="excluirHistorico({{ h.id }})"><i class="bi bi-trash"></i></button>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<form id="formExcluirHistorico" method="post" style="display:none">
+    <input type="hidden" name="senha" id="senhaHistorico">
+</form>
+{% endif %}
+{% endblock %}
+
+{% block scripts %}
+<script>
+function excluirHistorico(id) {
+    var senha = prompt('Digite a senha de administrador para excluir este registro:');
+    if (senha) {
+        var form = document.getElementById('formExcluirHistorico');
+        form.action = '/assinaturas/{{ assinatura.id }}/historico/' + id + '/excluir';
+        document.getElementById('senhaHistorico').value = senha;
+        form.submit();
+    }
+}
+</script>
+{% endblock %}
