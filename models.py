@@ -11,6 +11,7 @@ class StatusConta(str, enum.Enum):
     PAGO = "pago"
     VENCIDO = "vencido"
     CANCELADO = "cancelado"
+    BAIXA_SOLICITADA = "baixa_solicitada"
 
 
 class StatusOS(str, enum.Enum):
@@ -115,6 +116,14 @@ class ContaReceber(Base):
     status = Column(Enum(StatusConta), default=StatusConta.PENDENTE)
     forma_pagamento = Column(String(100), nullable=True)
     observacao = Column(Text, nullable=True)
+    nosso_numero = Column(String(30), nullable=True, unique=True)
+    boleto_emitido = Column(Boolean, default=False)
+    boleto_url = Column(String(500), nullable=True)
+    boleto_txid = Column(String(50), nullable=True)
+    numero_documento = Column(String(30), nullable=True)
+    api_nosso_numero = Column(String(30), nullable=True)
+    data_emissao = Column(Date, nullable=True)
+    motivo_baixa = Column(String(100), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -139,6 +148,7 @@ class Assinatura(Base):
     situacao = Column(Integer, default=1)
     fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True)
     valor_revenda = Column(Float, nullable=True)
+    numero_contrato = Column(String(50), nullable=True)
     observacao = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -222,6 +232,14 @@ class Empresa(Base):
     bling_refresh_token = Column(String(200), nullable=True)
     bling_token_expires_at = Column(DateTime, nullable=True)
     bling_webhook_secret = Column(String(100), nullable=True)
+    bling_api_key_v2 = Column(String(100), nullable=True)
+    sicoob_client_id = Column(String(200), nullable=True)
+    sicoob_token = Column(String(300), nullable=True)
+    sicoob_conta_corrente = Column(String(30), nullable=True)
+    sicoob_beneficiario = Column(String(20), nullable=True)
+    sicoob_cert_path = Column(String(500), nullable=True)
+    sicoob_cert_key_path = Column(String(500), nullable=True)
+    sicoob_cert_password = Column(String(100), nullable=True)
     observacao = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

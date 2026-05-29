@@ -80,10 +80,10 @@
             <div class="modal-body">
                 <div class="mb-3">
                     <label class="form-label">Cliente *</label>
-                    <select class="form-select" name="cliente_id" required>
+                    <select class="form-select" name="cliente_id" required onchange="atualizarContrato(this)">
                         <option value="">Selecione...</option>
                         {% for c in clientes %}
-                        <option value="{{ c.id }}">{{ c.nome }}</option>
+                        <option value="{{ c.id }}" data-contrato="{{ c.id }}">{{ c.nome }}</option>
                         {% endfor %}
                     </select>
                 </div>
@@ -127,6 +127,10 @@
                     <label class="form-label">Dia Vencimento *</label>
                     <input type="number" class="form-control" name="dia_vencimento" min="1" max="31" required>
                 </div>
+                <div class="mb-3">
+                    <label class="form-label">Número do Contrato</label>
+                    <input type="text" class="form-control" name="numero_contrato" id="numeroContrato" placeholder="Automático (código do cliente)">
+                </div>
                 <hr>
                 <h6 class="text-secondary"><i class="bi bi-shop"></i> Revenda (Fornecedor terceirizado)</h6>
                 <div class="mb-3">
@@ -154,4 +158,13 @@
         </form>
     </div>
 </div>
+
+<script>
+function atualizarContrato(select) {
+    const opt = select.selectedOptions[0];
+    if (opt && opt.dataset.contrato) {
+        document.getElementById('numeroContrato').value = opt.dataset.contrato;
+    }
+}
+</script>
 {% endblock %}

@@ -1,0 +1,82 @@
+{% extends "base.html" %}
+{% block title %}Sicoob - Controle de Serviços{% endblock %}
+{% block content %}
+<h2><i class="bi bi-credit-card"></i> Integração Sicoob</h2>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <button class="btn btn-link w-100 text-start p-0" type="button" 
+                            data-bs-toggle="collapse" data-bs-target="#credenciaisCollapse" 
+                            aria-expanded="{{ 'true' if not empresa or not empresa.sicoob_client_id else 'false' }}">
+                        <i class="bi bi-gear"></i> Credenciais Sicoob ( clique para expandir )
+                    </button>
+                </h5>
+            </div>
+            <div class="collapse {{ 'show' if not empresa or not empresa.sicoob_client_id else '' }}" id="credenciaisCollapse">
+                <div class="card-body">
+                    <form method="post" action="/sicoob/salvar-credenciais" enctype="multipart/form-data">
+                        <div class="mb-3">
+                            <label class="form-label">Client ID</label>
+                            <input type="text" name="sicoob_client_id" class="form-control" 
+                                   value="{{ empresa.sicoob_client_id or '' }}" required>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Access Token (gerado automaticamente)</label>
+                            <input type="text" class="form-control" value="{{ empresa.sicoob_token or 'Será gerado automaticamente' }}" readonly>
+                            <small class="text-muted">O token é obtido automaticamente via certificado digital.</small>
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Conta Corrente</label>
+                            <input type="text" name="sicoob_conta_corrente" class="form-control"
+                                   value="{{ empresa.sicoob_conta_corrente or '' }}" placeholder="Ex: 110558 (sem dígito)">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Código Beneficiário</label>
+                            <input type="text" name="sicoob_beneficiario" class="form-control"
+                                   value="{{ empresa.sicoob_beneficiario or '' }}" placeholder="Código do beneficiário">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Certificado ICP-Brasil (PEM/CRT)</label>
+                            <input type="file" name="cert_file" class="form-control" accept=".pem,.crt,.cer,.key">
+                            {% if empresa.sicoob_cert_path %}
+                            <small class="text-success">Certificado carregado: {{ empresa.sicoob_cert_path }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Chave Privada (se separada do certificado)</label>
+                            <input type="file" name="key_file" class="form-control" accept=".key,.pem">
+                        </div>
+                        <div class="mb-3">
+                            <label class="form-label">Senha do Certificado (se houver)</label>
+                            <input type="password" name="sicoob_cert_password" class="form-control" placeholder="Senha do certificado">
+                        </div>
+                        <button type="submit" class="btn btn-primary">Salvar</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+        <div class="col-md-6 d-grid gap-2">
+            <a href="/sicoob/boletos" class="btn btn-outline-info">
+                <i class="bi bi-credit-card"></i> Ver Boletos Sicoob
+            </a>
+            <a href="/contas/receber" class="btn btn-outline-primary">
+                <i class="bi bi-arrow-down-circle"></i> Contas a Receber
+            </a>
+        </div>
+    </div>
+
+    <div class="mt-3">
+        <h5>Status da Integração</h5>
+        <p>
+            Credenciais configuradas: 
+            {% if empresa and empresa.sicoob_client_id %}
+                <span class="badge bg-success">Sim</span>
+            {% else %}
+                <span class="badge bg-warning">Não</span>
+            {% endif %}
+        </p>
+    </div>
+{% endblock %}

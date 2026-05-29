@@ -5,9 +5,17 @@ from datetime import datetime, date
 from typing import Optional
 
 from database import get_db
-from models import ContaPagar, ContaReceber, Fornecedor, Cliente, StatusConta
+from models import ContaPagar, ContaReceber, Fornecedor, Cliente, StatusConta, Empresa
 
 router = APIRouter(prefix="/contas", tags=["Contas"])
+
+
+def get_messages(request: Request) -> list:
+    messages = []
+    msg = request.session.pop("message", None)
+    if msg:
+        messages.append(msg)
+    return messages
 
 
 # ─── CONTAS A PAGAR ───────────────────────────────────────────────
@@ -27,10 +35,12 @@ def listar_contas_pagar(
         )
     contas = query.order_by(ContaPagar.data_vencimento.desc()).all()
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
+    messages = get_messages(request)
     return request.app.state.templates.TemplateResponse(
         "contas/pagar_listar.html",
         {"request": request, "contas": contas, "fornecedores": fornecedores,
-         "status_filtro": status_filtro, "busca": busca, "StatusConta": StatusConta}
+         "status_filtro": status_filtro, "busca": busca, "StatusConta": StatusConta,
+         "messages": messages}
     )
 
 
@@ -90,10 +100,12 @@ def listar_contas_receber(
         )
     contas = query.order_by(ContaReceber.data_vencimento.desc()).all()
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
+    messages = get_messages(request)
     return request.app.state.templates.TemplateResponse(
         "contas/receber_listar.html",
         {"request": request, "contas": contas, "clientes": clientes,
-         "status_filtro": status_filtro, "busca": busca, "StatusConta": StatusConta}
+         "status_filtro": status_filtro, "busca": busca, "StatusConta": StatusConta,
+         "messages": messages}
     )
 
 
@@ -137,3 +149,15 @@ def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends
         db.delete(conta)
         db.commit()
     return RedirectResponse(url="/contas/receber", status_code=303)
+
+
+@router.get("/receber/{conta_id}/imprimir-boleto")
+def imprimir_boleto(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
+    empresa = db.query(Empresa).first()
+    if not conta:
+        return RedirectResponse(url="/contas/receber", status_code=303)
+    return request.app.state.templates.TemplateResponse(
+        "contas/imprimir_boleto.html",
+        {"request": request, "conta": conta, "empresa": empresa}
+    )

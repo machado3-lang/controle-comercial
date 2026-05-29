@@ -1,0 +1,254 @@
+{% extends "base.html" %}
+{% block title %}Boletos Sicoob - Controle de Serviços{% endblock %}
+{% block content %}
+<h2><i class="bi bi-credit-card"></i> Boletos Sicoob</h2>
+
+<div class="card">
+    <div class="card-header">
+        <h5>Lista de Boletos Emitidos <button class="btn btn-sm btn-outline-secondary" onclick="carregarBoletos()"><i class="bi bi-arrow-clockwise"></i></button>
+        <button class="btn btn-sm btn-outline-info" onclick="syncPagamentos()"><i class="bi bi-arrow-repeat"></i> Sync Pagamentos</button>
+        <div class="btn-group btn-group-sm ms-2">
+            <button class="btn btn-outline-secondary" onclick="filtrar('')">Todos</button>
+            <button class="btn btn-outline-success" onclick="filtrar('PAGO')">Pagos</button>
+            <button class="btn btn-outline-warning" onclick="filtrar('PENDENTE')">Pendentes</button>
+            <button class="btn btn-outline-danger" onclick="filtrar('CANCELADO')">Cancelados</button>
+        </div></h5>
+    </div>
+    <div class="card-body">
+        <table class="table table-striped">
+<thead>
+            <tr>
+                <th>Descrição</th>
+                <th>Nosso Número</th>
+                <th>Emissão</th>
+                <th>Cliente</th>
+                <th>Valor</th>
+                <th>Vencimento</th>
+                <th>Status</th>
+                <th>Ações</th>
+            </tr>
+        </thead>
+            <tbody id="boletos-list">
+                <tr><td colspan="7" class="text-center">Carregando...</td></tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<div class="card mt-3" id="inadimplencia-card" style="display: none;">
+    <div class="card-header bg-danger text-white">
+        <h5><i class="bi bi-exclamation-triangle"></i> Boletos Vencidos Não Pagos (Inadimplência)</h5>
+    </div>
+    <div class="card-body">
+        <table class="table table-sm table-hover">
+            <thead>
+                <tr>
+                    <th>Nosso Número</th>
+                    <th>Cliente</th>
+                    <th>Valor</th>
+                    <th>Vencimento</th>
+                    <th>Dias Vencido</th>
+                </tr>
+            </thead>
+            <tbody id="inadimplencia-list"></tbody>
+        </table>
+    </div>
+</div>
+
+<div class="modal fade" id="alterarBoletoModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Alterar Boleto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="alterar-nosso-numero">
+                <div class="mb-3">
+                    <label>Novo Valor (deixe vazio para não alterar)</label>
+                    <input type="number" class="form-control" id="alterar-valor" step="0.01">
+                </div>
+                <div class="mb-3">
+                    <label>Nova Data Vencimento (deixe vazio para não alterar)</label>
+                    <input type="date" class="form-control" id="alterar-vencimento">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button class="btn btn-primary" onclick="salvarAlteracao()">Salvar Alterações</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="motivoBaixaModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Motivo da Baixa</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <input type="hidden" id="motivo-nosso-numero">
+                <div class="mb-3">
+                    <label>Motivo (opcional)</label>
+                    <select class="form-select" id="motivo-selecao">
+                        <option value="">Selecione...</option>
+                        <option value="Pedido Cedente">Pedido Cedente</option>
+                        <option value="Pago em Outro Banco">Pago em Outro Banco</option>
+                        <option value="Erro Emissão">Erro Emissão</option>
+                        <option value="Outros">Outros</option>
+                    </select>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button class="btn btn-danger" onclick="confirmarBaixa()">Confirmar Baixa</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script id="boletos-script">
+function carregarBoletos() {
+    filtrar('');
+}
+
+carregarBoletos();
+
+function filtrar(situacao) {
+    fetch('/sicoob/api/listar-boletos?page=1&size=50' + (situacao ? '&situacao=' + situacao : ''))
+        .then(r => r.json())
+        .then(data => {
+            const tbody = document.getElementById('boletos-list');
+            if (!data.success || !data.boletos?.length) {
+                tbody.innerHTML = '<tr><td colspan="8" class="text-center">Nenhum boleto encontrado</td></tr>';
+                return;
+            }
+            tbody.innerHTML = data.boletos.map(b => `
+                <tr>
+                    <td>${b.seuNumero || '-'}</td>
+                    <td>${b.nossoNumero || '-'}</td>
+                    <td>${b.dataEmissao || '-'}</td>
+                    <td>${b.pagador?.nome || b.cliente || '-'}</td>
+                    <td>R$ ${parseFloat(b.valor || 0).toFixed(2)}</td>
+                    <td>${b.dataVencimento || '-'}</td>
+                    <td><span class="badge bg-${b.situacao === 'cancelado' ? 'danger' : b.situacao === 'pago' ? 'success' : 'warning'}">${b.situacao?.toUpperCase() || 'PENDENTE'}</span></td>
+                    <td>
+                        <button class="btn btn-sm btn-outline-primary me-1 ${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' ? 'disabled' : ''}" onclick="baixarPdf('${b.nossoNumero}')">
+                            <i class="bi bi-download"></i> PDF
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning me-1 ${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' ? 'disabled' : ''}" onclick="abrirAlterar('${b.nossoNumero}', '${b.dataVencimento || ''}')">
+                            <i class="bi bi-pencil"></i>
+                        </button>
+                        <button class="btn btn-sm btn-outline-danger ${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' ? 'disabled' : ''}" onclick="baixarBoleto('${b.nossoNumero}')">
+                            <i class="bi bi-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        })
+        .catch(e => {
+            document.getElementById('boletos-list').innerHTML = '<tr><td colspan="8" class="text-danger">Erro: ' + (e.message || e) + '</td></tr>';
+        });
+}
+
+function baixarPdf(txid) {
+    window.open('/sicoob/boleto-pdf/' + txid, '_blank');
+}
+
+function baixarBoleto(nossoNumero) {
+    document.getElementById('motivo-nosso-numero').value = nossoNumero;
+    document.getElementById('motivo-selecao').value = '';
+    new bootstrap.Modal(document.getElementById('motivoBaixaModal')).show();
+}
+
+function confirmarBaixa() {
+    const nossoNumero = document.getElementById('motivo-nosso-numero').value;
+    const motivo = document.getElementById('motivo-selecao').value;
+    bootstrap.Modal.getInstance(document.getElementById('motivoBaixaModal')).hide();
+    fetch('/sicoob/baixar-boleto/' + nossoNumero, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({motivo: motivo})
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                carregarBoletos();
+                carregarInadimplencia();
+            } else {
+                alert("Erro: " + data.error);
+            }
+        });
+}
+
+function carregarInadimplencia() {
+    fetch('/sicoob/api/inadimplencia')
+        .then(r => r.json())
+        .then(data => {
+            const card = document.getElementById('inadimplencia-card');
+            const tbody = document.getElementById('inadimplencia-list');
+            if (data.boletos?.length) {
+                card.style.display = 'block';
+                tbody.innerHTML = data.boletos.map(b => `
+                    <tr>
+                        <td>${b.nossoNumero}</td>
+                        <td>${b.cliente}</td>
+                        <td>R$ ${b.valor.toFixed(2)}</td>
+                        <td>${b.dataVencimento}</td>
+                        <td>${b.diasVencido}</td>
+                    </tr>
+                `).join('');
+            } else {
+                card.style.display = 'none';
+            }
+        });
+}
+
+function syncPagamentos() {
+    fetch('/sicoob/sync-pagamentos', { method: 'POST' })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                alert(`Sincronizados ${data.atualizados} pagamentos`);
+                carregarBoletos();
+            } else {
+                alert("Erro: " + data.error);
+            }
+        });
+}
+
+function abrirAlterar(nossoNumero, dataVencimento) {
+    document.getElementById('alterar-nosso-numero').value = nossoNumero;
+    document.getElementById('alterar-vencimento').value = dataVencimento;
+    document.getElementById('alterar-valor').value = '';
+    new bootstrap.Modal(document.getElementById('alterarBoletoModal')).show();
+}
+
+function salvarAlteracao() {
+    const nossoNumero = document.getElementById('alterar-nosso-numero').value;
+    const dados = {};
+    if (document.getElementById('alterar-valor').value) dados.valor = parseFloat(document.getElementById('alterar-valor').value);
+    if (document.getElementById('alterar-vencimento').value) dados.dataVencimento = document.getElementById('alterar-vencimento').value;
+    if (Object.keys(dados).length === 0) {
+        alert('Preencha ao menos um campo');
+        return;
+    }
+    fetch('/sicoob/alterar-boleto/' + nossoNumero, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dados)
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                bootstrap.Modal.getInstance(document.getElementById('alterarBoletoModal')).hide();
+                carregarBoletos();
+            } else {
+                alert("Erro: " + data.error);
+            }
+        });
+}
+</script>
+{% endblock %}

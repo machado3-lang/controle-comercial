@@ -46,9 +46,13 @@
         <label class="form-label">Quantidade</label>
         <input type="number" class="form-control" name="quantidade" value="{{ assinatura.quantidade if assinatura.quantidade else '' }}" placeholder="Nº de pessoas">
     </div>
-    <div class="col-md-3">
+    <div class="col-md-6">
         <label class="form-label">Dia Vencimento *</label>
         <input type="number" class="form-control" name="dia_vencimento" min="1" max="31" required value="{{ assinatura.dia_vencimento }}">
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Número do Contrato</label>
+        <input type="text" class="form-control" name="numero_contrato" value="{{ assinatura.numero_contrato if assinatura.numero_contrato else '' }}" placeholder="Sugerido: código do cliente">
     </div>
     <div class="col-md-6">
         <label class="form-label">Data Início *</label>
