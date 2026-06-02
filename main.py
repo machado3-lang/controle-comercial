@@ -183,15 +183,16 @@ app.include_router(sicoob.router)
 app.include_router(produtos.router)
 app.include_router(pedidos.router)
 
-@app.middleware("http")
-async def auth_middleware(request, call_next):
-    path = request.url.path.rstrip("/")
-    public_paths = ["", "/auth/login", "/auth/logout", "/static", "/favicon.ico"]
-    if path in public_paths or any(path.startswith(p) for p in public_paths):
-        return await call_next(request)
-    if not request.session.get("user_id"):
-        return RedirectResponse(url="/auth/login")
-    return await call_next(request)
+
+def init_db():
+    from sqlalchemy import text
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY AUTOINCREMENT, email VARCHAR(200) UNIQUE, senha VARCHAR(200), nome VARCHAR(200), ativo BOOLEAN, created_at DATETIME)"))
+            conn.commit()
+    except:
+        pass
+    create_default_admin(next(get_db()))
 
 
 def create_default_admin(db: Session):
@@ -204,21 +205,13 @@ def create_default_admin(db: Session):
         db.commit()
 
 
-@app.on_event("startup")
-def startup_event():
-    from sqlalchemy import text
-    db = next(get_db())
-    try:
-        db.execute(text("SELECT 1 FROM usuarios"))
-    except:
-        with engine.connect() as conn:
-            conn.execute(text("CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY AUTOINCREMENT, email VARCHAR(200) UNIQUE, senha VARCHAR(200), nome VARCHAR(200), ativo BOOLEAN, created_at DATETIME)"))
-            conn.commit()
-    create_default_admin(db)
+init_db()
 
 
 @app.get("/")
 def dashboard(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return RedirectResponse(url="/auth/login")
     hoje = date_func.today()
     
     total_clientes = db.query(func.count(Cliente.id)).scalar()
