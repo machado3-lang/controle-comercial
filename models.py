@@ -6,6 +6,17 @@ import enum
 from database import Base
 
 
+def get_safe_day(date_obj, target_day: int) -> date:
+    year = date_obj.year
+    month = date_obj.month
+    try:
+        return date(year, month, target_day)
+    except ValueError:
+        next_month = month + 1 if month < 12 else 1
+        next_year = year if month < 12 else year + 1
+        return date(next_year, next_month, 1)
+
+
 class StatusConta(str, enum.Enum):
     PENDENTE = "pendente"
     PAGO = "pago"
