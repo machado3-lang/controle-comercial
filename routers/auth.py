@@ -1,4 +1,5 @@
-import bcrypt
+import hashlib
+import secrets
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -9,6 +10,18 @@ from models import Usuario
 router = APIRouter(prefix="/auth", tags=["Auth"])
 
 
+def hash_senha(senha: str) -> str:
+    salt = secrets.token_hex(16)
+    return f"{salt}:{hashlib.sha256((salt + senha).encode()).hexdigest()}"
+
+
+def verifica_senha(senha: str, hash_armazenado: str) -> bool:
+    if ":" not in hash_armazenado:
+        return hash_armazenado == hashlib.sha256(senha.encode()).hexdigest()
+    salt, hash_val = hash_armazenado.split(":", 1)
+    return hashlib.sha256((salt + senha).encode()).hexdigest() == hash_val
+
+
 @router.get("/login")
 def login_page(request: Request):
     return request.app.state.templates.TemplateResponse("auth/login.html", {"request": request})
@@ -17,7 +30,7 @@ def login_page(request: Request):
 @router.post("/login")
 def login(request: Request, db: Session = Depends(get_db), email: str = Form(""), senha: str = Form("")):
     usuario = db.query(Usuario).filter(Usuario.email == email, Usuario.ativo == True).first()
-    if usuario and bcrypt.checkpw(senha.encode(), usuario.senha.encode()):
+    if usuario and verifica_senha(senha, usuario.senha):
         request.session["user_id"] = usuario.id
         request.session["user_nome"] = usuario.nome
         request.session["message"] = {"tipo": "success", "texto": f"Bem-vindo, {usuario.nome}!"}
@@ -48,7 +61,7 @@ def criar_usuario(request: Request, db: Session = Depends(get_db), nome: str = F
     if db.query(Usuario).filter(Usuario.email == email).first():
         request.session["message"] = {"tipo": "danger", "texto": "Email já cadastrado"}
         return RedirectResponse(url="/auth/usuarios", status_code=303)
-    senha_hash = bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
+    senha_hash = hash_senha(senha)
     usuario = Usuario(email=email, senha=senha_hash, nome=nome, ativo=True)
     db.add(usuario)
     db.commit()
@@ -71,7 +84,7 @@ def editar_usuario(request: Request, uid: int, db: Session = Depends(get_db), no
         usuario.nome = nome
         usuario.ativo = ativo == "on"
         if senha:
-            usuario.senha = bcrypt.hashpw(senha.encode(), bcrypt.gensalt()).decode()
+            usuario.senha = hash_senha(senha)
         db.commit()
         request.session["message"] = {"tipo": "success", "texto": "Usuário atualizado"}
     return RedirectResponse(url="/auth/usuarios", status_code=303)

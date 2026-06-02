@@ -1,3 +1,5 @@
+import hashlib
+import secrets
 from fastapi import FastAPI, Depends, Request
 from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
@@ -6,7 +8,6 @@ from starlette.middleware.sessions import SessionMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date as date_func, datetime
-import bcrypt
 
 from database import engine, Base, get_db
 from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario
@@ -196,7 +197,8 @@ async def auth_middleware(request, call_next):
 def create_default_admin(db: Session):
     admin = db.query(Usuario).filter(Usuario.email == "admin@controle.com").first()
     if not admin:
-        senha = bcrypt.hashpw("admin123".encode(), bcrypt.gensalt()).decode()
+        salt = secrets.token_hex(16)
+        senha = f"{salt}:{hashlib.sha256((salt + 'admin123').encode()).hexdigest()}"
         admin = Usuario(email="admin@controle.com", senha=senha, nome="Administrador", ativo=True)
         db.add(admin)
         db.commit()
