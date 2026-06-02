@@ -9,6 +9,7 @@ from models import Empresa
 
 router = APIRouter(prefix="/configuracoes", tags=["Configuracoes"])
 
+CERT_DIR = "certs"
 UPLOAD_DIR = "static/uploads"
 
 
@@ -21,7 +22,11 @@ def configuracoes(request: Request, db: Session = Depends(get_db)):
         messages.append(msg)
     return request.app.state.templates.TemplateResponse(
         "configuracoes/form.html",
-        {"request": request, "empresa": empresa, "messages": messages}
+        {
+            "request": request,
+            "empresa": empresa,
+            "messages": messages,
+        },
     )
 
 
@@ -45,6 +50,16 @@ async def salvar_configuracoes(
     site: str = Form(""),
     senha_admin: str = Form(""),
     observacao: str = Form(""),
+    bling_client_id: str = Form(""),
+    bling_client_secret: str = Form(""),
+    bling_api_key_v2: str = Form(""),
+    sicoob_client_id: str = Form(""),
+    sicoob_beneficiario: str = Form(""),
+    sicoob_conta_corrente: str = Form(""),
+    sicoob_cert_path: str = Form(""),
+    sicoob_cert_password: str = Form(""),
+    sicoob_cert_file: UploadFile = File(None),
+    sicoob_key_file: UploadFile = File(None),
     logo: UploadFile = File(None),
 ):
     empresa = db.query(Empresa).first()
@@ -65,7 +80,13 @@ async def salvar_configuracoes(
         empresa.site = site
         empresa.senha_admin = senha_admin if senha_admin else empresa.senha_admin
         empresa.observacao = observacao
-        empresa.updated_at = datetime.now()
+        empresa.bling_client_id = bling_client_id
+        empresa.bling_client_secret = bling_client_secret
+        empresa.bling_api_key_v2 = bling_api_key_v2
+        empresa.sicoob_client_id = sicoob_client_id
+        empresa.sicoob_beneficiario = sicoob_beneficiario
+        empresa.sicoob_conta_corrente = sicoob_conta_corrente
+
     else:
         empresa = Empresa(
             razao_social=razao_social, nome_fantasia=nome_fantasia,
@@ -74,9 +95,37 @@ async def salvar_configuracoes(
             bairro=bairro, cidade=cidade, estado=estado, cep=cep,
             telefone=telefone, celular=celular, email=email, site=site,
             senha_admin=senha_admin if senha_admin else None,
-            observacao=observacao
+            observacao=observacao,
+            bling_client_id=bling_client_id,
+            bling_client_secret=bling_client_secret,
+            bling_api_key_v2=bling_api_key_v2,
+            sicoob_client_id=sicoob_client_id,
+            sicoob_beneficiario=sicoob_beneficiario,
+            sicoob_conta_corrente=sicoob_conta_corrente,
+            sicoob_cert_path=sicoob_cert_path,
         )
         db.add(empresa)
+
+    if sicoob_cert_file and sicoob_cert_file.filename:
+        os.makedirs(CERT_DIR, exist_ok=True)
+        ext = os.path.splitext(sicoob_cert_file.filename)[1].lower()
+        filename = f"sicoob_cert_{empresa.id or 'temp'}{ext}"
+        filepath = os.path.join(CERT_DIR, filename)
+        content = await sicoob_cert_file.read()
+        with open(filepath, "wb") as f:
+            f.write(content)
+        empresa.sicoob_cert_path = filepath
+        if sicoob_cert_password:
+            empresa.sicoob_cert_password = sicoob_cert_password
+
+    if sicoob_key_file and sicoob_key_file.filename:
+        ext = os.path.splitext(sicoob_key_file.filename)[1].lower()
+        filename = f"sicoob_key_{empresa.id or 'temp'}{ext}"
+        filepath = os.path.join(CERT_DIR, filename)
+        content = await sicoob_key_file.read()
+        with open(filepath, "wb") as f:
+            f.write(content)
+        empresa.sicoob_cert_key_path = filepath
 
     if logo and logo.filename:
         ext = os.path.splitext(logo.filename)[1].lower()
@@ -88,6 +137,8 @@ async def salvar_configuracoes(
                 f.write(content)
             empresa.logo = f"static/uploads/{filename}"
 
+    empresa.sicoob_token = None
+    empresa.updated_at = datetime.now()
     db.commit()
     request.session["message"] = {"tipo": "success", "texto": "Dados salvos com sucesso!"}
     return RedirectResponse(url="/configuracoes", status_code=303)

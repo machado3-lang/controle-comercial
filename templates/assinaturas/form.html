@@ -51,6 +51,13 @@
         <input type="number" class="form-control" name="dia_vencimento" min="1" max="31" required value="{{ assinatura.dia_vencimento }}">
     </div>
     <div class="col-md-6">
+        <label class="form-label">Mês do Vencimento</label>
+        <select class="form-select" name="mes_vencimento">
+            <option value="0" {{ 'selected' if assinatura.mes_vencimento == 0 or assinatura.mes_vencimento is none }}>Mês Corrente</option>
+            <option value="1" {{ 'selected' if assinatura.mes_vencimento == 1 }}>Mês Seguinte</option>
+        </select>
+    </div>
+    <div class="col-md-6">
         <label class="form-label">Número do Contrato</label>
         <input type="text" class="form-control" name="numero_contrato" value="{{ assinatura.numero_contrato if assinatura.numero_contrato else '' }}" placeholder="Sugerido: código do cliente">
     </div>

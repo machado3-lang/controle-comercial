@@ -325,23 +325,13 @@ def pagina_bling(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/salvar-credenciais")
-def salvar_credenciais(
+async def salvar_credenciais(
     request: Request, db: Session = Depends(get_db),
     bling_client_id: str = Form(""),
     bling_client_secret: str = Form(""),
 ):
-    empresa = get_empresa(db)
-    if not empresa:
-        empresa = Empresa()
-        db.add(empresa)
-    empresa.bling_client_id = bling_client_id
-    empresa.bling_client_secret = bling_client_secret
-    empresa.bling_token = None
-    empresa.bling_refresh_token = None
-    empresa.bling_token_expires_at = None
-    db.commit()
-    request.session["message"] = {"tipo": "success", "texto": "Credenciais salvas! Autorize o acesso ao Bling."}
-    return RedirectResponse(url="/bling", status_code=303)
+    request.session["message"] = {"tipo": "info", "texto": "Credenciais devem ser configuradas em Configurações > Empresa."}
+    return RedirectResponse(url="/configuracoes", status_code=303)
 
 
 @router.get("/autorizar")

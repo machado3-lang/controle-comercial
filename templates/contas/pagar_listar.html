@@ -3,7 +3,11 @@
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3">
     <h4 class="mb-0"><i class="bi bi-arrow-up-circle"></i> Contas a Pagar</h4>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNova"><i class="bi bi-plus-circle"></i> Nova Conta</button>
+    <div>
+        <button class="btn btn-outline-success btn-sm me-2" onclick="exportarExcel()"><i class="bi bi-file-excel"></i> Excel</button>
+        <button class="btn btn-outline-danger btn-sm me-2" onclick="exportarPdf()"><i class="bi bi-file-pdf"></i> PDF</button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNova"><i class="bi bi-plus-circle"></i> Nova Conta</button>
+    </div>
 </div>
 
 <form class="row g-2 mb-3">
@@ -17,11 +21,18 @@
             <option value="cancelado" {{ 'selected' if status_filtro == 'cancelado' }}>Cancelado</option>
         </select>
     </div>
+    <div class="col-auto"><input type="date" class="form-control" name="data_inicio" value="{{ data_inicio }}" onchange="this.form.submit()"></div>
+    <div class="col-auto"><input type="date" class="form-control" name="data_fim" value="{{ data_fim }}" onchange="this.form.submit()"></div>
     <div class="col-auto"><button class="btn btn-outline-primary" type="submit"><i class="bi bi-search"></i></button></div>
 </form>
 
+<div class="alert alert-info d-flex justify-content-between align-items-center mb-2">
+    <span><strong>Total Filtrado:</strong> {{ contas|length }} contas</span>
+    <span><strong>Valor Total:</strong> R$ {{ "%.2f"|format(total_valor) }}</span>
+</div>
+
 <div class="table-responsive">
-    <table class="table table-hover">
+    <table class="table table-hover" id="tabelaContasPagar">
         <thead><tr><th>Descrição</th><th>Fornecedor</th><th>Valor</th><th>Vencimento</th><th>Pagamento</th><th>Status</th><th>Ações</th></tr></thead>
         <tbody>
             {% for c in contas %}
@@ -88,4 +99,20 @@
         </form>
     </div>
 </div>
+{% endblock %}
+
+{% block scripts %}
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+function exportarExcel() {
+    const tabela = document.getElementById('tabelaContasPagar');
+    const wb = XLSX.utils.table_to_book(tabela, { sheet: "Contas a Pagar" });
+    XLSX.writeFile(wb, 'contas-pagar.xlsx');
+}
+
+function exportarPdf() {
+    const params = new URLSearchParams(window.location.search);
+    window.open('/contas/pagar/pdf?' + params.toString(), '_blank');
+}
+</script>
 {% endblock %}

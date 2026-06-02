@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Relatório - Contas a Pagar</title>
+    <style>
+        @page { size: A4; margin: 20mm; }
+        body { font-family: Arial, sans-serif; font-size: 10pt; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .header h2 { margin: 0; }
+        .info { margin-bottom: 20px; }
+        table { width: 100%; border-collapse: collapse; }
+        th, td { border: 1px solid #333; padding: 6px; text-align: left; }
+        th { background: #f0f0f0; font-weight: bold; }
+        .total { text-align: right; font-weight: bold; font-size: 12pt; margin-top: 10px; }
+        .status-pago { color: green; }
+        .status-pendente { color: orange; }
+        .status-vencido { color: red; }
+        .status-cancelado { color: gray; }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h2>RELATÓRIO - CONTAS A PAGAR</h2>
+        <p>Emitido em: {{ data_geracao.strftime('%d/%m/%Y') }}</p>
+        {% if empresa %}
+        <p><strong>{{ empresa.nome_fantasia or empresa.razao_social }}</strong></p>
+        {% endif %}
+    </div>
+
+    <table>
+        <thead>
+            <tr>
+                <th>Descrição</th>
+                <th>Fornecedor</th>
+                <th>Valor</th>
+                <th>Vencimento</th>
+                <th>Pagamento</th>
+                <th>Status</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in contas %}
+            <tr>
+                <td>{{ c.descricao }}</td>
+                <td>{{ c.fornecedor.nome if c.fornecedor else '-' }}</td>
+                <td>R$ {{ "%.2f"|format(c.valor) }}</td>
+                <td>{{ c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '-' }}</td>
+                <td>{{ c.data_pagamento.strftime('%d/%m/%Y') if c.data_pagamento else '-' }}</td>
+                <td class="status-{{ c.status.value }}">{{ c.status.value }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+
+    <div class="total">
+        Total: R$ {{ "%.2f"|format(total_valor) }}
+    </div>
+</body>
+</html>

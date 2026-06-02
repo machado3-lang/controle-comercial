@@ -1,0 +1,36 @@
+{% extends "base.html" %}
+{% block title %}Imprimir Recebimentos{% endblock %}
+{% block content %}
+<div class="print-area">
+    <h3 class="text-center mb-4">RELATÓRIO DE RECEBIMENTOS</h3>
+    
+    <table class="table table-bordered">
+        <thead><tr><th>Data</th><th>Descrição</th><th>Cliente</th><th>Valor</th><th>Forma Pagamento</th><th>Nosso Número</th></tr></thead>
+        <tbody>
+            {% for r in recebimentos %}
+            <tr>
+                <td>{{ r.data_recebimento.strftime('%d/%m/%Y') if r.data_recebimento else '-' }}</td>
+                <td>{{ r.descricao }}</td>
+                <td>{{ r.cliente.nome if r.cliente else '-' }}</td>
+                <td>R$ {{ "%.2f"|format(r.valor) }}</td>
+                <td>{{ r.forma_pagamento or '-' }}</td>
+                <td>{{ r.nosso_numero or '-' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot><tr><th colspan="3" class="text-end">Total:</th><th colspan="3">R$ {{ "%.2f"|format(total_valor) }}</th></tr></tfoot>
+    </table>
+</div>
+
+<div class="mt-4 no-print text-end">
+    <button onclick="window.print()" class="btn btn-primary"><i class="bi bi-printer"></i> Imprimir</button>
+    <a href="/contas/recebimentos" class="btn btn-secondary">Voltar</a>
+</div>
+
+<style>
+@media print {
+    .no-print { display: none; }
+    .print-area { font-size: 10pt; }
+}
+</style>
+{% endblock %}

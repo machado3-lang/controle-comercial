@@ -7,7 +7,6 @@ from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File
 from fastapi.responses import RedirectResponse, JSONResponse, Response
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Empresa, ContaReceber, StatusConta
 
@@ -211,42 +210,8 @@ async def salvar_credenciais(
     cert_file: UploadFile = File(None),
     key_file: UploadFile = File(None),
 ):
-    empresa = get_empresa(db)
-    if not empresa:
-        empresa = Empresa()
-        db.add(empresa)
-    empresa.sicoob_client_id = sicoob_client_id
-    empresa.sicoob_conta_corrente = sicoob_conta_corrente
-    empresa.sicoob_beneficiario = sicoob_beneficiario
-    if sicoob_cert_password:
-        empresa.sicoob_cert_password = sicoob_cert_password
-
-    if cert_file and cert_file.filename:
-        os.makedirs(CERT_DIR, exist_ok=True)
-        ext = os.path.splitext(cert_file.filename)[1].lower()
-        filename = f"cert_{empresa.id or 'temp'}{ext}"
-        filepath = os.path.join(CERT_DIR, filename)
-        content = await cert_file.read()
-        with open(filepath, "wb") as f:
-            f.write(content)
-        empresa.sicoob_cert_path = filepath
-
-    if key_file and key_file.filename:
-        ext = os.path.splitext(key_file.filename)[1].lower()
-        filename = f"key_{empresa.id or 'temp'}{ext}"
-        filepath = os.path.join(CERT_DIR, filename)
-        content = await key_file.read()
-        with open(filepath, "wb") as f:
-            f.write(content)
-        empresa.sicoob_cert_key_path = filepath
-
-    db.commit()
-    token = refresh_sicoob_token(db, "boletos_consulta")
-    if token:
-        request.session["message"] = {"tipo": "success", "texto": "Credenciais Sicoob salvas!"}
-    else:
-        request.session["message"] = {"tipo": "warning", "texto": "Credenciais salvas, mas falha ao gerar token automático"}
-    return RedirectResponse(url="/sicoob", status_code=303)
+    request.session["message"] = {"tipo": "info", "texto": "Credenciais devem ser configuradas em Configurações > Empresa."}
+    return RedirectResponse(url="/configuracoes", status_code=303)
 
 
 @router.post("/emitir-boleto/{conta_id}")
@@ -478,6 +443,9 @@ async def baixar_boleto_route(nosso_numero: str, request: Request, db: Session =
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         )
         if resp.status_code in (200, 204):
+            if conta_inicial:
+                conta_inicial.status = StatusConta.CANCELADO
+                db.commit()
             return {"success": True, "message": "Boleto baixado com sucesso"}
         return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
 
@@ -497,7 +465,7 @@ def sync_pagamentos(db: Session = Depends(get_db)):
     contas = db.query(ContaReceber).filter(
         ContaReceber.boleto_emitido == True,
         ContaReceber.api_nosso_numero != None,
-        (ContaReceber.status == StatusConta.PENDENTE) | (ContaReceber.status == StatusConta.VENCIDO)
+        (ContaReceber.status == StatusConta.PENDENTE) | (ContaReceber.status == StatusConta.VENCIDO) | (ContaReceber.status == StatusConta.BAIXA_SOLICITADA)
     ).all()
     
     atualizados = 0

@@ -1,0 +1,12 @@
+__pycache__
+*.pyc
+*.pyo
+*.db
+*.sqlite
+certs/
+static/uploads/
+temp_*.pdf
+*.hex
+*.postman_collection
+SICOOB API/
+"Códigos de resposta HTTP.txt"

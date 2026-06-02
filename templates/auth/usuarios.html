@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Usuários - Controle Comercial{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4><i class="bi bi-people"></i> Usuários</h4>
+    <a href="/auth/usuarios/novo" class="btn btn-primary"><i class="bi bi-plus"></i> Novo Usuário</a>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover">
+        <thead><tr><th>Nome</th><th>Email</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody>
+            {% for u in usuarios %}
+            <tr>
+                <td>{{ u.nome }}</td>
+                <td>{{ u.email }}</td>
+                <td><span class="badge bg-{{ 'success' if u.ativo else 'secondary' }}">{{ 'Ativo' if u.ativo else 'Inativo' }}</span></td>
+                <td>
+                    <a href="/auth/usuarios/{{ u.id }}/editar" class="btn btn-sm btn-outline-primary"><i class="bi bi-pencil"></i></a>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="4" class="text-center text-muted">Nenhum usuário</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

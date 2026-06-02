@@ -14,6 +14,17 @@ class StatusConta(str, enum.Enum):
     BAIXA_SOLICITADA = "baixa_solicitada"
 
 
+class Usuario(Base):
+    __tablename__ = "usuarios"
+
+    id = Column(Integer, primary_key=True, index=True)
+    email = Column(String(200), nullable=False, unique=True)
+    senha = Column(String(200), nullable=False)
+    nome = Column(String(200), nullable=False)
+    ativo = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class StatusOS(str, enum.Enum):
     ABERTA = "aberta"
     EM_ANDAMENTO = "em_andamento"
@@ -145,6 +156,7 @@ class Assinatura(Base):
     data_inicio = Column(Date, nullable=False)
     data_fim = Column(Date, nullable=True)
     dia_vencimento = Column(Integer, nullable=False)
+    mes_vencimento = Column(Integer, default=0)
     situacao = Column(Integer, default=1)
     fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True)
     valor_revenda = Column(Float, nullable=True)
@@ -204,6 +216,107 @@ class OrdemServico(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     cliente = relationship("Cliente", back_populates="ordens_servico")
+
+
+class CategoriaProduto(Base):
+    __tablename__ = "categorias_produto"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(100), nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
+
+    produtos = relationship("Produto", back_populates="categoria")
+
+
+class Produto(Base):
+    __tablename__ = "produtos"
+
+    id = Column(Integer, primary_key=True, index=True)
+    codigo = Column(String(50), nullable=True, unique=True)
+    nome = Column(String(200), nullable=False)
+    descricao = Column(Text, nullable=True)
+    preco = Column(Float, nullable=False, default=0)
+    preco_custo = Column(Float, nullable=True)
+    ncm = Column(String(10), nullable=True)
+    unidade = Column(String(10), nullable=True, default="UN")
+    categoria_id = Column(Integer, ForeignKey("categorias_produto.id"), nullable=True)
+    foto = Column(String(500), nullable=True)
+    fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True)
+    marca = Column(String(100), nullable=True)
+    peso_liq = Column(Float, nullable=True)
+    peso_bruto = Column(Float, nullable=True)
+    altura = Column(Float, nullable=True)
+    largura = Column(Float, nullable=True)
+    profundidade = Column(Float, nullable=True)
+    unidade_medida = Column(String(20), nullable=True, default="cm")
+    estoque = Column(Float, nullable=False, default=0)
+    estoque_minimo = Column(Float, nullable=False, default=0)
+    situacao = Column(String(1), nullable=False, default="A")
+    bling_id = Column(Integer, nullable=True, unique=True)
+    bling_updated_at = Column(DateTime, nullable=True)
+    bling_pending_sync = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    categoria = relationship("CategoriaProduto", back_populates="produtos")
+    fornecedor = relationship("Fornecedor")
+    itens_pedido = relationship("PedidoVendaItem", back_populates="produto")
+
+
+class StatusPedido(str, enum.Enum):
+    PENDENTE = "pendente"
+    APROVADO = "aprovado"
+    FATURADO = "faturado"
+    PRE_VENDA = "pre_venda"
+    CANCELADO = "cancelado"
+
+
+class FormaPagamento(str, enum.Enum):
+    AVISTA = "avista"
+    APRAZO = "aprazo"
+    CARTAO_CREDITO = "cartao_credito"
+    CARTAO_DEBITO = "cartao_debito"
+    BOLETO = "boleto"
+
+
+class PedidoVenda(Base):
+    __tablename__ = "pedidos_venda"
+
+    id = Column(Integer, primary_key=True, index=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
+    numero = Column(String(50), nullable=True)
+    data = Column(Date, nullable=False, default=date.today)
+    status = Column(Enum(StatusPedido), default=StatusPedido.PENDENTE)
+    total = Column(Float, nullable=False, default=0)
+    observacao = Column(Text, nullable=True)
+    tipo_pedido = Column(String(20), default="venda")  # venda ou pre_venda
+    forma_pagamento = Column(String(20), nullable=True)
+    gerar_boleto = Column(Boolean, default=False)
+    terminos_boleto = Column(Text, nullable=True)
+    pedido_agrupado_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True)  # Referência ao pedido criado pelo agrupamento
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    cliente = relationship("Cliente")
+    itens = relationship("PedidoVendaItem", back_populates="pedido", cascade="all, delete-orphan")
+    pedido_agrupado = relationship("PedidoVenda", remote_side=[id])
+
+
+class PedidoVendaItem(Base):
+    __tablename__ = "pedidos_venda_itens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=False)
+    produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True)
+    descricao = Column(String(300), nullable=False)
+    quantidade = Column(Float, nullable=False, default=1)
+    preco_unitario = Column(Float, nullable=False, default=0)
+    total = Column(Float, nullable=False, default=0)
+    fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True)
+
+    pedido = relationship("PedidoVenda", back_populates="itens")
+    produto = relationship("Produto", back_populates="itens_pedido")
+    fornecedor = relationship("Fornecedor")
 
 
 class Empresa(Base):

@@ -1,6 +1,6 @@
-# Sistema de Controle de Serviços
+# Sistema de Controle Comercial
 
-Sistema web completo para gestão de oficina/prestador de serviços com integração Bling ERP v3.
+Sistema web completo para gestão comercial com integração Bling ERP v3.
 
 ## Stack
 
@@ -49,7 +49,7 @@ C:\Controle de Serviços\
 ## Como Executar
 
 ```bash
-cd "C:\Controle de Serviços"
+cd "C:\Controle Comercial"
 python -m uvicorn main:app --host 0.0.0.0 --port 8000 --reload
 ```
 

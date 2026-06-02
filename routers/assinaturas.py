@@ -1,11 +1,12 @@
+import enum
+from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
-from datetime import datetime, date
 
 from database import get_db
 from models import (Assinatura, AssinaturaHistorico, Cliente, Fornecedor, Empresa,
-                     ContaReceber, StatusConta)
+                   ContaReceber, StatusConta, get_safe_day)
 
 router = APIRouter(prefix="/assinaturas", tags=["Assinaturas"])
 
@@ -40,10 +41,25 @@ PERIODICIDADE_OPCOES = [
 ]
 
 
+def _proximo_vencimento(assinatura: Assinatura) -> date | None:
+    if assinatura.situacao != 1:
+        return None
+    hoje = date.today()
+    if assinatura.mes_vencimento == 1:
+        if hoje.month == 12:
+            data = date(hoje.year + 1, 1, min(assinatura.dia_vencimento, 28))
+        else:
+            data = date(hoje.year, hoje.month + 1, min(assinatura.dia_vencimento, 28))
+    else:
+        data = date(hoje.year, hoje.month, min(assinatura.dia_vencimento, 28))
+    return data
+
+
 @router.get("/")
 def listar_assinaturas(
     request: Request, db: Session = Depends(get_db),
-    periodicidade: str = Query(""), status_filtro: str = Query(""), busca: str = Query("")
+    periodicidade: str = Query(""), status_filtro: str = Query(""), busca: str = Query(""),
+    vencimento_dias: str = Query("")
 ):
     query = db.query(Assinatura).join(Cliente)
     if periodicidade:
@@ -58,7 +74,28 @@ def listar_assinaturas(
             pass
     if busca:
         query = query.filter(Cliente.nome.ilike(f"%{busca}%"))
-    assinaturas = query.order_by(Assinatura.data_inicio.desc()).all()
+    if vencimento_dias:
+        try:
+            dias = int(vencimento_dias)
+            hoje = date.today()
+            fim = hoje + timedelta(days=dias)
+            query = query.filter(
+                (Assinatura.data_fim == None) | (Assinatura.data_fim >= hoje),
+                Assinatura.data_inicio <= fim
+            )
+            assinaturas = query.order_by(Assinatura.data_inicio.desc()).all()
+            assinaturas = [a for a in assinaturas if _proximo_vencimento(a) and hoje <= _proximo_vencimento(a) <= fim]
+        except ValueError:
+            assinaturas = query.order_by(Assinatura.data_inicio.desc()).all()
+    else:
+        assinaturas = query.order_by(Assinatura.data_inicio.desc()).all()
+    
+    for a in assinaturas:
+        prox = _proximo_vencimento(a)
+        if prox:
+            a.proximo_vencimento = prox.strftime("%d/%m/%Y")
+        else:
+            a.proximo_vencimento = None
 
     lucro_total = sum(
         a.valor - (a.valor_revenda or 0)
@@ -71,7 +108,7 @@ def listar_assinaturas(
         "assinaturas/listar.html",
         {"request": request, "assinaturas": assinaturas, "clientes": clientes,
          "fornecedores": fornecedores, "periodicidade": periodicidade, "status_filtro": status_filtro,
-         "busca": busca, "SITUACAO_LABELS": SITUACAO_LABELS,
+         "busca": busca, "vencimento_dias": vencimento_dias, "SITUACAO_LABELS": SITUACAO_LABELS,
          "PERIODICIDADE_LABELS": PERIODICIDADE_LABELS, "lucro_total": lucro_total}
     )
 
@@ -87,8 +124,10 @@ def criar_assinatura(
     data_inicio: str = Form(...),
     data_fim: str = Form(""),
     dia_vencimento: int = Form(...),
+    mes_vencimento: int = Form(0),
     fornecedor_id: int = Form(0),
     valor_revenda: float = Form(0),
+    numero_contrato: str = Form(""),
     observacao: str = Form(""),
 ):
     inicio = date.fromisoformat(data_inicio)
@@ -98,10 +137,11 @@ def criar_assinatura(
         valor=valor, quantidade=quantidade if quantidade else None,
         data_inicio=inicio, data_fim=fim,
         dia_vencimento=dia_vencimento,
+        mes_vencimento=mes_vencimento,
         fornecedor_id=fornecedor_id if fornecedor_id else None,
         valor_revenda=valor_revenda if valor_revenda else None,
+        numero_contrato=numero_contrato if numero_contrato else None,
         observacao=observacao,
-        bling_pending_sync=True
     )
     db.add(assinatura)
     db.commit()
@@ -110,41 +150,58 @@ def criar_assinatura(
     return RedirectResponse(url="/assinaturas", status_code=303)
 
 
-def _gerar_cobranca(db: Session, assinatura: Assinatura):
+def _add_months(source_date, months):
+    month = source_date.month - 1 + months
+    year = source_date.year + month // 12
+    month = month % 12 + 1
+    day = min(source_date.day, 28)
+    return date(year, month, day)
+
+
+def _gerar_cobranca(db: Session, assinatura: Assinatura, gerar_proximas: int = 3):
     hoje = date.today()
-    mes_cobranca = hoje.month
-    ano_cobranca = hoje.year
-
-    if assinatura.dia_vencimento > 28:
-        dia = 28
-    else:
-        dia = assinatura.dia_vencimento
-
     label = PERIODICIDADE_LABELS.get(assinatura.periodicidade, "Mensal")
+    dia = assinatura.dia_vencimento
 
-    if assinatura.periodicidade >= 5:
-        desc = f"{label} - {assinatura.descricao} - {ano_cobranca}"
-        data_venc = date(ano_cobranca, 1, dia)
-    else:
-        desc = f"{label} - {assinatura.descricao} - {mes_cobranca:02d}/{ano_cobranca}"
-        data_venc = date(ano_cobranca, mes_cobranca, dia)
-
-    existente = db.query(ContaReceber).filter(
+    ultima_conta = db.query(ContaReceber).filter(
         ContaReceber.cliente_id == assinatura.cliente_id,
-        ContaReceber.descricao == desc,
-        ContaReceber.status != StatusConta.CANCELADO
-    ).first()
+        ContaReceber.observacao.like(f"%assinatura #{assinatura.id}%")
+    ).order_by(ContaReceber.data_vencimento.desc()).first()
 
-    if not existente:
-        conta = ContaReceber(
-            cliente_id=assinatura.cliente_id,
-            descricao=desc,
-            valor=assinatura.valor,
-            data_vencimento=data_venc,
-            observacao=f"Cobrança automática - assinatura #{assinatura.id}"
-        )
-        db.add(conta)
-        db.commit()
+    if ultima_conta:
+        data_base = _add_months(ultima_conta.data_vencimento, assinatura.periodicidade)
+    else:
+        m = hoje.month + 1 if assinatura.mes_vencimento == 1 else hoje.month
+        a = hoje.year if m <= 12 else hoje.year + 1
+        m = m if m <= 12 else 1
+        data_base = date(a, m, 1)
+
+    for i in range(gerar_proximas):
+        data_venc = get_safe_day(data_base, dia)
+        if assinatura.periodicidade >= 5:
+            desc = f"{label} - {assinatura.descricao} - {data_venc.year}"
+        else:
+            desc = f"{label} - {assinatura.descricao} - {data_venc.month:02d}/{data_venc.year}"
+
+        existente = db.query(ContaReceber).filter(
+            ContaReceber.cliente_id == assinatura.cliente_id,
+            ContaReceber.descricao == desc,
+            ContaReceber.status != StatusConta.CANCELADO
+        ).first()
+
+        if not existente and data_venc >= hoje:
+            conta = ContaReceber(
+                cliente_id=assinatura.cliente_id,
+                descricao=desc,
+                valor=assinatura.valor,
+                data_vencimento=data_venc,
+                observacao=f"Cobrança automática - assinatura #{assinatura.id}"
+            )
+            db.add(conta)
+
+        data_base = _add_months(data_base, assinatura.periodicidade)
+
+    db.commit()
 
 
 def _salvar_historico(db: Session, assinatura: Assinatura, valor, valor_revenda, quantidade):
@@ -205,9 +262,11 @@ def atualizar_assinatura(
     data_inicio: str = Form(...),
     data_fim: str = Form(""),
     dia_vencimento: int = Form(...),
+    mes_vencimento: int = Form(0),
     situacao: int = Form(1),
     fornecedor_id: int = Form(0),
     valor_revenda: float = Form(0),
+    numero_contrato: str = Form(""),
     observacao: str = Form(""),
 ):
     assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
@@ -224,12 +283,13 @@ def atualizar_assinatura(
     assinatura.data_inicio = date.fromisoformat(data_inicio)
     assinatura.data_fim = date.fromisoformat(data_fim) if data_fim else None
     assinatura.dia_vencimento = dia_vencimento
+    assinatura.mes_vencimento = mes_vencimento
     assinatura.situacao = situacao
     assinatura.fornecedor_id = fornecedor_id if fornecedor_id else None
     assinatura.valor_revenda = valor_revenda if valor_revenda else None
+    assinatura.numero_contrato = numero_contrato if numero_contrato else None
     assinatura.observacao = observacao
     assinatura.updated_at = datetime.now()
-    assinatura.bling_pending_sync = True
     db.commit()
     return RedirectResponse(url="/assinaturas", status_code=303)
 
