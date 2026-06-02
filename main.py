@@ -35,16 +35,23 @@ app.add_middleware(SessionMiddleware, secret_key="controle-comercial-secret-key-
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
+from starlette.middleware.base import BaseHTTPMiddleware
+
 from routers import clientes, fornecedores, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth
 
-with engine.connect() as conn:
-    from sqlalchemy import text
-    try:
-        conn.execute(text("CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY AUTOINCREMENT, email VARCHAR(200) UNIQUE, senha VARCHAR(200), nome VARCHAR(200), ativo BOOLEAN, created_at DATETIME)"))
-        conn.commit()
-    except:
-        pass
 
+class AuthMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        public_paths = ["/auth", "/static", "/favicon.ico"]
+        path = request.url.path
+        if any(path.startswith(p) for p in public_paths):
+            return await call_next(request)
+        if not request.session.get("user_id"):
+            return RedirectResponse(url="/auth/login")
+        return await call_next(request)
+
+
+app.add_middleware(AuthMiddleware)
 app.include_router(auth.router)
 app.include_router(clientes.router)
 app.include_router(fornecedores.router)
