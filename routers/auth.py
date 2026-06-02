@@ -3,8 +3,9 @@ import secrets
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
+from sqlalchemy import text
 
-from database import get_db
+from database import engine, get_db
 from models import Usuario
 
 router = APIRouter(prefix="/auth", tags=["Auth"])
@@ -20,6 +21,21 @@ def verifica_senha(senha: str, hash_armazenado: str) -> bool:
         return hash_armazenado == hashlib.sha256(senha.encode()).hexdigest()
     salt, hash_val = hash_armazenado.split(":", 1)
     return hashlib.sha256((salt + senha).encode()).hexdigest() == hash_val
+
+
+@router.get("/setup")
+def setup_admin(request: Request, db: Session = Depends(get_db)):
+    with engine.connect() as conn:
+        conn.execute(text("CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY AUTOINCREMENT, email VARCHAR(200) UNIQUE, senha VARCHAR(200), nome VARCHAR(200), ativo BOOLEAN, created_at DATETIME)"))
+        conn.commit()
+    admin = db.query(Usuario).filter(Usuario.email == "admin@controle.com").first()
+    if not admin:
+        senha = hash_senha("admin123")
+        admin = Usuario(email="admin@controle.com", senha=senha, nome="Administrador", ativo=True)
+        db.add(admin)
+        db.commit()
+        return "Admin criado: admin@controle.com / admin123"
+    return "Admin já existe"
 
 
 @router.get("/login")
