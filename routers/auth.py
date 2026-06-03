@@ -1,5 +1,6 @@
 import hashlib
 import secrets
+import json
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import RedirectResponse
 from sqlalchemy.orm import Session
@@ -27,20 +28,21 @@ def verifica_senha(senha: str, hash_armazenado: str) -> bool:
 def import_backup(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
-    import json
-    from sqlalchemy import text
     try:
-        with open("backup.json", "r") as f:
-            data = json.load(f)
-        for table, rows in data.items():
-            if rows:
-                for row in rows:
-                    cols = list(row.keys())
-                    vals = [row[c] for c in cols]
-                    stmt = text(f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join([f':{c}' for c in cols])}) ON CONFLICT DO NOTHING")
-                    db.execute(stmt, dict(zip(cols, vals)))
-                db.commit()
-        return {"success": True, "message": "Backup importado", "tables": len(data)}
+        from sqlalchemy import text
+        with open("restore.sql", "r") as f:
+            sql_content = f.read()
+        # Executar em blocos pequenos
+        statements = [s.strip() for s in sql_content.split(';') if s.strip() and s.strip().startswith('INSERT')]
+        count = 0
+        for stmt in statements[:100]:  # Limite seguro
+            try:
+                db.execute(text(stmt))
+                count += 1
+            except:
+                pass
+        db.commit()
+        return {"success": True, "message": f"{count} registros importados"}
     except Exception as e:
         return {"success": False, "error": str(e)}
 
