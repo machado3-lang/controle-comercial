@@ -16,8 +16,8 @@
         <input type="password" name="senha" class="form-control" {% if not usuario %}required{% endif %}>
     </div>
     <div class="mb-3 form-check">
-        <input type="checkbox" name="ativo" class="form-check-input" {% if not usuario or usuario.ativo %}checked{% endif %}>
-        <label class="form-check-label">Ativo</label>
+        <input type="checkbox" name="ativo" class="form-check-input" id="ativo" {% if not usuario or usuario.ativo %}checked{% endif %}>
+        <label class="form-check-label" for="ativo">Ativo</label>
     </div>
     <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
     <a href="/auth/usuarios" class="btn btn-outline-secondary">Cancelar</a>
