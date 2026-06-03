@@ -64,8 +64,9 @@ def logout(request: Request):
 
 @router.get("/usuarios")
 def listar_usuarios(request: Request, db: Session = Depends(get_db)):
+    message = request.session.pop("message", None)
     usuarios = db.query(Usuario).all()
-    return request.app.state.templates.TemplateResponse("auth/usuarios.html", {"request": request, "usuarios": usuarios})
+    return request.app.state.templates.TemplateResponse("auth/usuarios.html", {"request": request, "usuarios": usuarios, "message": message})
 
 
 @router.get("/usuarios/novo")
