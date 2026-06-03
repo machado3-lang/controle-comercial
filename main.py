@@ -1,9 +1,12 @@
 import re
+import os
 from fastapi import FastAPI, Depends, Request
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.middleware.sessions import SessionMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date as date_func, datetime
@@ -31,13 +34,20 @@ templates.env.filters["format_cpf_cnpj"] = format_cpf_cnpj
 
 app = FastAPI(title="Controle Comercial")
 app.state.templates = templates
-app.add_middleware(SessionMiddleware, secret_key="controle-comercial-secret-key-2024")
+app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
+app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "controle-comercial-secret-key-2024"))
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-from starlette.middleware.base import BaseHTTPMiddleware
-
 from routers import clientes, fornecedores, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth
+
+
+class ProxyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.headers.get("x-forwarded-proto") == "https":
+            request.scope["scheme"] = "https"
+        response = await call_next(request)
+        return response
 
 
 class AuthMiddleware(BaseHTTPMiddleware):
@@ -48,9 +58,15 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if not request.session.get("user_id"):
             return RedirectResponse(url="/auth/login")
-        return await call_next(request)
+        try:
+            return await call_next(request)
+        except Exception:
+            request.session.clear()
+            request.session["message"] = {"tipo": "danger", "texto": "Erro no servidor. Faça login novamente."}
+            return RedirectResponse(url="/auth/login", status_code=303)
 
 
+app.add_middleware(ProxyMiddleware)
 app.add_middleware(AuthMiddleware)
 app.include_router(auth.router)
 app.include_router(clientes.router)

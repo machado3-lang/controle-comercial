@@ -40,7 +40,8 @@ def setup_admin(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/login")
 def login_page(request: Request):
-    return request.app.state.templates.TemplateResponse("auth/login.html", {"request": request})
+    message = request.session.pop("message", None)
+    return request.app.state.templates.TemplateResponse("auth/login.html", {"request": request, "message": message})
 
 
 @router.post("/login")
