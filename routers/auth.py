@@ -83,8 +83,9 @@ def criar_usuario(request: Request, db: Session = Depends(get_db), nome: str = F
     usuario = Usuario(email=email, senha=senha_hash, nome=nome, ativo=True)
     db.add(usuario)
     db.commit()
-    request.session["message"] = {"tipo": "success", "texto": "Usuário criado"}
-    return RedirectResponse(url="/auth/usuarios", status_code=303)
+    db.refresh(usuario)
+    request.session["message"] = {"tipo": "success", "texto": f"Usuário {usuario.nome} criado"}
+    return RedirectResponse(url="/auth/usuarios", headers={"Cache-Control": "no-cache, no-store"}, status_code=303)
 
 
 @router.get("/usuarios/{uid}/editar")
