@@ -1,7 +1,6 @@
 import json
 import os
 import psycopg2
-from urllib.parse import urlparse
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if DATABASE_URL.startswith("postgres://"):
@@ -24,16 +23,19 @@ for table in table_order:
             vals = []
             for v in row.values():
                 if v is None:
-                    vals.append('NULL')
+                    vals.append(None)
                 elif isinstance(v, bool):
-                    vals.append('TRUE' if v else 'FALSE')
-                elif isinstance(v, (str, bytes)):
-                    vals.append("'" + str(v).replace("'", "''") + "'")
+                    vals.append(v)
+                elif isinstance(v, (int, float)):
+                    vals.append(v)
                 else:
-                    vals.append(str(v))
+                    vals.append(str(v) if v else None)
             placeholders = ', '.join(['%s'] * len(cols))
             stmt = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
-            cursor.execute(stmt, [row[c] for c in cols])
+            try:
+                cursor.execute(stmt, vals)
+            except Exception as e:
+                print(f"Erro em {table}: {e}")
         conn.commit()
         print(f"{table}: importado")
 
