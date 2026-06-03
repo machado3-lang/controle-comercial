@@ -51,17 +51,18 @@ class ProxyMiddleware(BaseHTTPMiddleware):
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        public_paths = ["/auth", "/static", "/favicon.ico"]
+        public_paths = ["/auth/login", "/auth/setup", "/static", "/favicon.ico"]
         path = request.url.path
         if any(path.startswith(p) for p in public_paths):
             return await call_next(request)
         if not request.session.get("user_id"):
+            request.session["message"] = {"tipo": "danger", "texto": "Faça login para acessar"}
             return RedirectResponse(url="/auth/login")
         try:
             return await call_next(request)
         except Exception:
             request.session.clear()
-            request.session["message"] = {"tipo": "danger", "texto": "Erro no servidor. Faça login novamente."}
+            request.session["message"] = {"tipo": "danger", "texto": "Erro no servidor."}
             return RedirectResponse(url="/auth/login", status_code=303)
 
 
