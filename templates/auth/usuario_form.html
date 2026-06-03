@@ -13,7 +13,7 @@
     </div>
     <div class="mb-3">
         <label class="form-label">Senha {{ 'nova' if usuario else '' }}</label>
-        <input type="password" name="senha" class="form-control" {{ 'required' if not usuario else '' }}>
+        <input type="password" name="senha" class="form-control" {% if not usuario %}required{% endif %}>
     </div>
     <div class="mb-3 form-check">
         <input type="checkbox" name="ativo" class="form-check-input" {% if not usuario or usuario.ativo %}checked{% endif %}>
