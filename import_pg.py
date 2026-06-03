@@ -20,22 +20,24 @@ for table in table_order:
     if table in data and data[table]:
         cols = list(data[table][0].keys())
         for row in data[table]:
-            vals = []
-            for v in row.values():
-                if v is None:
-                    vals.append(None)
-                elif isinstance(v, bool):
-                    vals.append(v)
-                elif isinstance(v, (int, float)):
-                    vals.append(v)
-                else:
-                    vals.append(str(v) if v else None)
-            placeholders = ', '.join(['%s'] * len(cols))
-            stmt = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
             try:
+                vals = []
+                for v in row.values():
+                    if v is None:
+                        vals.append(None)
+                    elif isinstance(v, bool):
+                        vals.append(v)
+                    elif isinstance(v, (int, float)):
+                        vals.append(v)
+                    else:
+                        vals.append(str(v) if v else None)
+                placeholders = ', '.join(['%s'] * len(cols))
+                stmt = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
                 cursor.execute(stmt, vals)
             except Exception as e:
-                print(f"Erro em {table}: {e}")
+                print(f"Erro em {table} id={row.get('id', 'unknown')}: {e}")
+                conn.rollback()
+                continue
         conn.commit()
         print(f"{table}: importado")
 
