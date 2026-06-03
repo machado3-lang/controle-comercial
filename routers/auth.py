@@ -23,11 +23,30 @@ def verifica_senha(senha: str, hash_armazenado: str) -> bool:
     return hashlib.sha256((salt + senha).encode()).hexdigest() == hash_val
 
 
+@router.get("/import-backup")
+def import_backup(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
+    import json
+    from sqlalchemy import text
+    try:
+        with open("backup.json", "r") as f:
+            data = json.load(f)
+        for table, rows in data.items():
+            if rows:
+                for row in rows:
+                    cols = list(row.keys())
+                    vals = [row[c] for c in cols]
+                    stmt = text(f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({', '.join([f':{c}' for c in cols])}) ON CONFLICT DO NOTHING")
+                    db.execute(stmt, dict(zip(cols, vals)))
+                db.commit()
+        return {"success": True, "message": "Backup importado", "tables": len(data)}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/setup")
 def setup_admin(request: Request, db: Session = Depends(get_db)):
-    with engine.connect() as conn:
-        conn.execute(text("CREATE TABLE IF NOT EXISTS usuarios (id INTEGER PRIMARY KEY AUTOINCREMENT, email VARCHAR(200) UNIQUE, senha VARCHAR(200), nome VARCHAR(200), ativo BOOLEAN, created_at DATETIME)"))
-        conn.commit()
     admin = db.query(Usuario).filter(Usuario.email == "admin@controle.com").first()
     if not admin:
         senha = hash_senha("admin123")
@@ -36,6 +55,15 @@ def setup_admin(request: Request, db: Session = Depends(get_db)):
         db.commit()
         return "Admin criado: admin@controle.com / admin123"
     return "Admin já existe"
+
+
+@router.get("/migrate")
+def migrate_check(request: Request, db: Session = Depends(get_db)):
+    try:
+        count = db.query(Usuario).count()
+        return f"Banco conectado. Total usuários: {count}. Acesse /auth/setup para criar admin se necessário."
+    except Exception as e:
+        return f"Erro: {str(e)}"
 
 
 @router.get("/login")
