@@ -234,7 +234,9 @@ async def emitir_boleto_route(request: Request, conta_id: int, db: Session = Dep
 
 
 @router.get("/api/boleto/{conta_id}", response_class=JSONResponse)
-def obter_boleto(conta_id: str, db: Session = Depends(get_db)):
+def obter_boleto(request: Request, conta_id: str, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
     emp = get_empresa(db)
     token = refresh_sicoob_token(db, "boletos_consulta")
     if not token:
@@ -270,7 +272,9 @@ def obter_boleto(conta_id: str, db: Session = Depends(get_db)):
 
 
 @router.get("/api/listar-boletos", response_class=JSONResponse)
-def listar_boletos(page: int = 1, size: int = 10, situacao: str = None, db: Session = Depends(get_db)):
+def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 1, size: int = 10, situacao: str = None):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
     emp = get_empresa(db)
     token = refresh_sicoob_token(db, "boletos_consulta")
     if not token:
@@ -302,7 +306,9 @@ def listar_boletos(page: int = 1, size: int = 10, situacao: str = None, db: Sess
 
 
 @router.get("/boleto-pdf/{nosso_numero}")
-def obter_pdf_boleto(nosso_numero: str, db: Session = Depends(get_db)):
+def obter_pdf_boleto(request: Request, nosso_numero: str, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse(content={"success": False, "error": "Não autenticado"})
     emp = get_empresa(db)
     cert_config = get_cert_config(db)
     
@@ -342,6 +348,8 @@ def obter_pdf_boleto(nosso_numero: str, db: Session = Depends(get_db)):
 
 @router.post("/emitir-em-lote")
 def emitir_em_lote(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
     emp = get_empresa(db)
     if not emp or not emp.sicoob_client_id:
         request.session["message"] = {"tipo": "danger", "texto": "Configure credenciais Sicoob primeiro"}
@@ -370,7 +378,9 @@ def emitir_em_lote(request: Request, db: Session = Depends(get_db)):
 
 
 @router.post("/baixar-boleto/{nosso_numero}", response_class=JSONResponse)
-async def baixar_boleto_route(nosso_numero: str, request: Request, db: Session = Depends(get_db)):
+async def baixar_boleto_route(request: Request, nosso_numero: str, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
     emp = get_empresa(db)
     cert_config = get_cert_config(db)
     
@@ -451,7 +461,9 @@ async def baixar_boleto_route(nosso_numero: str, request: Request, db: Session =
 
 
 @router.post("/sync-pagamentos", response_class=JSONResponse)
-def sync_pagamentos(db: Session = Depends(get_db)):
+def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
     emp = get_empresa(db)
     token = refresh_sicoob_token(db, "boletos_consulta")
     if not token:
@@ -521,7 +533,9 @@ async def webhook_sicoob(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/api/inadimplencia", response_class=JSONResponse)
-def api_inadimplencia(db: Session = Depends(get_db)):
+def api_inadimplencia(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
     hoje = date.today()
     contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
         ContaReceber.boleto_emitido == True,
