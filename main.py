@@ -38,7 +38,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-from routers import clientes, fornecedores, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth
+from routers import clientes, fornecedores, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth, admin
 
 
 class ProxyMiddleware(BaseHTTPMiddleware):
@@ -51,7 +51,7 @@ class ProxyMiddleware(BaseHTTPMiddleware):
 
 class AuthMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request, call_next):
-        public_paths = ["/auth/login", "/auth/setup", "/static", "/favicon.ico"]
+        public_paths = [\"/auth/login\", \"/auth/setup\", \"/static\", \"/favicon.ico\", \"/admin/restore-db\"]
         path = request.url.path
         if any(path.startswith(p) for p in public_paths):
             return await call_next(request)
@@ -80,6 +80,7 @@ app.include_router(bling.router)
 app.include_router(sicoob.router)
 app.include_router(produtos.router)
 app.include_router(pedidos.router)
+app.include_router(admin.router)
 
 
 @app.get("/")
