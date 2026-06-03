@@ -35,7 +35,6 @@ templates.env.filters["format_cpf_cnpj"] = format_cpf_cnpj
 app = FastAPI(title="Controle Comercial")
 app.state.templates = templates
 app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
-app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "controle-comercial-secret-key-2024"))
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
@@ -68,6 +67,7 @@ class AuthMiddleware(BaseHTTPMiddleware):
 
 app.add_middleware(ProxyMiddleware)
 app.add_middleware(AuthMiddleware)
+app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "controle-comercial-secret-key-2024"))
 app.include_router(auth.router)
 app.include_router(clientes.router)
 app.include_router(fornecedores.router)
