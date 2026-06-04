@@ -33,12 +33,14 @@ for table in table_order:
     cols = list(rows[0].keys())
     errors = 0
     
+    # Resetar sequências
+    cursor.execute(f"SELECT setval('{table}_id_seq', (SELECT MAX(id) FROM {table}));")
+    
     for row in rows:
         try:
             vals = []
             for c in cols:
                 v = row[c]
-                # Mapear enums para maiúscula
                 if isinstance(v, str):
                     if table in ['contas_pagar', 'contas_receber'] and c == 'status':
                         v = v.upper()
@@ -58,17 +60,8 @@ for table in table_order:
             placeholders = ', '.join(['%s'] * len(cols))
             stmt = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders})"
             cursor.execute(stmt, vals)
-        except psycopg2.errors.ForeignKeyViolation:
-            errors += 1
-            print(f"  FK erro {table} id={row.get('id', '?')}: FK inválida")
-            continue
-        except psycopg2.errors.StringDataRightTruncation:
-            errors += 1
-            print(f"  String erro {table} id={row.get('id', '?')}: string muito longa")
-            continue
         except Exception as e:
             errors += 1
-            continue
     
     conn.commit()
     print(f"{table}: {len(rows)-errors} sucessos, {errors} erros")
