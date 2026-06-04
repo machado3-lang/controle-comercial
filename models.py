@@ -17,6 +17,12 @@ def get_safe_day(date_obj, target_day: int) -> date:
         return date(next_year, next_month, 1)
 
 
+def recreate_tables():
+    """Drop and recreate all tables - use for migration"""
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
+
+
 class StatusConta(str, enum.Enum):
     PENDENTE = "pendente"
     PAGO = "pago"
