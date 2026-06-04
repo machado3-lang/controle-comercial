@@ -18,7 +18,7 @@ print("Tabelas recriadas!")
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
-# Desativar FK checks para importar dados inconsistentes
+# Desativar FK checks
 cursor.execute("SET session_replication_role = replica;")
 conn.commit()
 
@@ -33,9 +33,10 @@ def clean_row(row, cols):
     vals = []
     for c in cols:
         v = row[c]
-        if isinstance(v, str):
-            if c == 'status' and v:
-                v = v.upper()
+        if isinstance(v, str) and v.strip() == '':
+            v = None
+        if c == 'status' and isinstance(v, str):
+            v = v.upper()
         if v is None:
             vals.append(None)
         elif isinstance(v, bool):
@@ -56,14 +57,16 @@ for table in table_order:
     clean_data = [tuple(clean_row(row, cols)) for row in rows]
     
     try:
-        sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES %s"
+        cursor.execute(f"DELETE FROM {table};")
+        sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES %s ON CONFLICT DO NOTHING"
         execute_values(cursor, sql, clean_data, page_size=100)
         print(f"{table}: {len(rows)} importados")
     except Exception as e:
         print(f"{table}: ERRO - {e}")
+        conn.rollback()
+        continue
 
 conn.commit()
-# Reativar FK checks
 cursor.execute("SET session_replication_role = DEFAULT;")
 conn.close()
 print("Migração concluída!")
