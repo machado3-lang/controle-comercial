@@ -18,7 +18,6 @@ print("Tabelas recriadas!")
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
-# Desativar FK checks
 cursor.execute("SET session_replication_role = replica;")
 conn.commit()
 
@@ -58,9 +57,14 @@ for table in table_order:
     
     try:
         cursor.execute(f"DELETE FROM {table};")
-        sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES %s ON CONFLICT DO NOTHING"
-        execute_values(cursor, sql, clean_data, page_size=100)
-        print(f"{table}: {len(rows)} importados")
+        placeholders = ', '.join(['%s'] * len(cols))
+        sql = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders})"
+        for row_data in clean_data:
+            try:
+                cursor.execute(sql, row_data)
+            except:
+                pass
+        print(f"{table}: {len(rows)} processados")
     except Exception as e:
         print(f"{table}: ERRO - {e}")
         conn.rollback()
