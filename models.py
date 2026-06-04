@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Float, Date, Text, ForeignKey, DateTime, Enum, Boolean
+from sqlalchemy import Column, Integer, BigInteger, String, Float, Date, Text, ForeignKey, DateTime, Enum, Boolean
 from sqlalchemy.orm import relationship
 from datetime import datetime, date
 import enum
@@ -48,7 +48,7 @@ class Cliente(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     codigo = Column(String(20), nullable=True, unique=True)
-    bling_id = Column(Integer, nullable=True, unique=True)
+    bling_id = Column(BigInteger, nullable=True, unique=True)
     bling_updated_at = Column(DateTime, nullable=True)
     bling_pending_sync = Column(Boolean, default=False)
     nome = Column(String(200), nullable=False)
@@ -81,7 +81,7 @@ class Fornecedor(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     codigo = Column(String(20), nullable=True, unique=True)
-    bling_id = Column(Integer, nullable=True, unique=True)
+    bling_id = Column(BigInteger, nullable=True, unique=True)
     bling_updated_at = Column(DateTime, nullable=True)
     bling_pending_sync = Column(Boolean, default=False)
     nome = Column(String(200), nullable=False)
@@ -157,7 +157,7 @@ class Assinatura(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
-    bling_id = Column(Integer, nullable=True, unique=True)
+    bling_id = Column(BigInteger, nullable=True, unique=True)
     bling_updated_at = Column(DateTime, nullable=True)
     bling_pending_sync = Column(Boolean, default=False)
     periodicidade = Column(Integer, default=1)
@@ -203,7 +203,7 @@ class OrdemServico(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
-    bling_id = Column(Integer, nullable=True, unique=True)
+    bling_id = Column(BigInteger, nullable=True, unique=True)
     bling_updated_at = Column(DateTime, nullable=True)
     bling_pending_sync = Column(Boolean, default=False)
     equipamento = Column(String(200), nullable=False)
@@ -263,7 +263,7 @@ class Produto(Base):
     estoque = Column(Float, nullable=False, default=0)
     estoque_minimo = Column(Float, nullable=False, default=0)
     situacao = Column(String(1), nullable=False, default="A")
-    bling_id = Column(Integer, nullable=True, unique=True)
+    bling_id = Column(BigInteger, nullable=True, unique=True)
     bling_updated_at = Column(DateTime, nullable=True)
     bling_pending_sync = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
