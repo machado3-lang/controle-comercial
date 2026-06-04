@@ -33,8 +33,13 @@ connect_args = {}
 if "sqlite" in SQLALCHEMY_DATABASE_URL:
     connect_args = {"check_same_thread": False}
 
+engine_kwargs = {"connect_args": connect_args} if connect_args else {}
+if "postgresql" in SQLALCHEMY_DATABASE_URL:
+    engine_kwargs["pool_size"] = 10
+    engine_kwargs["pool_pre_ping"] = True
+
 try:
-    engine = create_engine(SQLALCHEMY_DATABASE_URL, connect_args=connect_args)
+    engine = create_engine(SQLALCHEMY_DATABASE_URL, **engine_kwargs)
     # Verify the connection is reachable at startup so failures are visible
     # immediately in the logs rather than on the first request.
     with engine.connect() as _conn:
