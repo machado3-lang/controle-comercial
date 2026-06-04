@@ -53,7 +53,7 @@ class Cliente(Base):
     __tablename__ = "clientes"
 
     id = Column(Integer, primary_key=True, index=True)
-    codigo = Column(String(20), nullable=True, unique=True)
+    codigo = Column(String(50), nullable=True)
     bling_id = Column(BigInteger, nullable=True, unique=True)
     bling_updated_at = Column(DateTime, nullable=True)
     bling_pending_sync = Column(Boolean, default=False)
@@ -86,7 +86,7 @@ class Fornecedor(Base):
     __tablename__ = "fornecedores"
 
     id = Column(Integer, primary_key=True, index=True)
-    codigo = Column(String(20), nullable=True, unique=True)
+    codigo = Column(String(50), nullable=True)
     bling_id = Column(BigInteger, nullable=True, unique=True)
     bling_updated_at = Column(DateTime, nullable=True)
     bling_pending_sync = Column(Boolean, default=False)
@@ -364,7 +364,7 @@ class Empresa(Base):
     bling_webhook_secret = Column(String(100), nullable=True)
     bling_api_key_v2 = Column(String(100), nullable=True)
     sicoob_client_id = Column(String(200), nullable=True)
-    sicoob_token = Column(String(300), nullable=True)
+    sicoob_token = Column(String(3000), nullable=True)
     sicoob_conta_corrente = Column(String(30), nullable=True)
     sicoob_beneficiario = Column(String(20), nullable=True)
     sicoob_cert_path = Column(String(500), nullable=True)
