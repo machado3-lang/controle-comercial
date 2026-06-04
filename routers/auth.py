@@ -63,9 +63,28 @@ def setup_admin(request: Request, db: Session = Depends(get_db)):
 def migrate_check(request: Request, db: Session = Depends(get_db)):
     try:
         count = db.query(Usuario).count()
-        return f"Banco conectado. Total usuários: {count}. Acesse /auth/setup para criar admin se necessário."
+        return f"Banco conectado. Total usuários: {count}."
     except Exception as e:
         return f"Erro: {str(e)}"
+
+
+@router.get("/database/migrate")
+def run_migrations(request: Request, db: Session = Depends(get_db)):
+    # Proteção: só admin logado pode executar
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
+    
+    try:
+        from sqlalchemy import text
+        # Migration 1: campo data_emissao em ContaReceber
+        db.execute(text("""
+            ALTER TABLE contas_receber ADD COLUMN IF NOT EXISTS data_emissao DATE;
+        """))
+        db.commit()
+        return {"success": True, "message": "Migration executada com sucesso"}
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": str(e)}
 
 
 @router.get("/login")

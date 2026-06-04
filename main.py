@@ -14,6 +14,23 @@ from datetime import date as date_func, datetime
 from database import engine, Base, get_db
 from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario
 
+# Executar migrations no startup
+def run_migrations():
+    from sqlalchemy import text
+    migrations = [
+        "ALTER TABLE contas_receber ADD COLUMN IF NOT EXISTS data_emissao DATE",
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS telefone_whatsapp VARCHAR(20)",
+        "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS codigo_barras VARCHAR(50)",
+    ]
+    try:
+        with engine.connect() as conn:
+            for m in migrations:
+                conn.execute(text(m))
+            conn.commit()
+    except Exception as e:
+        print(f"Migration error: {e}")
+
+run_migrations()
 Base.metadata.create_all(bind=engine)
 
 templates = Jinja2Templates(directory="templates")
