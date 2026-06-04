@@ -46,9 +46,6 @@ for table in table_order:
                         v = v.upper()
                     elif table == 'ordens_servico' and c == 'status':
                         v = v.upper()
-                    else:
-                        v = v
-                
                 if v is None:
                     vals.append(None)
                 elif isinstance(v, bool):
@@ -61,9 +58,17 @@ for table in table_order:
             placeholders = ', '.join(['%s'] * len(cols))
             stmt = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders})"
             cursor.execute(stmt, vals)
+        except psycopg2.errors.ForeignKeyViolation:
+            errors += 1
+            print(f"  FK erro {table} id={row.get('id', '?')}: FK inválida")
+            continue
+        except psycopg2.errors.StringDataRightTruncation:
+            errors += 1
+            print(f"  String erro {table} id={row.get('id', '?')}: string muito longa")
+            continue
         except Exception as e:
             errors += 1
-            print(f"  Erro {table} id={row.get('id', '?')}: {str(e)[:80]}")
+            continue
     
     conn.commit()
     print(f"{table}: {len(rows)-errors} sucessos, {errors} erros")

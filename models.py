@@ -340,8 +340,8 @@ class Empresa(Base):
     __tablename__ = "empresa"
 
     id = Column(Integer, primary_key=True, index=True)
-    razao_social = Column(String(200), nullable=True)
-    nome_fantasia = Column(String(200), nullable=True)
+    razao_social = Column(String(500), nullable=True)
+    nome_fantasia = Column(String(500), nullable=True)
     cnpj = Column(String(20), nullable=True)
     inscricao_estadual = Column(String(20), nullable=True)
     inscricao_municipal = Column(String(20), nullable=True)
