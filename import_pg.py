@@ -6,7 +6,6 @@ DATABASE_URL = os.environ.get("DATABASE_URL", "")
 if DATABASE_URL.startswith("postgres://"):
     DATABASE_URL = DATABASE_URL.replace("postgres://", "postgresql://", 1)
 
-# Importar modelos para recriar tabelas
 from models import Base
 from database import engine
 
@@ -39,6 +38,17 @@ for table in table_order:
             vals = []
             for c in cols:
                 v = row[c]
+                # Mapear enums para maiúscula
+                if isinstance(v, str):
+                    if table in ['contas_pagar', 'contas_receber'] and c == 'status':
+                        v = v.upper()
+                    elif table == 'pedidos_venda' and c == 'status':
+                        v = v.upper()
+                    elif table == 'ordens_servico' and c == 'status':
+                        v = v.upper()
+                    else:
+                        v = v
+                
                 if v is None:
                     vals.append(None)
                 elif isinstance(v, bool):
@@ -46,14 +56,14 @@ for table in table_order:
                 elif isinstance(v, (int, float)):
                     vals.append(int(v) if v == v else None)
                 else:
-                    vals.append(str(v) if str(v).strip() else None)
+                    vals.append(v)
             
             placeholders = ', '.join(['%s'] * len(cols))
             stmt = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders})"
             cursor.execute(stmt, vals)
         except Exception as e:
             errors += 1
-            pass
+            print(f"  Erro {table} id={row.get('id', '?')}: {str(e)[:80]}")
     
     conn.commit()
     print(f"{table}: {len(rows)-errors} sucessos, {errors} erros")
