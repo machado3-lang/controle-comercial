@@ -12,9 +12,17 @@ with open('backup.json', 'r', encoding='utf-8') as f:
 conn = psycopg2.connect(DATABASE_URL)
 cursor = conn.cursor()
 
-status_map = {'pendente': 'pendente', 'pago': 'pago', 'vencido': 'vencido', 'cancelado': 'cancelado', 'baixa_solicitada': 'baixa_solicitada'}
-status_pedido_map = {'pendente': 'pendente', 'aprovado': 'aprovado', 'faturado': 'faturado', 'pre_venda': 'pre_venda', 'cancelado': 'cancelado'}
-status_os_map = {'aberta': 'aberta', 'em_andamento': 'em_andamento', 'finalizada': 'finalizada', 'cancelada': 'cancelada'}
+def clean_val(v, col_type=None):
+    if v is None:
+        return None
+    if isinstance(v, bool):
+        return v
+    if isinstance(v, (int, float)):
+        return int(v) if v == v else None
+    s = str(v).strip()
+    if s in ('', 'None', 'null'):
+        return None
+    return s
 
 order = ['usuarios', 'clientes', 'fornecedores', 'categorias_produto', 'produtos', 
          'assinaturas', 'ordens_servico', 'contas_pagar', 'contas_receber', 
@@ -28,29 +36,21 @@ for table in order:
     rows = data[table]
     cols = [c for c in rows[0].keys() if c != 'id']
     errors = 0
+    success = 0
     
     for row in rows:
         try:
-            vals = []
-            for c in cols:
-                v = row[c]
-                if table in ['contas_pagar', 'contas_receber'] and c == 'status' and v:
-                    v = status_map.get(str(v), str(v) if v else v)
-                elif table == 'pedidos_venda' and c == 'status' and v:
-                    v = status_pedido_map.get(str(v), str(v) if v else v)
-                elif table == 'ordens_servico' and c == 'status' and v:
-                    v = status_os_map.get(str(v), str(v) if v else v)
-                vals.append(str(v) if isinstance(v, str) else v)
-            
+            vals = [clean_val(row[c]) for c in cols]
             placeholders = ', '.join(['%s'] * len(cols))
             stmt = f"INSERT INTO {table} ({', '.join(cols)}) VALUES ({placeholders}) ON CONFLICT DO NOTHING"
             cursor.execute(stmt, vals)
+            success += 1
         except Exception as e:
             errors += 1
-            continue
+            print(f"  Erro: {e}")
     
     conn.commit()
-    print(f"{table}: importado ({len(rows)-errors} sucessos, {errors} erros)")
+    print(f"{table}: {success} sucessos, {errors} erros")
 
 cursor.close()
 conn.close()
