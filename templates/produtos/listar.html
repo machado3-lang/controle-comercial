@@ -26,13 +26,20 @@
                     {% for c in categorias %}<option value="{{ c.id }}" {% if categoria_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}
                 </select>
             </div>
-            <div class="w-36">
+<div class="w-36">
                 <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="marca_id" onchange="this.form.submit()">
                     <option value="">Marca</option>
                     {% for m in marcas %}<option value="{{ m.id }}" {% if marca_id == m.id %}selected{% endif %}>{{ m.nome }}</option>{% endfor %}
                 </select>
             </div>
-        </form>
+            <div class="w-32">
+                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="estoque_filtro" onchange="this.form.submit()">
+                    <option value="">Estoque</option>
+                    <option value="zerado" {% if estoque_filtro == 'zerado' %}selected{% endif %}>Zerado</option>
+                    <option value="baixo" {% if estoque_filtro == 'baixo' %}selected{% endif %}>Baixo</option>
+                </select>
+            </div>
+           </form>
         <a href="/produtos/categorias" class="flex items-center px-3 py-2 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition"><i data-lucide="tag" class="w-4 h-4 me-1"></i> Categorias</a>
         <a href="/produtos/marcas" class="flex items-center px-3 py-2 text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition"><i data-lucide="bookmark" class="w-4 h-4 me-1"></i> Marcas</a>
         <a href="/produtos/novo" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> Novo</a>
@@ -68,7 +75,7 @@
                 <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(p.preco) }}</td>
                 <td class="px-4 py-3 text-right text-sm text-rose-300">{% if p.preco_custo %}R$ {{ "%.2f"|format(p.preco_custo) }}{% else %}<span class="text-slate-600">-</span>{% endif %}</td>
                 <td class="px-4 py-3 text-right text-sm{% if p.preco_custo %} text-emerald-400{% else %} text-slate-600{% endif %}">{% if p.preco_custo %}R$ {{ "%.2f"|format(p.preco - p.preco_custo) }}{% else %} -{% endif %}</td>
-                <td class="px-4 py-3 text-right text-sm{% if p.estoque < p.estoque_minimo and p.estoque_minimo > 0 %} text-rose-400{% else %} text-slate-300{% endif %}">{{ p.estoque }}</td>
+                <td class="px-4 py-3 text-right text-sm font-medium{% if p.estoque <= 0 %} text-rose-400{% elif p.estoque < p.estoque_minimo and p.estoque_minimo > 0 %} text-amber-400{% else %} text-cyan-300{% endif %}">{{ p.estoque }}</td>
                 <td class="px-4 py-3 text-center align-middle" style="min-width: 7rem;">
                     <div class="flex items-center justify-center gap-1">
                         <a href="/produtos/{{ p.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>

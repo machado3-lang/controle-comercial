@@ -123,6 +123,14 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     total_clientes = db.query(func.count(Cliente.id)).scalar()
     total_fornecedores = db.query(func.count(Fornecedor.id)).scalar()
     total_produtos = db.query(func.count(Produto.id)).scalar()
+    produtos_estoque_baixo = db.query(func.count(Produto.id)).filter(
+        Produto.estoque > 0,
+        Produto.estoque_minimo > 0,
+        Produto.estoque < Produto.estoque_minimo
+    ).scalar() or 0
+    produtos_estoque_zerado = db.query(func.count(Produto.id)).filter(
+        Produto.estoque <= 0
+    ).scalar() or 0
     total_pedidos = db.query(func.count(PedidoVenda.id)).scalar()
 
     contas_pagar_pendentes = db.query(func.sum(ContaPagar.valor)).filter(
@@ -177,6 +185,8 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "total_clientes": total_clientes,
         "total_fornecedores": total_fornecedores,
         "total_produtos": total_produtos,
+        "produtos_estoque_baixo": produtos_estoque_baixo,
+        "produtos_estoque_zerado": produtos_estoque_zerado,
         "total_pedidos": total_pedidos,
         "contas_pagar_pendentes": contas_pagar_pendentes,
         "contas_receber_pendentes": contas_receber_pendentes,

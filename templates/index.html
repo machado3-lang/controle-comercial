@@ -16,6 +16,12 @@
         <div class="stat-icon mx-auto"><i data-lucide="package" class="w-5 h-5 text-cyan-400"></i></div>
         <div class="stat-label mb-1">Produtos</div>
         <div class="stat-value text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400">{{ total_produtos }}</div>
+        {% if produtos_estoque_baixo > 0 or produtos_estoque_zerado > 0 %}
+        <div class="mt-1 text-xs space-y-0.5">
+            {% if produtos_estoque_zerado > 0 %}<div class="text-rose-400">{{ produtos_estoque_zerado }} zerado(s)</div>{% endif %}
+            {% if produtos_estoque_baixo > 0 %}<div class="text-amber-400">{{ produtos_estoque_baixo }} baixo(s)</div>{% endif %}
+        </div>
+        {% endif %}
     </div>
     <div class="glass-card stat-card p-4 text-center">
         <div class="stat-icon mx-auto"><i data-lucide="calendar-check" class="w-5 h-5 text-cyan-400"></i></div>

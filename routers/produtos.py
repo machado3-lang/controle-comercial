@@ -15,7 +15,7 @@ UNIDADES_MEDIDA = ["cm", "m", "mm", "UN", "KG", "L"]
 
 
 @router.get("/")
-def listar_produtos(request: Request, db: Session = Depends(get_db), busca: str = Query(""), situacao: str = Query(""), fornecedor_id: Optional[str] = Query(""), categoria_id: Optional[str] = Query(""), marca_id: Optional[str] = Query("")):
+def listar_produtos(request: Request, db: Session = Depends(get_db), busca: str = Query(""), situacao: str = Query(""), fornecedor_id: Optional[str] = Query(""), categoria_id: Optional[str] = Query(""), marca_id: Optional[str] = Query(""), estoque_filtro: str = Query("")):
     f_id = int(fornecedor_id) if fornecedor_id else None
     c_id = int(categoria_id) if categoria_id else None
     m_id = int(marca_id) if marca_id else None
@@ -23,6 +23,10 @@ def listar_produtos(request: Request, db: Session = Depends(get_db), busca: str 
     query = db.query(Produto)
     if busca:
         query = query.filter(Produto.nome.ilike(f"%{busca}%") | Produto.codigo.ilike(f"%{busca}%"))
+    if estoque_filtro == "zerado":
+        query = query.filter(Produto.estoque <= 0)
+    elif estoque_filtro == "baixo":
+        query = query.filter(Produto.estoque > 0, Produto.estoque_minimo > 0, Produto.estoque < Produto.estoque_minimo)
     if not situacao or situacao == "ativo":
         query = query.filter(Produto.situacao == "A")  # Padrão: ativos
     elif situacao == "inativo":
@@ -46,7 +50,7 @@ def listar_produtos(request: Request, db: Session = Depends(get_db), busca: str 
         proximo_pedido = "1"
     return request.app.state.templates.TemplateResponse(
         "produtos/listar.html",
-        {"request": request, "produtos": produtos, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "busca": busca, "situacao": situacao, "fornecedor_id": f_id, "categoria_id": c_id, "marca_id": m_id, "proximo_pedido": proximo_pedido}
+        {"request": request, "produtos": produtos, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "busca": busca, "situacao": situacao, "fornecedor_id": f_id, "categoria_id": c_id, "marca_id": m_id, "estoque_filtro": estoque_filtro, "proximo_pedido": proximo_pedido}
     )
 
 
