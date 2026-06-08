@@ -532,7 +532,17 @@ async def webhook_sicoob(request: Request, db: Session = Depends(get_db)):
     return {"success": False, "error": "Boleto não encontrado"}
 
 
-@router.get("/api/inadimplencia", response_class=JSONResponse)
+@router.get("/api/testar-token", response_class=JSONResponse)
+def testar_token(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
+    emp = get_empresa(db)
+    if not emp or not emp.sicoob_client_id:
+        return {"success": False, "error": "Client ID Sicoob não configurado"}
+    token = refresh_sicoob_token(db, "boletos_consulta")
+    if token:
+        return {"success": True, "token": "****" + token[-10:], "message": "Token obtido com sucesso"}
+    return {"success": False, "error": "Falha ao obter token - verifique certificado"}
 def api_inadimplencia(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
