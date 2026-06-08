@@ -1,0 +1,209 @@
+{% extends "base.html" %}
+{% block title %}OS #{{ ordem.id }} - {{ ordem.equipamento }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-wrench"></i> Ordem de Serviço #{{ ordem.id }}</h4>
+    <div>
+        <a href="/ordens-servico/{{ ordem.id }}/imprimir" class="btn btn-info" target="_blank"><i class="bi bi-printer"></i> Imprimir</a>
+        <button class="btn btn-warning" data-bs-toggle="modal" data-bs-target="#modalEditar"><i class="bi bi-pencil"></i> Editar</button>
+        <a href="/ordens-servico" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Voltar</a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Cliente</small><br>
+            <strong><a href="/clientes/{{ ordem.cliente.id }}">{{ ordem.cliente.nome }}</a></strong>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Equipamento</small><br>
+            <strong>{{ ordem.equipamento }}</strong>
+            {% if ordem.marca or ordem.modelo %}<br><small>{{ ordem.marca or '' }} {{ ordem.modelo or '' }}</small>{% endif %}
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Status</small><br>
+            <span class="badge fs-6 bg-{{ 'warning' if ordem.status.value == 'aberta' else 'info' if ordem.status.value == 'em_andamento' else 'success' if ordem.status.value == 'finalizada' else 'secondary' }}">
+                {{ ordem.status.value }}
+            </span>
+        </div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Data Entrada</small><br><strong>{{ ordem.data_entrada.strftime('%d/%m/%Y') if ordem.data_entrada else '-' }}</strong>
+        </div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Data Saída</small><br><strong>{{ ordem.data_saida.strftime('%d/%m/%Y') if ordem.data_saida else 'Pendente' }}</strong>
+        </div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Técnico</small><br><strong>{{ ordem.tecnico or 'Não informado' }}</strong>
+        </div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Nº Série</small><br><strong>{{ ordem.numero_serie or '-' }}</strong>
+        </div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Autorizado por</small><br><strong>{{ ordem.autorizado_por or 'Não informado' }}</strong>
+        </div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Nº Requisição</small><br><strong>{{ ordem.numero_requisicao or '-' }}</strong>
+        </div></div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">Defeito Relatado</div>
+            <div class="card-body">{{ ordem.defeito_relatado or 'Não informado' }}</div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Serviços Executados</div>
+            <div class="card-body">{{ ordem.servicos_executados or '-' }}</div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">Peças Utilizadas</div>
+            <div class="card-body">{{ ordem.pecas_utilizadas or '-' }}</div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-4">
+        <div class="card text-center"><div class="card-body">
+            <small class="text-muted">Valor Serviço</small>
+            <h5>R$ {{ "%.2f"|format(ordem.valor_servico) }}</h5>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center"><div class="card-body">
+            <small class="text-muted">Valor Peças</small>
+            <h5>R$ {{ "%.2f"|format(ordem.valor_pecas) }}</h5>
+        </div></div>
+    </div>
+    <div class="col-md-4">
+        <div class="card text-center border-success"><div class="card-body">
+            <small class="text-muted">Valor Total</small>
+            <h5 class="text-success">R$ {{ "%.2f"|format(ordem.valor_total) }}</h5>
+        </div></div>
+    </div>
+</div>
+
+{% if ordem.observacao %}
+<div class="alert alert-info">{{ ordem.observacao }}</div>
+{% endif %}
+
+<div class="modal fade" id="modalEditar">
+    <div class="modal-dialog modal-lg">
+        <form method="post" action="/ordens-servico/{{ ordem.id }}/editar" class="modal-content">
+            <div class="modal-header"><h5>Editar OS #{{ ordem.id }}</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-4">
+                        <label class="form-label">Cliente</label>
+                        <select class="form-select" name="cliente_id">
+                            {% for c in clientes %}
+                            <option value="{{ c.id }}" {{ 'selected' if ordem.cliente_id == c.id }}>{{ c.nome }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Equipamento *</label>
+                        <input type="text" class="form-control" name="equipamento" required value="{{ ordem.equipamento }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Status</label>
+                        <select class="form-select" name="status">
+                            <option value="aberta" {{ 'selected' if ordem.status.value == 'aberta' }}>Aberta</option>
+                            <option value="em_andamento" {{ 'selected' if ordem.status.value == 'em_andamento' }}>Em Andamento</option>
+                            <option value="finalizada" {{ 'selected' if ordem.status.value == 'finalizada' }}>Finalizada</option>
+                            <option value="cancelada" {{ 'selected' if ordem.status.value == 'cancelada' }}>Cancelada</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Marca</label>
+                        <input type="text" class="form-control" name="marca" value="{{ ordem.marca or '' }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Modelo</label>
+                        <input type="text" class="form-control" name="modelo" value="{{ ordem.modelo or '' }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Nº Série</label>
+                        <input type="text" class="form-control" name="numero_serie" value="{{ ordem.numero_serie or '' }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Técnico</label>
+                        <input type="text" class="form-control" name="tecnico" value="{{ ordem.tecnico or '' }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Data Entrada</label>
+                        <input type="date" class="form-control" name="data_entrada" value="{{ ordem.data_entrada }}">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Data Saída</label>
+                        <input type="date" class="form-control" name="data_saida" value="{{ ordem.data_saida if ordem.data_saida else '' }}">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Defeito Relatado</label>
+                        <textarea class="form-control" name="defeito_relatado" rows="2">{{ ordem.defeito_relatado or '' }}</textarea>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Serviços Executados</label>
+                        <textarea class="form-control" name="servicos_executados" rows="3">{{ ordem.servicos_executados or '' }}</textarea>
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Peças Utilizadas</label>
+                        <textarea class="form-control" name="pecas_utilizadas" rows="3">{{ ordem.pecas_utilizadas or '' }}</textarea>
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Valor Serviço</label>
+                        <input type="number" step="0.01" class="form-control" name="valor_servico" id="valor_servico" value="{{ ordem.valor_servico }}" oninput="calcularTotal()">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Valor Peças</label>
+                        <input type="number" step="0.01" class="form-control" name="valor_pecas" id="valor_pecas" value="{{ ordem.valor_pecas }}" oninput="calcularTotal()">
+                    </div>
+                    <div class="col-md-4">
+                        <label class="form-label">Valor Total</label>
+                        <input type="number" step="0.01" class="form-control" name="valor_total" id="valor_total" value="{{ ordem.valor_total }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Autorizado por</label>
+                        <input type="text" class="form-control" name="autorizado_por" value="{{ ordem.autorizado_por or '' }}">
+                    </div>
+                    <div class="col-md-6">
+                        <label class="form-label">Nº Requisição</label>
+                        <input type="text" class="form-control" name="numero_requisicao" value="{{ ordem.numero_requisicao or '' }}">
+                    </div>
+                    <div class="col-12">
+                        <label class="form-label">Observação</label>
+                        <textarea class="form-control" name="observacao" rows="2">{{ ordem.observacao or '' }}</textarea>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}

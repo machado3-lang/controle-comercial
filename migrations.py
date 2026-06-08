@@ -15,6 +15,20 @@ MIGRATIONS = [
     """
     ALTER TABLE produtos ADD COLUMN IF NOT EXISTS codigo_barras VARCHAR(50);
     """,
+    # Migration 2: tabela marcas_produto e coluna marca_id
+    """
+    CREATE TABLE IF NOT EXISTS marcas_produto (
+        id SERIAL PRIMARY KEY,
+        nome VARCHAR(100) NOT NULL UNIQUE,
+        created_at TIMESTAMP DEFAULT NOW()
+    );
+    """,
+    """
+    ALTER TABLE produtos ADD COLUMN IF NOT EXISTS marca_id INTEGER REFERENCES marcas_produto(id);
+    """,
+    """
+    ALTER TABLE produtos ADD COLUMN IF NOT EXISTS foto VARCHAR(500);
+    """,
 ]
 
 def run_migrations():

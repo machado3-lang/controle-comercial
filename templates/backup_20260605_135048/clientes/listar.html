@@ -1,0 +1,63 @@
+{% extends "base.html" %}
+{% block title %}Clientes - Controle Comercial{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-people"></i> Clientes</h4>
+    <a href="/clientes/novo" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Novo Cliente</a>
+</div>
+
+<form class="mb-3">
+    <div class="input-group">
+        <input type="text" class="form-control" name="busca" placeholder="Buscar por nome ou CPF/CNPJ..." value="{{ busca }}">
+        <button class="btn btn-outline-primary" type="submit"><i class="bi bi-search"></i></button>
+        <a href="/clientes" class="btn btn-outline-secondary"><i class="bi bi-x-circle"></i></a>
+    </div>
+</form>
+
+<div class="btn-group mb-3">
+    <a href="/clientes{% if busca %}?busca={{ busca }}{% endif %}" class="btn btn-sm {{ 'btn-primary' if not filtro_situacao else 'btn-outline-primary' }}">Todos</a>
+    <a href="/clientes?situacao=A{% if busca %}&busca={{ busca }}{% endif %}" class="btn btn-sm {{ 'btn-primary' if filtro_situacao == 'A' else 'btn-outline-primary' }}">Ativos</a>
+    <a href="/clientes?situacao=I{% if busca %}&busca={{ busca }}{% endif %}" class="btn btn-sm {{ 'btn-primary' if filtro_situacao == 'I' else 'btn-outline-primary' }}">Inativos</a>
+    <a href="/clientes?situacao=S{% if busca %}&busca={{ busca }}{% endif %}" class="btn btn-sm {{ 'btn-primary' if filtro_situacao == 'S' else 'btn-outline-primary' }}">Sem Movimento</a>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover">
+        <thead>
+            <tr>
+                <th>Código</th>
+                <th>Nome</th>
+                <th>Fantasia</th>
+                <th>Situação</th>
+                <th>CPF/CNPJ</th>
+                <th>Telefone</th>
+                <th>Email</th>
+                <th>Contato</th>
+                <th>Cadastro</th>
+                <th style="width:120px">Ações</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for c in clientes %}
+            <tr>
+                <td><code>{{ c.codigo or '-' }}</code></td>
+                <td><a href="/clientes/{{ c.id }}">{{ c.nome }}</a></td>
+                <td>{{ c.fantasia or '-' }}</td>
+                <td>{% if c.situacao == 'A' %}<span class="badge bg-success">Ativo</span>{% elif c.situacao == 'I' %}<span class="badge bg-danger">Inativo</span>{% elif c.situacao == 'S' %}<span class="badge bg-warning text-dark">Sem Mov.</span>{% else %}<span class="badge bg-secondary">{{ c.situacao }}</span>{% endif %}</td>
+                <td>{{ c.cpf_cnpj|format_cpf_cnpj or '-' }}</td>
+                <td>{{ c.telefone or c.celular or '-' }}</td>
+                <td>{{ c.email or '-' }}</td>
+                <td>{{ c.contato or '-' }}</td>
+                <td><small class="text-muted">{{ c.created_at.strftime('%d/%m/%Y') if c.created_at else '-' }}</small></td>
+                <td>
+                    <a href="/clientes/{{ c.id }}/editar" class="btn btn-sm btn-outline-warning" title="Editar"><i class="bi bi-pencil"></i></a>
+                    <button class="btn btn-sm btn-outline-danger" onclick="confirmarExclusao('/clientes/{{ c.id }}/excluir', 'Excluir {{ c.nome }}?')" title="Excluir"><i class="bi bi-trash"></i></button>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="10" class="text-center text-muted">Nenhum cliente cadastrado</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

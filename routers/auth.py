@@ -99,10 +99,9 @@ def login(request: Request, db: Session = Depends(get_db), email: str = Form("")
     if usuario and verifica_senha(senha, usuario.senha):
         request.session["user_id"] = usuario.id
         request.session["user_nome"] = usuario.nome
-        request.session["message"] = {"tipo": "success", "texto": f"Bem-vindo, {usuario.nome}!"}
-        return RedirectResponse(url="/", status_code=303)
+        return RedirectResponse(url="/", status_code=303, headers={"Cache-Control": "no-cache, no-store"})
     request.session["message"] = {"tipo": "danger", "texto": "Email ou senha inválidos"}
-    return RedirectResponse(url="/auth/login", status_code=303)
+    return RedirectResponse(url="/auth/login", status_code=303, headers={"Cache-Control": "no-cache, no-store"})
 
 
 @router.get("/logout")

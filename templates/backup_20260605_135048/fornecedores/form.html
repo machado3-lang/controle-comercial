@@ -1,0 +1,120 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Editar' if fornecedor else 'Novo' }} Fornecedor{% endblock %}
+{% block content %}
+<h4 class="mb-3"><i class="bi bi-building"></i> {{ 'Editar' if fornecedor else 'Novo' }} Fornecedor</h4>
+
+<form method="post" class="row g-3">
+    <div class="col-md-6">
+        <label class="form-label">Nome *</label>
+        <input type="text" class="form-control" name="nome" required value="{{ fornecedor.nome if fornecedor else '' }}">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Tipo</label>
+        <select class="form-select" name="tipo_pessoa">
+            <option value="fisica" {{ 'selected' if fornecedor and fornecedor.tipo_pessoa == 'fisica' }}>PF</option>
+            <option value="juridica" {{ 'selected' if fornecedor and fornecedor.tipo_pessoa == 'juridica' }}>PJ</option>
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">CPF/CNPJ</label>
+        <input type="text" class="form-control" name="cpf_cnpj" value="{{ fornecedor.cpf_cnpj if fornecedor else '' }}" maxlength="{{ '14' if not fornecedor or fornecedor.tipo_pessoa == 'fisica' else '18' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Contato (pessoa de referência)</label>
+        <input type="text" class="form-control" name="contato" value="{{ fornecedor.contato if fornecedor else '' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Fantasia (Nome Fantasia)</label>
+        <input type="text" class="form-control" name="fantasia" value="{{ fornecedor.fantasia if fornecedor else '' }}">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Inscrição Estadual</label>
+        <input type="text" class="form-control" name="inscricao_estadual" value="{{ fornecedor.inscricao_estadual if fornecedor else '' }}">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Inscrição Municipal</label>
+        <input type="text" class="form-control" name="inscricao_municipal" value="{{ fornecedor.inscricao_municipal if fornecedor else '' }}">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Situação</label>
+        <select class="form-select" name="situacao">
+            <option value="A" {{ 'selected' if not fornecedor or fornecedor.situacao == 'A' }}>Ativo</option>
+            <option value="I" {{ 'selected' if fornecedor and fornecedor.situacao == 'I' }}>Inativo</option>
+            <option value="S" {{ 'selected' if fornecedor and fornecedor.situacao == 'S' }}>Sem Movimento</option>
+        </select>
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Email</label>
+        <input type="email" class="form-control" name="email" value="{{ fornecedor.email if fornecedor else '' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Telefone</label>
+        <input type="text" class="form-control" name="telefone" value="{{ fornecedor.telefone if fornecedor else '' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">WhatsApp / Celular</label>
+        <input type="text" class="form-control" name="celular" value="{{ fornecedor.celular if fornecedor else '' }}">
+    </div>
+    <div class="col-md-6">
+        <label class="form-label">Endereço</label>
+        <input type="text" class="form-control" name="endereco" value="{{ fornecedor.endereco if fornecedor else '' }}">
+    </div>
+    <div class="col-md-3">
+        <label class="form-label">Bairro</label>
+        <input type="text" class="form-control" name="bairro" value="{{ fornecedor.bairro if fornecedor else '' }}">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Cidade</label>
+        <input type="text" class="form-control" name="cidade" value="{{ fornecedor.cidade if fornecedor else '' }}">
+    </div>
+    <div class="col-md-1">
+        <label class="form-label">UF</label>
+        <select class="form-select" name="estado">
+            <option value="">-</option>
+            <option value="AC" {{ 'selected' if fornecedor and fornecedor.estado == 'AC' }}>AC</option>
+            <option value="AL" {{ 'selected' if fornecedor and fornecedor.estado == 'AL' }}>AL</option>
+            <option value="AP" {{ 'selected' if fornecedor and fornecedor.estado == 'AP' }}>AP</option>
+            <option value="AM" {{ 'selected' if fornecedor and fornecedor.estado == 'AM' }}>AM</option>
+            <option value="BA" {{ 'selected' if fornecedor and fornecedor.estado == 'BA' }}>BA</option>
+            <option value="CE" {{ 'selected' if fornecedor and fornecedor.estado == 'CE' }}>CE</option>
+            <option value="DF" {{ 'selected' if fornecedor and fornecedor.estado == 'DF' }}>DF</option>
+            <option value="ES" {{ 'selected' if fornecedor and fornecedor.estado == 'ES' }}>ES</option>
+            <option value="GO" {{ 'selected' if fornecedor and fornecedor.estado == 'GO' }}>GO</option>
+            <option value="MA" {{ 'selected' if fornecedor and fornecedor.estado == 'MA' }}>MA</option>
+            <option value="MT" {{ 'selected' if fornecedor and fornecedor.estado == 'MT' }}>MT</option>
+            <option value="MS" {{ 'selected' if fornecedor and fornecedor.estado == 'MS' }}>MS</option>
+            <option value="MG" {{ 'selected' if fornecedor and fornecedor.estado == 'MG' }}>MG</option>
+            <option value="PA" {{ 'selected' if fornecedor and fornecedor.estado == 'PA' }}>PA</option>
+            <option value="PB" {{ 'selected' if fornecedor and fornecedor.estado == 'PB' }}>PB</option>
+            <option value="PR" {{ 'selected' if fornecedor and fornecedor.estado == 'PR' }}>PR</option>
+            <option value="PE" {{ 'selected' if fornecedor and fornecedor.estado == 'PE' }}>PE</option>
+            <option value="PI" {{ 'selected' if fornecedor and fornecedor.estado == 'PI' }}>PI</option>
+            <option value="RJ" {{ 'selected' if fornecedor and fornecedor.estado == 'RJ' }}>RJ</option>
+            <option value="RN" {{ 'selected' if fornecedor and fornecedor.estado == 'RN' }}>RN</option>
+            <option value="RS" {{ 'selected' if fornecedor and fornecedor.estado == 'RS' }}>RS</option>
+            <option value="RO" {{ 'selected' if fornecedor and fornecedor.estado == 'RO' }}>RO</option>
+            <option value="RR" {{ 'selected' if fornecedor and fornecedor.estado == 'RR' }}>RR</option>
+            <option value="SC" {{ 'selected' if fornecedor and fornecedor.estado == 'SC' }}>SC</option>
+            <option value="SP" {{ 'selected' if fornecedor and fornecedor.estado == 'SP' }}>SP</option>
+            <option value="SE" {{ 'selected' if fornecedor and fornecedor.estado == 'SE' }}>SE</option>
+            <option value="TO" {{ 'selected' if fornecedor and fornecedor.estado == 'TO' }}>TO</option>
+        </select>
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">CEP</label>
+        <input type="text" class="form-control" name="cep" value="{{ fornecedor.cep if fornecedor else '' }}" maxlength="9">
+    </div>
+    <div class="col-md-2">
+        <label class="form-label">Data Cadastro</label>
+        <input type="date" class="form-control" name="data_cadastro" value="{{ fornecedor.created_at.strftime('%Y-%m-%d') if fornecedor and fornecedor.created_at else '' }}">
+    </div>
+    <div class="col-12">
+        <label class="form-label">Observação</label>
+        <textarea class="form-control" name="observacao" rows="3">{{ fornecedor.observacao if fornecedor else '' }}</textarea>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+        <a href="/fornecedores" class="btn btn-secondary">Cancelar</a>
+    </div>
+</form>
+{% endblock %}

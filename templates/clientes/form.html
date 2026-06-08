@@ -1,120 +1,143 @@
 {% extends "base.html" %}
 {% block title %}{{ 'Editar' if cliente else 'Novo' }} Cliente - Controle Comercial{% endblock %}
 {% block content %}
-<h4 class="mb-3"><i class="bi bi-people"></i> {{ 'Editar' if cliente else 'Novo' }} Cliente</h4>
+<h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold mb-6">
+    <i data-lucide="users" class="w-6 h-6 inline me-2"></i> {{ 'Editar' if cliente else 'Novo' }} Cliente
+</h4>
 
-<form method="post" class="row g-3">
-    <div class="col-md-6">
-        <label class="form-label">Nome *</label>
-        <input type="text" class="form-control" name="nome" required value="{{ cliente.nome if cliente else '' }}">
+<form method="post" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div class="glass-card p-4">
+        <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="user" class="w-4 h-4 inline me-1"></i> Dados Pessoais</h5>
+        <div class="mb-3">
+            <label class="form-label text-cyan-300">Nome *</label>
+            <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="nome" required value="{{ cliente.nome if cliente else '' }}">
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+                <label class="form-label text-cyan-300">Fantasia (Nome Fantasia)</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="fantasia" value="{{ cliente.fantasia if cliente else '' }}">
+            </div>
+            <div>
+                <label class="form-label text-cyan-300">Contato (pessoa de referência)</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="contato" value="{{ cliente.contato if cliente else '' }}">
+            </div>
+        </div>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+                <label class="form-label text-cyan-300">Tipo</label>
+                <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="tipo_pessoa">
+                    <option value="fisica" {{ 'selected' if cliente and cliente.tipo_pessoa == 'fisica' }}>PF</option>
+                    <option value="juridica" {{ 'selected' if cliente and cliente.tipo_pessoa == 'juridica' }}>PJ</option>
+                </select>
+            </div>
+            <div>
+                <label class="form-label text-cyan-300">CPF/CNPJ</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="cpf_cnpj" value="{{ cliente.cpf_cnpj if cliente else '' }}" maxlength="{{ '14' if not cliente or cliente.tipo_pessoa == 'fisica' else '18' }}">
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mb-3">
+            <div>
+                <label class="form-label text-cyan-300">Inscrição Estadual</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="inscricao_estadual" value="{{ cliente.inscricao_estadual if cliente else '' }}">
+            </div>
+            <div>
+                <label class="form-label text-cyan-300">Inscrição Municipal</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="inscricao_municipal" value="{{ cliente.inscricao_municipal if cliente else '' }}">
+            </div>
+            <div>
+                <label class="form-label text-cyan-300">Situação</label>
+                <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="situacao">
+                    <option value="A" {{ 'selected' if not cliente or cliente.situacao == 'A' }}>Ativo</option>
+                    <option value="I" {{ 'selected' if cliente and cliente.situacao == 'I' }}>Inativo</option>
+                    <option value="S" {{ 'selected' if cliente and cliente.situacao == 'S' }}>Sem Movimento</option>
+                </select>
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label text-cyan-300">Observação</label>
+            <textarea class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="observacao" rows="3">{{ cliente.observacao if cliente else '' }}</textarea>
+        </div>
     </div>
-    <div class="col-md-2">
-        <label class="form-label">Tipo</label>
-        <select class="form-select" name="tipo_pessoa">
-            <option value="fisica" {{ 'selected' if cliente and cliente.tipo_pessoa == 'fisica' }}>PF</option>
-            <option value="juridica" {{ 'selected' if cliente and cliente.tipo_pessoa == 'juridica' }}>PJ</option>
-        </select>
+
+    <div class="glass-card p-4">
+        <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="map-pin" class="w-4 h-4 inline me-1"></i> Endereço</h5>
+        <div class="grid grid-cols-3 gap-3 mb-3">
+            <div>
+                <label class="form-label text-cyan-300">CEP</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cep" value="{{ cliente.cep if cliente else '' }}" maxlength="9">
+            </div>
+            <div class="col-span-2">
+                <label class="form-label text-cyan-300">Endereço</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="endereco" value="{{ cliente.endereco if cliente else '' }}">
+            </div>
+        </div>
+        <div class="grid grid-cols-4 gap-3 mb-3">
+            <div>
+                <label class="form-label text-cyan-300">Bairro</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="bairro" value="{{ cliente.bairro if cliente else '' }}">
+            </div>
+            <div class="col-span-2">
+                <label class="form-label text-cyan-300">Cidade</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="cidade" value="{{ cliente.cidade if cliente else '' }}">
+            </div>
+            <div>
+                <label class="form-label text-cyan-300">UF</label>
+                <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="estado">
+                    <option value="">-</option>
+                    <option value="AC" {{ 'selected' if cliente and cliente.estado == 'AC' }}>AC</option>
+                    <option value="AL" {{ 'selected' if cliente and cliente.estado == 'AL' }}>AL</option>
+                    <option value="AP" {{ 'selected' if cliente and cliente.estado == 'AP' }}>AP</option>
+                    <option value="AM" {{ 'selected' if cliente and cliente.estado == 'AM' }}>AM</option>
+                    <option value="BA" {{ 'selected' if cliente and cliente.estado == 'BA' }}>BA</option>
+                    <option value="CE" {{ 'selected' if cliente and cliente.estado == 'CE' }}>CE</option>
+                    <option value="DF" {{ 'selected' if cliente and cliente.estado == 'DF' }}>DF</option>
+                    <option value="ES" {{ 'selected' if cliente and cliente.estado == 'ES' }}>ES</option>
+                    <option value="GO" {{ 'selected' if cliente and cliente.estado == 'GO' }}>GO</option>
+                    <option value="MA" {{ 'selected' if cliente and cliente.estado == 'MA' }}>MA</option>
+                    <option value="MT" {{ 'selected' if cliente and cliente.estado == 'MT' }}>MT</option>
+                    <option value="MS" {{ 'selected' if cliente and cliente.estado == 'MS' }}>MS</option>
+                    <option value="MG" {{ 'selected' if cliente and cliente.estado == 'MG' }}>MG</option>
+                    <option value="PA" {{ 'selected' if cliente and cliente.estado == 'PA' }}>PA</option>
+                    <option value="PB" {{ 'selected' if cliente and cliente.estado == 'PB' }}>PB</option>
+                    <option value="PR" {{ 'selected' if cliente and cliente.estado == 'PR' }}>PR</option>
+                    <option value="PE" {{ 'selected' if cliente and cliente.estado == 'PE' }}>PE</option>
+                    <option value="PI" {{ 'selected' if cliente and cliente.estado == 'PI' }}>PI</option>
+                    <option value="RJ" {{ 'selected' if cliente and cliente.estado == 'RJ' }}>RJ</option>
+                    <option value="RN" {{ 'selected' if cliente and cliente.estado == 'RN' }}>RN</option>
+                    <option value="RS" {{ 'selected' if cliente and cliente.estado == 'RS' }}>RS</option>
+                    <option value="RO" {{ 'selected' if cliente and cliente.estado == 'RO' }}>RO</option>
+                    <option value="RR" {{ 'selected' if cliente and cliente.estado == 'RR' }}>RR</option>
+                    <option value="SC" {{ 'selected' if cliente and cliente.estado == 'SC' }}>SC</option>
+                    <option value="SP" {{ 'selected' if cliente and cliente.estado == 'SP' }}>SP</option>
+                    <option value="SE" {{ 'selected' if cliente and cliente.estado == 'SE' }}>SE</option>
+                    <option value="TO" {{ 'selected' if cliente and cliente.estado == 'TO' }}>TO</option>
+                </select>
+            </div>
+        </div>
+        <h6 class="text-cyan-400 border-b border-slate-800/30 pb-1 mb-2 mt-3"><i data-lucide="mail" class="w-3 h-3 inline me-1"></i> Contato</h6>
+        <div class="grid grid-cols-2 gap-3 mb-3">
+            <div>
+                <label class="form-label text-cyan-300">Telefone</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="telefone" value="{{ cliente.telefone if cliente else '' }}">
+            </div>
+            <div>
+                <label class="form-label text-cyan-300">WhatsApp / Celular</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="celular" value="{{ cliente.celular if cliente else '' }}">
+            </div>
+        </div>
+        <div class="mb-3">
+            <label class="form-label text-cyan-300">Email</label>
+            <input type="email" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="email" value="{{ cliente.email if cliente else '' }}">
+        </div>
+        <div class="mb-3">
+            <label class="form-label text-cyan-300">Data Cadastro</label>
+            <input type="date" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="data_cadastro" value="{{ cliente.created_at.strftime('%Y-%m-%d') if cliente and cliente.created_at else '' }}">
+        </div>
     </div>
-    <div class="col-md-4">
-        <label class="form-label">CPF/CNPJ</label>
-        <input type="text" class="form-control" name="cpf_cnpj" value="{{ cliente.cpf_cnpj if cliente else '' }}" maxlength="{{ '14' if not cliente or cliente.tipo_pessoa == 'fisica' else '18' }}">
-    </div>
-    <div class="col-md-2">
-        <label class="form-label">CEP</label>
-        <input type="text" class="form-control" name="cep" value="{{ cliente.cep if cliente else '' }}" maxlength="9">
-    </div>
-    <div class="col-md-6">
-        <label class="form-label">Email</label>
-        <input type="email" class="form-control" name="email" value="{{ cliente.email if cliente else '' }}">
-    </div>
-    <div class="col-md-3">
-        <label class="form-label">Telefone</label>
-        <input type="text" class="form-control" name="telefone" value="{{ cliente.telefone if cliente else '' }}">
-    </div>
-    <div class="col-md-3">
-        <label class="form-label">WhatsApp / Celular</label>
-        <input type="text" class="form-control" name="celular" value="{{ cliente.celular if cliente else '' }}">
-    </div>
-    <div class="col-md-6">
-        <label class="form-label">Endereço</label>
-        <input type="text" class="form-control" name="endereco" value="{{ cliente.endereco if cliente else '' }}">
-    </div>
-    <div class="col-md-3">
-        <label class="form-label">Bairro</label>
-        <input type="text" class="form-control" name="bairro" value="{{ cliente.bairro if cliente else '' }}">
-    </div>
-    <div class="col-md-2">
-        <label class="form-label">Cidade</label>
-        <input type="text" class="form-control" name="cidade" value="{{ cliente.cidade if cliente else '' }}">
-    </div>
-    <div class="col-md-1">
-        <label class="form-label">UF</label>
-        <select class="form-select" name="estado">
-            <option value="">-</option>
-            <option value="AC" {{ 'selected' if cliente and cliente.estado == 'AC' }}>AC</option>
-            <option value="AL" {{ 'selected' if cliente and cliente.estado == 'AL' }}>AL</option>
-            <option value="AP" {{ 'selected' if cliente and cliente.estado == 'AP' }}>AP</option>
-            <option value="AM" {{ 'selected' if cliente and cliente.estado == 'AM' }}>AM</option>
-            <option value="BA" {{ 'selected' if cliente and cliente.estado == 'BA' }}>BA</option>
-            <option value="CE" {{ 'selected' if cliente and cliente.estado == 'CE' }}>CE</option>
-            <option value="DF" {{ 'selected' if cliente and cliente.estado == 'DF' }}>DF</option>
-            <option value="ES" {{ 'selected' if cliente and cliente.estado == 'ES' }}>ES</option>
-            <option value="GO" {{ 'selected' if cliente and cliente.estado == 'GO' }}>GO</option>
-            <option value="MA" {{ 'selected' if cliente and cliente.estado == 'MA' }}>MA</option>
-            <option value="MT" {{ 'selected' if cliente and cliente.estado == 'MT' }}>MT</option>
-            <option value="MS" {{ 'selected' if cliente and cliente.estado == 'MS' }}>MS</option>
-            <option value="MG" {{ 'selected' if cliente and cliente.estado == 'MG' }}>MG</option>
-            <option value="PA" {{ 'selected' if cliente and cliente.estado == 'PA' }}>PA</option>
-            <option value="PB" {{ 'selected' if cliente and cliente.estado == 'PB' }}>PB</option>
-            <option value="PR" {{ 'selected' if cliente and cliente.estado == 'PR' }}>PR</option>
-            <option value="PE" {{ 'selected' if cliente and cliente.estado == 'PE' }}>PE</option>
-            <option value="PI" {{ 'selected' if cliente and cliente.estado == 'PI' }}>PI</option>
-            <option value="RJ" {{ 'selected' if cliente and cliente.estado == 'RJ' }}>RJ</option>
-            <option value="RN" {{ 'selected' if cliente and cliente.estado == 'RN' }}>RN</option>
-            <option value="RS" {{ 'selected' if cliente and cliente.estado == 'RS' }}>RS</option>
-            <option value="RO" {{ 'selected' if cliente and cliente.estado == 'RO' }}>RO</option>
-            <option value="RR" {{ 'selected' if cliente and cliente.estado == 'RR' }}>RR</option>
-            <option value="SC" {{ 'selected' if cliente and cliente.estado == 'SC' }}>SC</option>
-            <option value="SP" {{ 'selected' if cliente and cliente.estado == 'SP' }}>SP</option>
-            <option value="SE" {{ 'selected' if cliente and cliente.estado == 'SE' }}>SE</option>
-            <option value="TO" {{ 'selected' if cliente and cliente.estado == 'TO' }}>TO</option>
-        </select>
-    </div>
-    <div class="col-md-4">
-        <label class="form-label">Contato (pessoa de referência)</label>
-        <input type="text" class="form-control" name="contato" value="{{ cliente.contato if cliente else '' }}">
-    </div>
-    <div class="col-md-4">
-        <label class="form-label">Fantasia (Nome Fantasia)</label>
-        <input type="text" class="form-control" name="fantasia" value="{{ cliente.fantasia if cliente else '' }}">
-    </div>
-    <div class="col-md-2">
-        <label class="form-label">Inscrição Estadual</label>
-        <input type="text" class="form-control" name="inscricao_estadual" value="{{ cliente.inscricao_estadual if cliente else '' }}">
-    </div>
-    <div class="col-md-2">
-        <label class="form-label">Inscrição Municipal</label>
-        <input type="text" class="form-control" name="inscricao_municipal" value="{{ cliente.inscricao_municipal if cliente else '' }}">
-    </div>
-    <div class="col-md-2">
-        <label class="form-label">Situação</label>
-        <select class="form-select" name="situacao">
-            <option value="A" {{ 'selected' if not cliente or cliente.situacao == 'A' }}>Ativo</option>
-            <option value="I" {{ 'selected' if cliente and cliente.situacao == 'I' }}>Inativo</option>
-            <option value="S" {{ 'selected' if cliente and cliente.situacao == 'S' }}>Sem Movimento</option>
-        </select>
-    </div>
-    <div class="col-md-2">
-        <label class="form-label">Data Cadastro</label>
-        <input type="date" class="form-control" name="data_cadastro" value="{{ cliente.created_at.strftime('%Y-%m-%d') if cliente and cliente.created_at else '' }}">
-    </div>
-    <div class="col-12">
-        <label class="form-label">Observação</label>
-        <textarea class="form-control" name="observacao" rows="3">{{ cliente.observacao if cliente else '' }}</textarea>
-    </div>
-    <div class="col-12">
-        <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
-        <a href="/clientes" class="btn btn-secondary">Cancelar</a>
+
+    <div class="lg:col-span-2 flex items-center gap-3">
+        <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button>
+        <a href="/clientes" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition">Cancelar</a>
     </div>
 </form>
 {% endblock %}

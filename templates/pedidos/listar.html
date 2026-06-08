@@ -1,55 +1,67 @@
 {% extends "base.html" %}
 {% block title %}Pedidos de Venda{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="bi bi-receipt"></i> Pedidos de Venda</h4>
-    <div>
-        <a href="/pedidos/pre-venda/agrupar" class="btn btn-outline-info me-2"><i class="bi bi-box"></i> Agrupar Pré-Vendas</a>
-        <a href="/pedidos/novo" class="btn btn-primary"><i class="bi bi-plus-circle"></i> Novo Pedido</a>
+<div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-3">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="receipt" class="w-6 h-6 inline me-2"></i> Pedidos de Venda</h4>
+    <div class="flex flex-wrap items-center gap-2">
+        <a href="/pedidos/pre-venda/agrupar" class="flex items-center px-3 py-2 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition"><i data-lucide="box" class="w-4 h-4 me-1"></i> Agrupar Pré-Vendas</a>
+        <a href="/pedidos/novo" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> Novo Pedido</a>
     </div>
 </div>
 
-<form class="row g-2 mb-3">
-    <div class="col-auto"><input type="text" class="form-control" name="busca" placeholder="Buscar cliente..." value="{{ busca }}"></div>
-    <div class="col-auto">
-        <select class="form-select" name="cliente_id" onchange="this.form.submit()">
+<form class="flex flex-wrap gap-2 mb-3">
+    <div class="w-48"><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="busca" placeholder="Buscar cliente..." value="{{ busca }}"></div>
+    <div class="w-48">
+        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cliente_id" onchange="this.form.submit()">
             <option value="">Todos clientes</option>
-            {% for c in clientes %}
-            <option value="{{ c.id }}" {{ 'selected' if cliente_id == c.id }}>{{ c.nome }}</option>
-            {% endfor %}
+            {% for c in clientes %}<option value="{{ c.id }}" {% if cliente_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}
         </select>
     </div>
-    <div class="col-auto">
-        <select class="form-select" name="status" onchange="this.form.submit()">
+    <div class="w-40">
+        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="status" onchange="this.form.submit()">
             <option value="">Todos status</option>
-            <option value="pendente" {{ 'selected' if status == 'pendente' }}>Pendente</option>
-            <option value="aprovado" {{ 'selected' if status == 'aprovado' }}>Aprovado</option>
-            <option value="faturado" {{ 'selected' if status == 'faturado' }}>Faturado</option>
-            <option value="pre_venda" {{ 'selected' if status == 'pre_venda' }}>Pré-venda</option>
-            <option value="cancelado" {{ 'selected' if status == 'cancelado' }}>Cancelado</option>
+            <option value="pendente" {% if status == 'pendente' %}selected{% endif %}>Pendente</option>
+            <option value="aprovado" {% if status == 'aprovado' %}selected{% endif %}>Aprovado</option>
+            <option value="faturado" {% if status == 'faturado' %}selected{% endif %}>Faturado</option>
+            <option value="pre_venda" {% if status == 'pre_venda' %}selected{% endif %}>Pré-venda</option>
+            <option value="cancelado" {% if status == 'cancelado' %}selected{% endif %}>Cancelado</option>
         </select>
     </div>
-    <div class="col-auto"><button class="btn btn-outline-primary" type="submit"><i class="bi bi-search"></i></button></div>
+    <button class="px-3 py-2 border border-slate-800/80 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition" type="submit"><i data-lucide="search" class="w-4 h-4"></i></button>
 </form>
 
-<div class="table-responsive">
-    <table class="table table-hover">
-        <thead><tr><th>Número</th><th>Cliente</th><th>Data</th><th>Total</th><th>Status</th><th>Ações</th></tr></thead>
-        <tbody>
-            {% for p in pedidos %}
+<div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl shadow-xl overflow-hidden">
+    <table class="w-full divide-y divide-slate-800/60">
+        <thead class="bg-slate-950/50">
             <tr>
-                <td><a href="/pedidos/{{ p.id }}">{{ p.numero or '#' + p.id|string }}</a></td>
-                <td>{{ p.cliente.nome if p.cliente else '-' }}</td>
-                <td>{{ p.data.strftime('%d/%m/%Y') if p.data else '-' }}</td>
-                <td>R$ {{ "%.2f"|format(p.total or 0) }}</td>
-                <td><span class="badge bg-{{ 'success' if p.status == 'aprovado' else 'warning' if p.status == 'pre_venda' else 'primary' if p.status == 'pendente' else 'info' if p.status == 'faturado' else 'danger' }}">{{ STATUS_LABELS.get(p.status, p.status) }}</span></td>
-                <td>
-                    <a href="/pedidos/{{ p.id }}" class="btn btn-sm btn-outline-info"><i class="bi bi-eye"></i></a>
-                    <a href="/pedidos/{{ p.id }}/excluir" class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Número</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase tracking-wider">Cliente</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Data</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase tracking-wider">Total</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase tracking-wider">Status</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/60">
+            {% for p in pedidos %}
+            <tr class="hover:bg-slate-800/40 transition">
+                <td class="px-4 py-3 text-sm font-medium text-slate-100"><a href="/pedidos/{{ p.id }}">{{ p.numero or '#' + p.id|string }}</a></td>
+                <td class="px-4 py-3 text-sm text-cyan-300">{{ p.cliente.nome if p.cliente else '-' }}</td>
+                <td class="px-4 py-3 text-sm text-slate-300">{{ p.data.strftime('%d/%m/%Y') if p.data else '-' }}</td>
+                <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(p.total or 0) }}</td>
+                <td class="px-4 py-3 text-center">
+                    {% set cor = 'success' if p.status == 'aprovado' else 'warning' if p.status == 'pre_venda' else 'primary' if p.status == 'pendente' else 'info' if p.status == 'faturado' else 'danger' %}
+                    <span class="px-2 py-1 text-xs font-medium{% if p.status == 'aprovado' %} bg-emerald-950/50 text-emerald-400 border border-emerald-800/50{% elif p.status == 'pre_venda' %} bg-amber-950/50 text-amber-400 border border-amber-800/50{% elif p.status == 'pendente' %} bg-cyan-950/50 text-cyan-400 border border-cyan-800/50{% elif p.status == 'faturado' %} bg-indigo-950/50 text-indigo-400 border border-indigo-800/50{% else %} bg-rose-950/50 text-rose-400 border border-rose-800/50{% endif %} rounded-full">{{ STATUS_LABELS.get(p.status, p.status) }}</span>
+                </td>
+                <td class="px-4 py-3 text-center align-middle" style="min-width: 7rem;">
+                    <div class="flex items-center justify-center gap-1">
+                        <a href="/pedidos/{{ p.id }}" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Ver"><i data-lucide="eye" class="w-4 h-4"></i></a>
+                        <a href="/pedidos/{{ p.id }}/excluir" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="return confirm('Excluir?')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></a>
+                    </div>
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="6" class="text-center text-muted">Nenhum pedido</td></tr>
+            <tr><td colspan="6" class="px-4 py-12 text-center text-slate-500">Nenhum pedido</td></tr>
             {% endfor %}
         </tbody>
     </table>

@@ -5,6 +5,7 @@ from sqlalchemy import func
 from datetime import date, datetime
 from database import get_db
 from models import Produto, PedidoVenda, PedidoVendaItem, Cliente, StatusPedido, Fornecedor, FormaPagamento, ContaReceber, StatusConta
+from models_servico import Servico
 
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
 
@@ -114,12 +115,13 @@ async def finalizar_grupo(
 def novo_pedido(request: Request, db: Session = Depends(get_db)):
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     produtos = db.query(Produto).order_by(Produto.nome).all()
+    servicos = db.query(Servico).order_by(Servico.nome).all()
     produtos_json = [{"id": p.id, "nome": p.nome, "preco": p.preco, "descricao": p.descricao or p.nome} for p in produtos]
     ultimo_numero = db.query(PedidoVenda.numero).order_by(PedidoVenda.numero.desc()).first()
     proximo_numero = str(int(ultimo_numero[0]) + 1) if ultimo_numero and ultimo_numero[0] else "1"
     return request.app.state.templates.TemplateResponse(
         "pedidos/form.html",
-        {"request": request, "clientes": clientes, "produtos": produtos, "pedido": None, "date": date, "proximo_numero": proximo_numero, "produtos_json": produtos_json}
+        {"request": request, "clientes": clientes, "produtos": produtos, "servicos": servicos, "pedido": None, "date": date, "proximo_numero": proximo_numero, "produtos_json": produtos_json}
     )
 
 

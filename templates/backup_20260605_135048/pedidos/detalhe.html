@@ -1,0 +1,113 @@
+{% extends "base.html" %}
+{% block title %}Pedido #{{ pedido.numero or pedido.id }}{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-receipt"></i> Pedido {{ pedido.numero or '#' + pedido.id|string }}</h4>
+    <div>
+        <a href="/pedidos/{{ pedido.id }}/editar" class="btn btn-outline-warning"><i class="bi bi-pencil"></i> Editar</a>
+        <a href="/pedidos" class="btn btn-outline-secondary"><i class="bi bi-arrow-left"></i> Voltar</a>
+    </div>
+</div>
+
+<div class="row mb-3">
+    <div class="col-md-6">
+        <strong>Cliente:</strong> {{ pedido.cliente.nome if pedido.cliente else '-' }}
+    </div>
+    <div class="col-md-6">
+        <strong>Data:</strong> {{ pedido.data.strftime('%d/%m/%Y') if pedido.data else '-' }}
+    </div>
+</div>
+
+{% if pedido.tipo_pedido == 'venda' and pedido.status == 'faturado' %}
+<div class="mb-3">
+    <strong>Forma de Pagamento:</strong> {{ FORMAS_PAGAMENTO.get(pedido.forma_pagamento, '-') if pedido.forma_pagamento else '-' }}
+</div>
+{% endif %}
+
+<table class="table table-striped">
+    <thead><tr><th>Fornecedor</th><th>Produto</th><th>Descrição</th><th>Qtd</th><th>Preço Unit.</th><th>Total</th></tr></thead>
+    <tbody>
+        {% for item in pedido.itens %}
+        <tr>
+            <td>{{ item.fornecedor.nome if item.fornecedor else (item.produto.fornecedor.nome if item.produto and item.produto.fornecedor else '-') }}</td>
+            <td>{{ item.produto.nome if item.produto else '-' }}</td>
+            <td>{{ item.descricao }}</td>
+            <td>{{ item.quantidade }}</td>
+            <td>R$ {{ "%.2f"|format(item.preco_unitario) }}</td>
+            <td>R$ {{ "%.2f"|format(item.total) }}</td>
+        </tr>
+        {% else %}
+        <tr><td colspan="6" class="text-center">Nenhum item</td></tr>
+        {% endfor %}
+    </tbody>
+    <tfoot><tr><th colspan="5" class="text-end">Total:</th><th>R$ {{ "%.2f"|format(pedido.total or 0) }}</th></tr></tfoot>
+</table>
+
+<div class="row">
+    <div class="col-md-6">
+        <form method="post" action="/pedidos/{{ pedido.id }}/status">
+            <label class="form-label"><strong>Status:</strong></label>
+            <select name="status" class="form-select" onchange="this.form.submit()">
+                <option value="pendente" {{ 'selected' if pedido.status == 'pendente' }}>Pendente</option>
+                <option value="aprovado" {{ 'selected' if pedido.status == 'aprovado' }}>Aprovado</option>
+                <option value="faturado" {{ 'selected' if pedido.status == 'faturado' }}>Faturado</option>
+                <option value="pre_venda" {{ 'selected' if pedido.status == 'pre_venda' }}>Pré-venda</option>
+                <option value="cancelado" {{ 'selected' if pedido.status == 'cancelado' }}>Cancelado</option>
+            </select>
+        </form>
+    </div>
+    <div class="col-md-6 text-end">
+        {% if pedido.pedido_agrupado_id %}
+        <span class="badge bg-info">Agrupado em Pedido #{{ pedido.pedido_agrupado.numero or pedido.pedido_agrupado.id }}</span>
+        {% endif %}
+        {% if pedido.status == 'faturado' and pedido.tipo_pedido == 'venda' %}
+        <a href="/pedidos/{{ pedido.id }}/imprimir" class="btn btn-outline-info" target="_blank"><i class="bi bi-printer"></i> Imprimir</a>
+        <a href="/pedidos/{{ pedido.id }}/pdf" class="btn btn-outline-info"><i class="bi bi-file-pdf"></i> PDF</a>
+        {% endif %}
+        <a href="/pedidos/{{ pedido.id }}/excluir" class="btn btn-outline-danger" onclick="return confirm('Excluir este pedido?')"><i class="bi bi-trash"></i> Excluir</a>
+    </div>
+</div>
+
+{% if pedido.status in ['aprovado', 'pendente'] %}
+<hr class="my-3">
+<h5>Finalizar Pedido</h5>
+<form method="post" action="/pedidos/{{ pedido.id }}/finalizar" class="row g-3">
+    <div class="col-md-4">
+        <label class="form-label">Tipo *</label>
+        <select class="form-select" name="tipo_pedido" required>
+            <option value="venda">Venda</option>
+            <option value="pre_venda">Pré-venda</option>
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">Forma de Pagamento</label>
+        <select class="form-select" name="forma_pagamento">
+            <option value="">Selecione...</option>
+            <option value="avista">À Vista</option>
+            <option value="aprazo">À Prazo</option>
+            <option value="cartao_credito">Cartão Crédito</option>
+            <option value="cartao_debito">Cartão Débito</option>
+            <option value="boleto">Boleto</option>
+        </select>
+    </div>
+    <div class="col-md-4">
+        <label class="form-label">Gerar Boleto</label>
+        <div class="form-check mt-2">
+            <input class="form-check-input" type="checkbox" name="gerar_boleto" id="gerarBoleto{{ pedido.id }}">
+            <label class="form-check-label" for="gerarBoleto{{ pedido.id }}">Sim</label>
+        </div>
+    </div>
+    <div class="col-12">
+        <label class="form-label">Termos do Boleto</label>
+        <textarea class="form-control" name="terminos_boleto" rows="2" placeholder="Informações para o boleto..."></textarea>
+    </div>
+    <div class="col-12">
+        <button type="submit" class="btn btn-success"><i class="bi bi-check-circle"></i> Finalizar</button>
+    </div>
+</form>
+{% endif %}
+
+{% if pedido.observacao %}
+<div class="mt-3"><strong>Observação:</strong><br>{{ pedido.observacao }}</div>
+{% endif %}
+{% endblock %}

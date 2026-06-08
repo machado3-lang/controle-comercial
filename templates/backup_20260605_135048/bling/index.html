@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+{% block title %}Bling - Controle Comercial{% endblock %}
+{% block content %}
+<h2><i class="bi bi-cloud-download"></i> Bling</h2>
+
+<div class="col-md-6 d-grid gap-2">
+    <a href="/configuracoes" class="btn btn-outline-secondary">
+        <i class="bi bi-gear"></i> Ver Credenciais Bling
+    </a>
+    <a href="/contas/receber" class="btn btn-outline-primary">
+        <i class="bi bi-arrow-down-circle"></i> Contas a Receber
+    </a>
+</div>
+
+<div class="mt-3">
+    <h5>Status da Integração</h5>
+    <p>
+        Token configurado: 
+        {% if token_valido %}
+            <span class="badge bg-success">Sim</span>
+        {% else %}
+            <span class="badge bg-warning">Não</span>
+        {% endif %}
+    </p>
+    <p class="text-muted small">
+        <i class="bi bi-info-circle"></i> Para configurar, acesse 
+        <a href="https://developer.bling.com.br/aplicativos" target="_blank">developer.bling.com.br/aplicativos</a>
+        , crie um aplicativo e configure as credenciais em Configurações > Bling.
+    </p>
+</div>
+{% endblock %}

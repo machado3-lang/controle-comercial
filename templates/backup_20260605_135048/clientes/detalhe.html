@@ -1,0 +1,140 @@
+{% extends "base.html" %}
+{% block title %}{{ cliente.nome }} - Cliente{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-person-circle"></i> {{ cliente.nome }}</h4>
+    <div>
+        <a href="/clientes/{{ cliente.id }}/editar" class="btn btn-warning"><i class="bi bi-pencil"></i> Editar</a>
+        <a href="/clientes" class="btn btn-secondary"><i class="bi bi-arrow-left"></i> Voltar</a>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-2">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Código</small><br><strong>{{ cliente.codigo or '-' }}</strong>
+        </div></div>
+    </div>
+    <div class="col-md-2">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Tipo</small><br>{{ 'Pessoa Jurídica' if cliente.tipo_pessoa == 'juridica' else 'Pessoa Física' if cliente.tipo_pessoa == 'fisica' else '-' }}
+        </div></div>
+    </div>
+    <div class="col-md-2">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">CPF/CNPJ</small><br>{{ cliente.cpf_cnpj|format_cpf_cnpj or '-' }}
+        </div></div>
+    </div>
+    <div class="col-md-3">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Telefone</small><br>{{ cliente.telefone or '-' }}
+        </div></div>
+    </div>
+    <div class="col-md-2">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">WhatsApp / Celular</small><br>{{ cliente.celular or '-' }}
+        </div></div>
+    </div>
+    <div class="col-md-2">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Email</small><br>{{ cliente.email or '-' }}
+        </div></div>
+    </div>
+    <div class="col-md-2">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Contato</small><br>{{ cliente.contato or '-' }}
+        </div></div>
+    </div>
+    <div class="col-md-2">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Fantasia</small><br>{{ cliente.fantasia or '-' }}
+        </div></div>
+    </div>
+    <div class="col-md-2">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Insc. Estadual</small><br>{{ cliente.inscricao_estadual or '-' }}
+        </div></div>
+    </div>
+    <div class="col-md-2">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Insc. Municipal</small><br>{{ cliente.inscricao_municipal or '-' }}
+        </div></div>
+    </div>
+    <div class="col-md-2">
+        <div class="card"><div class="card-body">
+            <small class="text-muted">Situação</small><br>
+            {% if cliente.situacao == 'A' %}<span class="badge bg-success">Ativo</span>
+            {% elif cliente.situacao == 'I' %}<span class="badge bg-danger">Inativo</span>
+            {% elif cliente.situacao == 'S' %}<span class="badge bg-warning text-dark">Sem Movimento</span>
+            {% else %}{{ cliente.situacao or '-' }}{% endif %}
+        </div></div>
+    </div>
+</div>
+
+<ul class="nav nav-tabs mb-3" id="tabCliente">
+    <li class="nav-item"><a class="nav-link active" href="#contas" data-bs-toggle="tab">Contas a Receber</a></li>
+    <li class="nav-item"><a class="nav-link" href="#assinaturas" data-bs-toggle="tab">Assinaturas</a></li>
+    <li class="nav-item"><a class="nav-link" href="#ordens" data-bs-toggle="tab">Ordens de Serviço</a></li>
+</ul>
+
+<div class="tab-content">
+    <div class="tab-pane active" id="contas">
+        <table class="table table-hover">
+            <thead><tr><th>Descrição</th><th>Valor</th><th>Vencimento</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for c in contas %}
+                <tr>
+                    <td>{{ c.descricao }}</td>
+                    <td>R$ {{ "%.2f"|format(c.valor) }}</td>
+                    <td>{{ c.data_vencimento }}</td>
+                    <td><span class="badge bg-{{ 'success' if c.status == 'pago' else 'warning' if c.status == 'pendente' else 'danger' }}">{{ c.status }}</span></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="4" class="text-muted text-center">Nenhuma conta</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="tab-pane" id="assinaturas">
+        <table class="table table-hover">
+            <thead><tr><th>Descrição</th><th>Tipo</th><th>Valor</th><th>Início</th><th>Status</th></tr></thead>
+            <tbody>
+                {% for a in assinaturas %}
+                <tr>
+                    <td>{{ a.descricao }}</td>
+                    <td><span class="badge bg-info">{{ a.tipo }}</span></td>
+                    <td>R$ {{ "%.2f"|format(a.valor) }}</td>
+                    <td>{{ a.data_inicio }}</td>
+                    <td><span class="badge bg-{{ 'success' if a.status == 'ativa' else 'danger' }}">{{ a.status }}</span></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="text-muted text-center">Nenhuma assinatura</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    <div class="tab-pane" id="ordens">
+        <table class="table table-hover">
+            <thead><tr><th>Equipamento</th><th>Entrada</th><th>Saída</th><th>Valor</th><th>Status</th><th></th></tr></thead>
+            <tbody>
+                {% for o in ordens %}
+                <tr>
+                    <td>{{ o.equipamento }}</td>
+                    <td>{{ o.data_entrada }}</td>
+                    <td>{{ o.data_saida or '-' }}</td>
+                    <td>R$ {{ "%.2f"|format(o.valor_total) }}</td>
+                    <td>
+                        <span class="badge bg-{{ 'warning' if o.status == 'aberta' else 'info' if o.status == 'em_andamento' else 'success' if o.status == 'finalizada' else 'secondary' }}">
+                            {{ o.status }}
+                        </span>
+                    </td>
+                    <td><a href="/ordens-servico/{{ o.id }}" class="btn btn-sm btn-outline-primary">Ver</a></td>
+                </tr>
+                {% else %}
+                <tr><td colspan="6" class="text-muted text-center">Nenhuma OS</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}

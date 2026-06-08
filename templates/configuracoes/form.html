@@ -1,176 +1,78 @@
 {% extends "base.html" %}
 {% block title %}Configurações - Controle Comercial{% endblock %}
 {% block content %}
-<h4 class="mb-3"><i class="bi bi-gear"></i> Configurações</h4>
+<div class="flex justify-between items-center mb-6">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="settings" class="w-6 h-6 inline me-2"></i> Configurações</h4>
+    <a href="/" class="flex items-center px-3 py-2 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar</a>
+</div>
 
-<div class="row">
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0">
-                    <button class="btn btn-link w-100 text-start p-0" type="button" 
-                            data-bs-toggle="collapse" data-bs-target="#empresaCollapse" 
-                            aria-expanded="true">
-                        <i class="bi bi-building"></i> Dados da Empresa
-                    </button>
-                </h5>
+<div class="glass-card mb-6">
+    <div class="p-4 border-b border-slate-800/60">
+        <h5 class="text-cyan-400 font-semibold"><i data-lucide="building" class="w-5 h-5 inline me-2"></i> Dados da Empresa</h5>
+    </div>
+    <div class="p-4">
+        <form method="post" class="grid grid-cols-1 md:grid-cols-2 gap-4" enctype="multipart/form-data">
+            <div class="md:col-span-2"><h6 class="text-secondary text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2"><i data-lucide="building" class="w-4 h-4 inline me-1"></i> Dados da Empresa</h6></div>
+            
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Razão Social</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="razao_social" value="{{ empresa.razao_social if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Nome Fantasia</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="nome_fantasia" value="{{ empresa.nome_fantasia if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">CNPJ</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cnpj" value="{{ empresa.cnpj if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Inscrição Estadual</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="inscricao_estadual" value="{{ empresa.inscricao_estadual if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Inscrição Municipal</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="inscricao_municipal" value="{{ empresa.inscricao_municipal if empresa else '' }}"></div>
+            
+            <div class="md:col-span-2"><h6 class="text-secondary text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 mt-4"><i data-lucide="map-pin" class="w-4 h-4 inline me-1"></i> Endereço</h6></div>
+            
+            <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Endereço</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="endereco" value="{{ empresa.endereco if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Bairro</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="bairro" value="{{ empresa.bairro if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Cidade</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cidade" value="{{ empresa.cidade if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">UF</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="estado" maxlength="2" value="{{ empresa.estado if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">CEP</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cep" value="{{ empresa.cep if empresa else '' }}"></div>
+            
+            <div class="md:col-span-2"><h6 class="text-secondary text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 mt-4"><i data-lucide="phone" class="w-4 h-4 inline me-1"></i> Contato</h6></div>
+            
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Telefone</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="telefone" value="{{ empresa.telefone if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">WhatsApp / Celular</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="celular" value="{{ empresa.celular if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Email</label><input type="email" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="email" value="{{ empresa.email if empresa else '' }}"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Site</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="site" value="{{ empresa.site if empresa else '' }}"></div>
+            
+            <div class="md:col-span-2"><h6 class="text-secondary text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 mt-4"><i data-lucide="image" class="w-4 h-4 inline me-1"></i> Logotipo</h6></div>
+            
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Logo (JPG/PNG)</label><input type="file" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="logo" accept=".jpg,.jpeg,.png"></div>
+            <div class="flex items-center">
+                {% if empresa and empresa.logo %}
+                <img src="{{ url_for('static', path=empresa.logo.split('static/')[1]) }}" alt="Logo" class="h-16 rounded border border-slate-700">
+                <small class="ms-2 text-slate-400">Logo atual</small>
+                {% endif %}
             </div>
-            <div class="collapse show" id="empresaCollapse">
-                <div class="card-body">
-                    <form method="post" class="row g-3" enctype="multipart/form-data">
-                        <div class="col-12">
-                            <h6 class="text-secondary"><i class="bi bi-building"></i> Dados da Empresa</h6>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Razão Social</label>
-                            <input type="text" class="form-control" name="razao_social" value="{{ empresa.razao_social if empresa else '' }}">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Nome Fantasia</label>
-                            <input type="text" class="form-control" name="nome_fantasia" value="{{ empresa.nome_fantasia if empresa else '' }}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">CNPJ</label>
-                            <input type="text" class="form-control" name="cnpj" value="{{ empresa.cnpj if empresa else '' }}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Inscrição Estadual</label>
-                            <input type="text" class="form-control" name="inscricao_estadual" value="{{ empresa.inscricao_estadual if empresa else '' }}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Inscrição Municipal</label>
-                            <input type="text" class="form-control" name="inscricao_municipal" value="{{ empresa.inscricao_municipal if empresa else '' }}">
-                        </div>
-                        <div class="col-12">
-                            <h6 class="text-secondary mt-2"><i class="bi bi-geo-alt"></i> Endereço</h6>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Endereço</label>
-                            <input type="text" class="form-control" name="endereco" value="{{ empresa.endereco if empresa else '' }}">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Bairro</label>
-                            <input type="text" class="form-control" name="bairro" value="{{ empresa.bairro if empresa else '' }}">
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label">Cidade</label>
-                            <input type="text" class="form-control" name="cidade" value="{{ empresa.cidade if empresa else '' }}">
-                        </div>
-                        <div class="col-md-1">
-                            <label class="form-label">UF</label>
-                            <input type="text" class="form-control" name="estado" maxlength="2" value="{{ empresa.estado if empresa else '' }}">
-                        </div>
-                        <div class="col-md-2">
-                            <label class="form-label">CEP</label>
-                            <input type="text" class="form-control" name="cep" value="{{ empresa.cep if empresa else '' }}">
-                        </div>
-                        <div class="col-12">
-                            <h6 class="text-secondary mt-2"><i class="bi bi-telephone"></i> Contato</h6>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Telefone</label>
-                            <input type="text" class="form-control" name="telefone" value="{{ empresa.telefone if empresa else '' }}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">WhatsApp / Celular</label>
-                            <input type="text" class="form-control" name="celular" value="{{ empresa.celular if empresa else '' }}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Email</label>
-                            <input type="email" class="form-control" name="email" value="{{ empresa.email if empresa else '' }}">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Site</label>
-                            <input type="text" class="form-control" name="site" value="{{ empresa.site if empresa else '' }}">
-                        </div>
-                        <div class="col-12">
-                            <h6 class="text-secondary mt-2"><i class="bi bi-image"></i> Logotipo</h6>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Logo (JPG ou PNG)</label>
-                            <input type="file" class="form-control" name="logo" accept=".jpg,.jpeg,.png">
-                        </div>
-                        <div class="col-md-6 d-flex align-items-center">
-                            {% if empresa and empresa.logo %}
-                                <img src="{{ url_for('static', path=empresa.logo.split('static/')[1]) }}" alt="Logo" class="img-thumbnail" style="max-height: 100px;">
-                                <small class="ms-2 text-secondary">Logo atual</small>
-                            {% endif %}
-                        </div>
-                        <div class="col-12">
-                            <h6 class="text-secondary mt-2"><i class="bi bi-shield-lock"></i> Segurança</h6>
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Senha de Administrador</label>
-                            <input type="password" class="form-control" name="senha_admin" placeholder="Deixe em branco para manter a atual">
-                        </div>
-                        <div class="col-12">
-                            <label class="form-label">Observação</label>
-                            <textarea class="form-control" name="observacao" rows="3">{{ empresa.observacao if empresa else '' }}</textarea>
-                        </div>
-                        <div class="col-12">
-                            <hr>
-                            <h5><i class="bi bi-plug"></i> Integrações</h5>
-                        </div>
-                        <div class="col-12">
-                            <h6 class="text-secondary mt-2"><i class="bi bi-key"></i> Integração Bling API v3 (OAuth 2.0)</h6>
-                            <p class="text-muted small">Se a API v3 falhar na sincronização de contratos, configure a API Key v2 aqui.</p>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Client ID (OAuth)</label>
-                            <input type="text" class="form-control" name="bling_client_id" value="{{ empresa.bling_client_id if empresa else '' }}" placeholder="Client ID do aplicativo Bling">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Client Secret (OAuth)</label>
-                            <input type="text" class="form-control" name="bling_client_secret" value="{{ empresa.bling_client_secret if empresa else '' }}" placeholder="Client Secret do aplicativo Bling">
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">API Key v2 (opcional)</label>
-                            <input type="text" class="form-control" name="bling_api_key_v2" value="{{ empresa.bling_api_key_v2 if empresa else '' }}" placeholder="Chave API gerada no Bling v2">
-                        </div>
-                        <div class="col-12">
-                            <h6 class="text-secondary mt-2"><i class="bi bi-bank"></i> Integração Sicoob</h6>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Client ID Sicoob</label>
-                            <input type="text" class="form-control" name="sicoob_client_id" value="{{ empresa.sicoob_client_id if empresa else '' }}" placeholder="Client ID da aplicação Sicoob">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Beneficiário</label>
-                            <input type="text" class="form-control" name="sicoob_beneficiario" value="{{ empresa.sicoob_beneficiario if empresa else '' }}" placeholder="91820">
-                        </div>
-                        <div class="col-md-3">
-                            <label class="form-label">Conta Corrente</label>
-                            <input type="text" class="form-control" name="sicoob_conta_corrente" value="{{ empresa.sicoob_conta_corrente if empresa else '' }}" placeholder="110558">
-                        </div>
-                        <div class="col-12">
-                            <h6 class="text-secondary mt-2"><i class="bi bi-key"></i> Certificado Sicoob (opcional - upload aqui ou caminho manual)</h6>
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Certificado ICP-Brasil (PEM/CRT)</label>
-                            <input type="file" name="sicoob_cert_file" class="form-control" accept=".pem,.crt,.cer,.p12">
-                            {% if empresa and empresa.sicoob_cert_path %}
-                            <small class="text-success">Arquivo salvo: {{ empresa.sicoob_cert_path }}</small>
-                            {% endif %}
-                        </div>
-                        <div class="col-md-6">
-                            <label class="form-label">Chave Privada (se separada do certificado)</label>
-                            <input type="file" name="sicoob_key_file" class="form-control" accept=".key,.pem">
-                        </div>
-                        <div class="col-md-4">
-                            <label class="form-label">Senha do Certificado (se houver)</label>
-                            <input type="password" name="sicoob_cert_password" class="form-control" placeholder="Senha do certificado">
-                        </div>
-                        <div class="col-md-8">
-                            <label class="form-label">Caminho Certificado (manual)</label>
-                            <input type="text" class="form-control" name="sicoob_cert_path" value="{{ empresa.sicoob_cert_path if empresa else '' }}" placeholder="C:\certs\cert_1.pem">
-                        </div>
-                        <div class="col-12">
-                            <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
-                        </div>
-                    </form>
-                </div>
+            
+            <div class="md:col-span-2"><hr class="border-slate-800/60 my-4"><h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="plug" class="w-5 h-5 inline me-2"></i> Integrações</h5></div>
+            
+            <div class="md:col-span-2"><h6 class="text-secondary text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2"><i data-lucide="key" class="w-4 h-4 inline me-1"></i> Integração Bling API v3 (OAuth 2.0)</h6><p class="text-slate-500 text-xs mb-3">Se a API v3 falhar, configure a API Key v2 aqui.</p></div>
+            
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Client ID (OAuth)</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="bling_client_id" value="{{ empresa.bling_client_id if empresa else '' }}" placeholder="Client ID do aplicativo Bling"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Client Secret (OAuth)</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="bling_client_secret" value="{{ empresa.bling_client_secret if empresa else '' }}" placeholder="Client Secret"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">API Key v2 (opcional)</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="bling_api_key_v2" value="{{ empresa.bling_api_key_v2 if empresa else '' }}" placeholder="Chave API Bling v2"></div>
+            
+            <div class="md:col-span-2"><h6 class="text-secondary text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 mt-4"><i data-lucide="bank" class="w-4 h-4 inline me-1"></i> Integração Sicoob</h6></div>
+            
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Client ID Sicoob</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="sicoob_client_id" value="{{ empresa.sicoob_client_id if empresa else '' }}" placeholder="Client ID da aplicação Sicoob"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Beneficiário</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="sicoob_beneficiario" value="{{ empresa.sicoob_beneficiario if empresa else '' }}" placeholder="91820"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Conta Corrente</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="sicoob_conta_corrente" value="{{ empresa.sicoob_conta_corrente if empresa else '' }}" placeholder="110558"></div>
+            
+            <div class="md:col-span-2"><h6 class="text-secondary text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-2 mt-4"><i data-lucide="key" class="w-4 h-4 inline me-1"></i> Certificado Sicoob</h6></div>
+            
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Certificado (PEM/CRT)</label><input type="file" name="sicoob_cert_file" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" accept=".pem,.crt,.cer,.p12">{% if empresa and empresa.sicoob_cert_path %}<small class="text-emerald-400">Arquivo: {{ empresa.sicoob_cert_path }}</small>{% endif %}</div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Chave Privada</label><input type="file" name="sicoob_key_file" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" accept=".key,.pem"></div>
+            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Senha do Certificado</label><input type="password" name="sicoob_cert_password" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Senha"></div>
+            <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Caminho Certificado (manual)</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="sicoob_cert_path" value="{{ empresa.sicoob_cert_path if empresa else '' }}" placeholder="C:\certs\cert_1.pem"></div>
+            
+            <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1 mt-2">Senha de Administrador</label><input type="password" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="senha_admin" placeholder="Nova senha"></div>
+            <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label><textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="3">{{ empresa.observacao if empresa else '' }}</textarea></div>
+            
+            <div class="md:col-span-2 pt-4 border-t border-slate-800/60">
+                <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button>
             </div>
-        </div>
+        </form>
     </div>
 </div>
 {% endblock %}

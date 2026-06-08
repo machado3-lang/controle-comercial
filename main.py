@@ -1,5 +1,7 @@
 import re
 import os
+from dotenv import load_dotenv
+load_dotenv()
 from fastapi import FastAPI, Depends, Request
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
@@ -12,20 +14,32 @@ from sqlalchemy import func
 from datetime import date as date_func, datetime
 
 from database import engine, Base, get_db
-from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario
+from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario, MarcaProduto
+from models_servico import Servico, ServicoInsumo
 
 # Executar migrations no startup
 def run_migrations():
-    from sqlalchemy import text
+    from sqlalchemy import text, inspect
+    # Para SQLite, garantir colunas existem via create_all
+    if "sqlite" in str(engine.url):
+        Base.metadata.create_all(bind=engine)
+        return
     migrations = [
         "ALTER TABLE contas_receber ADD COLUMN IF NOT EXISTS data_emissao DATE",
         "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS telefone_whatsapp VARCHAR(20)",
         "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS codigo_barras VARCHAR(50)",
+        "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS tipo VARCHAR(20) DEFAULT 'produto'",
+        "CREATE TABLE IF NOT EXISTS marcas_produto (id SERIAL PRIMARY KEY, nome VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT NOW())",
+        "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS marca_id INTEGER REFERENCES marcas_produto(id)",
+        "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS foto VARCHAR(500)",
     ]
     try:
         with engine.connect() as conn:
             for m in migrations:
-                conn.execute(text(m))
+                try:
+                    conn.execute(text(m))
+                except Exception:
+                    pass
             conn.commit()
     except Exception as e:
         print(f"Migration error: {e}")
@@ -48,6 +62,7 @@ def format_cpf_cnpj(value):
 
 
 templates.env.filters["format_cpf_cnpj"] = format_cpf_cnpj
+templates.env.globals["now"] = lambda: date_func.today()
 
 app = FastAPI(title="Controle Comercial")
 app.state.templates = templates
@@ -55,7 +70,7 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-from routers import clientes, fornecedores, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth
+from routers import clientes, fornecedores, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth, servicos
 
 
 class ProxyMiddleware(BaseHTTPMiddleware):
@@ -74,10 +89,11 @@ class AuthMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
         if not request.session.get("user_id"):
             request.session["message"] = {"tipo": "danger", "texto": "Faça login para acessar"}
-            return RedirectResponse(url="/auth/login")
+            return RedirectResponse(url="/auth/login", headers={"Cache-Control": "no-cache, no-store"})
         try:
             return await call_next(request)
-        except Exception:
+        except Exception as e:
+            print(f"AuthMiddleware error: {e}")
             request.session.clear()
             request.session["message"] = {"tipo": "danger", "texto": "Erro no servidor."}
             return RedirectResponse(url="/auth/login", status_code=303)
@@ -97,6 +113,7 @@ app.include_router(bling.router)
 app.include_router(sicoob.router)
 app.include_router(produtos.router)
 app.include_router(pedidos.router)
+app.include_router(servicos.router)
 
 
 @app.get("/")

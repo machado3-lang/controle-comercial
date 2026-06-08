@@ -1,115 +1,107 @@
 <!DOCTYPE html>
-<html lang="pt-BR" data-bs-theme="dark">
+<html lang="pt-BR">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Controle Comercial{% endblock %}</title>
-    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css">
+    <script src="https://unpkg.com/lucide@latest"></script>
     <link href="{{ url_for('static', path='/css/styles.css') }}" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cyan: { 400: '#22d3ee', 500: '#06b6d4' },
+                        emerald: { 400: '#34d399' },
+                        indigo: { 400: '#818cf8', 500: '#6366f1' }
+                    }
+                }
+            }
+        }
+    </script>
 </head>
-<body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark border-bottom border-secondary mb-4">
-        <div class="container-fluid">
-            <a class="navbar-brand d-flex align-items-center" href="/">
-                <img src="/static/img/logo.png" alt="ControliZ" height="30" class="me-2">
-                <span class="fw-light">Controle Comercial</span>
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav me-auto">
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-people"></i> Clientes
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="/clientes"><i class="bi bi-list"></i> Listar</a></li>
-                            <li><a class="dropdown-item" href="/clientes/novo"><i class="bi bi-plus-circle"></i> Novo</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-building"></i> Fornecedores
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="/fornecedores"><i class="bi bi-list"></i> Listar</a></li>
-                            <li><a class="dropdown-item" href="/fornecedores/novo"><i class="bi bi-plus-circle"></i> Novo</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-box"></i> Produtos
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="/produtos"><i class="bi bi-list"></i> Listar</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="/pedidos">
-                            <i class="bi bi-receipt"></i> Pedidos
-                        </a>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-calendar-check"></i> Assinaturas
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="/assinaturas"><i class="bi bi-list"></i> Gerenciar</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-wrench"></i> Ordens de Serviço
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="/ordens-servico"><i class="bi bi-list"></i> Listar</a></li>
-                            <li><a class="dropdown-item" href="/ordens-servico/nova"><i class="bi bi-plus-circle"></i> Nova</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-cash-stack"></i> Contas
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="/contas/pagar"><i class="bi bi-arrow-up-circle"></i> Contas a Pagar</a></li>
-                            <li><a class="dropdown-item" href="/contas/receber"><i class="bi bi-arrow-down-circle"></i> Contas a Receber</a></li>
-                            <li><a class="dropdown-item" href="/contas/recebimentos"><i class="bi bi-cash-stack"></i> Recebimentos</a></li>
-                        </ul>
-                    </li>
-                    <li class="nav-item dropdown">
-                        <a class="nav-link dropdown-toggle" href="#" role="button" data-bs-toggle="dropdown">
-                            <i class="bi bi-gear"></i> Configurações
-                        </a>
-                        <ul class="dropdown-menu">
-                            <li><a class="dropdown-item" href="/configuracoes"><i class="bi bi-building"></i> Empresa</a></li>
-                            <li><a class="dropdown-item" href="/auth/usuarios"><i class="bi bi-people"></i> Usuários</a></li>
-                            <li><a class="dropdown-item" href="/bling"><i class="bi bi-cloud-download"></i> Bling</a></li>
-                            <li><a class="dropdown-item" href="/sicoob"><i class="bi bi-credit-card"></i> Sicoob Boletos</a></li>
-                        </ul>
-                    </li>
-                </ul>
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link" href="/auth/logout">
-                            <i class="bi bi-box-arrow-left"></i> Sair
-                        </a>
-                    </li>
-                </ul>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-950 to-slate-950">
+    <nav class="bg-slate-900/60 backdrop-blur-md border-b border-slate-800/80 px-4 py-3">
+        <div class="container-fluid px-4">
+            <div class="flex justify-between items-center">
+                <a class="flex items-center" href="/">
+                    <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ" class="h-8 w-auto me-2">
+                    <span class="text-slate-400 text-sm">Controle Comercial</span>
+                </a>
+                
+                <div class="hidden md:flex items-center space-x-1">
+                    <a class="flex items-center px-3 py-2 text-cyan-400 hover:text-cyan-300 transition" href="/clientes">
+                        <i data-lucide="users" class="w-4 h-4 me-1"></i> Clientes
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-cyan-400 hover:text-cyan-300 transition" href="/fornecedores">
+                        <i data-lucide="building-2" class="w-4 h-4 me-1"></i> Fornecedores
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-cyan-400 hover:text-cyan-300 transition" href="/produtos">
+                        <i data-lucide="package" class="w-4 h-4 me-1"></i> Produtos
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-emerald-400 hover:text-emerald-300 transition" href="/contas/receber">
+                        <i data-lucide="arrow-down-circle" class="w-4 h-4 me-1"></i> Receber
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-rose-400 hover:text-rose-300 transition" href="/contas/pagar">
+                        <i data-lucide="arrow-up-circle" class="w-4 h-4 me-1"></i> Pagar
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-cyan-400 hover:text-cyan-300 transition" href="/pedidos">
+                        <i data-lucide="receipt" class="w-4 h-4 me-1"></i> Pedidos
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-cyan-400 hover:text-cyan-300 transition" href="/servicos">
+                        <i data-lucide="wrench" class="w-4 h-4 me-1"></i> Serviços
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-cyan-400 hover:text-cyan-300 transition" href="/ordens-servico">
+                        <i data-lucide="wrench" class="w-4 h-4 me-1"></i> OS
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-cyan-400 hover:text-cyan-300 transition" href="/assinaturas">
+                        <i data-lucide="calendar-check" class="w-4 h-4 me-1"></i> Assinaturas
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-cyan-400 hover:text-cyan-300 transition" href="/configuracoes">
+                        <i data-lucide="settings" class="w-4 h-4 me-1"></i> Configurações
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-cyan-400 hover:text-cyan-300 transition" href="/sicoob">
+                        <i data-lucide="credit-card" class="w-4 h-4 me-1"></i> Sicoob
+                    </a>
+                    <a class="flex items-center px-3 py-2 text-slate-400 hover:text-slate-300 transition" href="/auth/logout">
+                        <i data-lucide="log-out" class="w-4 h-4 me-1"></i> Sair
+                    </a>
+                </div>
+                
+                <button class="md:hidden text-slate-300" onclick="document.getElementById('mobile-menu').classList.toggle('hidden')">
+                    <i data-lucide="menu" class="w-6 h-6"></i>
+                </button>
+            </div>
+            <div id="mobile-menu" class="md:hidden hidden mt-3">
+                <a class="block py-2 text-cyan-400" href="/clientes">Clientes</a>
+                <a class="block py-2 text-cyan-400" href="/fornecedores">Fornecedores</a>
+                <a class="block py-2 text-cyan-400" href="/produtos">Produtos</a>
+                <a class="block py-2 text-emerald-400" href="/contas/receber">Receber</a>
+                <a class="block py-2 text-rose-400" href="/contas/pagar">Pagar</a>
+                <a class="block py-2 text-cyan-400" href="/pedidos">Pedidos</a>
+                <a class="block py-2 text-cyan-400" href="/ordens-servico">OS</a>
+                <a class="block py-2 text-cyan-400" href="/assinaturas">Assinaturas</a>
+                <a class="block py-2 text-cyan-400" href="/configuracoes">Configurações</a>
+                <a class="block py-2 text-cyan-400" href="/sicoob">Sicoob</a>
             </div>
         </div>
     </nav>
 
-    <div aria-live="polite" aria-atomic="true" class="position-fixed top-0 end-0 p-3" style="z-index: 1080;">
+    <div aria-live="polite" aria-atomic="true" class="fixed top-4 end-4 z-50">
         <div id="toast-container"></div>
     </div>
 
-    <div class="container-fluid">
+    <div class="container-fluid px-4 py-4">
         {% if messages %}
             {% for msg in messages %}
-                <div class="alert alert-{{ msg.tipo }} alert-dismissible fade show">{{ msg.texto }}
-                    <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
+                <div class="bg-red-950/30 border border-red-800/50 text-red-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
+                    {{ msg.texto }}
+                    <button type="button" class="text-slate-400 hover:text-slate-200" onclick="this.parentElement.remove()"><i data-lucide="x" class="w-4 h-4"></i></button>
                 </div>
             {% endfor %}
         {% endif %}
@@ -118,33 +110,19 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-function showToast(texto, tipo) {
-    tipo = tipo || 'success';
-    const toastHtml = `
-        <div class="toast align-items-center text-bg-${tipo} border-0" role="alert">
-            <div class="d-flex">
-                <div class="toast-body">${texto}</div>
-                <button type="button" class="btn-close btn-close-white me-2 m-auto" data-bs-dismiss="toast"></button>
-            </div>
-        </div>
-    `;
-    const container = document.getElementById('toast-container');
-    container.insertAdjacentHTML('beforeend', toastHtml);
-    const toastEl = container.lastElementChild;
-    const toast = new bootstrap.Toast(toastEl, { delay: 4000 });
-    toast.show();
-    setTimeout(() => toastEl.remove(), 5000);
-}
-
-document.addEventListener('DOMContentLoaded', function() {
-    const toastMsg = sessionStorage.getItem('toast-mensagem');
-    const toastTipo = sessionStorage.getItem('toast-tipo');
-    if (toastMsg) {
-        showToast(toastMsg, toastTipo);
-        sessionStorage.removeItem('toast-mensagem');
-        sessionStorage.removeItem('toast-tipo');
+    function showToast(texto, tipo) {
+        const colors = {success: 'emerald', danger: 'rose', warning: 'amber', info: 'cyan'};
+        const color = colors[tipo] || 'cyan';
+        const toastHtml = `<div class="bg-${color}-950/30 border border-${color}-800/50 text-${color}-300 px-4 py-3 rounded-xl mb-2 min-w-[250px] backdrop-blur-sm flex items-center justify-between"><span>${texto}</span><button type="button" class="text-slate-400" onclick="this.parentElement.remove()"><i data-lucide="x" class="w-4 h-4"></i></button></div>`;
+        document.getElementById('toast-container').insertAdjacentHTML('beforeend', toastHtml);
+        setTimeout(() => document.querySelector('#toast-container > div:last-child')?.remove(), 4000);
     }
-});
+    document.addEventListener('DOMContentLoaded', function() {
+        const toastMsg = sessionStorage.getItem('toast-mensagem');
+        const toastTipo = sessionStorage.getItem('toast-tipo');
+        if (toastMsg) { showToast(toastMsg, toastTipo); sessionStorage.removeItem('toast-mensagem'); sessionStorage.removeItem('toast-tipo'); }
+        if (window.lucide) lucide.createIcons();
+    });
     </script>
     <script src="{{ url_for('static', path='/js/scripts.js') }}"></script>
     {% block scripts %}{% endblock %}

@@ -1,0 +1,60 @@
+{% extends "base.html" %}
+{% block title %}Imprimir Pedido{% endblock %}
+{% block content %}
+<div class="print-area">
+    <h3 class="text-center mb-4">PEDIDO {{ pedido.numero or pedido.id }}</h3>
+    
+    <div class="row mb-3">
+        <div class="col-6">
+            <strong>Cliente:</strong> {{ pedido.cliente.nome if pedido.cliente else '-' }}<br>
+            {% if pedido.cliente and pedido.cliente.cpf_cnpj %}<strong>CNPJ:</strong> {{ pedido.cliente.cpf_cnpj }}{% endif %}<br>
+            {% if pedido.cliente and pedido.cliente.endereco %}<strong>Endereço:</strong> {{ pedido.cliente.endereco }}{% endif %}
+        </div>
+        <div class="col-6">
+            <strong>Data:</strong> {{ pedido.data.strftime('%d/%m/%Y') if pedido.data else '-' }}<br>
+            <strong>Status:</strong> {{ STATUS_LABELS.get(pedido.status, pedido.status) }}<br>
+            {% if pedido.forma_pagamento %}<strong>Pagamento:</strong> {{ FORMAS_PAGAMENTO.get(pedido.forma_pagamento, '-') }}{% endif %}
+        </div>
+    </div>
+    
+    <table class="table table-bordered">
+        <thead><tr><th>Fornecedor</th><th>Produto</th><th>Descrição</th><th>Qtd</th><th>Preço Unit.</th><th>Total</th></tr></thead>
+        <tbody>
+            {% for item in pedido.itens %}
+            <tr>
+                <td>{{ item.fornecedor.nome if item.fornecedor else (item.produto.fornecedor.nome if item.produto and item.produto.fornecedor else '-') }}</td>
+                <td>{{ item.produto.nome if item.produto else '-' }}</td>
+                <td>{{ item.descricao }}</td>
+                <td>{{ item.quantidade }}</td>
+                <td>R$ {{ "%.2f"|format(item.preco_unitario) }}</td>
+                <td>R$ {{ "%.2f"|format(item.total) }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+        <tfoot><tr><th colspan="5" class="text-end">Total:</th><th>R$ {{ "%.2f"|format(pedido.total) }}</th></tr></tfoot>
+    </table>
+    
+    {% if pedido.gerar_boleto and pedido.terminos_boleto %}
+    <div class="mt-4 p-3 border">
+        <h5>Informações do Boleto</h5>
+        <p>{{ pedido.terminos_boleto }}</p>
+    </div>
+    {% endif %}
+    
+    {% if pedido.observacao %}
+    <div class="mt-3"><strong>Observação:</strong><br>{{ pedido.observacao }}</div>
+    {% endif %}
+</div>
+
+<div class="mt-4 no-print">
+    <button onclick="window.print()" class="btn btn-primary"><i class="bi bi-printer"></i> Imprimir</button>
+    <a href="/pedidos/{{ pedido.id }}" class="btn btn-secondary">Voltar</a>
+</div>
+
+<style>
+@media print {
+    .no-print { display: none; }
+    .print-area { font-size: 12pt; }
+}
+</style>
+{% endblock %}

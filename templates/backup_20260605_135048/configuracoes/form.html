@@ -1,0 +1,176 @@
+{% extends "base.html" %}
+{% block title %}Configurações - Controle Comercial{% endblock %}
+{% block content %}
+<h4 class="mb-3"><i class="bi bi-gear"></i> Configurações</h4>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">
+                    <button class="btn btn-link w-100 text-start p-0" type="button" 
+                            data-bs-toggle="collapse" data-bs-target="#empresaCollapse" 
+                            aria-expanded="true">
+                        <i class="bi bi-building"></i> Dados da Empresa
+                    </button>
+                </h5>
+            </div>
+            <div class="collapse show" id="empresaCollapse">
+                <div class="card-body">
+                    <form method="post" class="row g-3" enctype="multipart/form-data">
+                        <div class="col-12">
+                            <h6 class="text-secondary"><i class="bi bi-building"></i> Dados da Empresa</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Razão Social</label>
+                            <input type="text" class="form-control" name="razao_social" value="{{ empresa.razao_social if empresa else '' }}">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Nome Fantasia</label>
+                            <input type="text" class="form-control" name="nome_fantasia" value="{{ empresa.nome_fantasia if empresa else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">CNPJ</label>
+                            <input type="text" class="form-control" name="cnpj" value="{{ empresa.cnpj if empresa else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Inscrição Estadual</label>
+                            <input type="text" class="form-control" name="inscricao_estadual" value="{{ empresa.inscricao_estadual if empresa else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Inscrição Municipal</label>
+                            <input type="text" class="form-control" name="inscricao_municipal" value="{{ empresa.inscricao_municipal if empresa else '' }}">
+                        </div>
+                        <div class="col-12">
+                            <h6 class="text-secondary mt-2"><i class="bi bi-geo-alt"></i> Endereço</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Endereço</label>
+                            <input type="text" class="form-control" name="endereco" value="{{ empresa.endereco if empresa else '' }}">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Bairro</label>
+                            <input type="text" class="form-control" name="bairro" value="{{ empresa.bairro if empresa else '' }}">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">Cidade</label>
+                            <input type="text" class="form-control" name="cidade" value="{{ empresa.cidade if empresa else '' }}">
+                        </div>
+                        <div class="col-md-1">
+                            <label class="form-label">UF</label>
+                            <input type="text" class="form-control" name="estado" maxlength="2" value="{{ empresa.estado if empresa else '' }}">
+                        </div>
+                        <div class="col-md-2">
+                            <label class="form-label">CEP</label>
+                            <input type="text" class="form-control" name="cep" value="{{ empresa.cep if empresa else '' }}">
+                        </div>
+                        <div class="col-12">
+                            <h6 class="text-secondary mt-2"><i class="bi bi-telephone"></i> Contato</h6>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Telefone</label>
+                            <input type="text" class="form-control" name="telefone" value="{{ empresa.telefone if empresa else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">WhatsApp / Celular</label>
+                            <input type="text" class="form-control" name="celular" value="{{ empresa.celular if empresa else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Email</label>
+                            <input type="email" class="form-control" name="email" value="{{ empresa.email if empresa else '' }}">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Site</label>
+                            <input type="text" class="form-control" name="site" value="{{ empresa.site if empresa else '' }}">
+                        </div>
+                        <div class="col-12">
+                            <h6 class="text-secondary mt-2"><i class="bi bi-image"></i> Logotipo</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Logo (JPG ou PNG)</label>
+                            <input type="file" class="form-control" name="logo" accept=".jpg,.jpeg,.png">
+                        </div>
+                        <div class="col-md-6 d-flex align-items-center">
+                            {% if empresa and empresa.logo %}
+                                <img src="{{ url_for('static', path=empresa.logo.split('static/')[1]) }}" alt="Logo" class="img-thumbnail" style="max-height: 100px;">
+                                <small class="ms-2 text-secondary">Logo atual</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-12">
+                            <h6 class="text-secondary mt-2"><i class="bi bi-shield-lock"></i> Segurança</h6>
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Senha de Administrador</label>
+                            <input type="password" class="form-control" name="senha_admin" placeholder="Deixe em branco para manter a atual">
+                        </div>
+                        <div class="col-12">
+                            <label class="form-label">Observação</label>
+                            <textarea class="form-control" name="observacao" rows="3">{{ empresa.observacao if empresa else '' }}</textarea>
+                        </div>
+                        <div class="col-12">
+                            <hr>
+                            <h5><i class="bi bi-plug"></i> Integrações</h5>
+                        </div>
+                        <div class="col-12">
+                            <h6 class="text-secondary mt-2"><i class="bi bi-key"></i> Integração Bling API v3 (OAuth 2.0)</h6>
+                            <p class="text-muted small">Se a API v3 falhar na sincronização de contratos, configure a API Key v2 aqui.</p>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Client ID (OAuth)</label>
+                            <input type="text" class="form-control" name="bling_client_id" value="{{ empresa.bling_client_id if empresa else '' }}" placeholder="Client ID do aplicativo Bling">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Client Secret (OAuth)</label>
+                            <input type="text" class="form-control" name="bling_client_secret" value="{{ empresa.bling_client_secret if empresa else '' }}" placeholder="Client Secret do aplicativo Bling">
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">API Key v2 (opcional)</label>
+                            <input type="text" class="form-control" name="bling_api_key_v2" value="{{ empresa.bling_api_key_v2 if empresa else '' }}" placeholder="Chave API gerada no Bling v2">
+                        </div>
+                        <div class="col-12">
+                            <h6 class="text-secondary mt-2"><i class="bi bi-bank"></i> Integração Sicoob</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Client ID Sicoob</label>
+                            <input type="text" class="form-control" name="sicoob_client_id" value="{{ empresa.sicoob_client_id if empresa else '' }}" placeholder="Client ID da aplicação Sicoob">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Beneficiário</label>
+                            <input type="text" class="form-control" name="sicoob_beneficiario" value="{{ empresa.sicoob_beneficiario if empresa else '' }}" placeholder="91820">
+                        </div>
+                        <div class="col-md-3">
+                            <label class="form-label">Conta Corrente</label>
+                            <input type="text" class="form-control" name="sicoob_conta_corrente" value="{{ empresa.sicoob_conta_corrente if empresa else '' }}" placeholder="110558">
+                        </div>
+                        <div class="col-12">
+                            <h6 class="text-secondary mt-2"><i class="bi bi-key"></i> Certificado Sicoob (opcional - upload aqui ou caminho manual)</h6>
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Certificado ICP-Brasil (PEM/CRT)</label>
+                            <input type="file" name="sicoob_cert_file" class="form-control" accept=".pem,.crt,.cer,.p12">
+                            {% if empresa and empresa.sicoob_cert_path %}
+                            <small class="text-success">Arquivo salvo: {{ empresa.sicoob_cert_path }}</small>
+                            {% endif %}
+                        </div>
+                        <div class="col-md-6">
+                            <label class="form-label">Chave Privada (se separada do certificado)</label>
+                            <input type="file" name="sicoob_key_file" class="form-control" accept=".key,.pem">
+                        </div>
+                        <div class="col-md-4">
+                            <label class="form-label">Senha do Certificado (se houver)</label>
+                            <input type="password" name="sicoob_cert_password" class="form-control" placeholder="Senha do certificado">
+                        </div>
+                        <div class="col-md-8">
+                            <label class="form-label">Caminho Certificado (manual)</label>
+                            <input type="text" class="form-control" name="sicoob_cert_path" value="{{ empresa.sicoob_cert_path if empresa else '' }}" placeholder="C:\certs\cert_1.pem">
+                        </div>
+                        <div class="col-12">
+                            <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

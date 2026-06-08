@@ -1,83 +1,99 @@
 {% extends "base.html" %}
 {% block title %}Assinaturas{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="bi bi-calendar-check"></i> Assinaturas (Mensalidades / Anuidades)</h4>
-    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNova"><i class="bi bi-plus-circle"></i> Nova Assinatura</button>
+<div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-3">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="calendar-check-2" class="w-6 h-6 inline me-2"></i> Assinaturas (Mensalidades / Anuidades)</h4>
+    <div class="flex flex-wrap items-center gap-2">
+        <form class="flex flex-wrap gap-2">
+            <div class="w-56"><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="busca" placeholder="Buscar cliente..." value="{{ busca }}"></div>
+            <div class="w-40">
+                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="periodicidade" onchange="this.form.submit()">
+                    <option value="">Periodicidade</option>
+                    <option value="1" {{ 'selected' if periodicidade == '1' }}>Mensal</option>
+                    <option value="2" {{ 'selected' if periodicidade == '2' }}>Bimestral</option>
+                    <option value="3" {{ 'selected' if periodicidade == '3' }}>Trimestral</option>
+                    <option value="4" {{ 'selected' if periodicidade == '4' }}>Semestral</option>
+                    <option value="5" {{ 'selected' if periodicidade == '5' }}>Anual</option>
+                    <option value="6" {{ 'selected' if periodicidade == '6' }}>Bianual</option>
+                    <option value="7" {{ 'selected' if periodicidade == '7' }}>Trianual</option>
+                </select>
+            </div>
+            <div class="w-40">
+                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="status_filtro" onchange="this.form.submit()">
+                    <option value="">Situação</option>
+                    <option value="0" {{ 'selected' if status_filtro == '0' }}>Inativo</option>
+                    <option value="1" {{ 'selected' if status_filtro == '1' }}>Ativo</option>
+                    <option value="2" {{ 'selected' if status_filtro == '2' }}>Baixado</option>
+                    <option value="3" {{ 'selected' if status_filtro == '3' }}>Isento</option>
+                    <option value="4" {{ 'selected' if status_filtro == '4' }}>Em Avaliação</option>
+                </select>
+            </div>
+            <div class="w-40">
+                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="vencimento_dias" onchange="this.form.submit()">
+                    <option value="">Vencimento</option>
+                    <option value="15" {{ 'selected' if vencimento_dias == '15' }}>Próx. 15 dias</option>
+                    <option value="30" {{ 'selected' if vencimento_dias == '30' }}>Próx. 30 dias</option>
+                    <option value="60" {{ 'selected' if vencimento_dias == '60' }}>Próx. 60 dias</option>
+                    <option value="90" {{ 'selected' if vencimento_dias == '90' }}>Próx. 90 dias</option>
+                </select>
+            </div>
+            <div><button class="px-3 py-2 border border-slate-800/80 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition" type="submit"><i data-lucide="search" class="w-4 h-4"></i></button></div>
+        </form>
+        <button class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10" data-bs-toggle="modal" data-bs-target="#modalNova"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> Novo</button>
+    </div>
 </div>
 
-<form class="row g-2 mb-3">
-    <div class="col-auto"><input type="text" class="form-control" name="busca" placeholder="Buscar cliente..." value="{{ busca }}"></div>
-    <div class="col-auto">
-        <select class="form-select" name="periodicidade" onchange="this.form.submit()">
-            <option value="">Todas periodicidades</option>
-            <option value="1" {{ 'selected' if periodicidade == '1' }}>Mensal</option>
-            <option value="2" {{ 'selected' if periodicidade == '2' }}>Bimestral</option>
-            <option value="3" {{ 'selected' if periodicidade == '3' }}>Trimestral</option>
-            <option value="4" {{ 'selected' if periodicidade == '4' }}>Semestral</option>
-            <option value="5" {{ 'selected' if periodicidade == '5' }}>Anual</option>
-            <option value="6" {{ 'selected' if periodicidade == '6' }}>Bianual</option>
-            <option value="7" {{ 'selected' if periodicidade == '7' }}>Trianual</option>
-        </select>
-    </div>
-    <div class="col-auto">
-        <select class="form-select" name="status_filtro" onchange="this.form.submit()">
-            <option value="">Todas situações</option>
-            <option value="0" {{ 'selected' if status_filtro == '0' }}>Inativo</option>
-            <option value="1" {{ 'selected' if status_filtro == '1' }}>Ativo</option>
-            <option value="2" {{ 'selected' if status_filtro == '2' }}>Baixado</option>
-            <option value="3" {{ 'selected' if status_filtro == '3' }}>Isento</option>
-            <option value="4" {{ 'selected' if status_filtro == '4' }}>Em Avaliação</option>
-        </select>
-    </div>
-    <div class="col-auto">
-        <select class="form-select" name="vencimento_dias" onchange="this.form.submit()">
-            <option value="">Todos vencimentos</option>
-            <option value="15" {{ 'selected' if vencimento_dias == '15' }}>Próximos 15 dias</option>
-            <option value="30" {{ 'selected' if vencimento_dias == '30' }}>Próximos 30 dias</option>
-            <option value="60" {{ 'selected' if vencimento_dias == '60' }}>Próximos 60 dias</option>
-            <option value="90" {{ 'selected' if vencimento_dias == '90' }}>Próximos 90 dias</option>
-        </select>
-    </div>
-    <div class="col-auto"><button class="btn btn-outline-primary" type="submit"><i class="bi bi-search"></i></button></div>
-</form>
-
 {% if lucro_total > 0 %}
-<div class="alert alert-info d-flex justify-content-between align-items-center">
-    <span><i class="bi bi-graph-up-arrow"></i> <strong>Lucro total estimado:</strong></span>
-    <span class="fs-5"><strong>R$ {{ "%.2f"|format(lucro_total) }}</strong></span>
+<div class="flex items-center justify-between px-4 py-3 mb-4 bg-gradient-to-r from-cyan-950/50 to-blue-950/50 border border-cyan-800/50 rounded-xl">
+    <span class="text-cyan-300"><i data-lucide="trending-up" class="w-4 h-4 inline me-1"></i> <strong>Lucro total estimado:</strong></span>
+    <span class="text-lg font-bold text-emerald-400">R$ {{ "%.2f"|format(lucro_total) }}</span>
 </div>
 {% endif %}
 
-<div class="table-responsive">
-    <table class="table table-hover">
-        <thead><tr><th>Cliente</th><th>Descrição</th><th>Periodicidade</th><th>Valor</th><th>Revenda</th><th>Custo Revenda</th><th>Lucro</th><th>Início</th><th>Próximo Vencimento</th><th>Situação</th><th>Ações</th></tr></thead>
-        <tbody>
-            {% for a in assinaturas %}
+<div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl shadow-xl overflow-hidden">
+    <table class="w-full divide-y divide-slate-800/60">
+        <thead class="bg-slate-950/50">
             <tr>
-                <td><a href="/clientes/{{ a.cliente.id }}">{{ a.cliente.nome }}</a></td>
-                <td>{{ a.descricao }}</td>
-                <td><span class="badge bg-info">{{ PERIODICIDADE_LABELS.get(a.periodicidade, a.periodicidade) }}</span></td>
-                <td><strong>R$ {{ "%.2f"|format(a.valor) }}</strong></td>
-                <td>{{ a.fornecedor.nome if a.fornecedor else '-' }}</td>
-                <td>{% if a.valor_revenda %}R$ {{ "%.2f"|format(a.valor_revenda) }}{% else %}-{% endif %}</td>
-                <td>{% if a.valor_revenda %}<span class="text-success">R$ {{ "%.2f"|format(a.valor - a.valor_revenda) }}</span>{% else %}-{% endif %}</td>
-                <td>{{ a.data_inicio.strftime('%d/%m/%Y') if a.data_inicio else '-' }}</td>
-                <td>{{ a.proximo_vencimento if a.proximo_vencimento else '-' }}</td>
-                <td>
-                    {% set cor = 'success' if a.situacao == 1 else 'danger' if a.situacao == 0 else 'secondary' if a.situacao == 2 else 'info' if a.situacao == 3 else 'warning' %}
-                    <span class="badge bg-{{ cor }}">{{ SITUACAO_LABELS.get(a.situacao, a.situacao) }}</span>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Cliente</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase tracking-wider">Descrição</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Periodicidade</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase tracking-wider">Valor</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Revenda</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-rose-400 uppercase tracking-wider">Custo Revenda</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase tracking-wider">Lucro</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase tracking-wider">Início</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Próx. Vencimento</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase tracking-wider">Situação</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/60">
+            {% for a in assinaturas %}
+            <tr class="hover:bg-slate-800/40 transition">
+                <td class="px-4 py-3 text-sm text-cyan-300"><a href="/clientes/{{ a.cliente.id }}">{{ a.cliente.nome }}</a></td>
+                <td class="px-4 py-3 text-sm font-medium text-slate-100">{{ a.descricao }}</td>
+                <td class="px-4 py-3 text-sm text-slate-300"><span class="px-2 py-1 text-xs font-medium bg-slate-950/50 text-cyan-400 border border-slate-800/50 rounded-full">{{ PERIODICIDADE_LABELS.get(a.periodicidade, a.periodicidade) }}</span></td>
+                <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(a.valor) }}</td>
+                <td class="px-4 py-3 text-sm text-emerald-300">{{ a.fornecedor.nome if a.fornecedor else '-' }}</td>
+                <td class="px-4 py-3 text-right text-sm text-rose-300">{% if a.valor_revenda %}R$ {{ "%.2f"|format(a.valor_revenda) }}{% else %}<span class="text-slate-600">-</span>{% endif %}</td>
+                <td class="px-4 py-3 text-right text-sm{% if a.valor_revenda %} text-emerald-400{% else %} text-slate-600{% endif %}">{% if a.valor_revenda %}R$ {{ "%.2f"|format(a.valor - a.valor_revenda) }}{% else %} -{% endif %}</td>
+                <td class="px-4 py-3 text-sm text-indigo-300">{{ a.data_inicio.strftime('%d/%m/%Y') if a.data_inicio else '-' }}</td>
+                <td class="px-4 py-3 text-sm text-cyan-300">{{ a.proximo_vencimento if a.proximo_vencimento else '-' }}</td>
+                <td class="px-4 py-3 text-center">
+                    {% set cor = 'emerald' if a.situacao == 1 else 'rose' if a.situacao == 0 else 'slate' if a.situacao == 2 else 'cyan' if a.situacao == 3 else 'amber' %}
+                    {% set texto_situacao = 'Ativo' if a.situacao == 1 else 'Inativo' if a.situacao == 0 else 'Baixado' if a.situacao == 2 else 'Isento' if a.situacao == 3 else 'Em Avaliação' if a.situacao == 4 else a.situacao %}
+                    <span class="px-2 py-1 text-xs font-medium bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 rounded-full">{{ texto_situacao }}</span>
                 </td>
-                <td>
-                    <a href="/assinaturas/{{ a.id }}/gerar-cobranca" class="btn btn-sm btn-outline-info" title="Gerar cobrança"><i class="bi bi-cash"></i></a>
-                    <a href="/assinaturas/{{ a.id }}/editar" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil"></i></a>
+                <td class="px-4 py-3 text-center">
+                    <a href="/assinaturas/{{ a.id }}/gerar-cobranca" class="inline-block p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Gerar cobrança"><i data-lucide="banknote" class="w-4 h-4"></i></a>
+                    <a href="/assinaturas/{{ a.id }}/editar" class="inline-block p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>
                     {% if a.situacao == 1 %}
-                    <a href="/assinaturas/{{ a.id }}/cancelar" class="btn btn-sm btn-outline-danger" title="Cancelar"><i class="bi bi-x-circle"></i></a>
+                    <a href="/assinaturas/{{ a.id }}/cancelar" class="inline-block p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Cancelar"><i data-lucide="x" class="w-4 h-4"></i></a>
                     {% endif %}
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="10" class="text-center text-muted">Nenhuma assinatura</td></tr>
+            <tr><td colspan="11" class="px-4 py-12 text-center text-slate-500">Nenhuma assinatura cadastrada</td></tr>
             {% endfor %}
         </tbody>
     </table>
@@ -85,12 +101,15 @@
 
 <div class="modal fade" id="modalNova">
     <div class="modal-dialog">
-        <form method="post" action="/assinaturas/novo" class="modal-content">
-            <div class="modal-header"><h5>Nova Assinatura</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+        <form method="post" action="/assinaturas/novo" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <div class="modal-header border-b border-slate-800/50">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">Nova Assinatura</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
             <div class="modal-body">
                 <div class="mb-3">
-                    <label class="form-label">Cliente *</label>
-                    <select class="form-select" name="cliente_id" required onchange="atualizarContrato(this)">
+                    <label class="form-label text-cyan-300">Cliente *</label>
+                    <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cliente_id" required onchange="atualizarContrato(this)">
                         <option value="">Selecione...</option>
                         {% for c in clientes %}
                         <option value="{{ c.id }}" data-contrato="{{ c.id }}">{{ c.nome }}</option>
@@ -98,8 +117,8 @@
                     </select>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Periodicidade *</label>
-                    <select class="form-select" name="periodicidade" required>
+                    <label class="form-label text-cyan-300">Periodicidade *</label>
+                    <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="periodicidade" required>
                         <option value="1">Mensal</option>
                         <option value="2">Bimestral</option>
                         <option value="3">Trimestral</option>
@@ -110,49 +129,49 @@
                     </select>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Descrição *</label>
-                    <input type="text" class="form-control" name="descricao" required placeholder="Ex: Manutenção mensal / Anuidade suporte">
+                    <label class="form-label text-cyan-300">Descrição *</label>
+                    <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" required placeholder="Ex: Manutenção mensal / Anuidade suporte">
                 </div>
-                <div class="row g-2 mb-3">
-                    <div class="col">
-                        <label class="form-label">Valor da Mensalidade *</label>
-                        <input type="number" step="0.01" class="form-control" name="valor" required placeholder="Valor cobrado do cliente">
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                    <div>
+                        <label class="form-label text-cyan-300">Valor da Mensalidade *</label>
+                        <input type="number" step="0.01" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="valor" required placeholder="Valor cobrado do cliente">
                     </div>
-                    <div class="col">
-                        <label class="form-label">Quantidade</label>
-                        <input type="number" class="form-control" name="quantidade" placeholder="Nº de pessoas">
-                    </div>
-                </div>
-                <div class="row g-2 mb-3">
-                    <div class="col">
-                        <label class="form-label">Data Início *</label>
-                        <input type="date" class="form-control" name="data_inicio" required>
-                    </div>
-                    <div class="col">
-                        <label class="form-label">Data Fim</label>
-                        <input type="date" class="form-control" name="data_fim">
+                    <div>
+                        <label class="form-label text-cyan-300">Quantidade</label>
+                        <input type="number" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="quantidade" placeholder="Nº de pessoas">
                     </div>
                 </div>
-                <div class="mb-3">
-                    <label class="form-label">Dia Vencimento *</label>
-                    <input type="number" class="form-control" name="dia_vencimento" min="1" max="31" required>
+                <div class="grid grid-cols-2 gap-2 mb-3">
+                    <div>
+                        <label class="form-label text-cyan-300">Data Início *</label>
+                        <input type="date" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_inicio" required>
+                    </div>
+                    <div>
+                        <label class="form-label text-cyan-300">Data Fim</label>
+                        <input type="date" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_fim">
+                    </div>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Mês do Vencimento</label>
-                    <select class="form-select" name="mes_vencimento">
+                    <label class="form-label text-cyan-300">Dia Vencimento *</label>
+                    <input type="number" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="dia_vencimento" min="1" max="31" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-cyan-300">Mês do Vencimento</label>
+                    <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="mes_vencimento">
                         <option value="0">Mês Corrente</option>
                         <option value="1">Mês Seguinte</option>
                     </select>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Número do Contrato</label>
-                    <input type="text" class="form-control" name="numero_contrato" id="numeroContrato" placeholder="Automático (código do cliente)">
+                    <label class="form-label text-cyan-300">Número do Contrato</label>
+                    <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_contrato" id="numeroContrato" placeholder="Automático (código do cliente)">
                 </div>
-                <hr>
-                <h6 class="text-secondary"><i class="bi bi-shop"></i> Revenda (Fornecedor terceirizado)</h6>
+                <hr class="border-slate-800/50">
+                <h6 class="text-cyan-400 mt-3 mb-2"><i data-lucide="store" class="w-4 h-4 inline me-1"></i> Revenda (Fornecedor terceirizado)</h6>
                 <div class="mb-3">
-                    <label class="form-label">Fornecedor / Revenda</label>
-                    <select class="form-select" name="fornecedor_id">
+                    <label class="form-label text-cyan-300">Fornecedor / Revenda</label>
+                    <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="fornecedor_id">
                         <option value="">Selecione...</option>
                         {% for f in fornecedores %}
                         <option value="{{ f.id }}">{{ f.nome }}</option>
@@ -160,17 +179,17 @@
                     </select>
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Custo da Revenda (valor de referência)</label>
-                    <input type="number" step="0.01" class="form-control" name="valor_revenda" placeholder="0,00">
+                    <label class="form-label text-cyan-300">Custo da Revenda (valor de referência)</label>
+                    <input type="number" step="0.01" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="valor_revenda" placeholder="0,00">
                 </div>
                 <div class="mb-3">
-                    <label class="form-label">Observação</label>
-                    <textarea class="form-control" name="observacao" rows="2"></textarea>
+                    <label class="form-label text-cyan-300">Observação</label>
+                    <textarea class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="2"></textarea>
                 </div>
             </div>
-            <div class="modal-footer">
-                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+            <div class="modal-footer border-t border-slate-800/50">
+                <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button>
             </div>
         </form>
     </div>

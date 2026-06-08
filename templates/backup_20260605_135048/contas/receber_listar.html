@@ -1,0 +1,177 @@
+{% extends "base.html" %}
+{% block title %}Contas a Receber{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3">
+    <h4 class="mb-0"><i class="bi bi-arrow-down-circle"></i> Contas a Receber</h4>
+    <div>
+        <button class="btn btn-outline-success btn-sm me-2" onclick="exportarExcel()"><i class="bi bi-file-excel"></i> Excel</button>
+        <button class="btn btn-outline-danger btn-sm me-2" onclick="exportarPdf()"><i class="bi bi-file-pdf"></i> PDF</button>
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#modalNova"><i class="bi bi-plus-circle"></i> Nova Conta</button>
+    </div>
+</div>
+
+<form class="row g-2 mb-3">
+    <div class="col-auto"><input type="text" class="form-control" name="busca" placeholder="Buscar..." value="{{ busca }}"></div>
+    <div class="col-auto">
+        <select class="form-select" name="status_filtro" onchange="this.form.submit()">
+            <option value="">Todos os status</option>
+            <option value="pendente" {{ 'selected' if status_filtro == 'pendente' }}>Pendente</option>
+            <option value="pago" {{ 'selected' if status_filtro == 'pago' }}>Recebido</option>
+            <option value="vencido" {{ 'selected' if status_filtro == 'vencido' }}>Vencido</option>
+            <option value="cancelado" {{ 'selected' if status_filtro == 'cancelado' }}>Cancelado</option>
+        </select>
+    </div>
+    <div class="col-auto"><input type="date" class="form-control" name="data_inicio" value="{{ data_inicio }}" onchange="this.form.submit()"></div>
+    <div class="col-auto"><input type="date" class="form-control" name="data_fim" value="{{ data_fim }}" onchange="this.form.submit()"></div>
+    <div class="col-auto"><button class="btn btn-outline-primary" type="submit"><i class="bi bi-search"></i></button></div>
+</form>
+
+<div class="alert alert-info d-flex justify-content-between align-items-center mb-2">
+    <span><strong>Total Filtrado:</strong> {{ contas|length }} contas</span>
+    <span><strong>Valor Total:</strong> R$ {{ "%.2f"|format(total_valor) }}</span>
+</div>
+
+<div class="table-responsive">
+    <table class="table table-hover" id="tabelaContasReceber">
+        <thead><tr><th>Descrição</th><th>Cliente</th><th>Valor</th><th>Vencimento</th><th>Recebimento</th><th>Status</th><th>Ações</th></tr></thead>
+        <tbody>
+            {% for c in contas %}
+            <tr>
+                <td>{{ c.descricao }}</td>
+                <td>{{ c.cliente.nome if c.cliente else '-' }}</td>
+                <td><strong>R$ {{ "%.2f"|format(c.valor) }}</strong></td>
+                <td>{{ c.data_vencimento }}</td>
+                <td>{{ c.data_recebimento or '-' }}</td>
+                <td>
+                    <span class="badge bg-{{ 'success' if c.status.value == 'pago' else 'warning' if c.status.value == 'pendente' else 'danger' if c.status.value == 'vencido' else 'secondary' }}">
+                        {{ c.status.value }}
+                    </span>
+                </td>
+<td>
+                    {% if c.status.value not in ['pago', 'cancelado', 'baixa_solicitada'] %}
+                    <button class="btn btn-sm btn-outline-success" title="Receber"
+                        onclick="abrirRecebimento({{ c.id }}, '{{ c.descricao|e }}', '{{ c.cliente.nome if c.cliente else '---' }}', {{ c.valor }})">
+                        <i class="bi bi-check-lg"></i>
+                    </button>
+                    {% endif %}
+{% if not c.boleto_emitido %}
+                            <button class="btn btn-sm btn-outline-info" title="Emitir Boleto" onclick="abrirEmitir({{ c.id }}, {{ c.valor }})">
+                                <i class="bi bi-credit-card"></i>
+                            </button>
+                      {% elif c.status.value not in ['cancelado', 'baixa_solicitada'] %}
+                           <a href="{{ c.boleto_url }}" target="_blank" class="btn btn-sm btn-outline-success" title="Ver Boleto"><i class="bi bi-eye"></i></a>
+                           <a href="/contas/receber/{{ c.id }}/imprimir-boleto" target="_blank" class="btn btn-sm btn-outline-secondary" title="Imprimir Boleto"><i class="bi bi-printer"></i></a>
+                      {% endif %}
+                      <button class="btn btn-sm btn-outline-danger" onclick="confirmarExclusao('/contas/receber/{{ c.id }}/excluir', 'Excluir {{ c.descricao }}?')"><i class="bi bi-trash"></i></button>
+                  </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="text-center text-muted">Nenhuma conta</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+</div>
+
+<div class="modal fade" id="modalReceber">
+    <div class="modal-dialog">
+        <form method="post" class="modal-content" id="formReceber">
+            <div class="modal-header">
+                <h5><i class="bi bi-check-lg text-success"></i> Receber Conta</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="mb-1">Deseja realmente receber esta conta?</p>
+                <div class="alert alert-info py-2 px-3 mb-3">
+                    <strong id="receberDescricao"></strong><br>
+                    Cliente: <span id="receberCliente"></span><br>
+                    Valor: <strong id="receberValor"></strong>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Data do Recebimento</label>
+                    <input type="date" class="form-control" name="data_recebimento" id="dataRecebimento" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-success"><i class="bi bi-check-lg"></i> Confirmar Recebimento</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalNova">
+    <div class="modal-dialog">
+        <form method="post" action="/contas/receber/novo" class="modal-content">
+            <div class="modal-header"><h5>Nova Conta a Receber</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
+            <div class="modal-body">
+                <div class="mb-3">
+                    <label class="form-label">Cliente</label>
+                    <select class="form-select" name="cliente_id">
+                        <option value="0">Nenhum</option>
+                        {% for c in clientes %}
+                        <option value="{{ c.id }}">{{ c.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Descrição *</label>
+                    <input type="text" class="form-control" name="descricao" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Valor *</label>
+                    <input type="number" step="0.01" class="form-control" name="valor" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Data Vencimento *</label>
+                    <input type="date" class="form-control" name="data_vencimento" required>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label">Observação</label>
+                    <textarea class="form-control" name="observacao" rows="2"></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="modalEmitir">
+    <div class="modal-dialog">
+        <form method="post" action="" class="modal-content" id="formEmitir">
+            <input type="hidden" name="valor" id="emitir-valor">
+            <div class="modal-header">
+                <h5><i class="bi bi-credit-card text-info"></i> Emitir Boleto</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p>Número do documento (deixe vazio para gerar automático)</p>
+                <div class="mb-3">
+                    <label class="form-label">Número do Documento</label>
+                    <input type="text" class="form-control" name="numero_documento" placeholder="Automático se vazio" pattern="\d*">
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-info"><i class="bi bi-credit-card"></i> Emitir Boleto</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script>
+function exportarExcel() {
+    const tabela = document.getElementById('tabelaContasReceber');
+    const wb = XLSX.utils.table_to_book(tabela, { sheet: "Contas a Receber" });
+    XLSX.writeFile(wb, 'contas-receber.xlsx');
+}
+
+function exportarPdf() {
+    const params = new URLSearchParams(window.location.search);
+    window.open('/contas/receber/pdf?' + params.toString(), '_blank');
+}
+</script>
+{% endblock %}

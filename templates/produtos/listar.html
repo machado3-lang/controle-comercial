@@ -1,97 +1,85 @@
 {% extends "base.html" %}
 {% block title %}Produtos{% endblock %}
 {% block content %}
-<div class="d-flex justify-content-between align-items-center mb-3">
-    <h4 class="mb-0"><i class="bi bi-box"></i> Produtos</h4>
-    <a href="/produtos/categorias" class="btn btn-outline-info btn-sm"><i class="bi bi-tags"></i> Categorias</a>
+<div class="flex flex-col md:flex-row md:items-center md:justify-between mb-6 gap-3">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="package" class="w-6 h-6 inline me-2"></i> Produtos</h4>
+    <div class="flex flex-wrap items-center gap-2">
+        <form class="flex flex-wrap gap-2">
+            <div class="w-56"><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="busca" placeholder="Buscar..." value="{{ busca }}"></div>
+            <div><button class="px-3 py-2 border border-slate-800/80 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition" type="submit"><i data-lucide="search" class="w-4 h-4"></i></button></div>
+            <div class="w-36">
+                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="situacao" onchange="this.form.submit()">
+                    <option value="ativo" {% if situacao == 'ativo' or not situacao %}selected{% endif %}>Ativos</option>
+                    <option value="todos" {% if situacao == 'todos' %}selected{% endif %}>Todos</option>
+                    <option value="inativo" {% if situacao == 'inativo' %}selected{% endif %}>Inativos</option>
+                </select>
+            </div>
+            <div class="w-36">
+                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="fornecedor_id" onchange="this.form.submit()">
+                    <option value="">Fornecedor</option>
+                    {% for f in fornecedores %}<option value="{{ f.id }}" {% if fornecedor_id == f.id %}selected{% endif %}>{{ f.nome }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="w-36">
+                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="categoria_id" onchange="this.form.submit()">
+                    <option value="">Categoria</option>
+                    {% for c in categorias %}<option value="{{ c.id }}" {% if categoria_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}
+                </select>
+            </div>
+            <div class="w-36">
+                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="marca_id" onchange="this.form.submit()">
+                    <option value="">Marca</option>
+                    {% for m in marcas %}<option value="{{ m.id }}" {% if marca_id == m.id %}selected{% endif %}>{{ m.nome }}</option>{% endfor %}
+                </select>
+            </div>
+        </form>
+        <a href="/produtos/categorias" class="flex items-center px-3 py-2 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition"><i data-lucide="tag" class="w-4 h-4 me-1"></i> Categorias</a>
+        <a href="/produtos/marcas" class="flex items-center px-3 py-2 text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition"><i data-lucide="bookmark" class="w-4 h-4 me-1"></i> Marcas</a>
+        <a href="/produtos/novo" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> Novo</a>
+    </div>
 </div>
 
-<form class="row g-2 mb-3">
-    <div class="col-auto"><input type="text" class="form-control" name="busca" placeholder="Buscar produto..." value="{{ busca }}"></div>
-    <div class="col-auto"><button class="btn btn-outline-primary" type="submit"><i class="bi bi-search"></i></button></div>
-    <div class="col-auto">
-        <select class="form-select" name="situacao" onchange="this.form.submit()">
-            <option value="">Todos</option>
-            <option value="ativo" {% if situacao == 'ativo' %}selected{% endif %}>Ativos</option>
-            <option value="inativo" {% if situacao == 'inativo' %}selected{% endif %}>Inativos</option>
-        </select>
-    </div>
-    <div class="col-auto">
-        <select class="form-select" name="fornecedor_id" onchange="this.form.submit()">
-            <option value="">Todos Fornecedores</option>
-            {% for f in fornecedores %}
-            <option value="{{ f.id }}" {% if fornecedor_id == f.id %}selected{% endif %}>{{ f.nome }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="col-auto">
-        <select class="form-select" name="categoria_id" onchange="this.form.submit()">
-            <option value="">Todas Categorias</option>
-            {% for c in categorias %}
-            <option value="{{ c.id }}" {% if categoria_id == c.id %}selected{% endif %}>{{ c.nome }}</option>
-            {% endfor %}
-        </select>
-    </div>
-    <div class="col-auto"><input type="text" class="form-control" name="marca" placeholder="Marca..." value="{{ marca }}"></div>
-</form>
-
-<button class="btn btn-primary mb-3" data-bs-toggle="modal" data-bs-target="#modalNovo"><i class="bi bi-plus-circle"></i> Novo Produto</button>
-
-<div class="table-responsive">
-    <table class="table table-hover">
-        <thead><tr><th>Foto</th><th>Categoria</th><th>Código</th><th>Nome</th><th>Fornecedor</th><th>Preço</th><th>Custo</th><th>Lucro</th><th>Estoque</th><th>Ações</th></tr></thead>
-        <tbody>
-            {% for p in produtos %}
+<div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl shadow-xl overflow-hidden">
+    <table class="w-full divide-y divide-slate-800/60">
+        <thead class="bg-slate-950/50">
             <tr>
-                <td>{% if p.foto %}<img src="{{ p.foto }}" style="height:30px;">{% endif %}</td>
-                <td>{{ p.categoria.nome if p.categoria else '-' }}</td>
-                <td>{{ p.codigo or '-' }}</td>
-                <td>{{ p.nome }}</td>
-                <td>{{ p.fornecedor.nome if p.fornecedor else '-' }}</td>
-                <td>R$ {{ "%.2f"|format(p.preco) }}</td>
-                <td>{% if p.preco_custo %}R$ {{ "%.2f"|format(p.preco_custo) }}{% else %}-{% endif %}</td>
-                <td>{% if p.preco_custo %}<span class="text-success">R$ {{ "%.2f"|format(p.preco - p.preco_custo) }}</span>{% else %}-{% endif %}</td>
-                <td>{% if p.estoque < p.estoque_minimo and p.estoque_minimo > 0 %}<span class="text-danger">{{ p.estoque }}</span>{% else %}{{ p.estoque }}{% endif %}</td>
-                <td>
-                    <a href="/produtos/{{ p.id }}/editar" class="btn btn-sm btn-outline-warning"><i class="bi bi-pencil"></i></a>
-                    <a href="/produtos/{{ p.id }}/excluir" class="btn btn-sm btn-outline-danger" onclick="return confirm('Excluir?')"><i class="bi bi-trash"></i></a>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Foto</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase tracking-wider">Marca</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Categoria</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Código</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Nome</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Fornecedor</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase tracking-wider">Preço</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-rose-400 uppercase tracking-wider">Custo</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase tracking-wider">Lucro</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-cyan-400 uppercase tracking-wider w-20">Estoque</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/60">
+            {% for p in produtos %}
+            <tr class="hover:bg-slate-800/40 transition">
+                <td class="px-4 py-3 text-center">{% if p.foto %}<i data-lucide="check-circle" class="w-5 h-5 text-emerald-400 inline"></i>{% else %}<i data-lucide="image-off" class="w-5 h-5 text-slate-600 inline"></i>{% endif %}</td>
+                <td class="px-4 py-3 text-sm text-emerald-300">{{ p.marca or '-' }}</td>
+                <td class="px-4 py-3 text-sm text-cyan-300">{{ p.categoria.nome if p.categoria else '-' }}</td>
+                <td class="px-4 py-3 text-sm text-slate-300">{{ p.codigo or '-' }}</td>
+                <td class="px-4 py-3 text-sm font-medium text-slate-100">{{ p.nome }}</td>
+                <td class="px-4 py-3 text-sm text-cyan-300">{{ p.fornecedor.nome if p.fornecedor else '-' }}</td>
+                <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(p.preco) }}</td>
+                <td class="px-4 py-3 text-right text-sm text-rose-300">{% if p.preco_custo %}R$ {{ "%.2f"|format(p.preco_custo) }}{% else %}<span class="text-slate-600">-</span>{% endif %}</td>
+                <td class="px-4 py-3 text-right text-sm{% if p.preco_custo %} text-emerald-400{% else %} text-slate-600{% endif %}">{% if p.preco_custo %}R$ {{ "%.2f"|format(p.preco - p.preco_custo) }}{% else %} -{% endif %}</td>
+                <td class="px-4 py-3 text-right text-sm{% if p.estoque < p.estoque_minimo and p.estoque_minimo > 0 %} text-rose-400{% else %} text-slate-300{% endif %}">{{ p.estoque }}</td>
+                <td class="px-4 py-3 text-center align-middle" style="min-width: 7rem;">
+                    <div class="flex items-center justify-center gap-1">
+                        <a href="/produtos/{{ p.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>
+                        <a href="/produtos/{{ p.id }}/excluir" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="return confirm('Excluir?')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></a>
+                    </div>
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="10" class="text-center text-muted">Nenhum produto</td></tr>
+            <tr><td colspan="11" class="px-4 py-12 text-center text-slate-500">Nenhum produto cadastrado</td></tr>
             {% endfor %}
         </tbody>
     </table>
-</div>
-
-<div class="modal fade" id="modalNovo">
-    <div class="modal-dialog modal-lg">
-        <form method="post" action="/produtos/novo" class="modal-content">
-            <div class="modal-header"><h5>Novo Produto</h5><button type="button" class="btn-close" data-bs-dismiss="modal"></button></div>
-            <div class="modal-body">
-                <div class="row g-3">
-                    <div class="col-md-4"><label class="form-label">Código</label><input type="text" class="form-control" name="codigo"></div>
-                    <div class="col-md-8"><label class="form-label">Nome *</label><input type="text" class="form-control" name="nome" required></div>
-                    <div class="col-12"><label class="form-label">Descrição</label><textarea class="form-control" name="descricao" rows="2"></textarea></div>
-                    <div class="col-md-4"><label class="form-label">Categoria</label><select class="form-select" name="categoria_id"><option value="">Selecione...</option>{% for c in categorias %}<option value="{{ c.id }}">{{ c.nome }}</option>{% endfor %}</select></div>
-                    <div class="col-md-4"><label class="form-label">Fornecedor</label><select class="form-select" name="fornecedor_id"><option value="">Selecione...</option>{% for f in fornecedores %}<option value="{{ f.id }}">{{ f.nome }}</option>{% endfor %}</select></div>
-                    <div class="col-md-4"><label class="form-label">Marca</label><input type="text" class="form-control" name="marca"></div>
-                    <div class="col-md-4"><label class="form-label">NCM</label><input type="text" class="form-control" name="ncm"></div>
-                    <div class="col-md-4"><label class="form-label">Preço Venda *</label><input type="number" step="0.01" class="form-control" name="preco" required></div>
-                    <div class="col-md-4"><label class="form-label">Preço Custo</label><input type="number" step="0.01" class="form-control" name="preco_custo"></div>
-                    <div class="col-md-4"><label class="form-label">Unidade</label><input type="text" class="form-control" name="unidade" value="UN"></div>
-                    <div class="col-md-3"><label class="form-label">Peso Líq (kg)</label><input type="number" step="0.01" class="form-control" name="peso_liq"></div>
-                    <div class="col-md-3"><label class="form-label">Peso Bruto (kg)</label><input type="number" step="0.01" class="form-control" name="peso_bruto"></div>
-                    <div class="col-md-2"><label class="form-label">Altura</label><input type="number" step="0.01" class="form-control" name="altura"></div>
-                    <div class="col-md-2"><label class="form-label">Largura</label><input type="number" step="0.01" class="form-control" name="largura"></div>
-                    <div class="col-md-2"><label class="form-label">Profundidade</label><input type="number" step="0.01" class="form-control" name="profundidade"></div>
-                    <div class="col-md-4"><label class="form-label">Unidade Medida</label><select class="form-select" name="unidade_medida">{% for u in UNIDADES_MEDIDA %}<option value="{{ u }}">{{ u }}</option>{% endfor %}</select></div>
-                    <div class="col-md-4"><label class="form-label">Estoque</label><input type="number" step="0.01" class="form-control" name="estoque" value="0"></div>
-                    <div class="col-md-4"><label class="form-label">Estoque Mínimo</label><input type="number" step="0.01" class="form-control" name="estoque_minimo" value="0"></div>
-                </div>
-            </div>
-            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button><button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button></div>
-        </form>
-    </div>
 </div>
 {% endblock %}

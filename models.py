@@ -235,6 +235,14 @@ class OrdemServico(Base):
     cliente = relationship("Cliente", back_populates="ordens_servico")
 
 
+class MarcaProduto(Base):
+    __tablename__ = "marcas_produto"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(100), nullable=False, unique=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 class CategoriaProduto(Base):
     __tablename__ = "categorias_produto"
 
@@ -259,6 +267,7 @@ class Produto(Base):
     categoria_id = Column(Integer, ForeignKey("categorias_produto.id"), nullable=True)
     foto = Column(String(500), nullable=True)
     fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True)
+    marca_id = Column(Integer, ForeignKey("marcas_produto.id"), nullable=True)
     marca = Column(String(100), nullable=True)
     peso_liq = Column(Float, nullable=True)
     peso_bruto = Column(Float, nullable=True)
@@ -277,7 +286,9 @@ class Produto(Base):
 
     categoria = relationship("CategoriaProduto", back_populates="produtos")
     fornecedor = relationship("Fornecedor")
+    marca_rel = relationship("MarcaProduto")
     itens_pedido = relationship("PedidoVendaItem", back_populates="produto")
+    tipo = Column(String(20), default="produto")  # "produto" ou "servico"
 
 
 class StatusPedido(str, enum.Enum):
