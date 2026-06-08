@@ -52,6 +52,13 @@
     </div>
 </div>
 
+{% if sicoob_token_configurado %}
+<div class="mb-4 flex items-center gap-2 text-slate-400 text-sm">
+    <i data-lucide="credit-card" class="w-4 h-4"></i>
+    <span>Sicoob:</span>
+    <span class="px-2 py-1 bg-emerald-950/30 border border-emerald-800/50 text-emerald-300 rounded-full text-xs">Configurado</span>
+</div>
+{% endif %}
 {% if bling_token_configurado %}
 <div class="mb-4 flex items-center gap-2 text-slate-400 text-sm">
     <i data-lucide="cloud-arrow-up" class="w-4 h-4"></i>

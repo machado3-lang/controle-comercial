@@ -157,6 +157,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     bling_pending += db.query(func.count(Produto.id)).filter(Produto.bling_pending_sync == True).scalar() or 0
     empresa_config = db.query(Empresa).first()
     bling_token_configurado = bool(empresa_config and empresa_config.bling_token)
+    sicoob_token_configurado = bool(empresa_config and empresa_config.sicoob_client_id)
     
     contas_pagar_proximas = db.query(ContaPagar).filter(
         ContaPagar.status == StatusConta.PENDENTE
@@ -187,6 +188,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "contas_receber_proximas": contas_receber_proximas,
         "bling_pending": bling_pending,
         "bling_token_configurado": bling_token_configurado,
+        "sicoob_token_configurado": sicoob_token_configurado,
         "StatusOS": StatusOS, "StatusConta": StatusConta,
         "clientes": clientes_rapidos,
         "produtos": produtos_rapidos,
