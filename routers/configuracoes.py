@@ -103,6 +103,7 @@ async def salvar_configuracoes(
             sicoob_beneficiario=sicoob_beneficiario,
             sicoob_conta_corrente=sicoob_conta_corrente,
             sicoob_cert_path=sicoob_cert_path,
+            sicoob_cert_password=sicoob_cert_password or empresa.sicoob_cert_password,
         )
         db.add(empresa)
 

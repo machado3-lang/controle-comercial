@@ -210,8 +210,32 @@ async def salvar_credenciais(
     cert_file: UploadFile = File(None),
     key_file: UploadFile = File(None),
 ):
-    request.session["message"] = {"tipo": "info", "texto": "Credenciais devem ser configuradas em Configurações > Empresa."}
-    return RedirectResponse(url="/configuracoes", status_code=303)
+    emp = get_empresa(db)
+    if emp:
+        emp.sicoob_client_id = sicoob_client_id or emp.sicoob_client_id
+        emp.sicoob_conta_corrente = sicoob_conta_corrente or emp.sicoob_conta_corrente
+        emp.sicoob_beneficiario = sicoob_beneficiario or emp.sicoob_beneficiario
+        emp.sicoob_cert_password = sicoob_cert_password or emp.sicoob_cert_password
+        
+        if cert_file and cert_file.filename:
+            os.makedirs("certs", exist_ok=True)
+            ext = cert_file.filename.split('.')[-1]
+            cert_path = f"certs/cert_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}"
+            with open(cert_path, "wb") as f:
+                f.write(cert_file.file.read())
+            emp.sicoob_cert_path = cert_path
+        
+        if key_file and key_file.filename:
+            os.makedirs("certs", exist_ok=True)
+            ext = key_file.filename.split('.')[-1]
+            key_path = f"certs/key_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}"
+            with open(key_path, "wb") as f:
+                f.write(key_file.file.read())
+            emp.sicoob_cert_key_path = key_path
+        
+        db.commit()
+        request.session["message"] = {"tipo": "success", "texto": "Credenciais salvas com sucesso"}
+    return RedirectResponse(url="/sicoob", status_code=303)
 
 
 @router.post("/emitir-boleto/{conta_id}")
