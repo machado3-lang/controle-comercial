@@ -211,6 +211,17 @@ def detalhe_pedido(request: Request, pedido_id: int, db: Session = Depends(get_d
     )
 
 
+@router.get("/{pedido_id}/imprimir")
+def imprimir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
+    pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
+    if not pedido:
+        return RedirectResponse(url="/pedidos", status_code=303)
+    return request.app.state.templates.TemplateResponse(
+        "pedidos/imprimir.html",
+        {"request": request, "pedido": pedido}
+    )
+
+
 @router.get("/{pedido_id}/editar")
 def editar_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()

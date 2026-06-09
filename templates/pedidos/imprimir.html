@@ -1,60 +1,58 @@
 {% extends "base.html" %}
-{% block title %}Imprimir Pedido{% endblock %}
+{% block title %}Imprimir Pedido #{{ pedido.numero }} - Controle Comercial{% endblock %}
 {% block content %}
-<div class="print-area">
-    <h3 class="text-center mb-4">PEDIDO {{ pedido.numero or pedido.id }}</h3>
-    
-    <div class="row mb-3">
-        <div class="col-6">
-            <strong>Cliente:</strong> {{ pedido.cliente.nome if pedido.cliente else '-' }}<br>
-            {% if pedido.cliente and pedido.cliente.cpf_cnpj %}<strong>CNPJ:</strong> {{ pedido.cliente.cpf_cnpj }}{% endif %}<br>
-            {% if pedido.cliente and pedido.cliente.endereco %}<strong>Endereço:</strong> {{ pedido.cliente.endereco }}{% endif %}
+<div class="print-container max-w-4xl mx-auto p-6 bg-white text-black">
+    <div class="flex justify-between items-start mb-6">
+        <div>
+            <h2 class="text-2xl font-bold">Pedido #{{ pedido.numero }}</h2>
+            <p class="text-sm">Data: {{ pedido.data }}</p>
         </div>
-        <div class="col-6">
-            <strong>Data:</strong> {{ pedido.data.strftime('%d/%m/%Y') if pedido.data else '-' }}<br>
-            <strong>Status:</strong> {{ STATUS_LABELS.get(pedido.status, pedido.status) }}<br>
-            {% if pedido.forma_pagamento %}<strong>Pagamento:</strong> {{ FORMAS_PAGAMENTO.get(pedido.forma_pagamento, '-') }}{% endif %}
-        </div>
+        <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ" class="h-12">
     </div>
     
-    <table class="table table-bordered">
-        <thead><tr><th>Fornecedor</th><th>Produto</th><th>Descrição</th><th>Qtd</th><th>Preço Unit.</th><th>Total</th></tr></thead>
-        <tbody>
-            {% for item in pedido.itens %}
-            <tr>
-                <td>{{ item.fornecedor.nome if item.fornecedor else (item.produto.fornecedor.nome if item.produto and item.produto.fornecedor else '-') }}</td>
-                <td>{{ item.produto.nome if item.produto else '-' }}</td>
-                <td>{{ item.descricao }}</td>
-                <td>{{ item.quantidade }}</td>
-                <td>R$ {{ "%.2f"|format(item.preco_unitario) }}</td>
-                <td>R$ {{ "%.2f"|format(item.total) }}</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-        <tfoot><tr><th colspan="5" class="text-end">Total:</th><th>R$ {{ "%.2f"|format(pedido.total) }}</th></tr></tfoot>
-    </table>
-    
-    {% if pedido.gerar_boleto and pedido.terminos_boleto %}
-    <div class="mt-4 p-3 border">
-        <h5>Informações do Boleto</h5>
-        <p>{{ pedido.terminos_boleto }}</p>
+    <div class="border-t-2 border-gray-800 pt-4 mb-4">
+        <h3 class="font-bold text-lg mb-2">Cliente</h3>
+        <p><strong>Nome:</strong> {{ pedido.cliente.nome }}</p>
+        <p><strong>CNPJ/CPF:</strong> {{ pedido.cliente.cpf_cnpj or '-' }}</p>
     </div>
-    {% endif %}
     
-    {% if pedido.observacao %}
-    <div class="mt-3"><strong>Observação:</strong><br>{{ pedido.observacao }}</div>
-    {% endif %}
-</div>
-
-<div class="mt-4 no-print">
-    <button onclick="window.print()" class="btn btn-primary"><i class="bi bi-printer"></i> Imprimir</button>
-    <a href="/pedidos/{{ pedido.id }}" class="btn btn-secondary">Voltar</a>
+    <div class="border-t-2 border-gray-800 pt-4 mb-4">
+        <h3 class="font-bold text-lg mb-2">Itens do Pedido</h3>
+        <table class="w-full border">
+            <thead><tr class="bg-gray-200"><th class="border p-2">Descrição</th><th class="border p-2">Qtd</th><th class="border p-2">Preço</th><th class="border p-2">Total</th></tr></thead>
+            <tbody>
+                {% for item in pedido.itens %}
+                <tr>
+                    <td class="border p-2">{{ item.descricao }}</td>
+                    <td class="border p-2">{{ item.quantidade }}</td>
+                    <td class="border p-2">R$ {{ "%.2f"|format(item.preco_unitario or 0) }}</td>
+                    <td class="border p-2">R$ {{ "%.2f"|format(item.total or 0) }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    
+    <div class="border-t-2 border-gray-800 pt-4 mb-4">
+        <h3 class="font-bold text-lg mb-2">Total do Pedido</h3>
+        <p class="text-xl font-bold">R$ {{ "%.2f"|format(pedido.total or 0) }}</p>
+    </div>
+    
+    <div class="border-t-2 border-gray-800 pt-4 mb-4">
+        <h3 class="font-bold text-lg mb-2">Observação</h3>
+        <p>{{ pedido.observacao or '-' }}</p>
+    </div>
+    
+    <div class="text-center mt-8">
+        <button onclick="window.print()" class="px-4 py-2 bg-blue-600 text-white rounded print-button">Imprimir</button>
+    </div>
 </div>
 
 <style>
 @media print {
-    .no-print { display: none; }
-    .print-area { font-size: 12pt; }
+    .print-button { display: none; }
+    body { background: white; color: black; }
+    .print-container { background: white; color: black; padding: 0; }
 }
 </style>
 {% endblock %}
