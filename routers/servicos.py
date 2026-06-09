@@ -61,9 +61,10 @@ def criar_servico(
 def editar_servico_page(request: Request, servico_id: int, db: Session = Depends(get_db)):
     servico = db.query(Servico).filter(Servico.id == servico_id).first()
     produtos = db.query(Produto).all()
+    produtos_json = [{"id": p.id, "nome": p.nome} for p in produtos]
     return request.app.state.templates.TemplateResponse(
         "servicos/form.html",
-        {"request": request, "servico": servico, "produtos": produtos}
+        {"request": request, "servico": servico, "produtos": produtos, "produtos_json": produtos_json}
     )
 
 

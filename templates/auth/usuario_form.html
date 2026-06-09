@@ -7,23 +7,53 @@
         <a href="/auth/usuarios" class="flex items-center px-3 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Cancelar</a>
     </div>
     
-    <form method="post" action="{{ '/auth/usuarios/' + usuario.id|string + '/editar' if usuario else '/auth/usuarios/novo' }}" class="p-4 max-w-lg grid grid-cols-1 gap-4">
-        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Nome *</label>
+    <form method="post" action="{{ '/auth/usuarios/' + usuario.id|string + '/editar' if usuario else '/auth/usuarios/novo' }}" class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="md:col-span-2">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Nome *</label>
             <input type="text" name="nome" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" value="{{ usuario.nome if usuario else '' }}" required>
         </div>
-        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Email *</label>
+        <div class="md:col-span-2">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Email *</label>
             <input type="email" name="email" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" value="{{ usuario.email if usuario else '' }}" required>
         </div>
-        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Senha {{ 'nova' if usuario else ' *' }}</label>
+        <div class="md:col-span-2">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Senha {{ 'nova' if usuario else ' *' }}</label>
             <input type="password" name="senha" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" {% if not usuario %}required{% endif %}>
         </div>
-        <div class="flex items-center gap-2">
-            <input type="checkbox" name="ativo" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded" id="ativo" {% if not usuario or usuario.ativo %}checked{% endif %}>
-            <label for="ativo" class="text-slate-300 text-sm">Ativo</label>
+        
+        <div class="md:col-span-2 border-t border-slate-800/60 pt-4"><h6 class="text-cyan-400 font-semibold mb-2"><i data-lucide="shield" class="w-4 h-4 inline me-1"></i> Permissões</h6></div>
+        
+        <div class="flex items-center gap-2"><input type="checkbox" name="is_admin" id="is_admin" class="w-4 h-4" {% if usuario and usuario.is_admin %}checked{% endif %}><label for="is_admin" class="text-emerald-400 font-medium">Administrador (controle total)</label></div>
+        
+        <div class="md:col-span-2">
+            <label class="block text-xs font-medium text-cyan-400 mb-2">Módulos com permissão</label>
+            <div class="grid grid-cols-2 md:grid-cols-4 gap-2" id="modulos-container">
+                {% for mod in ['clientes','fornecedores','produtos','pedidos','ordens_servico','assinaturas','contas'] %}
+                <label class="flex items-center gap-1 text-xs"><input type="checkbox" class="perm-check w-3 h-3" value="{{ mod }}" {% if usuario and usuario.permissoes and mod in usuario.permissoes.split(',') %}checked{% endif %}> {{ mod|replace('_',' ')|title }}</label>
+                {% endfor %}
+            </div>
+            <input type="hidden" name="permissoes" id="permissoes-input" value="{{ usuario.permissoes if usuario else '' }}">
         </div>
-        <div class="flex gap-2">
+        
+        <div class="flex items-center gap-2"><input type="checkbox" name="ativo" id="ativo" class="w-4 h-4" {% if not usuario or usuario.ativo %}checked{% endif %}><label for="ativo" class="text-slate-300 text-sm">Ativo</label></div>
+        
+        <div class="md:col-span-2 pt-4 border-t border-slate-800/60">
             <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button>
         </div>
     </form>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+    document.querySelectorAll('.perm-check').forEach(cb => {
+        cb.addEventListener('change', () => {
+            document.getElementById('permissoes-input').value = 
+                Array.from(document.querySelectorAll('.perm-check:checked')).map(c => c.value).join(',');
+        });
+    });
+    document.querySelectorAll('.perm-check:checked').forEach(cb => {
+        document.getElementById('permissoes-input').value = 
+            Array.from(document.querySelectorAll('.perm-check:checked')).map(c => c.value).join(',');
+    });
+});
+</script>
 {% endblock %}

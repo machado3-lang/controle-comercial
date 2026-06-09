@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Esqueci Senha - Controle Comercial</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    colors: {
+                        cyan: { 400: '#22d3ee', 500: '#06b6d4' },
+                        emerald: { 400: '#34d399' },
+                        indigo: { 400: '#818cf8', 500: '#6366f1' }
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex items-center justify-center bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-indigo-900/20 via-slate-950 to-slate-950">
+    <div class="w-full max-w-md">
+        <div class="glass-card p-8">
+            <div class="text-center mb-6">
+                <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ" class="h-8 w-auto mb-2 mx-auto">
+                <p class="text-slate-400">Recuperar Senha</p>
+            </div>
+            
+            {% if message %}
+            <div class="bg-rose-950/30 border border-rose-800/50 text-rose-300 px-4 py-3 rounded-xl mb-4">{{ message.texto }}</div>
+            {% endif %}
+            
+            <form method="post" action="/auth/esqueci-senha">
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-cyan-400 mb-1">Email cadastrado</label>
+                    <input type="email" name="email" class="w-full px-4 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" required>
+                </div>
+                <button type="submit" class="w-full flex items-center justify-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all"><i data-lucide="send" class="w-4 h-4 me-2"></i> Enviar link</button>
+            </form>
+            <div class="text-center mt-4"><a href="/auth/login" class="text-xs text-cyan-400 hover:text-cyan-300 transition">Voltar ao login</a></div>
+        </div>
+    </div>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

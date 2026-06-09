@@ -39,6 +39,8 @@ class Usuario(Base):
     senha = Column(String(200), nullable=False)
     nome = Column(String(200), nullable=False)
     ativo = Column(Boolean, default=True)
+    is_admin = Column(Boolean, default=False)
+    permissoes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
 
@@ -336,6 +338,7 @@ class PedidoVendaItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=False)
     produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True)
+    servico_id = Column(Integer, ForeignKey("servicos.id"), nullable=True)
     descricao = Column(String(300), nullable=False)
     quantidade = Column(Float, nullable=False, default=1)
     preco_unitario = Column(Float, nullable=False, default=0)

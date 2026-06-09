@@ -1,0 +1,303 @@
+{% extends "base.html" %}
+{% block title %}Dashboard - Controle Comercial{% endblock %}
+{% block content %}
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card bg-primary text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-people display-3"></i>
+                <h5 class="mt-2">Clientes</h5>
+                <h2>{{ total_clientes }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-building display-3"></i>
+                <h5 class="mt-2">Fornecedores</h5>
+                <h2>{{ total_fornecedores }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-info text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-box display-3"></i>
+                <h5 class="mt-2">Produtos</h5>
+                <h2>{{ total_produtos }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-warning text-dark h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-calendar-check display-3"></i>
+                <h5 class="mt-2">Assinaturas Ativas</h5>
+                <h2>{{ assinaturas_ativas }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row g-3 mb-4">
+    <div class="col-md-3">
+        <div class="card bg-secondary text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-receipt display-3"></i>
+                <h5 class="mt-2">Pedidos</h5>
+                <h2>{{ total_pedidos }}</h2>
+                <div class="d-grid gap-1 mt-2">
+                    <a href="/pedidos/novo" class="btn btn-light btn-sm"><i class="bi bi-plus"></i> Novo Pedido</a>
+                    <a href="/pedidos" class="btn btn-outline-light btn-sm"><i class="bi bi-list"></i> Listar Pedidos</a>
+                    <a href="/pedidos/pre-venda/agrupar" class="btn btn-outline-warning btn-sm"><i class="bi bi-box"></i> Agrupar Pré-Vendas</a>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-danger text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-arrow-up-circle display-3"></i>
+                <h5 class="mt-2">Contas a Pagar</h5>
+                <h2>R$ {{ "%.2f"|format(contas_pagar_pendentes) }}</h2>
+                <small>{{ contas_vencidas }} vencida(s)</small>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-success text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-arrow-down-circle display-3"></i>
+                <h5 class="mt-2">Contas a Receber</h5>
+                <h2>R$ {{ "%.2f"|format(contas_receber_pendentes) }}</h2>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card bg-dark text-white h-100">
+            <div class="card-body text-center">
+                <i class="bi bi-wrench display-3"></i>
+                <h5 class="mt-2">OS Abertas</h5>
+                <h2>{{ ordens_abertas }}</h2>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% if bling_token_configurado %}
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="d-flex align-items-center gap-2 text-muted small">
+            <i class="bi bi-cloud-arrow-up"></i>
+            <span>Bling:</span>
+            {% if bling_pending > 0 %}
+                <span class="badge bg-warning text-dark">{{ bling_pending }} pendente(s) de sincronia</span>
+                <form method="post" action="/bling/sincronizar-pendentes" style="display:inline">
+                    <button type="submit" class="btn btn-sm btn-outline-warning">Sincronizar</button>
+                </form>
+            {% else %}
+                <span class="badge bg-success">Sincronizado</span>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="row g-3">
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-clock"></i> Últimas OS</span>
+                <a href="/ordens-servico" class="btn btn-sm btn-outline-primary">Ver todas</a>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for os in ultimas_ordens %}
+                <a href="/ordens-servico/{{ os.id }}" class="list-group-item list-group-item-action">
+                    <div class="d-flex w-100 justify-content-between">
+                        <strong>{{ os.equipamento }}</strong>
+                        {% if os.status == StatusOS.ABERTA.value %}
+                            <span class="badge bg-warning">Aberta</span>
+                        {% elif os.status == StatusOS.EM_ANDAMENTO.value %}
+                            <span class="badge bg-info">Em andamento</span>
+                        {% elif os.status == StatusOS.FINALIZADA.value %}
+                            <span class="badge bg-success">Finalizada</span>
+                        {% else %}
+                            <span class="badge bg-secondary">Cancelada</span>
+                        {% endif %}
+                    </div>
+                    <small class="text-muted">{{ os.cliente.nome }} - {{ os.data_entrada }}</small>
+                </a>
+                {% else %}
+                <div class="list-group-item text-muted">Nenhuma OS ainda</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-arrow-up-circle"></i> Contas a Pagar</span>
+                <a href="/contas/pagar" class="btn btn-sm btn-outline-primary">Ver todas</a>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for c in contas_pagar_proximas %}
+                <div class="list-group-item">
+                    <div class="d-flex w-100 justify-content-between">
+                        <span>{{ c.descricao }}</span>
+                        <strong>R$ {{ "%.2f"|format(c.valor) }}</strong>
+                    </div>
+                    <small class="text-muted">Vence: {{ c.data_vencimento }}</small>
+                </div>
+                {% else %}
+                <div class="list-group-item text-muted">Nenhuma conta pendente</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-arrow-down-circle"></i> Contas a Receber</span>
+                <a href="/contas/receber" class="btn btn-sm btn-outline-primary">Ver todas</a>
+            </div>
+            <div class="list-group list-group-flush">
+                {% for c in contas_receber_proximas %}
+                <div class="list-group-item">
+                    <div class="d-flex w-100 justify-content-between">
+                        <span>{{ c.descricao }}</span>
+                        <strong>R$ {{ "%.2f"|format(c.valor) }}</strong>
+                    </div>
+                    <small class="text-muted">Vence: {{ c.data_vencimento }}</small>
+                </div>
+                {% else %}
+                <div class="list-group-item text-muted">Nenhuma conta pendente</div>
+                {% endfor %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalPedido" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content">
+            <form method="post" action="/pedidos/salvar" id="formPedidoRapido">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="bi bi-receipt"></i> Novo Pedido</h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="row g-2 align-items-end">
+                        <div class="col-6">
+                            <label class="form-label">Cliente *</label>
+                            <select class="form-select" name="cliente_id" required>
+                                <option value="">Selecione...</option>
+                                {% for c in clientes %}
+                                <option value="{{ c.id }}">{{ c.nome }}{% if c.cpf_cnpj %} - {{ c.cpf_cnpj }}{% endif %}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label">Número</label>
+                            <input type="text" class="form-control" name="numero" placeholder="Auto ({{ proximo_pedido }})">
+                        </div>
+                        <div class="col-3">
+                            <label class="form-label">Data *</label>
+                            <input type="date" class="form-control" name="data" value="{{ hoje.isoformat() }}">
+                        </div>
+                    </div>
+
+                    <hr class="my-3">
+                    <div id="itens-container-rapido">
+                        <div class="row g-1 mb-2 item-row-rapido">
+                            <div class="col-5">
+                                <select class="form-select produto-select-rapido">
+                                    <option value="">Produto...</option>
+                                    {% for p in produtos %}
+                                    <option value="{{ p.id }}" data-preco="{{ p.preco }}" data-descricao="{{ p.descricao or p.nome }}">{{ p.nome }}</option>
+                                    {% endfor %}
+                                </select>
+                            </div>
+                            <div class="col-4"><input type="text" class="form-control descricao-input-rapido" placeholder="Descrição"></div>
+                            <div class="col-1"><input type="number" step="0.01" class="form-control qtd-input-rapido" placeholder="Qtd" value="1"></div>
+                            <div class="col-2"><input type="number" step="0.01" class="form-control preco-input-rapido" placeholder="Preço"></div>
+                        </div>
+                    </div>
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="addItemRapido"><i class="bi bi-plus"></i> Add Item</button>
+
+                    <div class="mt-3 text-end">
+                        <h4>Total: R$ <span id="total-rapido">0.00</span></h4>
+                    </div>
+
+                    <input type="hidden" name="itens" id="itensJsonRapido">
+                </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="submit" class="btn btn-primary"><i class="bi bi-save"></i> Salvar</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal"><i class="bi bi-x"></i> Cancelar</button>
+</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.getElementById('addItemRapido').addEventListener('click', function() {
+    const container = document.getElementById('itens-container-rapido');
+    const row = document.createElement('div');
+    row.className = 'row g-1 mb-2 item-row-rapido';
+    const produtosOptions = Array.from(document.querySelector('.produto-select-rapido').options).slice(1)
+        .map(o => `<option value="${o.value}" data-preco="${o.dataset.preco}" data-descricao="${o.dataset.descricao}">${o.text}</option>`).join('');
+    row.innerHTML = `<div class="col-5"><select class="form-select produto-select-rapido"><option value="">Produto...</option>${produtosOptions}</select></div><div class="col-4"><input type="text" class="form-control descricao-input-rapido" placeholder="Descrição"></div><div class="col-1"><input type="number" step="0.01" class="form-control qtd-input-rapido" placeholder="Qtd" value="1"></div><div class="col-2"><input type="number" step="0.01" class="form-control preco-input-rapido" placeholder="Preço"></div>`;
+    container.appendChild(row);
+    atualizarTotalRapido();
+});
+
+function atualizarTotalRapido() {
+    let total = 0;
+    document.querySelectorAll('.item-row-rapido').forEach(row => {
+        const qtd = parseFloat(row.querySelector('.qtd-input-rapido')?.value) || 0;
+        const preco = parseFloat(row.querySelector('.preco-input-rapido')?.value) || 0;
+        total += qtd * preco;
+    });
+    document.getElementById('total-rapido').textContent = total.toFixed(2);
+}
+
+document.getElementById('itens-container-rapido').addEventListener('change', function(e) {
+    if (e.target.classList.contains('produto-select-rapido')) {
+        const preco = e.target.selectedOptions[0]?.dataset?.preco || 0;
+        const descricao = e.target.selectedOptions[0]?.dataset?.descricao || '';
+        const row = e.target.closest('.item-row-rapido');
+        const precoInput = row.querySelector('.preco-input-rapido');
+        const descInput = row.querySelector('.descricao-input-rapido');
+        if (precoInput && !precoInput.value) {
+            precoInput.value = preco;
+        }
+        if (descInput && !descInput.value) {
+            descInput.value = descricao;
+        }
+        atualizarTotalRapido();
+    }
+});
+
+document.getElementById('itens-container-rapido').addEventListener('input', function(e) {
+    if (e.target.classList.contains('qtd-input-rapido') || e.target.classList.contains('preco-input-rapido')) {
+        atualizarTotalRapido();
+    }
+});
+
+document.getElementById('formPedidoRapido').addEventListener('submit', function(e) {
+    const itens = [];
+    document.querySelectorAll('.item-row-rapido').forEach(row => {
+        const produto_id = row.querySelector('.produto-select-rapido')?.value || '';
+        const descricao = row.querySelector('.descricao-input-rapido')?.value || '';
+        const quantidade = parseFloat(row.querySelector('.qtd-input-rapido')?.value) || 1;
+        const preco = parseFloat(row.querySelector('.preco-input-rapido')?.value) || 0;
+        if (descricao && preco > 0) {
+            itens.push({produto_id, descricao, quantidade, preco});
+        }
+    });
+    document.getElementById('itensJsonRapido').value = JSON.stringify(itens);
+});
+</script>
+{% endblock %}

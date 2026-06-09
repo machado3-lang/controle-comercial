@@ -52,7 +52,7 @@ def setup_admin(request: Request, db: Session = Depends(get_db)):
     admin = db.query(Usuario).filter(Usuario.email == "admin@controle.com").first()
     if not admin:
         senha = hash_senha("admin123")
-        admin = Usuario(email="admin@controle.com", senha=senha, nome="Administrador", ativo=True, is_admin=True)
+        admin = Usuario(email="admin@controle.com", senha=senha, nome="Administrador", ativo=True)
         db.add(admin)
         db.commit()
         return "Admin criado: admin@controle.com / admin123"
@@ -70,12 +70,16 @@ def migrate_check(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/database/migrate")
 def run_migrations(request: Request, db: Session = Depends(get_db)):
+    # Proteção: só admin logado pode executar
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
+    
     try:
         from sqlalchemy import text
-        db.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE"))
-        db.execute(text("ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS permissoes TEXT"))
+        # Migration 1: campo data_emissao em ContaReceber
+        db.execute(text("""
+            ALTER TABLE contas_receber ADD COLUMN IF NOT EXISTS data_emissao DATE;
+        """))
         db.commit()
         return {"success": True, "message": "Migration executada com sucesso"}
     except Exception as e:
@@ -91,17 +95,13 @@ def login_page(request: Request):
 
 @router.post("/login")
 def login(request: Request, db: Session = Depends(get_db), email: str = Form(""), senha: str = Form("")):
-    try:
-        usuario = db.query(Usuario).filter(Usuario.email == email, Usuario.ativo == True).first()
-        if usuario and verifica_senha(senha, usuario.senha):
-            request.session["user_id"] = usuario.id
-            request.session["user_nome"] = usuario.nome
-            return RedirectResponse(url="/", status_code=303, headers={"Cache-Control": "no-cache, no-store"})
-        request.session["message"] = {"tipo": "danger", "texto": "Email ou senha inválidos"}
-        return RedirectResponse(url="/auth/login", status_code=303, headers={"Cache-Control": "no-cache, no-store"})
-    except Exception as e:
-        print(f"Login error: {e}")
-        raise
+    usuario = db.query(Usuario).filter(Usuario.email == email, Usuario.ativo == True).first()
+    if usuario and verifica_senha(senha, usuario.senha):
+        request.session["user_id"] = usuario.id
+        request.session["user_nome"] = usuario.nome
+        return RedirectResponse(url="/", status_code=303, headers={"Cache-Control": "no-cache, no-store"})
+    request.session["message"] = {"tipo": "danger", "texto": "Email ou senha inválidos"}
+    return RedirectResponse(url="/auth/login", status_code=303, headers={"Cache-Control": "no-cache, no-store"})
 
 
 @router.get("/logout")
@@ -110,55 +110,25 @@ def logout(request: Request):
     return RedirectResponse(url="/auth/login", status_code=303)
 
 
-@router.get("/esqueci-senha")
-def esqueci_senha_page(request: Request):
-    message = request.session.pop("message", None)
-    return request.app.state.templates.TemplateResponse("auth/esqueci_senha.html", {"request": request, "message": message})
-
-@router.post("/esqueci-senha")
-def esqueci_senha(request: Request, db: Session = Depends(get_db), email: str = Form("")):
-    usuario = db.query(Usuario).filter(Usuario.email == email).first()
-    request.session["message"] = {"tipo": "success", "texto": "Se o email existir, instruções serão enviadas"}
-    return RedirectResponse(url="/auth/esqueci-senha", status_code=303)
-
-
 @router.get("/usuarios")
 def listar_usuarios(request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return RedirectResponse(url="/auth/login", status_code=303)
-    user = db.query(Usuario).filter(Usuario.id == request.session.get("user_id")).first()
-    if not user or not user.is_admin:
-        request.session["message"] = {"tipo": "danger", "texto": "Acesso negado"}
-        return RedirectResponse(url="/", status_code=303)
     message = request.session.pop("message", None)
     usuarios = db.query(Usuario).all()
     return request.app.state.templates.TemplateResponse("auth/usuarios.html", {"request": request, "usuarios": usuarios, "message": message})
 
 
 @router.get("/usuarios/novo")
-def novo_usuario_page(request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return RedirectResponse(url="/auth/login", status_code=303)
-    user = db.query(Usuario).filter(Usuario.id == request.session.get("user_id")).first()
-    if not user or not user.is_admin:
-        request.session["message"] = {"tipo": "danger", "texto": "Acesso negado: apenas administradores"}
-        return RedirectResponse(url="/auth/usuarios", status_code=303)
+def novo_usuario_page(request: Request):
     return request.app.state.templates.TemplateResponse("auth/usuario_form.html", {"request": request})
 
 
 @router.post("/usuarios/novo")
-def criar_usuario(request: Request, db: Session = Depends(get_db), nome: str = Form(""), email: str = Form(""), senha: str = Form(""), is_admin: str = Form(None), permissoes: str = Form("")):
-    if not request.session.get("user_id"):
-        return RedirectResponse(url="/auth/login", status_code=303)
-    user = db.query(Usuario).filter(Usuario.id == request.session.get("user_id")).first()
-    if not user or not user.is_admin:
-        request.session["message"] = {"tipo": "danger", "texto": "Acesso negado"}
-        return RedirectResponse(url="/auth/usuarios", status_code=303)
+def criar_usuario(request: Request, db: Session = Depends(get_db), nome: str = Form(""), email: str = Form(""), senha: str = Form("")):
     if db.query(Usuario).filter(Usuario.email == email).first():
         request.session["message"] = {"tipo": "danger", "texto": "Email já cadastrado"}
         return RedirectResponse(url="/auth/usuarios", status_code=303)
     senha_hash = hash_senha(senha)
-    usuario = Usuario(email=email, senha=senha_hash, nome=nome, ativo=True, is_admin=(is_admin == "on"), permissoes=permissoes)
+    usuario = Usuario(email=email, senha=senha_hash, nome=nome, ativo=True)
     db.add(usuario)
     db.commit()
     db.refresh(usuario)
@@ -168,12 +138,6 @@ def criar_usuario(request: Request, db: Session = Depends(get_db), nome: str = F
 
 @router.get("/usuarios/{uid}/editar")
 def editar_usuario_page(request: Request, uid: int, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return RedirectResponse(url="/auth/login", status_code=303)
-    user = db.query(Usuario).filter(Usuario.id == request.session.get("user_id")).first()
-    if not user or not user.is_admin:
-        request.session["message"] = {"tipo": "danger", "texto": "Acesso negado: apenas administradores"}
-        return RedirectResponse(url="/auth/usuarios", status_code=303)
     usuario = db.query(Usuario).filter(Usuario.id == uid).first()
     if not usuario:
         return RedirectResponse(url="/auth/usuarios", status_code=303)
@@ -181,19 +145,11 @@ def editar_usuario_page(request: Request, uid: int, db: Session = Depends(get_db
 
 
 @router.post("/usuarios/{uid}/editar")
-def editar_usuario(request: Request, uid: int, db: Session = Depends(get_db), nome: str = Form(""), email: str = Form(""), senha: str = Form(""), ativo: str = Form(None), is_admin: str = Form(None), permissoes: str = Form("")):
-    if not request.session.get("user_id"):
-        return RedirectResponse(url="/auth/login", status_code=303)
-    user = db.query(Usuario).filter(Usuario.id == request.session.get("user_id")).first()
-    if not user or not user.is_admin:
-        request.session["message"] = {"tipo": "danger", "texto": "Acesso negado"}
-        return RedirectResponse(url="/auth/usuarios", status_code=303)
+def editar_usuario(request: Request, uid: int, db: Session = Depends(get_db), nome: str = Form(""), email: str = Form(""), senha: str = Form(""), ativo: str = Form(None)):
     usuario = db.query(Usuario).filter(Usuario.id == uid).first()
     if usuario:
         usuario.nome = nome
         usuario.ativo = ativo == "on"
-        usuario.is_admin = is_admin == "on"
-        usuario.permissoes = permissoes
         if senha:
             usuario.senha = hash_senha(senha)
         db.commit()

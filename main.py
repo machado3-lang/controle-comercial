@@ -17,13 +17,15 @@ from database import engine, Base, get_db
 from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario, MarcaProduto
 from models_servico import Servico, ServicoInsumo
 
+def get_current_user(request: Request, db: Session = Depends(get_db)):
+    user_id = request.session.get("user_id")
+    if not user_id:
+        raise RedirectResponse(url="/auth/login")
+    return db.query(Usuario).filter(Usuario.id == user_id).first()
+
 # Executar migrations no startup
 def run_migrations():
     from sqlalchemy import text, inspect
-    # Para SQLite, garantir colunas existem via create_all
-    if "sqlite" in str(engine.url):
-        Base.metadata.create_all(bind=engine)
-        return
     migrations = [
         "ALTER TABLE contas_receber ADD COLUMN IF NOT EXISTS data_emissao DATE",
         "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS telefone_whatsapp VARCHAR(20)",
@@ -32,17 +34,41 @@ def run_migrations():
         "CREATE TABLE IF NOT EXISTS marcas_produto (id SERIAL PRIMARY KEY, nome VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT NOW())",
         "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS marca_id INTEGER REFERENCES marcas_produto(id)",
         "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS foto VARCHAR(500)",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS permissoes TEXT",
+        "ALTER TABLE pedidos_venda_itens ADD COLUMN IF NOT EXISTS servico_id INTEGER REFERENCES servicos(id)",
     ]
-    try:
-        with engine.connect() as conn:
-            for m in migrations:
-                try:
-                    conn.execute(text(m))
-                except Exception:
-                    pass
-            conn.commit()
-    except Exception as e:
-        print(f"Migration error: {e}")
+    # SQLite não suporta IF NOT EXISTS em ADD COLUMN, usar PRAGMA para verificar
+    if "sqlite" in str(engine.url):
+        inspector = inspect(engine)
+        cols = inspector.get_columns("usuarios")
+        existing_cols = {c['name'] for c in cols}
+        if "is_admin" not in existing_cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE usuarios ADD COLUMN is_admin BOOLEAN DEFAULT FALSE"))
+                conn.commit()
+        if "permissoes" not in existing_cols:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE usuarios ADD COLUMN permissoes TEXT"))
+                conn.commit()
+        # Migration pedidos_venda_itens
+        cols_itens = inspector.get_columns("pedidos_venda_itens")
+        existing_itens = {c['name'] for c in cols_itens}
+        if "servico_id" not in existing_itens:
+            with engine.connect() as conn:
+                conn.execute(text("ALTER TABLE pedidos_venda_itens ADD COLUMN servico_id INTEGER REFERENCES servicos(id)"))
+                conn.commit()
+    else:
+        try:
+            with engine.connect() as conn:
+                for m in migrations:
+                    try:
+                        conn.execute(text(m))
+                    except Exception:
+                        pass
+                conn.commit()
+        except Exception as e:
+            print(f"Migration error: {e}")
 
 run_migrations()
 Base.metadata.create_all(bind=engine)
@@ -70,38 +96,9 @@ app.add_middleware(TrustedHostMiddleware, allowed_hosts=["*"])
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
 
-from routers import clientes, fornecedores, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth, servicos
-
-
-class ProxyMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        if request.headers.get("x-forwarded-proto") == "https":
-            request.scope["scheme"] = "https"
-        response = await call_next(request)
-        return response
-
-
-class AuthMiddleware(BaseHTTPMiddleware):
-    async def dispatch(self, request, call_next):
-        public_paths = ["/auth/login", "/auth/setup", "/static", "/favicon.ico"]
-        path = request.url.path
-        if any(path.startswith(p) for p in public_paths):
-            return await call_next(request)
-        if not request.session.get("user_id"):
-            request.session["message"] = {"tipo": "danger", "texto": "Faça login para acessar"}
-            return RedirectResponse(url="/auth/login", headers={"Cache-Control": "no-cache, no-store"})
-        try:
-            return await call_next(request)
-        except Exception as e:
-            print(f"AuthMiddleware error: {e}")
-            request.session.clear()
-            request.session["message"] = {"tipo": "danger", "texto": "Erro no servidor."}
-            return RedirectResponse(url="/auth/login", status_code=303)
-
-
-app.add_middleware(ProxyMiddleware)
-app.add_middleware(AuthMiddleware)
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "controle-comercial-secret-key-2024"))
+
+from routers import clientes, fornecedores, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth, servicos
 app.include_router(auth.router)
 app.include_router(clientes.router)
 app.include_router(fornecedores.router)
@@ -118,6 +115,8 @@ app.include_router(servicos.router)
 
 @app.get("/")
 def dashboard(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return RedirectResponse(url="/auth/login")
     hoje = date_func.today()
     
     total_clientes = db.query(func.count(Cliente.id)).scalar()
