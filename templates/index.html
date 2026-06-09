@@ -91,11 +91,11 @@
             <a href="/ordens-servico/{{ os.id }}" class="p-3 hover:bg-slate-800/40 transition block">
                 <div class="flex justify-between items-center">
                     <strong class="text-slate-100 text-sm">{{ os.equipamento }}</strong>
-                    {% if os.status == StatusOS.ABERTA.value %}
+                    {% if os.status == "aberta" %}
                         <span class="px-2 py-1 bg-amber-950/30 border border-amber-800/50 text-amber-300 rounded-full text-xs">Aberta</span>
-                    {% elif os.status == StatusOS.EM_ANDAMENTO.value %}
+                    {% elif os.status == "em_andamento" %}
                         <span class="px-2 py-1 bg-cyan-950/30 border border-cyan-800/50 text-cyan-300 rounded-full text-xs">Em andamento</span>
-                    {% elif os.status == StatusOS.FINALIZADA.value %}
+                    {% elif os.status == "finalizada" %}
                         <span class="px-2 py-1 bg-emerald-950/30 border border-emerald-800/50 text-emerald-300 rounded-full text-xs">Finalizada</span>
                     {% else %}
                         <span class="px-2 py-1 bg-slate-800/50 border border-slate-700/50 text-slate-300 rounded-full text-xs">Cancelada</span>
