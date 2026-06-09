@@ -56,7 +56,9 @@ def setup_admin(request: Request, db: Session = Depends(get_db)):
         db.add(admin)
         db.commit()
         return "Admin criado: admin@controle.com / admin123"
-    return "Admin já existe"
+    admin.is_admin = True
+    db.commit()
+    return "Admin atualizado com is_admin=True"
 
 
 @router.get("/migrate")
