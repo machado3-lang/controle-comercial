@@ -29,6 +29,8 @@ def get_sicoob_token(db: Session) -> str | None:
 
 def refresh_sicoob_token(db: Session, scope: str = "boletos_consulta") -> str | None:
     emp = get_empresa(db)
+    if not emp:
+        return None
     if not emp.sicoob_client_id:
         return None
     cert_config = get_cert_config(db)
@@ -46,6 +48,20 @@ def refresh_sicoob_token(db: Session, scope: str = "boletos_consulta") -> str | 
             db.commit()
             return emp.sicoob_token
     return None
+
+
+def get_token_or_error(db: Session, scope: str = "boletos_consulta") -> tuple[str | None, str | None]:
+    emp = get_empresa(db)
+    if not emp:
+        return None, "Empresa não encontrada - verifique database"
+    if not emp.sicoob_client_id:
+        return None, "sicoob_client_id não configurado - configure em /sicoob"
+    if not emp.sicoob_cert_path or not os.path.exists(emp.sicoob_cert_path):
+        return None, "Certificado Sicoob não configurado - configure em /sicoob"
+    token = refresh_sicoob_token(db, scope)
+    if not token:
+        return None, "Falha na autenticação Sicoob - verifique credenciais/certificado"
+    return token, None
 
 
 def get_cert_config(db: Session) -> dict | None:
@@ -299,10 +315,9 @@ def obter_boleto(request: Request, conta_id: str, db: Session = Depends(get_db))
 def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 1, size: int = 10, situacao: str = None):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
-    emp = get_empresa(db)
-    token = refresh_sicoob_token(db, "boletos_consulta")
-    if not token:
-        return {"success": False, "error": "Token Sicoob não configurado"}
+    token, error = get_token_or_error(db, "boletos_consulta")
+    if error:
+        return {"success": False, "error": error}
     
     contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
         ContaReceber.boleto_emitido == True
@@ -488,11 +503,10 @@ async def baixar_boleto_route(request: Request, nosso_numero: str, db: Session =
 def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
+    token, error = get_token_or_error(db, "boletos_consulta")
+    if error:
+        return {"success": False, "error": error}
     emp = get_empresa(db)
-    token = refresh_sicoob_token(db, "boletos_consulta")
-    if not token:
-        return {"success": False, "error": "Token Sicoob não configurado"}
-    
     cert_config = get_cert_config(db)
     client_args = {"timeout": 30}
     if cert_config and "cert" in cert_config:
