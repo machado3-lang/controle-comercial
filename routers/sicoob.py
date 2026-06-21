@@ -567,6 +567,7 @@ def testar_token(request: Request, db: Session = Depends(get_db)):
     if token:
         return {"success": True, "token": "****" + token[-10:], "message": "Token obtido com sucesso"}
     return {"success": False, "error": "Falha ao obter token - verifique certificado"}
+@router.get("/api/inadimplencia", response_class=JSONResponse)
 def api_inadimplencia(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
@@ -584,7 +585,48 @@ def api_inadimplencia(request: Request, db: Session = Depends(get_db)):
                 "cliente": c.cliente.nome if c.cliente else "",
                 "valor": float(c.valor),
                 "dataVencimento": str(c.data_vencimento),
-                "diasVencido": (hoje - c.data_vencimento).days
-            })
+"diasVencido": (hoje - c.data_vencimento).days
+             })
     
     return {"success": True, "boletos": boletos}
+
+
+@router.patch("/alterar-boleto/{nosso_numero}", response_class=JSONResponse)
+async def alterar_boleto(request: Request, nosso_numero: str, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
+    emp = get_empresa(db)
+    cert_config = get_cert_config(db)
+    body = await request.json()
+    body_req = {"numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820, "codigoModalidade": 1}
+    if "valor" in body and body["valor"] is not None:
+        body_req["valor"] = float(body["valor"])
+    if "dataVencimento" in body and body["dataVencimento"]:
+        body_req["dataVencimento"] = body["dataVencimento"]
+    token = refresh_sicoob_token(db, "boletos_alteracao")
+    if not token:
+        return {"success": False, "error": "Token Sicoob não configurado"}
+    client_args = {"timeout": 30}
+    if cert_config and "cert" in cert_config:
+        client_args["cert"] = cert_config["cert"]
+    with httpx.Client(**client_args) as client:
+        resp = client.patch(
+            f"{SICOOO_API}/boletos/{nosso_numero}",
+            json=body_req,
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        if resp.status_code in (200, 204):
+            conta = db.query(ContaReceber).filter(
+                (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
+            ).first()
+            if conta:
+                if "valor" in body:
+                    conta.valor = body["valor"]
+                if "dataVencimento" in body:
+                    try:
+                        conta.data_vencimento = datetime.strptime(body["dataVencimento"], "%Y-%m-%d").date()
+                    except:
+                        pass
+                db.commit()
+            return {"success": True}
+        return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
