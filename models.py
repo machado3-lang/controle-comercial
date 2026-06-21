@@ -3,7 +3,7 @@ from sqlalchemy.orm import relationship
 from datetime import datetime, date
 import enum
 
-from database import Base
+from database import Base, engine
 
 
 def get_safe_day(date_obj, target_day: int) -> date:
@@ -198,9 +198,11 @@ class AssinaturaHistorico(Base):
     valor_anterior = Column(Float, nullable=True)
     valor_revenda_anterior = Column(Float, nullable=True)
     quantidade_anterior = Column(Integer, nullable=True)
+    dia_vencimento_anterior = Column(Integer, nullable=True)
     valor_novo = Column(Float, nullable=True)
     valor_revenda_novo = Column(Float, nullable=True)
     quantidade_novo = Column(Integer, nullable=True)
+    dia_vencimento_novo = Column(Integer, nullable=True)
     data_alteracao = Column(DateTime, default=datetime.now)
 
     assinatura = relationship("Assinatura", back_populates="historico")
@@ -289,8 +291,47 @@ class Produto(Base):
     categoria = relationship("CategoriaProduto", back_populates="produtos")
     fornecedor = relationship("Fornecedor")
     marca_rel = relationship("MarcaProduto")
-    itens_pedido = relationship("PedidoVendaItem", back_populates="produto")
-    tipo = Column(String(20), default="produto")  # "produto" ou "servico"
+    variacoes = relationship("ProdutoVariacao", back_populates="produto", cascade="all, delete-orphan")
+    composicoes = relationship("ProdutoComposicao", foreign_keys="[ProdutoComposicao.produto_pai_id]", back_populates="produto_pai", cascade="all, delete-orphan")
+    tipo = Column(String(20), default="produto")  # "produto", "servico" ou "kit"
+
+    @property
+    def preco_padrao(self):
+        return self.preco
+
+    @preco_padrao.setter
+    def preco_padrao(self, value):
+        self.preco = value
+
+
+class ProdutoVariacao(Base):
+    __tablename__ = "produto_variacoes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=False)
+    nome_variacao = Column(String(100), nullable=True)
+    sku = Column(String(50), nullable=False, unique=True)
+    preco_adicional = Column(Float, default=0)
+    estoque_atual = Column(Float, default=0)
+    estoque_minimo = Column(Float, default=0)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    produto = relationship("Produto", back_populates="variacoes")
+    itens_pedido = relationship("PedidoVendaItem", foreign_keys="[PedidoVendaItem.variacao_id]", back_populates="variacao")
+
+
+class ProdutoComposicao(Base):
+    __tablename__ = "produto_composicao"
+
+    id = Column(Integer, primary_key=True, index=True)
+    produto_pai_id = Column(Integer, ForeignKey("produtos.id"), nullable=False)
+    insumo_id = Column(Integer, ForeignKey("produtos.id"), nullable=False)
+    quantidade_padrao = Column(Float, default=1)
+    created_at = Column(DateTime, default=datetime.now)
+
+    produto_pai = relationship("Produto", foreign_keys=[produto_pai_id], back_populates="composicoes")
+    insumo = relationship("Produto", foreign_keys=[insumo_id])
 
 
 class StatusPedido(str, enum.Enum):
@@ -338,7 +379,9 @@ class PedidoVendaItem(Base):
     id = Column(Integer, primary_key=True, index=True)
     pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=False)
     produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True)
-    servico_id = Column(Integer, ForeignKey("servicos.id"), nullable=True)
+    variacao_id = Column(Integer, ForeignKey("produto_variacoes.id"), nullable=True)
+    item_pai_id = Column(Integer, ForeignKey("pedidos_venda_itens.id"), nullable=True)
+
     descricao = Column(String(300), nullable=False)
     quantidade = Column(Float, nullable=False, default=1)
     preco_unitario = Column(Float, nullable=False, default=0)
@@ -346,8 +389,11 @@ class PedidoVendaItem(Base):
     fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True)
 
     pedido = relationship("PedidoVenda", back_populates="itens")
-    produto = relationship("Produto", back_populates="itens_pedido")
+    produto = relationship("Produto")
+    variacao = relationship("ProdutoVariacao", foreign_keys=[variacao_id], back_populates="itens_pedido")
     fornecedor = relationship("Fornecedor")
+    pai = relationship("PedidoVendaItem", remote_side=[id], back_populates="filhos")
+    filhos = relationship("PedidoVendaItem", back_populates="pai")
 
 
 class Empresa(Base):
