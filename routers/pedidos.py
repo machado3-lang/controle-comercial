@@ -4,8 +4,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date, datetime
 from database import get_db
-from models import Produto, PedidoVenda, PedidoVendaItem, Cliente, StatusPedido, Fornecedor, FormaPagamento, ContaReceber, StatusConta
-from models_servico import Servico
+from models import Produto, PedidoVenda, PedidoVendaItem, Cliente, StatusPedido, Fornecedor, FormaPagamento, ContaReceber, StatusConta, ProdutoVariacao, ProdutoComposicao, Empresa
 
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
 
@@ -80,7 +79,7 @@ async def finalizar_grupo(
     if not cliente:
         return RedirectResponse(url="/pedidos/pre-venda/agrupar", status_code=303)
     novo_pedido = PedidoVenda(
-        cliente_id=cliente_id,
+        cliente_id=cliente_id_int,
         status=StatusPedido.FATURADO,
         tipo_pedido="venda",
         forma_pagamento=FormaPagamento.AVISTA
@@ -94,7 +93,7 @@ async def finalizar_grupo(
         for item in p.itens:
             novo_item = PedidoVendaItem(
                 pedido_id=novo_pedido.id,
-                produto_id=item.produto_id,
+                variacao_id=item.variacao_id if item.variacao_id else None,
                 descricao=item.descricao,
                 quantidade=item.quantidade,
                 preco_unitario=item.preco_unitario,
@@ -113,43 +112,57 @@ async def finalizar_grupo(
 
 @router.get("/novo")
 def novo_pedido(request: Request, db: Session = Depends(get_db)):
+    from sqlalchemy.orm import selectinload
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
-    produtos = db.query(Produto).order_by(Produto.nome).all()
-    servicos = db.query(Servico).order_by(Servico.nome).all()
-    produtos_json = [{"id": p.id, "nome": p.nome, "preco": p.preco, "descricao": p.descricao or p.nome} for p in produtos]
-    servicos_json = [{"id": s.id, "nome": s.nome, "preco_padrao": s.preco_padrao} for s in servicos]
+    itens_disponiveis = db.query(Produto).options(
+        selectinload(Produto.variacoes),
+        selectinload(Produto.composicoes)
+    ).order_by(Produto.nome).all()
+    itens_json = [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": v.preco_adicional} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padrao} for c in i.composicoes]} for i in itens_disponiveis if i.tipo in ('produto', 'servico', 'kit')]
+    clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
+    hoje = date.today().isoformat()
     ultimo_numero = db.query(PedidoVenda.numero).order_by(PedidoVenda.numero.desc()).first()
     proximo_numero = str(int(ultimo_numero[0]) + 1) if ultimo_numero and ultimo_numero[0] else "1"
     return request.app.state.templates.TemplateResponse(
         "pedidos/form.html",
-        {"request": request, "clientes": clientes, "produtos": produtos, "servicos": servicos, "pedido": None, "date": date, "proximo_numero": proximo_numero, "produtos_json": produtos_json, "servicos_json": servicos_json}
+        {"request": request, "clientes": clientes, "pedido": None, "date": date, "hoje": hoje, "proximo_numero": proximo_numero, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "clientes_json": clientes_json}
     )
 
 
 @router.post("/salvar")
 def salvar_pedido(
     request: Request, db: Session = Depends(get_db),
-    cliente_id: int = Form(...),
+    cliente_id: str = Form(""),
     numero: str = Form(""),
     data: str = Form(""),
     observacao: str = Form(""),
+    forma_pagamento: str = Form("avista"),
     itens: str = Form("[]"),
     fornecedores_itens: str = Form("[]"),
-    pedido_id: int = Form(None)
+    pedido_id: str = Form(""),
+    acao: str = Form("emitir")
 ):
     import json
     from sqlalchemy import func
+    cliente_id_int = int(cliente_id) if cliente_id else None
+    if not cliente_id_int:
+        return RedirectResponse(url="/pedidos", status_code=303)
+    pedido_id_int = int(pedido_id) if pedido_id else None
     if pedido_id:
         # EDIÇÃO: Atualizar pedido existente
         pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
         if not pedido:
             return RedirectResponse(url="/pedidos", status_code=303)
-        pedido.cliente_id = cliente_id
+        pedido.cliente_id = cliente_id_int
         if numero:
             pedido.numero = numero
         if data:
             pedido.data = date.fromisoformat(data)
         pedido.observacao = observacao
+        if forma_pagamento == "prazo":
+            pedido.forma_pagamento = FormaPagamento.APRAZO
+        else:
+            pedido.forma_pagamento = FormaPagamento.AVISTA
         # Limpar itens antigos
         db.query(PedidoVendaItem).filter(PedidoVendaItem.pedido_id == pedido_id).delete()
     else:
@@ -164,10 +177,11 @@ def salvar_pedido(
                     pass
             numero = str(ultimo_val + 1)
         pedido = PedidoVenda(
-            cliente_id=cliente_id,
+            cliente_id=cliente_id_int,
             numero=numero,
             data=date.fromisoformat(data) if data else date.today(),
             observacao=observacao,
+            forma_pagamento=FormaPagamento.AVISTA if forma_pagamento != "prazo" else FormaPagamento.APRAZO,
         )
         db.add(pedido)
     db.commit()
@@ -177,31 +191,69 @@ def salvar_pedido(
         total = 0
         for item in itens_list:
             total += float(item.get("quantidade", 0)) * float(item.get("preco", 0))
-            servico_id = int(item.get("servico_id")) if item.get("servico_id") else None
-            produto_id = int(item.get("produto_id")) if item.get("produto_id") else None
-            produto = db.query(Produto).filter(Produto.id == produto_id).first() if produto_id else None
-            pi = PedidoVendaItem(
-                pedido_id=pedido.id,
-                produto_id=produto_id,
-                servico_id=servico_id,
-                descricao=item.get("descricao", ""),
-                quantidade=float(item.get("quantidade", 1)),
-                preco_unitario=float(item.get("preco", 0)),
-                total=float(item.get("quantidade", 0)) * float(item.get("preco", 0)),
-                fornecedor_id=produto.fornecedor_id if produto else None,
-            )
-            db.add(pi)
+            item_id = int(item.get("item_id")) if item.get("item_id") else None
+            variacao_id = int(item.get("variacao_id")) if item.get("variacao_id") else None
+            
+            produto = db.query(Produto).filter(Produto.id == item_id).first() if item_id else None
+            
+            pai_id = None
+            if produto and produto.tipo == "kit" and produto.composicoes:
+                pi_pai = PedidoVendaItem(
+                    pedido_id=pedido.id,
+                    produto_id=produto.id,
+                    descricao=produto.nome,
+                    quantidade=float(item.get("quantidade", 1)),
+                    preco_unitario=float(item.get("preco", 0)),
+                    total=float(item.get("quantidade", 0)) * float(item.get("preco", 0)),
+                    fornecedor_id=produto.fornecedor_id
+                )
+                db.add(pi_pai)
+                db.flush()
+                pai_id = pi_pai.id
+                
+                for comp in produto.composicoes:
+                    comp_prod = db.query(Produto).filter(Produto.id == comp.insumo_id).first()
+                    if comp_prod:
+                        pi_filho = PedidoVendaItem(
+                            pedido_id=pedido.id,
+                            item_pai_id=pai_id,
+                            descricao=comp_prod.nome,
+                            quantidade=comp.quantidade_padrao,
+                            preco_unitario=comp_prod.preco,
+                            total=comp.quantidade_padrao * comp_prod.preco,
+                            fornecedor_id=comp_prod.fornecedor_id
+                        )
+                        db.add(pi_filho)
+            else:
+                pi = PedidoVendaItem(
+                    pedido_id=pedido.id,
+                    produto_id=item_id,
+                    variacao_id=variacao_id,
+                    descricao=item.get("descricao", ""),
+                    quantidade=float(item.get("quantidade", 1)),
+                    preco_unitario=float(item.get("preco", 0)),
+                    total=float(item.get("quantidade", 0)) * float(item.get("preco", 0)),
+                    fornecedor_id=produto.fornecedor_id if produto else None,
+                )
+                db.add(pi)
         pedido.total = total
         db.commit()
-    except:
+    except Exception as e:
         pass
     
+    if acao == "emitir":
+        return RedirectResponse(url=f"/pedidos/{pedido.id}/imprimir", status_code=303)
     return RedirectResponse(url="/pedidos", status_code=303)
 
 
 @router.get("/{pedido_id}")
 def detalhe_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
-    pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
+    from sqlalchemy.orm import selectinload
+    pedido = db.query(PedidoVenda).options(
+        selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.produto),
+        selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.variacao),
+        selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.filhos).selectinload(PedidoVendaItem.fornecedor)
+    ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
         return RedirectResponse(url="/pedidos", status_code=303)
     produtos = db.query(Produto).order_by(Produto.nome).all()
@@ -211,31 +263,16 @@ def detalhe_pedido(request: Request, pedido_id: int, db: Session = Depends(get_d
     )
 
 
-@router.get("/{pedido_id}/imprimir")
-def imprimir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
+@router.post("/{pedido_id}/excluir")
+def excluir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
+        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
-    if not pedido:
-        return RedirectResponse(url="/pedidos", status_code=303)
-    return request.app.state.templates.TemplateResponse(
-        "pedidos/imprimir.html",
-        {"request": request, "pedido": pedido}
-    )
-
-
-@router.get("/{pedido_id}/editar")
-def editar_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
-    pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
-    if not pedido:
-        return RedirectResponse(url="/pedidos", status_code=303)
-    clientes = db.query(Cliente).order_by(Cliente.nome).all()
-    produtos = db.query(Produto).order_by(Produto.nome).all()
-    servicos = db.query(Servico).order_by(Servico.nome).all()
-    produtos_json = [{"id": p.id, "nome": p.nome, "preco": p.preco, "descricao": p.descricao or p.nome} for p in produtos]
-    servicos_json = [{"id": s.id, "nome": s.nome, "preco_padrao": s.preco_padrao} for s in servicos]
-    return request.app.state.templates.TemplateResponse(
-        "pedidos/form.html",
-        {"request": request, "pedido": pedido, "clientes": clientes, "produtos": produtos, "produtos_json": produtos_json, "servicos_json": servicos_json, "date": date}
-    )
+    if pedido:
+        db.delete(pedido)
+        db.commit()
+    return RedirectResponse(url="/pedidos", status_code=303)
 
 
 @router.post("/{pedido_id}/status")
@@ -253,13 +290,28 @@ def atualizar_status(
     return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
 
 
-@router.get("/{pedido_id}/excluir")
-def excluir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
-    pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
-    if pedido:
-        db.delete(pedido)
-        db.commit()
-    return RedirectResponse(url="/pedidos", status_code=303)
+@router.get("/{pedido_id}/editar")
+def editar_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
+    from sqlalchemy.orm import selectinload
+    clientes = db.query(Cliente).order_by(Cliente.nome).all()
+    itens_disponiveis = db.query(Produto).options(
+        selectinload(Produto.variacoes),
+        selectinload(Produto.composicoes)
+    ).order_by(Produto.nome).all()
+    itens_json = [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": v.preco_adicional} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padrao} for c in i.composicoes]} for i in itens_disponiveis if i.tipo in ('produto', 'servico', 'kit')]
+    clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
+    hoje = date.today().isoformat()
+    # Carrega itens com produtos e variações para edição
+    pedido = db.query(PedidoVenda).options(
+        selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.produto),
+        selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.variacao)
+    ).filter(PedidoVenda.id == pedido_id).first()
+    if not pedido:
+        return RedirectResponse(url="/pedidos", status_code=303)
+    return request.app.state.templates.TemplateResponse(
+        "pedidos/form.html",
+        {"request": request, "pedido": pedido, "clientes": clientes, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "date": date, "hoje": hoje, "clientes_json": clientes_json}
+    )
 
 
 @router.post("/{pedido_id}/finalizar")
@@ -296,14 +348,17 @@ def finalizar_pedido(
 
 
 @router.get("/{pedido_id}/imprimir")
-def imprimir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
-    pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
+def imprimir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db), tipo: str = Query("faturado")):
+    from sqlalchemy.orm import selectinload
+    pedido = db.query(PedidoVenda).options(
+        selectinload(PedidoVenda.itens),
+        selectinload(PedidoVenda.cliente)
+    ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
         return RedirectResponse(url="/pedidos", status_code=303)
-    produtos = db.query(Produto).order_by(Produto.nome).all()
     return request.app.state.templates.TemplateResponse(
         "pedidos/imprimir.html",
-        {"request": request, "pedido": pedido, "STATUS_LABELS": STATUS_PEDIDO_LABELS, "FORMAS_PAGAMENTO": FORMAS_PAGAMENTO}
+        {"request": request, "pedido": pedido, "tipo_impressao": tipo, "STATUS_LABELS": STATUS_PEDIDO_LABELS, "FORMAS_PAGAMENTO": FORMAS_PAGAMENTO}
     )
 
 

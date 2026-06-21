@@ -1,14 +1,31 @@
 {% extends "base.html" %}
-{% block title %}Imprimir Pedido #{{ pedido.numero }} - Controle Comercial{% endblock %}
+{% block title %}{{ 'Orçamento' if tipo_impressao == 'orcamento' else 'Imprimir' }} Pedido #{{ pedido.numero }} - Controle Comercial{% endblock %}
 {% block content %}
+<style>
+@media print {
+    .print-button { display: none; }
+    body { background: white; color: black; font-family: Arial, sans-serif; }
+    .print-container { background: white; color: black; padding: 0; }
+}
+@media print and (max-width: 80mm) {
+    .print-container { max-width: 80mm; font-size: 10px; }
+}
+</style>
 <div class="print-container max-w-4xl mx-auto p-6 bg-white text-black">
+    {% if tipo_impressao == 'orcamento' %}
+    <div class="text-center border-b-2 border-gray-800 pb-4 mb-4">
+        <h1 class="text-3xl font-bold">ORÇAMENTO</h1>
+        <p class="text-sm">Pedido #{{ pedido.numero }} - {{ pedido.data.strftime('%d/%m/%Y') if pedido.data else '' }}</p>
+    </div>
+    {% else %}
     <div class="flex justify-between items-start mb-6">
         <div>
             <h2 class="text-2xl font-bold">Pedido #{{ pedido.numero }}</h2>
-            <p class="text-sm">Data: {{ pedido.data }}</p>
+            <p class="text-sm">Data: {{ pedido.data.strftime('%d/%m/%Y') if pedido.data else '-' }}</p>
         </div>
         <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ" class="h-12">
     </div>
+    {% endif %}
     
     <div class="border-t-2 border-gray-800 pt-4 mb-4">
         <h3 class="font-bold text-lg mb-2">Cliente</h3>
@@ -22,12 +39,14 @@
             <thead><tr class="bg-gray-200"><th class="border p-2">Descrição</th><th class="border p-2">Qtd</th><th class="border p-2">Preço</th><th class="border p-2">Total</th></tr></thead>
             <tbody>
                 {% for item in pedido.itens %}
+                {% if not item.item_pai_id %}
                 <tr>
                     <td class="border p-2">{{ item.descricao }}</td>
                     <td class="border p-2">{{ item.quantidade }}</td>
                     <td class="border p-2">R$ {{ "%.2f"|format(item.preco_unitario or 0) }}</td>
                     <td class="border p-2">R$ {{ "%.2f"|format(item.total or 0) }}</td>
                 </tr>
+                {% endif %}
                 {% endfor %}
             </tbody>
         </table>

@@ -1,86 +1,87 @@
 {% extends "base.html" %}
-{% block title %}Imprimir OS #{{ os.id }} - Controle Comercial{% endblock %}
+{% block title %}{{ 'Orçamento' if tipo_impressao == 'orcamento' else 'Imprimir' }} OS #{{ ordem.id }} - Controle Comercial{% endblock %}
 {% block content %}
-<div class="print-container max-w-4xl mx-auto p-6 bg-white text-black">
+<style>
+@media print {
+    .print-button { display: none; }
+    body { background: white; color: black; font-family: Arial, sans-serif; }
+}
+@media print and (max-width: 80mm) {
+    .print-container { max-width: 80mm; font-size: 10px; padding: 2mm; }
+    .termica-width { width: 80mm; }
+}
+</style>
+<div class="print-container max-w-4xl mx-auto p-6 bg-white text-black {{ 'termica-width' if tipo_impressao == 'termica' else '' }}">
+    {% if tipo_impressao == 'orcamento' %}
+    <div class="text-center border-b-2 border-gray-800 pb-4 mb-4">
+        <h1 class="text-3xl font-bold">ORÇAMENTO</h1>
+        <p class="text-sm">OS #{{ ordem.id }} - {{ ordem.data_entrada.strftime('%d/%m/%Y') if ordem.data_entrada else '' }}</p>
+    </div>
+    {% else %}
     <div class="flex justify-between items-start mb-6">
         <div>
-            <h2 class="text-2xl font-bold">Ordem de Serviço #{{ os.id }}</h2>
-            <p class="text-sm">Data: {{ os.data_entrada }}</p>
+            <h2 class="text-2xl font-bold">Ordem de Serviço #{{ ordem.id }}</h2>
+            <p class="text-sm">Data Entrada: {{ ordem.data_entrada.strftime('%d/%m/%Y') if ordem.data_entrada else '' }}</p>
         </div>
         <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ" class="h-12">
     </div>
+    {% endif %}
     
     <div class="border-t-2 border-gray-800 pt-4 mb-4">
         <h3 class="font-bold text-lg mb-2">Cliente</h3>
-        <p><strong>Nome:</strong> {{ os.cliente.nome }}</p>
-        <p><strong>CNPJ/CPF:</strong> {{ os.cliente.cpf_cnpj }}</p>
-        <p><strong>Telefone:</strong> {{ os.cliente.telefone or '-' }}</p>
+        <p><strong>Nome:</strong> {{ ordem.cliente.nome }}</p>
+        <p><strong>CNPJ/CPF:</strong> {{ ordem.cliente.cpf_cnpj or '-' }}</p>
+        <p><strong>Telefone:</strong> {{ ordem.cliente.telefone or '-' }}</p>
     </div>
     
     <div class="border-t-2 border-gray-800 pt-4 mb-4">
         <h3 class="font-bold text-lg mb-2">Equipamento</h3>
-        <p><strong>Equipamento:</strong> {{ os.equipamento }}</p>
-        <p><strong>Marca/Modelo:</strong> {{ os.marca }} / {{ os.modelo }}</p>
-        <p><strong>Série:</strong> {{ os.serie or '-' }}</p>
+        <p><strong>Equipamento:</strong> {{ ordem.equipamento }}</p>
+        <p><strong>Marca/Modelo:</strong> {{ ordem.marca }} / {{ ordem.modelo }}</p>
+        <p><strong>Série:</strong> {{ ordem.numero_serie or '-' }}</p>
     </div>
     
     <div class="border-t-2 border-gray-800 pt-4 mb-4">
         <h3 class="font-bold text-lg mb-2">Defeito Informado</h3>
-        <p>{{ os.defeito or '-' }}</p>
+        <p>{{ ordem.defeito_relatado or '-' }}</p>
     </div>
     
+    {% if ordem.servicos_executados %}
     <div class="border-t-2 border-gray-800 pt-4 mb-4">
         <h3 class="font-bold text-lg mb-2">Serviços Realizados</h3>
-        {% if os.servicos %}
-        <table class="w-full border">
-            <thead><tr class="bg-gray-200"><th class="border p-2">Serviço</th><th class="border p-2">Valor</th></tr></thead>
-            <tbody>
-                {% for s in os.servicos %}
-                <tr><td class="border p-2">{{ s.servico.nome }}</td><td class="border p-2">R$ {{ (s.preco or 0) / 100 }}</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p>-</p>
-        {% endif %}
+        <p>{{ ordem.servicos_executados }}</p>
     </div>
+    {% endif %}
     
+    {% if ordem.pecas_utilizadas %}
     <div class="border-t-2 border-gray-800 pt-4 mb-4">
         <h3 class="font-bold text-lg mb-2">Peças / Produtos</h3>
-        {% if os.pecas %}
-        <table class="w-full border">
-            <thead><tr class="bg-gray-200"><th class="border p-2">Produto</th><th class="border p-2">Qtd</th><th class="border p-2">Valor</th></tr></thead>
-            <tbody>
-                {% for p in os.pecas %}
-                <tr><td class="border p-2">{{ p.produto.nome }}</td><td class="border p-2">{{ p.quantidade }}</td><td class="border p-2">R$ {{ (p.preco or 0) / 100 }}</td></tr>
-                {% endfor %}
-            </tbody>
-        </table>
-        {% else %}
-        <p>-</p>
-        {% endif %}
+        <p>{{ ordem.pecas_utilizadas }}</p>
     </div>
+    {% endif %}
     
     <div class="border-t-2 border-gray-800 pt-4 mb-4">
-        <h3 class="font-bold text-lg mb-2">Total</h3>
-        <p class="text-xl font-bold">R$ {{ (os.total or 0) / 100 }}</p>
+        <h3 class="font-bold text-lg mb-2">Valores</h3>
+        <p><strong>Valor Serviço:</strong> R$ {{ "%.2f"|format(ordem.valor_servico or 0) }}</p>
+        <p><strong>Valor Peças:</strong> R$ {{ "%.2f"|format(ordem.valor_pecas or 0) }}</p>
+        <p class="text-xl font-bold"><strong>Valor Total:</strong> R$ {{ "%.2f"|format(ordem.valor_total or 0) }}</p>
     </div>
     
     <div class="border-t-2 border-gray-800 pt-4 mb-4">
         <h3 class="font-bold text-lg mb-2">Status</h3>
-        <p>{{ os.status.value.title() }}</p>
+        <p>{{ ordem.status.value.title() }}</p>
     </div>
+    
+    {% if ordem.observacao %}
+    <div class="border-t-2 border-gray-800 pt-4 mb-4">
+        <h3 class="font-bold text-lg mb-2">Observação</h3>
+        <p>{{ ordem.observacao }}</p>
+    </div>
+    {% endif %}
     
     <div class="text-center mt-8">
         <button onclick="window.print()" class="px-4 py-2 bg-blue-600 text-white rounded print-button">Imprimir</button>
     </div>
 </div>
 
-<style>
-@media print {
-    .print-button { display: none; }
-    body { background: white; color: black; }
-    .print-container { background: white; color: black; }
-}
-</style>
 {% endblock %}

@@ -5,7 +5,7 @@
     <div class="p-4 border-b border-slate-800/60 flex flex-col md:flex-row md:items-center md:justify-between gap-3">
         <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="wrench" class="w-6 h-6 inline me-2"></i> Ordem de Serviço #{{ ordem.id }}</h4>
         <div class="flex flex-wrap gap-2">
-            <a href="/ordens-servico/{{ ordem.id }}/imprimir" class="flex items-center px-3 py-2 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition" target="_blank"><i data-lucide="printer" class="w-4 h-4 me-1"></i> Imprimir</a>
+            <button type="button" id="btnPreviewOS" class="flex items-center px-3 py-2 text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition"><i data-lucide="printer" class="w-4 h-4 me-1"></i> Emitir / Finalizar</button>
             <button class="flex items-center px-3 py-2 text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition" data-bs-toggle="modal" data-bs-target="#modalEditar"><i data-lucide="pencil" class="w-4 h-4 me-1"></i> Editar</button>
             <a href="/ordens-servico" class="flex items-center px-3 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar</a>
         </div>
@@ -137,6 +137,44 @@
     </div>
 </div>
 
+<div class="modal fade" id="modalPreviewOS" tabindex="-1">
+    <div class="modal-dialog max-w-3xl">
+        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <div class="modal-header border-b border-slate-800/50 flex justify-between items-center">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">Pré-visualização da OS</h5>
+                <div class="flex gap-1">
+                    <button type="button" class="tab-impressao-os px-3 py-1.5 text-xs font-medium bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-full active" data-formato="a4">A4</button>
+                    <button type="button" class="tab-impressao-os px-3 py-1.5 text-xs font-medium text-slate-400 border border-slate-700 rounded-full hover:text-slate-300" data-formato="termica">Térmica 80mm</button>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body max-h-[70vh] overflow-y-auto p-6" id="previewContentOS">
+                <div class="print-preview-os bg-white text-black p-6 rounded-lg text-sm">
+                    <div class="text-center border-b-2 border-gray-800 pb-4 mb-4">
+                        <h2 class="text-2xl font-bold text-black">ORDEM DE SERVIÇO #{{ ordem.id }}</h2>
+                        <p class="text-slate-600">Data: {{ ordem.data_entrada.strftime('%d/%m/%Y') if ordem.data_entrada else '' }}</p>
+                    </div>
+                    <div class="mb-4"><strong>Cliente:</strong> {{ ordem.cliente.nome if ordem.cliente else '-' }}</div>
+                    <div class="mb-4"><strong>Equipamento:</strong> {{ ordem.equipamento }} {{ ordem.marca or '' }} {{ ordem.modelo or '' }}</div>
+                    <div class="mb-4"><strong>Defeito:</strong> {{ ordem.defeito_relatado or '-' }}</div>
+                    {% if ordem.servicos_executados %}
+                    <div class="mb-4"><strong>Serviços:</strong> {{ ordem.servicos_executados }}</div>
+                    {% endif %}
+                    {% if ordem.pecas_utilizadas %}
+                    <div class="mb-4"><strong>Peças:</strong> {{ ordem.pecas_utilizadas }}</div>
+                    {% endif %}
+                    <div class="border-t pt-2"><strong>Total:</strong> R$ {{ "%.2f"|format(ordem.valor_total or 0) }}</div>
+                </div>
+            </div>
+            <div class="modal-footer border-t border-slate-800/50 flex justify-between">
+                <button type="button" class="px-4 py-2 border border-slate-700 rounded-xl text-slate-300 hover:bg-slate-800/50" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" id="btnImprimirPreviewOS" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium"><i data-lucide="printer" class="w-4 h-4 me-1"></i> Imprimir</button>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
 {% block scripts %}
 <script>
 function calcularTotal() {
@@ -155,6 +193,21 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     });
 });
+document.getElementById('btnPreviewOS').addEventListener('click', function() {
+    new bootstrap.Modal(document.getElementById('modalPreviewOS')).show();
+});
+document.querySelectorAll('.tab-impressao-os').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.tab-impressao-os').forEach(b => b.classList.remove('bg-cyan-950/50', 'text-cyan-400', 'border-cyan-800/50', 'active'));
+        this.classList.add('bg-cyan-950/50', 'text-cyan-400', 'border-cyan-800/50', 'active');
+        document.querySelector('.print-preview-os').className = 'print-preview-os bg-white text-black p-6 rounded-lg text-sm';
+        if (this.dataset.formato === 'termica') {
+            document.querySelector('.print-preview-os').classList.add('max-w-[80mm]', 'mx-auto', 'text-xs');
+        }
+    });
+});
+document.getElementById('btnImprimirPreviewOS').addEventListener('click', function() {
+    window.open(`/ordens-servico/{{ ordem.id }}/imprimir?tipo=tela`, '_blank');
+});
 </script>
-{% endblock %}
 {% endblock %}

@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request, Form, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 
@@ -95,7 +95,7 @@ def atualizar_ordem(
     valor_pecas: float = Form(0),
     valor_total: float = Form(0),
     data_entrada: str = Form(""),
-    data_saida: str = Form(""),
+    data_saida: str = Form(None),
     status: str = Form(...),
     tecnico: str = Form(""),
     autorizado_por: str = Form(""),
@@ -130,7 +130,7 @@ def atualizar_ordem(
 
 
 @router.get("/{ordem_id}/imprimir")
-def imprimir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)):
+def imprimir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db), tipo: str = Query("comum")):
     ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
     if not ordem:
         return RedirectResponse(url="/ordens-servico", status_code=303)
@@ -138,12 +138,15 @@ def imprimir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db
     from datetime import datetime
     return request.app.state.templates.TemplateResponse(
         "ordens_servico/imprimir.html",
-        {"request": request, "ordem": ordem, "empresa": empresa, "datetime": datetime}
+        {"request": request, "ordem": ordem, "empresa": empresa, "datetime": datetime, "tipo_impressao": tipo}
     )
 
 
-@router.get("/{ordem_id}/excluir")
-def excluir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)):
+@router.post("/{ordem_id}/excluir")
+def excluir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
+        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
     ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
     if ordem:
         db.delete(ordem)
