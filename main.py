@@ -15,7 +15,6 @@ from datetime import date as date_func, datetime
 
 from database import engine, Base, get_db
 from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario, MarcaProduto
-from models_servico import Servico, ServicoInsumo
 
 def get_current_user(request: Request, db: Session = Depends(get_db)):
     user_id = request.session.get("user_id")
@@ -36,28 +35,73 @@ def run_migrations():
         "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS foto VARCHAR(500)",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS permissoes TEXT",
-        "ALTER TABLE pedidos_venda_itens ADD COLUMN IF NOT EXISTS servico_id INTEGER REFERENCES servicos(id)",
+        "ALTER TABLE pedidos_venda_itens ADD COLUMN IF NOT EXISTS variacao_id INTEGER REFERENCES produto_variacoes(id)",
     ]
     # SQLite não suporta IF NOT EXISTS em ADD COLUMN, usar PRAGMA para verificar
     if "sqlite" in str(engine.url):
+        conn = engine.connect()
         inspector = inspect(engine)
         cols = inspector.get_columns("usuarios")
         existing_cols = {c['name'] for c in cols}
         if "is_admin" not in existing_cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE usuarios ADD COLUMN is_admin BOOLEAN DEFAULT FALSE"))
-                conn.commit()
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN is_admin BOOLEAN DEFAULT FALSE"))
+            conn.commit()
         if "permissoes" not in existing_cols:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE usuarios ADD COLUMN permissoes TEXT"))
-                conn.commit()
+            conn.execute(text("ALTER TABLE usuarios ADD COLUMN permissoes TEXT"))
+            conn.commit()
         # Migration pedidos_venda_itens
         cols_itens = inspector.get_columns("pedidos_venda_itens")
         existing_itens = {c['name'] for c in cols_itens}
-        if "servico_id" not in existing_itens:
-            with engine.connect() as conn:
-                conn.execute(text("ALTER TABLE pedidos_venda_itens ADD COLUMN servico_id INTEGER REFERENCES servicos(id)"))
-                conn.commit()
+        if "variacao_id" not in existing_itens:
+            conn.execute(text("ALTER TABLE pedidos_venda_itens ADD COLUMN variacao_id INTEGER"))
+            conn.commit()
+        if "item_pai_id" not in existing_itens:
+            conn.execute(text("ALTER TABLE pedidos_venda_itens ADD COLUMN item_pai_id INTEGER"))
+            conn.commit()
+        # Check and add missing columns to produto_variacoes
+        cols_var = inspector.get_columns("produto_variacoes")
+        existing_var = {c['name'] for c in cols_var}
+        if "created_at" not in existing_var:
+            conn.execute(text("ALTER TABLE produto_variacoes ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
+            conn.commit()
+        if "updated_at" not in existing_var:
+            conn.execute(text("ALTER TABLE produto_variacoes ADD COLUMN updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
+            conn.commit()
+        if "estoque_atual" not in existing_var:
+            conn.execute(text("ALTER TABLE produto_variacoes ADD COLUMN estoque_atual REAL DEFAULT 0"))
+            conn.commit()
+        if "estoque_minimo" not in existing_var:
+            conn.execute(text("ALTER TABLE produto_variacoes ADD COLUMN estoque_minimo REAL DEFAULT 0"))
+            conn.commit()
+        # Check and add missing column to produto_composicao
+        cols_comp = inspector.get_columns("produto_composicao")
+        existing_comp = {c['name'] for c in cols_comp}
+        if "created_at" not in existing_comp:
+            conn.execute(text("ALTER TABLE produto_composicao ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP"))
+            conn.commit()
+        if "insumo_id" not in existing_comp:
+            # Não há dados importantes - recriar tabela limpa
+            conn.execute(text("DROP TABLE IF EXISTS produto_composicao"))
+            conn.execute(text("""
+                CREATE TABLE produto_composicao (
+                    id INTEGER PRIMARY KEY,
+                    produto_pai_id INTEGER NOT NULL REFERENCES produtos(id),
+                    insumo_id INTEGER NOT NULL REFERENCES produtos(id),
+                    quantidade_padrao REAL DEFAULT 1,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                )
+            """))
+            conn.commit()
+        # Check and add missing columns to assinaturas_historico
+        cols_hist = inspector.get_columns("assinaturas_historico")
+        existing_hist = {c['name'] for c in cols_hist}
+        if "dia_vencimento_anterior" not in existing_hist:
+            conn.execute(text("ALTER TABLE assinaturas_historico ADD COLUMN dia_vencimento_anterior INTEGER"))
+            conn.commit()
+        if "dia_vencimento_novo" not in existing_hist:
+            conn.execute(text("ALTER TABLE assinaturas_historico ADD COLUMN dia_vencimento_novo INTEGER"))
+            conn.commit()
+        conn.close()
     else:
         try:
             with engine.connect() as conn:

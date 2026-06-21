@@ -1,23 +1,32 @@
 from fastapi import APIRouter, Depends, Request, Form, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import datetime, date
 
 from database import get_db
-from models import Cliente, ContaReceber, Assinatura, OrdemServico
+from models import Cliente, ContaReceber, Assinatura, OrdemServico, Empresa
 
 
 def _proximo_codigo_cliente(db: Session) -> str:
-    ultimo = db.query(func.max(Cliente.codigo)).scalar()
-    if ultimo:
+    codigos = db.query(Cliente.codigo).filter(Cliente.codigo.isnot(None)).all()
+    codigos = [c[0] for c in codigos if c[0]]
+    
+    usados = set()
+    for c in codigos:
         try:
-            num = int(ultimo.split("-")[1]) + 1
+            num = int(c.split("-")[1])
+            usados.add(num)
         except (IndexError, ValueError):
-            num = int(ultimo) + 1
-    else:
-        num = 1
-    return f"CLI-{num:04d}"
+            continue
+    
+    max_num = max(usados) if usados else 0
+    
+    for i in range(1, max_num + 2):
+        if i not in usados:
+            return f"CLI-{i:04d}"
+    
+    return f"CLI-{max_num + 1:04d}"
 
 router = APIRouter(prefix="/clientes", tags=["Clientes"])
 
@@ -38,11 +47,19 @@ def listar_clientes(request: Request, db: Session = Depends(get_db), busca: str 
     )
 
 
+@router.get("/buscar")
+def buscar_clientes(request: Request, db: Session = Depends(get_db), q: str = Query("")):
+    if not q or len(q) < 2:
+        return {"clientes": []}
+    query = db.query(Cliente).filter(Cliente.nome.ilike(f"%{q}%") | Cliente.cpf_cnpj.ilike(f"%{q}%"))
+    clientes = query.order_by(Cliente.nome).limit(20).all()
+    return {"clientes": [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]}
+
 @router.get("/novo")
-def novo_cliente(request: Request):
+def novo_cliente(request: Request, db: Session = Depends(get_db)):
     return request.app.state.templates.TemplateResponse(
         "clientes/form.html",
-        {"request": request, "cliente": None}
+        {"request": request, "cliente": None, "proximo_codigo": _proximo_codigo_cliente(db)}
     )
 
 
@@ -50,6 +67,7 @@ def novo_cliente(request: Request):
 def criar_cliente(
     request: Request,
     db: Session = Depends(get_db),
+    codigo: str = Form(""),
     nome: str = Form(...),
     cpf_cnpj: str = Form(""),
     tipo_pessoa: str = Form(""),
@@ -69,6 +87,8 @@ def criar_cliente(
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
 ):
+    if not codigo:
+        codigo = _proximo_codigo_cliente(db)
     if data_cadastro:
         created_at = datetime.strptime(data_cadastro, "%Y-%m-%d")
     else:
@@ -165,8 +185,11 @@ def atualizar_cliente(
     return RedirectResponse(url=f"/clientes/{cliente_id}", status_code=303)
 
 
-@router.get("/{cliente_id}/excluir")
-def excluir_cliente(request: Request, cliente_id: int, db: Session = Depends(get_db)):
+@router.post("/{cliente_id}/excluir")
+def excluir_cliente(request: Request, cliente_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
+        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
     if cliente:
         db.delete(cliente)

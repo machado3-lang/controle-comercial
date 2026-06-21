@@ -73,7 +73,7 @@ def listar_assinaturas(
         except ValueError:
             pass
     if busca:
-        query = query.filter(Cliente.nome.ilike(f"%{busca}%"))
+        query = query.filter(Cliente.nome.ilike(f"%{busca}%") | Cliente.fantasia.ilike(f"%{busca}%") | Cliente.cpf_cnpj.ilike(f"%{busca}%"))
     if vencimento_dias:
         try:
             dias = int(vencimento_dias)
@@ -104,10 +104,13 @@ def listar_assinaturas(
 
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
+    clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
+    fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     return request.app.state.templates.TemplateResponse(
         "assinaturas/listar.html",
         {"request": request, "assinaturas": assinaturas, "clientes": clientes,
-         "fornecedores": fornecedores, "periodicidade": periodicidade, "status_filtro": status_filtro,
+         "fornecedores": fornecedores, "clientes_json": clientes_json, "fornecedores_json": fornecedores_json,
+         "periodicidade": periodicidade, "status_filtro": status_filtro,
          "busca": busca, "vencimento_dias": vencimento_dias, "SITUACAO_LABELS": SITUACAO_LABELS,
          "PERIODICIDADE_LABELS": PERIODICIDADE_LABELS, "lucro_total": lucro_total}
     )
@@ -204,7 +207,7 @@ def _gerar_cobranca(db: Session, assinatura: Assinatura, gerar_proximas: int = 3
     db.commit()
 
 
-def _salvar_historico(db: Session, assinatura: Assinatura, valor, valor_revenda, quantidade):
+def _salvar_historico(db: Session, assinatura: Assinatura, valor, valor_revenda, quantidade, dia_vencimento):
     alterou = False
     vals = {}
     if assinatura.valor != valor:
@@ -218,6 +221,10 @@ def _salvar_historico(db: Session, assinatura: Assinatura, valor, valor_revenda,
     if assinatura.quantidade != quantidade:
         vals["quantidade_anterior"] = assinatura.quantidade
         vals["quantidade_novo"] = quantidade
+        alterou = True
+    if assinatura.dia_vencimento != dia_vencimento:
+        vals["dia_vencimento_anterior"] = assinatura.dia_vencimento
+        vals["dia_vencimento_novo"] = dia_vencimento
         alterou = True
     if alterou:
         historico = AssinaturaHistorico(assinatura_id=assinatura.id, **vals)
@@ -243,10 +250,13 @@ def editar_assinatura(request: Request, assinatura_id: int, db: Session = Depend
         AssinaturaHistorico.assinatura_id == assinatura_id
     ).order_by(AssinaturaHistorico.data_alteracao.desc()).all()
     empresa = db.query(Empresa).first()
+    clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
+    fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     return request.app.state.templates.TemplateResponse(
         "assinaturas/form.html",
         {"request": request, "assinatura": assinatura, "clientes": clientes,
          "fornecedores": fornecedores, "historico": historico,
+         "clientes_json": clientes_json, "fornecedores_json": fornecedores_json,
          "senha_definida": bool(empresa and empresa.senha_admin)}
     )
 
@@ -273,7 +283,11 @@ def atualizar_assinatura(
     if not assinatura:
         return RedirectResponse(url="/assinaturas", status_code=303)
 
-    _salvar_historico(db, assinatura, valor, valor_revenda, quantidade if quantidade else None)
+    # Só permite alterações se a assinatura estiver ativa
+    if assinatura.situacao != 1:
+        return RedirectResponse(url="/assinaturas", status_code=303)
+
+    _salvar_historico(db, assinatura, valor, valor_revenda, quantidade if quantidade else None, dia_vencimento)
 
     assinatura.cliente_id = cliente_id
     assinatura.periodicidade = periodicidade
@@ -310,7 +324,7 @@ def excluir_historico(
     if historico:
         db.delete(historico)
         db.commit()
-    return RedirectResponse(url=f"/assinaturas/{assinatura_id}/editar", status_code=303)
+    return RedirectResponse(url=f"/assinaturas/{assinatura_id}", status_code=303)
 
 
 @router.get("/{assinatura_id}/cancelar")
@@ -322,8 +336,11 @@ def cancelar_assinatura(request: Request, assinatura_id: int, db: Session = Depe
     return RedirectResponse(url="/assinaturas", status_code=303)
 
 
-@router.get("/{assinatura_id}/excluir")
-def excluir_assinatura(request: Request, assinatura_id: int, db: Session = Depends(get_db)):
+@router.post("/{assinatura_id}/excluir")
+def excluir_assinatura(request: Request, assinatura_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
+        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
     assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
     if assinatura:
         db.delete(assinatura)

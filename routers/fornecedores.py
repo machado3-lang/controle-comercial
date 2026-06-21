@@ -1,23 +1,31 @@
 from fastapi import APIRouter, Depends, Request, Form, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from datetime import datetime
 
 from database import get_db
-from models import Fornecedor, ContaPagar
+from models import Fornecedor, ContaPagar, Empresa
 
 
 def _proximo_codigo_fornecedor(db: Session) -> str:
-    ultimo = db.query(func.max(Fornecedor.codigo)).scalar()
-    if ultimo:
+    codigos = db.query(Fornecedor.codigo).filter(Fornecedor.codigo.isnot(None)).all()
+    codigos = [c[0] for c in codigos if c[0]]
+    
+    usados = set()
+    for c in codigos:
         try:
-            num = int(ultimo.split("-")[1]) + 1
+            num = int(c.split("-")[1])
+            usados.add(num)
         except (IndexError, ValueError):
-            num = int(ultimo) + 1
-    else:
-        num = 1
-    return f"FOR-{num:04d}"
+            continue
+    
+    max_num = max(usados) if usados else 0
+    
+    for i in range(1, max_num + 2):
+        if i not in usados:
+            return f"FOR-{i:04d}"
+    
+    return f"FOR-{max_num + 1:04d}"
 
 
 router = APIRouter(prefix="/fornecedores", tags=["Fornecedores"])
@@ -39,11 +47,19 @@ def listar_fornecedores(request: Request, db: Session = Depends(get_db), busca: 
     )
 
 
+@router.get("/buscar")
+def buscar_fornecedores(request: Request, db: Session = Depends(get_db), q: str = Query("")):
+    if not q or len(q) < 2:
+        return {"fornecedores": []}
+    query = db.query(Fornecedor).filter(Fornecedor.nome.ilike(f"%{q}%") | Fornecedor.cpf_cnpj.ilike(f"%{q}%"))
+    fornecedores = query.order_by(Fornecedor.nome).limit(20).all()
+    return {"fornecedores": [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]}
+
 @router.get("/novo")
-def novo_fornecedor(request: Request):
+def novo_fornecedor(request: Request, db: Session = Depends(get_db)):
     return request.app.state.templates.TemplateResponse(
         "fornecedores/form.html",
-        {"request": request, "fornecedor": None}
+        {"request": request, "fornecedor": None, "proximo_codigo": _proximo_codigo_fornecedor(db)}
     )
 
 
@@ -51,6 +67,7 @@ def novo_fornecedor(request: Request):
 def criar_fornecedor(
     request: Request,
     db: Session = Depends(get_db),
+    codigo: str = Form(""),
     nome: str = Form(...),
     cpf_cnpj: str = Form(""),
     tipo_pessoa: str = Form(""),
@@ -70,6 +87,8 @@ def criar_fornecedor(
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
 ):
+    if not codigo:
+        codigo = _proximo_codigo_fornecedor(db)
     if data_cadastro:
         created_at = datetime.strptime(data_cadastro, "%Y-%m-%d")
     else:
@@ -164,8 +183,11 @@ def atualizar_fornecedor(
     return RedirectResponse(url=f"/fornecedores/{fornecedor_id}", status_code=303)
 
 
-@router.get("/{fornecedor_id}/excluir")
-def excluir_fornecedor(request: Request, fornecedor_id: int, db: Session = Depends(get_db)):
+@router.post("/{fornecedor_id}/excluir")
+def excluir_fornecedor(request: Request, fornecedor_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
+        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
     fornecedor = db.query(Fornecedor).filter(Fornecedor.id == fornecedor_id).first()
     if fornecedor:
         db.delete(fornecedor)

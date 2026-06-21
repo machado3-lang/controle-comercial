@@ -21,8 +21,8 @@
                     <tr class="hover:bg-slate-800/40 transition">
                         <td class="px-4 py-3 text-sm text-slate-100">{{ m.nome }}</td>
                         <td class="px-4 py-3 text-center">
-                            <a href="/produtos/marcas/editar/{{ m.id }}" class="inline-block p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition me-1" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>
-                            <a href="/produtos/marcas/excluir/{{ m.id }}" class="inline-block p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="return confirm('Excluir?')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></a>
+                            <a href="/produtos/marcas/editar/{{ m.id }}" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition me-1 align-middle" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>
+                            <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition align-middle" onclick="excluirDireto('/produtos/marcas/excluir/{{ m.id }}')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                         </td>
                     </tr>
                     {% else %}

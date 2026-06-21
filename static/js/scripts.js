@@ -58,10 +58,25 @@ function aplicarMascaraCep(input) {
     input.value = val;
 }
 
-function confirmarExclusao(url, mensagem) {
-    if (confirm(mensagem || 'Tem certeza que deseja excluir?')) {
-        window.location.href = url;
-    }
+function confirmarExclusao(url) {
+    const form = document.getElementById('formExcluirModal');
+    form.action = url;
+    const modal = new bootstrap.Modal(document.getElementById('modalConfirmarExclusao'));
+    modal.show();
+}
+
+function excluirDireto(url) {
+    fetch(url, { method: 'POST' })
+        .then(r => {
+            if (r.redirected) {
+                window.location.href = r.url;
+            } else if (r.status === 400) {
+                r.json().then(d => alert(d.detail || 'Não é possível excluir'));
+            } else {
+                window.location.reload();
+            }
+        })
+        .catch(() => window.location.reload());
 }
 
 function calcularTotal() {

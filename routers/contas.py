@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, Request, Form, Query
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func as sql_func
 from datetime import datetime, date
@@ -42,13 +42,14 @@ def listar_contas_pagar(
     contas = query.order_by(ContaPagar.data_vencimento.desc()).all()
     total_valor = sum(c.valor for c in contas)
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
+    fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     messages = get_messages(request)
     return request.app.state.templates.TemplateResponse(
         "contas/pagar_listar.html",
         {"request": request, "contas": contas, "fornecedores": fornecedores,
          "status_filtro": status_filtro, "busca": busca, "StatusConta": StatusConta,
          "messages": messages, "data_inicio": data_inicio, "data_fim": data_fim,
-         "total_valor": total_valor}
+         "total_valor": total_valor, "fornecedores_json": fornecedores_json}
     )
 
 
@@ -110,8 +111,11 @@ def pagar_conta(request: Request, conta_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/contas/pagar", status_code=303)
 
 
-@router.get("/pagar/{conta_id}/excluir")
-def excluir_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
+@router.post("/pagar/{conta_id}/excluir")
+def excluir_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
+        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if conta:
         db.delete(conta)
@@ -209,13 +213,14 @@ def listar_contas_receber(
     contas = query.order_by(ContaReceber.data_vencimento.desc()).all()
     total_valor = sum(c.valor for c in contas)
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
+    clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     messages = get_messages(request)
     return request.app.state.templates.TemplateResponse(
         "contas/receber_listar.html",
         {"request": request, "contas": contas, "clientes": clientes,
          "status_filtro": status_filtro, "busca": busca, "StatusConta": StatusConta,
          "messages": messages, "data_inicio": data_inicio, "data_fim": data_fim,
-         "total_valor": total_valor}
+         "total_valor": total_valor, "clientes_json": clientes_json}
     )
 
 
@@ -280,8 +285,11 @@ def receber_conta(
     return RedirectResponse(url="/contas/receber", status_code=303)
 
 
-@router.get("/receber/{conta_id}/excluir")
-def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db)):
+@router.post("/receber/{conta_id}/excluir")
+def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
+        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
     conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
     if conta:
         db.delete(conta)

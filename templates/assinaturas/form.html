@@ -7,48 +7,278 @@
         <a href="/assinaturas" class="flex items-center px-3 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Cancelar</a>
     </div>
     
-    <form method="post" class="p-4 grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>
-            <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cliente_id" required>
+    {% set editavel = assinatura.situacao == 1 %}
+    
+    <form method="post" class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div class="relative">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>
+            <input type="text" id="clienteSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off" {% if not editavel %}readonly{% endif %}>
+            <div id="clienteDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+            <select class="hidden" name="cliente_id" id="clienteId" required>
                 {% for c in clientes %}<option value="{{ c.id }}" {% if assinatura.cliente_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}
             </select>
         </div>
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Periodicidade *</label>
-            <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="periodicidade" required>
+            <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="periodicidade" required {% if not editavel %}disabled{% endif %}>
                 <option value="1" {% if assinatura.periodicidade == 1 %}selected{% endif %}>Mensal</option>
                 <option value="2" {% if assinatura.periodicidade == 2 %}selected{% endif %}>Bimestral</option>
                 <option value="3" {% if assinatura.periodicidade == 3 %}selected{% endif %}>Trimestral</option>
                 <option value="4" {% if assinatura.periodicidade == 4 %}selected{% endif %}>Semestral</option>
                 <option value="5" {% if assinatura.periodicidade == 5 %}selected{% endif %}>Anual</option>
+                <option value="6" {% if assinatura.periodicidade == 6 %}selected{% endif %}>Bianual</option>
+                <option value="7" {% if assinatura.periodicidade == 7 %}selected{% endif %}>Trianual</option>
             </select>
         </div>
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Situação</label>
-            <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="situacao">
+            <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="situacao" {% if not editavel %}disabled{% endif %}>
                 <option value="0" {% if assinatura.situacao == 0 %}selected{% endif %}>Inativo</option>
                 <option value="1" {% if assinatura.situacao == 1 %}selected{% endif %}>Ativo</option>
                 <option value="2" {% if assinatura.situacao == 2 %}selected{% endif %}>Baixado</option>
+                <option value="3" {% if assinatura.situacao == 3 %}selected{% endif %}>Isento</option>
+                <option value="4" {% if assinatura.situacao == 4 %}selected{% endif %}>Em Avaliação</option>
             </select>
         </div>
-        <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Descrição *</label>
-            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" required value="{{ assinatura.descricao }}">
-        </div>
         <div><label class="block text-xs font-medium text-emerald-400 mb-1">Valor *</label>
-            <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="valor" required value="{{ assinatura.valor }}">
+            <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="valor" required value="{{ assinatura.valor }}" {% if not editavel %}readonly{% endif %}>
+        </div>
+        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Quantidade</label>
+            <input type="number" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="quantidade" value="{{ assinatura.quantidade if assinatura.quantidade else '' }}" placeholder="Nº de pessoas" {% if not editavel %}readonly{% endif %}>
         </div>
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Dia Vencimento *</label>
-            <input type="number" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="dia_vencimento" min="1" max="31" required value="{{ assinatura.dia_vencimento }}">
+            <input type="number" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="dia_vencimento" min="1" max="31" required value="{{ assinatura.dia_vencimento }}" {% if not editavel %}readonly{% endif %}>
+        </div>
+        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Mês do Vencimento</label>
+            <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="mes_vencimento" {% if not editavel %}disabled{% endif %}>
+                <option value="0" {% if assinatura.mes_vencimento == 0 or not assinatura.mes_vencimento %}selected{% endif %}>Mês Corrente</option>
+                <option value="1" {% if assinatura.mes_vencimento == 1 %}selected{% endif %}>Mês Seguinte</option>
+            </select>
+        </div>
+        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Número do Contrato</label>
+            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_contrato" value="{{ assinatura.numero_contrato if assinatura.numero_contrato else '' }}" placeholder="Sugerido: código do cliente" {% if not editavel %}readonly{% endif %}>
         </div>
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Data Início *</label>
-            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_inicio" required value="{{ assinatura.data_inicio }}">
+            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_inicio" required value="{{ assinatura.data_inicio.strftime('%Y-%m-%d') if assinatura.data_inicio else '' }}" {% if not editavel %}readonly{% endif %}>
         </div>
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Data Fim</label>
-            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_fim" value="{{ assinatura.data_fim if assinatura.data_fim else '' }}">
+            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_fim" value="{{ assinatura.data_fim.strftime('%Y-%m-%d') if assinatura.data_fim else '' }}" {% if not editavel %}readonly{% endif %}>
         </div>
-        <div class="md:col-span-3"><button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button></div>
+        <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Descrição *</label>
+            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" required value="{{ assinatura.descricao }}" {% if not editavel %}readonly{% endif %}>
+        </div>
+        <div class="md:col-span-2">
+            <h6 class="text-cyan-400 mt-2 mb-2"><i data-lucide="store" class="w-4 h-4 inline me-1"></i> Revenda (Fornecedor terceirizado)</h6>
+        </div>
+        <div class="relative">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Fornecedor / Revenda</label>
+            <input type="text" id="fornecedorSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off" {% if not editavel %}readonly{% endif %}>
+            <div id="fornecedorDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+            <select class="hidden" name="fornecedor_id" id="fornecedorId">
+                <option value="">Selecione...</option>
+                {% for f in fornecedores %}
+                <option value="{{ f.id }}" {% if assinatura.fornecedor_id == f.id %}selected{% endif %}>{{ f.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Custo da Revenda (valor de referência)</label>
+            <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="valor_revenda" value="{{ assinatura.valor_revenda if assinatura.valor_revenda else '' }}" {% if not editavel %}readonly{% endif %}>
+        </div>
+        <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
+            <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="3" {% if not editavel %}readonly{% endif %}>{{ assinatura.observacao or '' }}</textarea>
+        </div>
+        {% if editavel %}
+        <div class="md:col-span-2"><button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button></div>
+        {% else %}
+        <div class="md:col-span-2 text-slate-400 text-sm"><i data-lucide="info" class="w-4 h-4 inline me-1"></i> Assinatura inativa - somente visualização</div>
+        {% endif %}
     </form>
 </div>
 
-{% block scripts %}
-<script>document.addEventListener('DOMContentLoaded', function() { lucide.createIcons(); });</script>
+{% if historico %}
+{% set historico_count = historico|length %}
+<div class="glass-card mb-6">
+    <div class="p-4 border-b border-slate-800/60">
+        <h5 class="text-cyan-400 font-semibold"><i data-lucide="clock" class="w-5 h-5 inline me-2"></i> Histórico de Alterações</h5>
+    </div>
+    <div class="p-4">
+        <div class="overflow-x-auto">
+            <table class="w-full divide-y divide-slate-800/60">
+                <thead class="bg-slate-950/50">
+                    <tr>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Data</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Valor Ant.</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Valor Novo</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Custo Ant.</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Custo Novo</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Qtd Ant.</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Qtd Nova</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Dia Ant.</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Dia Novo</th>
+                        <th class="px-3 py-2 text-center text-xs font-semibold text-cyan-400 uppercase">Ações</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                    {% for h in historico %}
+                    <tr class="hover:bg-slate-800/40 transition">
+                        <td class="px-3 py-2 text-sm text-slate-300">{{ h.data_alteracao.strftime('%d/%m/%Y %H:%M') }}</td>
+                        <td class="px-3 py-2 text-sm text-emerald-300">{% if h.valor_anterior is not none %}R$ {{ "%.2f"|format(h.valor_anterior) }}{% else %}<span class="text-slate-600">-</span>{% endif %}</td>
+                        <td class="px-3 py-2 text-sm text-emerald-300">{% if h.valor_novo is not none %}R$ {{ "%.2f"|format(h.valor_novo) }}{% else %}<span class="text-slate-600">-</span>{% endif %}</td>
+                        <td class="px-3 py-2 text-sm text-rose-300">{% if h.valor_revenda_anterior is not none %}R$ {{ "%.2f"|format(h.valor_revenda_anterior) }}{% else %}<span class="text-slate-600">-</span>{% endif %}</td>
+                        <td class="px-3 py-2 text-sm text-rose-300">{% if h.valor_revenda_novo is not none %}R$ {{ "%.2f"|format(h.valor_revenda_novo) }}{% else %}<span class="text-slate-600">-</span>{% endif %}</td>
+                        <td class="px-3 py-2 text-sm text-cyan-300">{{ h.quantidade_anterior if h.quantidade_anterior is not none else '-' }}</td>
+                        <td class="px-3 py-2 text-sm text-cyan-300">{{ h.quantidade_novo if h.quantidade_novo is not none else '-' }}</td>
+                        <td class="px-3 py-2 text-sm text-cyan-300">{{ h.dia_vencimento_anterior if h.dia_vencimento_anterior is not none else '-' }}</td>
+                        <td class="px-3 py-2 text-sm text-cyan-300">{{ h.dia_vencimento_novo if h.dia_vencimento_novo is not none else '-' }}</td>
+                        <td class="px-3 py-2 text-center">
+                            {% if editavel and loop.index0 > 0 %}
+                            <button class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" onclick="excluirHistorico({{ h.id }})" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            {% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+</table>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+<div class="modal fade" id="modalConfirmarHistorico" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <form method="post" action="" class="modal-content bg-dark" id="formExcluirHistorico">
+            <div class="modal-header">
+                <h5 class="modal-title text-cyan-400">Confirmar Exclusão</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-light mb-3">Deseja realmente excluir esta alteração do histórico?</p>
+                <div class="mb-3">
+                    <label class="form-label text-cyan-300">Senha de Administrador *</label>
+                    <input type="password" class="form-control" name="senha" required>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="btn btn-danger d-flex align-items-center"><i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Confirmar Exclusão</button>
+            </div>
+        </form>
+    </div>
+</div>
 {% endblock %}
+
+{% block scripts %}
+<script>
+const clientesData = {{ clientes_json|tojson }};
+const fornecedoresData = {{ fornecedores_json|tojson }};
+
+async function buscarClientesEdit(q) {
+    if (!q || q.length < 2) return [];
+    try {
+        const r = await fetch(`/clientes/buscar?q=${encodeURIComponent(q)}`);
+        const d = await r.json();
+        return d.clientes || [];
+    } catch {
+        return [];
+    }
+}
+
+async function buscarFornecedoresEdit(q) {
+    if (!q || q.length < 2) return [];
+    try {
+        const r = await fetch(`/fornecedores/buscar?q=${encodeURIComponent(q)}`);
+        const d = await r.json();
+        return d.fornecedores || [];
+    } catch {
+        return [];
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    lucide.createIcons();
+    
+    // Busca dinâmica de clientes no formulário
+    const clienteSearch = document.getElementById('clienteSearch');
+    const clienteDropdown = document.getElementById('clienteDropdown');
+    if (clienteSearch && !clienteSearch.hasAttribute('readonly')) {
+        const clienteAtual = document.querySelector('#clienteId option[selected]').textContent;
+        clienteSearch.value = clienteAtual;
+        
+        clienteSearch.addEventListener('input', function(e) {
+            const term = e.target.value;
+            if (term.length >= 2) {
+                buscarClientesEdit(term).then(clientes => {
+                    if (clientes.length > 0) {
+                        clienteDropdown.innerHTML = clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}">${c.nome}${c.fantasia ? ' - ' + c.fantasia : ''}${c.cpf_cnpj ? ' (<span class="text-cyan-400">' + c.cpf_cnpj + '</span>)' : ''}</div>`).join('');
+                        clienteDropdown.classList.remove('hidden');
+                    } else {
+                        clienteDropdown.classList.add('hidden');
+                    }
+                });
+            } else {
+                clienteDropdown.classList.add('hidden');
+            }
+        });
+    }
+    if (clienteDropdown) {
+        clienteDropdown.addEventListener('click', function(e) {
+            const item = e.target.closest('[data-id]');
+            if (item) {
+                clienteSearch.value = item.textContent;
+                document.getElementById('clienteId').value = item.dataset.id;
+                this.classList.add('hidden');
+            }
+        });
+    }
+    
+    // Busca dinâmica de fornecedores no formulário
+    const fornecedorSearch = document.getElementById('fornecedorSearch');
+    const fornecedorDropdown = document.getElementById('fornecedorDropdown');
+    if (fornecedorSearch && !fornecedorSearch.hasAttribute('readonly')) {
+        const fornecedorAtual = document.querySelector('#fornecedorId option[selected]')?.textContent || '';
+        fornecedorSearch.value = fornecedorAtual;
+        
+        fornecedorSearch.addEventListener('input', function(e) {
+            const term = e.target.value;
+            if (term.length >= 2) {
+                buscarFornecedoresEdit(term).then(fornecedores => {
+                    if (fornecedores.length > 0) {
+                        fornecedorDropdown.innerHTML = fornecedores.map(f => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${f.id}">${f.nome}${f.fantasia ? ' - ' + f.fantasia : ''}${f.cpf_cnpj ? ' (<span class="text-cyan-400">' + f.cpf_cnpj + '</span>)' : ''}</div>`).join('');
+                        fornecedorDropdown.classList.remove('hidden');
+                    } else {
+                        fornecedorDropdown.classList.add('hidden');
+                    }
+                });
+            } else {
+                fornecedorDropdown.classList.add('hidden');
+            }
+        });
+    }
+    if (fornecedorDropdown) {
+        fornecedorDropdown.addEventListener('click', function(e) {
+            const item = e.target.closest('[data-id]');
+            if (item) {
+                fornecedorSearch.value = item.textContent;
+                document.getElementById('fornecedorId').value = item.dataset.id;
+                this.classList.add('hidden');
+            }
+        });
+    }
+});
+
+function excluirHistorico(id) {
+    console.log('excluirHistorico called with id:', id);
+    const form = document.getElementById('formExcluirHistorico');
+    if (!form) {
+        console.error('form not found');
+        return;
+    }
+    form.action = '/assinaturas/{{ assinatura.id }}/historico/' + id + '/excluir';
+    const modalEl = document.getElementById('modalConfirmarHistorico');
+    if (!modalEl) {
+        console.error('modal not found');
+        return;
+    }
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+}
+</script>
 {% endblock %}

@@ -6,7 +6,7 @@
         <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="package" class="w-6 h-6 inline me-2"></i> {{ "Novo" if not editar else "Editar" }} Produto</h4>
     </div>
     
-    <form method="post" enctype="multipart/form-data" class="p-4">
+    <form method="post" enctype="multipart/form-data" class="p-4" id="formProduto">
         <input type="hidden" name="situacao" id="situacaoInput" value="A">
         <div class="flex flex-col md:flex-row gap-4">
             <div class="text-center">
@@ -21,40 +21,128 @@
                 <input type="file" class="text-xs text-slate-400" name="foto" accept="image/*">
             </div>
             
-            <div class="flex-1 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Código</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="codigo" value="{{ produto.codigo or '' }}"></div>
-                <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Nome *</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="nome" required value="{{ produto.nome or '' }}"></div>
-                <div class="md:col-span-3"><label class="block text-xs font-medium text-cyan-400 mb-1">Descrição</label><textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" rows="1">{{ produto.descricao or '' }}</textarea></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-emerald-400 mb-1">Marca</label>
-                    <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="marca_id">
-                        <option value="">Selecione...</option>
-                        {% for m in marcas %}<option value="{{ m.id }}" {% if produto and produto.marca_id == m.id %}selected{% endif %}>{{ m.nome }}</option>{% endfor %}
-                    </select>
-                </div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Categoria</label><select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="categoria_id"><option value="">Selecione...</option>{% for c in categorias %}<option value="{{ c.id }}" {% if produto and produto.categoria_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}</select></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Tipo</label><select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tipo"><option value="produto" {% if not produto or produto.tipo == 'produto' %}selected{% endif %}>Produto</option><option value="servico" {% if produto and produto.tipo == 'servico' %}selected{% endif %}>Serviço</option></select></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Fornecedor</label><select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="fornecedor_id"><option value="">Selecione...</option>{% for f in fornecedores %}<option value="{{ f.id }}" {% if produto and produto.fornecedor_id == f.id %}selected{% endif %}>{{ f.nome }}</option>{% endfor %}</select></div>
-                <div class="md:col-span-3 flex gap-2">
-                    <div class="flex-1"><label class="block text-xs font-medium text-rose-400 mb-1">Preço Custo</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-rose-500/50" name="preco_custo" id="precoCusto" value="{{ produto.preco_custo or '' }}"></div>
-                    <div class="w-24"><label class="block text-xs font-medium text-cyan-400 mb-1">Margem %</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="margem" id="margemInput" value=""></div>
-                    <div class="flex-1"><label class="block text-xs font-medium text-emerald-400 mb-1">Preço Venda *</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="preco" id="precoVenda" required value="{{ produto.preco or '' }}"></div>
-                </div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Unidade</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="unidade" value="{{ produto.unidade or 'UN' }}"></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">NCM</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="ncm" value="{{ produto.ncm or '' }}"></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Altura</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="altura" value="{{ produto.altura or '' }}"></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Largura</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="largura" value="{{ produto.largura or '' }}"></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Profund.</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="profundidade" value="{{ produto.profundidade or '' }}"></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Peso Líq</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="peso_liq" value="{{ produto.peso_liq or '' }}"></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Peso Brut</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="peso_bruto" value="{{ produto.peso_bruto or '' }}"></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Unid. Med.</label><select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="unidade_medida">{% for u in UNIDADES_MEDIDA %}<option value="{{ u }}" {% if produto and produto.unidade_medida == u %}selected{% endif %}>{{ u }}</option>{% endfor %}</select></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-emerald-400 mb-1">Estoque</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="estoque" value="{{ produto.estoque or 0 }}"></div>
-                <div class="md:col-span-1"><label class="block text-xs font-medium text-emerald-400 mb-1">Estoque Min.</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="estoque_minimo" value="{{ produto.estoque_minimo or 0 }}"></div>
-                <div class="md:col-span-3 flex justify-end gap-2 mt-2">
-                    <button type="button" id="situacaoToggle" class="px-3 py-2 rounded-xl text-xs font-medium {% if produto and produto.situacao != 'A' %}bg-rose-950/50 text-rose-400 border border-rose-800/50{% else %}bg-emerald-950/50 text-emerald-400 border border-emerald-800/50{% endif %}">{% if produto and produto.situacao != 'A' %}Inativo{% else %}Ativo{% endif %}</button>
-                    <a href="/produtos" class="px-4 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition flex items-center"><i data-lucide="x" class="w-4 h-4 me-1"></i> Cancelar</a>
-                    <button type="submit" class="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all flex items-center"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button>
+            <div class="flex-1">
+                <div class="grid grid-cols-12 gap-2">
+                    <div class="col-span-12 md:col-span-4"><label class="block text-xs font-medium text-cyan-400 mb-1">Código</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="codigo" value="{{ produto.codigo or proximo_codigo or '' }}"></div>
+                    <div class="col-span-12 md:col-span-8"><label class="block text-xs font-medium text-cyan-400 mb-1">Nome *</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="nome" required value="{{ produto.nome or '' }}"></div>
+                    <div class="col-span-12"><label class="block text-xs font-medium text-cyan-400 mb-1">Descrição</label><textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" rows="1">{{ produto.descricao or '' }}</textarea></div>
+                    
+                    <div class="col-span-12 md:col-span-4"><label class="block text-xs font-medium text-emerald-400 mb-1">Marca</label>
+                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="marca_id" id="marcaSelect">
+                            <option value="">Selecione...</option>
+                            {% for m in marcas %}<option value="{{ m.id }}" {% if produto and produto.marca_id == m.id %}selected{% endif %}>{{ m.nome }}</option>{% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-span-12 md:col-span-4"><label class="block text-xs font-medium text-cyan-400 mb-1">Categoria</label><select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="categoria_id" id="categoriaSelect"><option value="">Selecione...</option>{% for c in categorias %}<option value="{{ c.id }}" {% if produto and produto.categoria_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}</select></div>
+                    <div class="col-span-12 md:col-span-4"><label class="block text-xs font-medium text-cyan-400 mb-1">Tipo</label>
+                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tipo" id="tipoSelect">
+<option value="produto" {% if not produto or produto.tipo == 'produto' %}selected{% endif %}>Produto</option>
+<option value="servico" {% if produto and produto.tipo == 'servico' %}selected{% endif %}>Serviço</option>
+<option value="kit" {% if produto and produto.tipo == 'kit' %}selected{% endif %}>Kit / Combo</option>
+</select></div>
+<div class="col-span-12 md:col-span-8 relative"><label class="block text-xs font-medium text-cyan-400 mb-1">Fornecedor</label>
+                        <input type="text" id="fornecedorSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off">
+                        <div id="fornecedorDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+                        <select class="hidden" name="fornecedor_id" id="fornecedorId">
+                            <option value="">Selecione...</option>
+                            {% for f in fornecedores %}<option value="{{ f.id }}" {% if produto and produto.fornecedor_id == f.id %}selected{% endif %}>{{ f.nome }}</option>{% endfor %}
+                        </select>
+                    </div>
+                     
+                    <div class="col-span-12 md:col-span-2 campos-fisicos"><label class="block text-xs font-medium text-cyan-400 mb-1">NCM</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="ncm" value="{{ produto.ncm or '' }}"></div>
+                    <div class="col-span-12 md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Unidade</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="unidade" value="{{ produto.unidade or 'UN' }}"></div>
+                    
+<div class="col-span-3 campos-preco"><label class="block text-xs font-medium text-rose-400 mb-1">Preço Custo</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-rose-500/50" name="preco_custo" id="precoCusto" value="{{ produto.preco_custo or '' }}"></div>
+                     <div class="col-span-3 campos-preco"><label class="block text-xs font-medium text-cyan-400 mb-1">Margem %</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="margem" id="margemInput" value=""></div>
+                     <div class="col-span-3 campos-preco"><label class="block text-xs font-medium text-emerald-400 mb-1">Preço Venda *</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="preco" id="precoVenda" required value="{{ produto.preco or '' }}"><span id="precoSugerido" class="text-xs text-cyan-400 hidden">Sugerido: R$ <span class="text-emerald-400">0.00</span></span></div>
+                    
+                    <div class="col-span-3 campos-fisicos"><label class="block text-xs font-medium text-cyan-400 mb-1">Altura</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="altura" value="{{ produto.altura or '' }}"></div>
+                    <div class="col-span-3 campos-fisicos"><label class="block text-xs font-medium text-cyan-400 mb-1">Largura</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="largura" value="{{ produto.largura or '' }}"></div>
+                    <div class="col-span-3 campos-fisicos"><label class="block text-xs font-medium text-cyan-400 mb-1">Profund.</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="profundidade" value="{{ produto.profundidade or '' }}"></div>
+                    <div class="col-span-3 campos-fisicos"><label class="block text-xs font-medium text-cyan-400 mb-1">Unid. Med.</label><select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="unidade_medida"><option value="">Selecione...</option>{% for u in UNIDADES_MEDIDA %}<option value="{{ u }}" {% if produto and produto.unidade_medida == u %}selected{% endif %}>{{ u }}</option>{% endfor %}</select></div>
+                    
+                    <div class="col-span-3 campos-fisicos"><label class="block text-xs font-medium text-cyan-400 mb-1">Peso Líq</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="peso_liq" value="{{ produto.peso_liq or '' }}"></div>
+<div class="col-span-3 campos-fisicos"><label class="block text-xs font-medium text-cyan-400 mb-1">Peso Brut</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="peso_bruto" value="{{ produto.peso_bruto or '' }}"></div>
+                    <div class="col-span-3 campos-fisicos"><label class="block text-xs font-medium text-emerald-400 mb-1">Estoque Min.</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50 h-9" name="estoque_minimo" id="estoqueMinInput" value="{{ produto.estoque_minimo or 0 }}"></div>
+                    <div class="col-span-3 campos-fisicos estoque-controlado estoque-principal"><label class="block text-xs font-medium text-emerald-400 mb-1">Estoque</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50 h-9" name="estoque" id="estoqueInput" value="{{ produto.estoque or 0 }}"></div>
+                    <input type="hidden" name="estoque_variacao_controlado" id="estoqueVariacaoControlado" value="false">
                 </div>
             </div>
+        </div>
+
+        <hr class="my-4 border-slate-700">
+
+        <div id="variacoes-section" class="hidden">
+            <h5 class="text-cyan-400 mb-3"><i data-lucide="layers" class="w-5 h-5 inline me-2"></i> Variações do Produto</h5>
+            <div id="variacoes-container">
+                {% if produto and produto.variacoes %}
+                    {% for v in produto.variacoes %}
+                    <div class="flex gap-2 mb-2 variacao-row items-end">
+                        <div class="flex-1">
+                            <label class="block text-xs text-cyan-400 mb-1">Nome</label>
+                            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 h-9" name="variacao_nome[]" placeholder="Nome variação" value="{{ v.nome_variacao }}" autocomplete="off">
+                        </div>
+                        <div class="w-28">
+                            <label class="block text-xs text-cyan-400 mb-1">SKU</label>
+                            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="variacao_sku[]" placeholder="SKU" value="{{ v.sku }}">
+                        </div>
+                        <div class="w-24">
+                            <label class="block text-xs text-emerald-400 mb-1">Preço +</label>
+                            <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="variacao_preco[]" placeholder="Preço +" value="{{ v.preco_adicional or 0 }}">
+                        </div>
+                        <div class="w-20">
+                            <label class="block text-xs text-emerald-400 mb-1">Est. At.</label>
+                            <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="variacao_estoque[]" placeholder="Est.At." value="{{ v.estoque_atual or 0 }}">
+                        </div>
+<div class="w-20">
+                            <label class="block text-xs text-emerald-400 mb-1">Est. Min.</label>
+                            <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="variacao_estoque_min[]" placeholder="Est.Min" value="{{ v.estoque_minimo or 0 }}">
+                        </div>
+                        <button type="button" class="remove-variacao h-9 px-3 bg-rose-950/50 text-rose-400 border border-rose-800/50 rounded-xl flex items-center justify-center self-end" title="Remover"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                    </div>
+                    {% endfor %}
+                {% endif %}
+            </div>
+            <button type="button" id="addVariacao" class="mt-2 flex items-center px-3 py-1 text-xs bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-900/50 transition"><i data-lucide="plus" class="w-3 h-3 me-1"></i> Adicionar Variação</button>
+            <input type="hidden" name="variacoes" id="variacoesJson">
+        </div>
+
+        <div id="insumos-section" class="hidden">
+            <h5 class="text-cyan-400 mb-3"><i data-lucide="package-plus" class="w-5 h-5 inline me-2"></i> Composição do Kit</h5>
+            <div class="relative">
+                <table class="w-full text-xs">
+                    <thead>
+                        <tr class="border-b border-slate-700">
+                            <th class="text-left text-cyan-400 pb-2">Item da Composição</th>
+                            <th class="text-center text-cyan-400 pb-2 w-28">Qtd</th>
+                            <th class="text-center text-cyan-400 pb-2 w-16">Remover</th>
+                        </tr>
+                    </thead>
+                    <tbody id="insumos-container">
+                        {% if produto and produto.composicoes %}
+                            {% for c in produto.composicoes %}
+                            <tr class="border-b border-slate-800/50 insumo-row">
+                                <td class="py-2 relative">
+                                    <input type="text" class="insumo-search w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-xs" placeholder="Digite para buscar..." autocomplete="off" value="{{ c.insumo.nome if c.insumo else '' }}">
+                                    <div class="insumo-dropdown absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden" style="max-height: 160px; overflow-y: auto;"></div>
+                                    <select class="hidden insumo-select" name="insumo_id[]"><option value="{{ c.insumo_id }}" selected data-preco="{{ c.insumo.preco if c.insumo else 0 }}">{{ c.insumo.nome if c.insumo else '' }}</option></select>
+                                </td>
+                                <td class="py-2"><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-xs text-center" name="insumo_quantidade[]" value="{{ c.quantidade_padrao }}" onchange="calcularPrecoKit()"></td>
+                                <td class="py-2 text-center"><button type="button" class="remove-insumo w-8 h-8 bg-rose-950/50 text-rose-400 border border-rose-800/50 rounded flex items-center justify-center mx-auto" title="Remover"><i data-lucide="trash-2" class="w-4 h-4"></i></button></td>
+                            </tr>
+                            {% endfor %}
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+            <button type="button" id="addInsumo" class="mt-2 flex items-center px-3 py-1 text-xs bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-900/50 transition"><i data-lucide="plus" class="w-3 h-3 me-1"></i> Adicionar Item</button>
+            <input type="hidden" name="insumos" id="insumosJson">
+        </div>
+
+        <div class="flex justify-end gap-2 mt-4">
+            <button type="button" id="situacaoToggle" class="px-3 py-2 rounded-xl text-xs font-medium {% if produto and produto.situacao != 'A' %}bg-rose-950/50 text-rose-400 border border-rose-800/50{% else %}bg-emerald-950/50 text-emerald-400 border border-emerald-800/50{% endif %}">{% if produto and produto.situacao != 'A' %}Inativo{% else %}Ativo{% endif %}</button>
+            <a href="/produtos" class="px-4 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition flex items-center text-xs"><i data-lucide="x" class="w-3 h-3 me-1"></i> Cancelar</a>
+            <button type="submit" class="px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all flex items-center text-xs"><i data-lucide="save" class="w-3 h-3 me-1"></i> Salvar</button>
         </div>
     </form>
 </div>
@@ -63,45 +151,298 @@
 <script>
 const precoCusto = document.getElementById('precoCusto');
 const precoVenda = document.getElementById('precoVenda');
-const margemInput = document.getElementById('margemInput');
-const situacaoToggle = document.getElementById('situacaoToggle');
-const situacaoHidden = document.getElementById('situacaoInput');
+const tipoSelect = document.getElementById('tipoSelect');
+const variacoesSection = document.getElementById('variacoes-section');
+const insumosSection = document.getElementById('insumos-section');
 
 function calcMargem() {
     const custo = parseFloat(precoCusto.value) || 0;
     const venda = parseFloat(precoVenda.value) || 0;
+    const margemInput = document.getElementById('margemInput');
     if (custo > 0 && venda > 0) {
         margemInput.value = ((venda - custo) / custo * 100).toFixed(2);
     }
 }
 
 precoCusto.addEventListener('input', function() {
-    if (precoCusto.value && margemInput.value) {
+    const margemInput = document.getElementById('margemInput');
+    if (tipoSelect.value === 'produto' && precoCusto.value && margemInput.value) {
         const custo = parseFloat(precoCusto.value) || 0;
         const margem = parseFloat(margemInput.value) || 0;
-        precoVenda.value = (custo * (1 + margem / 100)).toFixed(2);
+        if (custo > 0 && margem > 0) {
+            precoVenda.value = (custo * (1 + margem / 100)).toFixed(2);
+        }
     }
 });
 
-margemInput.addEventListener('input', function() {
-    const custo = parseFloat(precoCusto.value) || 0;
-    const margem = parseFloat(margemInput.value) || 0;
-    precoVenda.value = (custo * (1 + margem / 100)).toFixed(2);
+precoVenda.addEventListener('input', function() {
+    if (tipoSelect.value === 'produto') {
+        calcMargem();
+    }
 });
 
-precoVenda.addEventListener('input', calcMargem);
+document.getElementById('margemInput').addEventListener('input', function() {
+    if (tipoSelect.value === 'produto' && precoCusto.value && this.value) {
+        const custo = parseFloat(precoCusto.value) || 0;
+        const margem = parseFloat(this.value) || 0;
+        if (custo > 0 && margem >= 0) {
+            precoVenda.value = (custo * (1 + margem / 100)).toFixed(2);
+        }
+    }
+});
 
-situacaoToggle.addEventListener('click', function() {
+document.getElementById('situacaoToggle').addEventListener('click', function() {
+    const situacaoHidden = document.getElementById('situacaoInput');
     if (situacaoHidden.value === 'A') {
         situacaoHidden.value = 'I';
-        situacaoToggle.textContent = 'Inativo';
-        situacaoToggle.className = 'px-3 py-2 rounded-xl text-xs font-medium bg-rose-950/50 text-rose-400 border border-rose-800/50';
+        this.textContent = 'Inativo';
+        this.className = 'px-3 py-2 rounded-xl text-xs font-medium bg-rose-950/50 text-rose-400 border border-rose-800/50';
     } else {
         situacaoHidden.value = 'A';
-        situacaoToggle.textContent = 'Ativo';
-        situacaoToggle.className = 'px-3 py-2 rounded-xl text-xs font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50';
+        this.textContent = 'Ativo';
+        this.className = 'px-3 py-2 rounded-xl text-xs font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50';
     }
 });
-document.addEventListener('DOMContentLoaded', function() { lucide.createIcons(); });
+
+function toggleSections() {
+    const tipo = tipoSelect.value;
+    variacoesSection.classList.toggle('hidden', tipo !== 'produto');
+    insumosSection.classList.toggle('hidden', tipo !== 'kit');
+    document.querySelectorAll('.campos-preco').forEach(el => {
+        const isPrecoCusto = el.querySelector('#precoCusto, input[name="margem"]');
+        el.classList.toggle('hidden', tipo === 'kit' || (isPrecoCusto && tipo === 'servico'));
+    });
+    document.querySelectorAll('.campos-fisicos').forEach(el => {
+        el.classList.toggle('hidden', tipo !== 'produto');
+    });
+    document.querySelectorAll('.estoque-principal').forEach(el => {
+        el.classList.toggle('hidden', tipo === 'kit');
+    });
+}
+
+function calcularPrecoKit() {
+    if (tipoSelect.value !== 'kit') return;
+    let total = 0;
+    document.querySelectorAll('.insumo-row').forEach(row => {
+        const select = row.querySelector('.insumo-select');
+        const qtd = parseFloat(row.querySelector('[name="insumo_quantidade[]"]')?.value) || 0;
+        if (select && select.value) {
+            const opt = select.querySelector('option:checked');
+            const preco = parseFloat(opt?.dataset?.preco) || 0;
+            total += preco * qtd;
+        }
+    });
+    precoVenda.value = total.toFixed(2);
+    document.getElementById('precoSugerido').textContent = total.toFixed(2);
+}
+
+tipoSelect.addEventListener('change', function() {
+    toggleSections();
+    if (this.value === 'kit') {
+        calcularPrecoKit();
+    }
+});
+
+document.getElementById('addInsumo').addEventListener('click', function() {
+    const tbody = document.getElementById('insumos-container');
+    const row = document.createElement('tr');
+    row.className = 'border-b border-slate-800/50 insumo-row';
+    row.innerHTML = `<td class="py-2 relative">
+        <input type="text" class="insumo-search w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-xs" placeholder="Digite para buscar..." autocomplete="off">
+        <div class="insumo-dropdown absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+        <select class="hidden insumo-select" name="insumo_id[]"></select>
+    </td>
+    <td class="py-2"><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-xs text-center" name="insumo_quantidade[]" value="1" onchange="calcularPrecoKit()"></td>
+    <td class="py-2 text-center"><button type="button" class="remove-insumo w-8 h-8 bg-rose-950/50 text-rose-400 border border-rose-800/50 rounded flex items-center justify-center mx-auto" title="Remover"><i data-lucide="trash-2" class="w-4 h-4"></i></button></td>`;
+    tbody.appendChild(row);
+    lucide.createIcons();
+});
+
+const fornecedoresData = {{ fornecedores_json|tojson }};
+
+async function buscarFornecedores(q) {
+    if (!q || q.length < 2) return [];
+    try {
+        const r = await fetch(`/fornecedores/buscar?q=${encodeURIComponent(q)}`);
+        const d = await r.json();
+        return d.fornecedores || [];
+    } catch {
+        return [];
+    }
+}
+
+async function buscarItens(q) {
+    if (!q || q.length < 2) return [];
+    try {
+        const r = await fetch(`/produtos/buscar-insumos?q=${encodeURIComponent(q)}`);
+        const d = await r.json();
+        return d.itens || [];
+    } catch {
+        return [];
+    }
+}
+
+async function _proximoSkuPreview() {
+    try {
+        const r = await fetch('/produtos/proximo-sku');
+        const d = await r.json();
+        return d.sku || 'SKU-00001';
+    } catch {
+        return 'SKU-00001';
+    }
+}
+
+document.getElementById('addVariacao').addEventListener('click', async function() {
+    const container = document.getElementById('variacoes-container');
+    const row = document.createElement('div');
+    row.className = 'flex gap-2 mb-2 variacao-row';
+    const sku = await _proximoSkuPreview();
+    row.innerHTML = `<div class="flex-1">
+        <label class="block text-xs text-cyan-400 mb-1">Nome</label>
+        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="variacao_nome[]" list="variacoes-list" placeholder="Nome variação" autocomplete="off">
+    </div>
+    <div class="w-28">
+        <label class="block text-xs text-cyan-400 mb-1">SKU</label>
+        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 variacao-sku" name="variacao_sku[]" placeholder="SKU" value="${sku}">
+    </div>
+    <div class="w-24">
+        <label class="block text-xs text-emerald-400 mb-1">Preço +</label>
+        <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="variacao_preco[]" placeholder="Preço +" value="0">
+    </div>
+    <div class="w-20">
+        <label class="block text-xs text-emerald-400 mb-1">Est. At.</label>
+        <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="variacao_estoque[]" placeholder="Est.At." value="0">
+    </div>
+    <div class="w-20">
+        <label class="block text-xs text-emerald-400 mb-1">Est. Min.</label>
+<input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="variacao_estoque_min[]" placeholder="Est.Min" value="0">
+    </div>
+    <button type="button" class="remove-variacao h-9 px-3 bg-rose-950/50 text-rose-400 border border-rose-800/50 rounded-xl flex items-center justify-center self-end" title="Remover"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+    </div>`;
+    container.appendChild(row);
+    lucide.createIcons();
+    toggleEstoqueControlado();
+});
+
+document.getElementById('variacoes-container').addEventListener('click', function(e) {
+    if (e.target.closest('.remove-variacao')) {
+        e.target.closest('.variacao-row').remove();
+        toggleEstoqueControlado();
+    }
+});
+
+function toggleEstoqueControlado() {
+    const temVariacoes = document.querySelectorAll('.variacao-row').length > 0;
+    const estoqueControlado = document.getElementById('estoqueVariacaoControlado')?.value === 'true';
+    if (estoqueControlado) {
+        document.querySelectorAll('.estoque-controlado').forEach(el => {
+            if (el.querySelector('input')) el.querySelector('input').disabled = temVariacoes;
+        });
+    }
+}
+
+// Busca dinâmica de itens na composição
+document.getElementById('insumos-container').addEventListener('input', function(e) {
+    if (e.target.classList.contains('insumo-search')) {
+        const row = e.target.closest('.insumo-row');
+        const dropdown = row.querySelector('.insumo-dropdown');
+        const term = e.target.value;
+        if (term.length >= 2) {
+            buscarItens(term).then(itens => {
+                if (itens.length > 0) {
+                    dropdown.innerHTML = itens.map(i => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${i.id}" data-preco="${i.preco}" data-tipo="${i.tipo}">${i.nome}${i.tipo === 'kit' ? ' [KIT]' : i.tipo === 'servico' ? ' [SRV]' : ''}</div>`).join('');
+                    dropdown.classList.remove('hidden');
+                } else {
+                    dropdown.classList.add('hidden');
+                }
+            });
+        } else {
+            dropdown.classList.add('hidden');
+        }
+    }
+});
+
+document.getElementById('insumos-container').addEventListener('click', function(e) {
+    if (e.target.classList.contains('insumo-search')) return;
+    const item = e.target.closest('[data-id]');
+    if (item) {
+        const row = item.closest('.insumo-row');
+        const search = row.querySelector('.insumo-search');
+        const select = row.querySelector('.insumo-select');
+        search.value = item.textContent;
+        select.innerHTML = `<option value="${item.dataset.id}" selected data-preco="${item.dataset.preco}">${item.textContent}</option>`;
+        item.parentElement.classList.add('hidden');
+        calcularPrecoKit();
+    }
+    if (e.target.closest('.remove-insumo')) {
+        e.target.closest('.insumo-row').remove();
+        calcularPrecoKit();
+    }
+});
+
+document.getElementById('formProduto').addEventListener('submit', function(e) {
+    const variacoes = [];
+    document.querySelectorAll('.variacao-row').forEach(row => {
+        const nome = row.querySelector('[name="variacao_nome[]"]')?.value || '';
+        const sku = row.querySelector('[name="variacao_sku[]"]')?.value || '';
+        const preco = parseFloat(row.querySelector('[name="variacao_preco[]"]')?.value) || 0;
+        const estoque = parseFloat(row.querySelector('[name="variacao_estoque[]"]')?.value) || 0;
+        const estoque_min = parseFloat(row.querySelector('[name="variacao_estoque_min[]"]')?.value) || 0;
+        if (nome && sku) variacoes.push({nome_variacao: nome, sku, preco_adicional: preco, estoque_atual: estoque, estoque_minimo: estoque_min});
+    });
+    document.getElementById('variacoesJson').value = JSON.stringify(variacoes);
+    
+    const insumos = [];
+    document.querySelectorAll('.insumo-row').forEach(row => {
+        const insumo_id = row.querySelector('[name="insumo_id[]"]')?.value || '';
+        const quantidade = parseFloat(row.querySelector('[name="insumo_quantidade[]"]')?.value) || 0;
+        if (insumo_id && quantidade > 0) insumos.push({insumo_id: parseInt(insumo_id), quantidade});
+    });
+    document.getElementById('insumosJson').value = JSON.stringify(insumos);
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    lucide.createIcons();
+    toggleSections();
+    if (tipoSelect.value === 'kit') {
+        calcularPrecoKit();
+    }
+    
+    // Busca dinâmica de fornecedores
+    const fornecedorSearch = document.getElementById('fornecedorSearch');
+    const fornecedorDropdown = document.getElementById('fornecedorDropdown');
+    if (fornecedorSearch) {
+        const fornecedorAtual = document.querySelector('#fornecedorId option[selected]')?.textContent || '';
+        fornecedorSearch.value = fornecedorAtual;
+        fornecedorSearch.addEventListener('input', function(e) {
+            const term = e.target.value;
+            if (term.length >= 2) {
+                buscarFornecedores(term).then(fornecedores => {
+                    if (fornecedores.length > 0) {
+                        fornecedorDropdown.innerHTML = fornecedores.map(f => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${f.id}">${f.nome}${f.fantasia ? ' - ' + f.fantasia : ''}${f.cpf_cnpj ? ' (<span class="text-cyan-400">' + f.cpf_cnpj + '</span>)' : ''}</div>`).join('');
+                        fornecedorDropdown.classList.remove('hidden');
+                    } else {
+                        fornecedorDropdown.classList.add('hidden');
+                    }
+                }).catch(err => {
+                    console.error('Erro buscarFornecedores:', err);
+                    fornecedorDropdown.classList.add('hidden');
+                });
+            } else {
+                fornecedorDropdown.classList.add('hidden');
+            }
+        });
+    }
+    if (fornecedorDropdown) {
+        fornecedorDropdown.addEventListener('click', function(e) {
+            const item = e.target.closest('[data-id]');
+            if (item) {
+                fornecedorSearch.value = item.textContent;
+                document.getElementById('fornecedorId').value = item.dataset.id;
+                this.classList.add('hidden');
+            }
+        });
+    }
+});
 </script>
 {% endblock %}

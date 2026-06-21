@@ -40,7 +40,7 @@
             <div><label class="block text-xs font-medium text-cyan-400 mb-1">Logo (JPG/PNG)</label><input type="file" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="logo" accept=".jpg,.jpeg,.png"></div>
             <div class="flex items-center">
                 {% if empresa and empresa.logo %}
-                <img src="{{ url_for('static', path=empresa.logo.split('static/')[1]) }}" alt="Logo" class="h-16 rounded border border-slate-700">
+                <img src="/{{ empresa.logo }}" alt="Logo" class="h-16 rounded border border-slate-700">
                 <small class="ms-2 text-slate-400">Logo atual</small>
                 {% endif %}
             </div>
