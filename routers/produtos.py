@@ -193,10 +193,10 @@ def criar_produto(
         profundidade=profundidade if profundidade else None,
         unidade_medida=unidade_medida,
         estoque=estoque if estoque else 0,
-        estoque_minimo=estoque_minimo if estoque_minimo else 0,
+estoque_minimo=estoque_minimo if estoque_minimo else 0,
         tipo=tipo,
         situacao=situacao,
-foto=foto_path,
+        foto=foto_path,
     )
     db.add(produto)
     db.commit()
