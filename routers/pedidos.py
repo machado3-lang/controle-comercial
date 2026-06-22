@@ -292,19 +292,19 @@ def atualizar_status(
 
 @router.get("/{pedido_id}/editar")
 def editar_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
-    from sqlalchemy.orm import selectinload
+    from sqlalchemy.orm import selectinload, joinedload
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     itens_disponiveis = db.query(Produto).options(
         selectinload(Produto.variacoes),
         selectinload(Produto.composicoes)
     ).order_by(Produto.nome).all()
-    itens_json = [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": v.preco_adicional} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padrao} for c in i.composicoes]} for i in itens_disponiveis if i.tipo in ('produto', 'servico', 'kit')]
+    itens_json = [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": v.preco_adicional} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padra} for c in i.composicoes]} for i in itens_disponiveis if i.tipo in ('produto', 'servico', 'kit')]
     clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
     hoje = date.today().isoformat()
     # Carrega itens com produtos e variações para edição
     pedido = db.query(PedidoVenda).options(
-        selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.produto),
-        selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.variacao)
+        joinedload(PedidoVenda.itens).joinedload(PedidoVendaItem.produto),
+        joinedload(PedidoVenda.itens).joinedload(PedidoVendaItem.variacao)
     ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
         return RedirectResponse(url="/pedidos", status_code=303)

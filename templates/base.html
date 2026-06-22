@@ -203,7 +203,7 @@
         resetTimer();
     })();
     </script>
-    <script src="{{ url_for('static', path='/js/scripts.js') }}"></script>
+    <script src="{{ url_for('static', path='/js/scripts.js') }}?v={{ range(1000, 9999) | random }}"></script>
     {% block scripts %}{% endblock %}
 </body>
 </html>

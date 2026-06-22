@@ -1,5 +1,5 @@
 from datetime import datetime
-from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, ForeignKey, Float
 from sqlalchemy.orm import relationship
 from database import Base
 
@@ -9,7 +9,7 @@ class Servico(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(200), nullable=False)
     descricao = Column(Text, nullable=True)
-    preco_padrao = Column(Integer, default=0)
+    preco_padrao = Column(Float, default=0)
     created_at = Column(DateTime, default=datetime.now)
     
     insumos = relationship("ServicoInsumo", back_populates="servico")
