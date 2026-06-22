@@ -61,7 +61,8 @@ def listar_assinaturas(
     periodicidade: str = Query(""), status_filtro: str = Query(""), busca: str = Query(""),
     vencimento_dias: str = Query("")
 ):
-    query = db.query(Assinatura).join(Cliente)
+    from sqlalchemy.orm import joinedload
+    query = db.query(Assinatura).options(joinedload(Assinatura.cliente), joinedload(Assinatura.fornecedor)).join(Cliente)
     if periodicidade:
         try:
             query = query.filter(Assinatura.periodicidade == int(periodicidade))
