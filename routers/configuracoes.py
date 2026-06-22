@@ -56,6 +56,8 @@ async def salvar_configuracoes(
     email: str = Form(""),
     site: str = Form(""),
     senha_admin: str = Form(""),
+    senha_admin_confirm: str = Form(""),
+    senha_lembrete: str = Form(""),
     observacao: str = Form(""),
     bling_client_id: str = Form(""),
     bling_client_secret: str = Form(""),
@@ -85,7 +87,9 @@ async def salvar_configuracoes(
         empresa.celular = celular
         empresa.email = email
         empresa.site = site
-        empresa.senha_admin = senha_admin if senha_admin else empresa.senha_admin
+        if senha_admin and senha_admin == senha_admin_confirm:
+            empresa.senha_admin = senha_admin
+            empresa.senha_lembrete = senha_lembrete
         empresa.observacao = observacao
         empresa.bling_client_id = bling_client_id
         empresa.bling_client_secret = bling_client_secret

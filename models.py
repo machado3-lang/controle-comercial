@@ -416,6 +416,7 @@ class Empresa(Base):
     site = Column(String(200), nullable=True)
     logo = Column(String(300), nullable=True)
     senha_admin = Column(String(100), nullable=True)
+    senha_lembrete = Column(String(200), nullable=True)
     bling_token = Column(String(200), nullable=True)
     bling_client_id = Column(String(200), nullable=True)
     bling_client_secret = Column(String(200), nullable=True)
