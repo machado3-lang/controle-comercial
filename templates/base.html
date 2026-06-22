@@ -186,6 +186,23 @@
         }
     });
     </script>
+    <script>
+    (function() {
+        const INACTIVITY_TIMEOUT = 15 * 60 * 1000;
+        let timeoutId;
+        const resetTimer = () => {
+            clearTimeout(timeoutId);
+            timeoutId = setTimeout(() => {
+                sessionStorage.clear();
+                fetch('/auth/logout', {method: 'GET', credentials: 'include'}).finally(() => {
+                    window.location.href = '/auth/login?timeout=1';
+                });
+            }, INACTIVITY_TIMEOUT);
+        };
+        ['mousemove', 'mousedown', 'keypress', 'touchstart', 'scroll'].forEach(e => document.addEventListener(e, resetTimer, {passive: true}));
+        resetTimer();
+    })();
+    </script>
     <script src="{{ url_for('static', path='/js/scripts.js') }}"></script>
     {% block scripts %}{% endblock %}
 </body>

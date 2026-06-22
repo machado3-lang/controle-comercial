@@ -80,11 +80,12 @@ def proximo_sku_endpoint(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/")
 def listar_produtos(request: Request, db: Session = Depends(get_db), busca: str = Query(""), situacao: str = Query(""), fornecedor_id: Optional[str] = Query(""), categoria_id: Optional[str] = Query(""), marca_id: Optional[str] = Query(""), estoque_filtro: str = Query(""), tipo_filtro: str = Query("")):
+    from sqlalchemy.orm import selectinload
     f_id = int(fornecedor_id) if fornecedor_id else None
     c_id = int(categoria_id) if categoria_id else None
     m_id = int(marca_id) if marca_id else None
     
-    query = db.query(Produto)
+    query = db.query(Produto).options(selectinload(Produto.variacoes))
     if busca:
         query = query.filter(Produto.nome.ilike(f"%{busca}%") | Produto.codigo.ilike(f"%{busca}%"))
     if estoque_filtro == "zerado":
