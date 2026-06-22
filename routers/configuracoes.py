@@ -5,7 +5,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime
 
 from database import get_db
-from models import Empresa
+from models import Empresa, Cliente, Fornecedor, Assinatura, OrdemServico
 
 router = APIRouter(prefix="/configuracoes", tags=["Configuracoes"])
 
