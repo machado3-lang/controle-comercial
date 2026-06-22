@@ -644,3 +644,30 @@ async def alterar_boleto(request: Request, nosso_numero: str, db: Session = Depe
                 db.commit()
             return {"success": True}
         return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+
+
+@router.post("/boleto/{nosso_numero}/excluir", response_class=JSONResponse)
+async def excluir_boleto_api(request: Request, nosso_numero: str, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"success": False, "error": "Não autenticado"}, status_code=403)
+    emp = get_empresa(db)
+    cert_config = get_cert_config(db)
+    token = refresh_sicoob_token(db, "boletos_exclusao")
+    if not token:
+        return {"success": False, "error": "Token Sicoob não configurado"}
+    client_args = {"timeout": 30}
+    if cert_config and "cert" in cert_config:
+        client_args["cert"] = cert_config["cert"]
+    with httpx.Client(**client_args) as client:
+        resp = client.post(
+            f"{SICOOO_API}/boletos/{nosso_numero}/baixa",
+            json={"numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820, "codigoBaixa": "CAC"},
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        )
+        conta = db.query(ContaReceber).filter(
+            (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
+        ).first()
+        if conta:
+            conta.status = StatusConta.CANCELADO
+            db.commit()
+        return {"success": True} if resp.status_code in (200, 204) else {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}

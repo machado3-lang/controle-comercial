@@ -15,17 +15,24 @@ UPLOAD_DIR = "static/uploads"
 
 @router.get("/")
 def configuracoes(request: Request, db: Session = Depends(get_db)):
+    from sqlalchemy import func
     empresa = db.query(Empresa).first()
     messages = []
     msg = request.session.pop("message", None)
     if msg:
         messages.append(msg)
+    bling_pending = db.query(func.count(Cliente.id)).filter(Cliente.bling_pending_sync == True).scalar() or 0
+    bling_pending += db.query(func.count(Fornecedor.id)).filter(Fornecedor.bling_pending_sync == True).scalar() or 0
+    bling_pending += db.query(func.count(Assinatura.id)).filter(Assinatura.bling_pending_sync == True).scalar() or 0
+    bling_pending += db.query(func.count(OrdemServico.id)).filter(OrdemServico.bling_pending_sync == True).scalar() or 0
+    sincronizados = None if bling_pending == 0 else f"{bling_pending} pendentes"
     return request.app.state.templates.TemplateResponse(
         "configuracoes/form.html",
         {
             "request": request,
             "empresa": empresa,
             "messages": messages,
+            "sincronizados": sincronizados,
         },
     )
 

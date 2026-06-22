@@ -356,9 +356,10 @@ def imprimir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_
     ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
         return RedirectResponse(url="/pedidos", status_code=303)
+    empresa = db.query(Empresa).first()
     return request.app.state.templates.TemplateResponse(
         "pedidos/imprimir.html",
-        {"request": request, "pedido": pedido, "tipo_impressao": tipo, "STATUS_LABELS": STATUS_PEDIDO_LABELS, "FORMAS_PAGAMENTO": FORMAS_PAGAMENTO}
+        {"request": request, "pedido": pedido, "empresa": empresa, "tipo_impressao": tipo, "STATUS_LABELS": STATUS_PEDIDO_LABELS, "FORMAS_PAGAMENTO": FORMAS_PAGAMENTO}
     )
 
 
