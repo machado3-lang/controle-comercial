@@ -26,9 +26,13 @@
 
     <div class="boleto">
         <div class="header">
+            <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ" style="height: 40px; margin-bottom: 10px;">
             <h2>BOLETO BANCÁRIO</h2>
-            <h4>{{ empresa.nome_fantasia or empresa.razao_social }}</h4>
-            <p>CNPJ: {{ empresa.cnpj }}</p>
+            <h4>{{ empresa.nome_fantasia or empresa.razao_social or 'MultiCom' }}</h4>
+            {% if empresa.logo %}
+            <img src="/{{ empresa.logo }}" alt="Logotipo" style="height: 50px; margin-top: 5px;">
+            {% endif %}
+            <p>CNPJ: {{ empresa.cnpj or '' }}</p>
         </div>
 
         <div class="row">

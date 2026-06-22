@@ -12,6 +12,14 @@
 }
 </style>
 <div class="print-container max-w-4xl mx-auto p-6 bg-white text-black {{ 'termica-width' if tipo_impressao == 'termica' else '' }}">
+    <div class="flex flex-col items-center mb-6 pb-4 border-b-2 border-gray-800">
+        <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ" class="h-12 mb-2">
+        <h1 class="text-3xl font-bold">Control iZ - Controle Comercial</h1>
+        {% if empresa and empresa.logo %}
+        <img src="/{{ empresa.logo }}" alt="Logotipo MultiCom" class="h-16 mt-2" style="max-height: 60px; object-fit: contain;">
+        <p class="text-sm font-medium mt-1">{{ empresa.nome_fantasia or empresa.razao_social or 'MultiCom' }}</p>
+        {% endif %}
+    </div>
     {% if tipo_impressao == 'orcamento' %}
     <div class="text-center border-b-2 border-gray-800 pb-4 mb-4">
         <h1 class="text-3xl font-bold">ORÇAMENTO</h1>
@@ -23,7 +31,6 @@
             <h2 class="text-2xl font-bold">Ordem de Serviço #{{ ordem.id }}</h2>
             <p class="text-sm">Data Entrada: {{ ordem.data_entrada.strftime('%d/%m/%Y') if ordem.data_entrada else '' }}</p>
         </div>
-        <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ" class="h-12">
     </div>
     {% endif %}
     
