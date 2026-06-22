@@ -81,12 +81,14 @@
                     {% set texto_situacao = 'Ativo' if a.situacao == 1 else 'Inativo' if a.situacao == 0 else 'Baixado' if a.situacao == 2 else 'Isento' if a.situacao == 3 else 'Em Avaliação' if a.situacao == 4 else a.situacao %}
                     <span class="px-2 py-1 text-xs font-medium bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 rounded-full">{{ texto_situacao }}</span>
                 </td>
-                <td class="px-4 py-3 text-center">
-                    <a href="/assinaturas/{{ a.id }}/gerar-cobranca" class="inline-block p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Gerar cobrança"><i data-lucide="banknote" class="w-4 h-4"></i></a>
-                    <a href="/assinaturas/{{ a.id }}/editar" class="inline-block p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>
-                    {% if a.situacao == 1 %}
-                    <button type="button" class="inline-block p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir" onclick="confirmarExclusao('/assinaturas/{{ a.id }}/excluir')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                    {% endif %}
+                <td class="px-4 py-3 align-middle" style="min-width: 7rem;">
+                    <div class="flex items-center justify-center gap-1 h-9">
+                        <a href="/assinaturas/{{ a.id }}/gerar-cobranca" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Gerar cobrança"><i data-lucide="banknote" class="w-4 h-4"></i></a>
+                        <a href="/assinaturas/{{ a.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>
+                        {% if a.situacao == 1 %}
+                        <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir" onclick="confirmarExclusao('/assinaturas/{{ a.id }}/excluir')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        {% endif %}
+                    </div>
                 </td>
             </tr>
             {% else %}
