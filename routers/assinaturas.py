@@ -142,6 +142,7 @@ def criar_assinatura(
         data_inicio=inicio, data_fim=fim,
         dia_vencimento=dia_vencimento,
         mes_vencimento=mes_vencimento,
+        situacao=1,
         fornecedor_id=fornecedor_id if fornecedor_id else None,
         valor_revenda=valor_revenda if valor_revenda else None,
         numero_contrato=numero_contrato if numero_contrato else None,
