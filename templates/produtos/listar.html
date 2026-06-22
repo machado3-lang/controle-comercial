@@ -39,20 +39,22 @@
     </div>
     <div class="flex items-center gap-2 flex-shrink-0 ml-auto">
         <a href="/produtos/novo" class="flex items-center h-9 px-4 text-sm bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> Novo</a>
+        <button type="button" id="pdfSelectedBtn" class="flex items-center h-9 px-3 text-sm bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10" style="display: none;"><i data-lucide="file-text" class="w-4 h-4 me-1"></i> PDF Selecionados</button>
     </div>
 </div>
 
 <div class="overflow-x-auto w-full">
     <div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl shadow-xl overflow-hidden">
         <table class="w-full divide-y divide-slate-800/60">
-        <thead class="bg-slate-950/50">
-            <tr>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Foto</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase tracking-wider">Marca</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Categoria</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Código</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Nome</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Fornecedor</th>
+<thead class="bg-slate-950/50">
+             <tr>
+                 <th class="px-4 py-3 text-center"><input type="checkbox" id="selectAll" class="w-4 h-4"></th>
+                 <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Foto</th>
+                 <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase tracking-wider">Marca</th>
+                 <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Categoria</th>
+                 <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Código</th>
+                 <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Nome</th>
+                 <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Fornecedor</th>
                 <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase tracking-wider">Preço</th>
                 <th class="px-4 py-3 text-right text-xs font-semibold text-rose-400 uppercase tracking-wider">Custo</th>
                 <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase tracking-wider">Lucro</th>
@@ -63,6 +65,7 @@
 <tbody class="divide-y divide-slate-800/60">
              {% for p in produtos %}
              <tr class="hover:bg-slate-800/40 transition">
+                 <td class="px-4 py-3 text-center"><input type="checkbox" class="row-select w-4 h-4" value="{{ p.id }}"></td>
                  <td class="px-4 py-3 text-center">{% if p.foto %}<i data-lucide="check-circle" class="w-5 h-5 text-emerald-400 inline"></i>{% else %}<i data-lucide="image-off" class="w-5 h-5 text-slate-600 inline"></i>{% endif %}</td>
                  <td class="px-4 py-3 text-sm text-emerald-300">{{ p.marca or '-' }}</td>
                  <td class="px-4 py-3 text-sm text-cyan-300">{{ p.categoria.nome if p.categoria else '-' }}</td>
@@ -90,10 +93,29 @@
                  </td>
              </tr>
              {% else %}
-             <tr><td colspan="11" class="px-4 py-12 text-center text-slate-500">Nenhum produto cadastrado</td></tr>
-             {% endfor %}
+<tr><td colspan="13" class="px-4 py-12 text-center text-slate-500">Nenhum produto cadastrado</td></tr>
+            {% endfor %}
         </tbody>
     </table>
     </div>
 </div>
+{% endblock %}
+{% block scripts %}
+<script>
+document.getElementById('selectAll').addEventListener('change', function() {
+    document.querySelectorAll('.row-select').forEach(cb => cb.checked = this.checked);
+    togglePdfBtn();
+});
+document.querySelectorAll('.row-select').forEach(cb => cb.addEventListener('change', togglePdfBtn));
+function togglePdfBtn() {
+    const selected = document.querySelectorAll('.row-select:checked').length;
+    document.getElementById('pdfSelectedBtn').style.display = selected > 0 ? 'flex' : 'none';
+}
+document.getElementById('pdfSelectedBtn').addEventListener('click', function() {
+    const selected = Array.from(document.querySelectorAll('.row-select:checked')).map(cb => cb.value);
+    if (selected.length > 0) {
+        window.open('/produtos/pdf-selecionados?ids=' + selected.join(','), '_blank');
+    }
+});
+</script>
 {% endblock %}

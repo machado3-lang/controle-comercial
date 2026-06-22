@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Produtos Selecionados - Controle Comercial</title>
+    <style>
+        @page { size: A4; margin: 15mm; }
+        body { font-family: Arial, sans-serif; font-size: 11pt; color: black; }
+        .header { text-align: center; margin-bottom: 20px; }
+        .header img { height: 40px; margin-bottom: 5px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { border: 1px solid #000; padding: 6px; font-size: 10pt; }
+        th { background: #f0f0f0; font-weight: bold; }
+        .produto-foto { width: 30px; text-align: center; }
+        .produto-nome { width: 40%; }
+        .produto-preco { width: 15%; text-align: right; }
+        .produto-estoque { width: 15%; text-align: center; }
+        .variacoes { font-size: 9pt; color: #333; }
+        @media print {
+            .no-print { display: none; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ">
+        <h2>PRODUTOS SELECIONADOS</h2>
+        {% if empresa and empresa.logo %}
+        <img src="/{{ empresa.logo }}" alt="Logotipo" style="height: 50px; margin-top: 10px;">
+        <p>{{ empresa.nome_fantasia or empresa.razao_social or 'MultiCom' }}</p>
+        {% endif %}
+    </div>
+    
+    <table>
+        <thead>
+            <tr>
+                <th>Cód.</th>
+                <th>Foto</th>
+                <th class="produto-nome">Nome</th>
+                <th>Marca</th>
+                <th class="produto-preco">Preço</th>
+                <th class="produto-estoque">Estoque</th>
+                <th>Var.</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for p in produtos %}
+            <tr>
+                <td>{{ p.codigo or '-' }}</td>
+                <td class="produto-foto">{% if p.foto %}<i data-lucide="check" class="w-4 h-4 text-emerald-500"></i>{% endif %}</td>
+                <td>{{ p.nome }}</td>
+                <td>{{ p.marca or '-' }}</td>
+                <td class="produto-preco">R$ {{ "%.2f"|format(p.preco) }}</td>
+                <td class="produto-estoque">{{ p.estoque or 0 }}</td>
+                <td>
+                    {% if p.variacoes %}
+                    <div class="variacoes">
+                        {% for v in p.variacoes %}
+                        {{ v.nome_variacao }}: {{ v.estoque_atual or 0 }} un{% if not loop.last %}<br>{% endif %}
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <script>lucide.createIcons();</script>
+</body>
+</html>

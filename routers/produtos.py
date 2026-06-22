@@ -488,3 +488,15 @@ def excluir_marca(request: Request, marca_id: int, db: Session = Depends(get_db)
         db.delete(marca)
         db.commit()
     return RedirectResponse(url="/produtos/marcas", status_code=303)
+
+
+@router.get("/pdf-selecionados")
+def pdf_selecionados(request: Request, db: Session = Depends(get_db), ids: str = Query("")):
+    from sqlalchemy.orm import joinedload
+    empresa = db.query(Empresa).first()
+    id_list = [int(i) for i in ids.split(',') if i.isdigit()]
+    produtos = db.query(Produto).options(joinedload(Produto.variacoes)).filter(Produto.id.in_(id_list)).all() if id_list else []
+    return request.app.state.templates.TemplateResponse(
+        "produtos/pdf_selecionados.html",
+        {"request": request, "produtos": produtos, "empresa": empresa}
+    )
