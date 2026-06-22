@@ -11,14 +11,20 @@
         <div class="flex flex-col md:flex-row gap-4">
             <div class="text-center">
                 <label class="block text-sm font-medium text-cyan-400 mb-2">Foto do Produto</label>
-                <div class="border-2 border-dashed border-slate-700 rounded-xl w-36 h-36 flex items-center justify-center mb-2 bg-slate-900/50 mx-auto">
+                <div class="border-2 border-dashed border-slate-700 rounded-xl w-36 h-36 flex items-center justify-center mb-2 bg-slate-900/50 mx-auto cursor-pointer" id="fotoPreviewContainer" onclick="document.getElementById('fotoInput').click()">
                     {% if produto and produto.foto %}
-                        <img src="{{ produto.foto }}" class="max-h-32 max-w-32 object-contain rounded">
+                        <img src="{{ produto.foto }}" class="max-h-32 max-w-32 object-contain rounded" id="fotoPreviewImg">
+                        <i data-lucide="image" class="w-10 h-10 text-slate-600 hidden" id="fotoPlaceholderIcon"></i>
                     {% else %}
-                        <i data-lucide="image" class="w-10 h-10 text-slate-600"></i>
+                        <i data-lucide="image" class="w-10 h-10 text-slate-600" id="fotoPlaceholderIcon"></i>
+                        <img src="" class="max-h-32 max-w-32 object-contain rounded hidden" id="fotoPreviewImg">
                     {% endif %}
                 </div>
-                <input type="file" class="text-xs text-slate-400" name="foto" accept="image/*">
+                <input type="file" class="hidden" name="foto" accept="image/*" id="fotoInput" onchange="previewFoto(this)">
+                <label class="block text-xs text-slate-400 mb-2" id="fotoLabel">{% if produto and produto.foto %}Alterar foto{% else %}Escolher foto{% endif %}</label>
+                <button type="button" class="flex items-center mx-auto px-3 py-1 text-xs bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-900/50 transition" onclick="document.getElementById('fotoInput').click()"><i data-lucide="plus" class="w-3 h-3 me-1"></i> Adicionar foto</button>
+                <input type="hidden" name="fotos_extras" id="fotosExtrasJson">
+                <div id="fotosExtrasContainer" class="flex flex-wrap gap-2 mt-2 justify-center"></div>
             </div>
             
             <div class="flex-1">
@@ -444,5 +450,22 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+
+// Preview de foto única
+function previewFoto(input) {
+    const preview = document.getElementById('fotoPreviewImg');
+    const placeholder = document.getElementById('fotoPlaceholderIcon');
+    const label = document.getElementById('fotoLabel');
+    if (input.files && input.files[0]) {
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            preview.src = e.target.result;
+            preview.classList.remove('hidden');
+            placeholder.classList.add('hidden');
+            label.textContent = 'Alterar foto';
+        };
+        reader.readAsDataURL(input.files[0]);
+    }
+}
 </script>
 {% endblock %}
