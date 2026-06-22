@@ -124,35 +124,38 @@ def criar_assinatura(
     periodicidade: int = Form(1),
     descricao: str = Form(...),
     valor: float = Form(...),
-    quantidade: int = Form(0),
+    quantidade: int = Form(None),
     data_inicio: str = Form(...),
-    data_fim: str = Form(""),
+    data_fim: str = Form(None),
     dia_vencimento: int = Form(...),
     mes_vencimento: int = Form(0),
-    fornecedor_id: int = Form(0),
-    valor_revenda: float = Form(0),
-    numero_contrato: str = Form(""),
-    observacao: str = Form(""),
+    fornecedor_id: int = Form(None),
+    valor_revenda: float = Form(None),
+    numero_contrato: str = Form(None),
+    observacao: str = Form(None),
 ):
-    inicio = date.fromisoformat(data_inicio)
-    fim = date.fromisoformat(data_fim) if data_fim else None
-    assinatura = Assinatura(
-        cliente_id=cliente_id, periodicidade=periodicidade, descricao=descricao,
-        valor=valor, quantidade=quantidade if quantidade else None,
-        data_inicio=inicio, data_fim=fim,
-        dia_vencimento=dia_vencimento,
-        mes_vencimento=mes_vencimento,
-        situacao=1,
-        fornecedor_id=fornecedor_id if fornecedor_id else None,
-        valor_revenda=valor_revenda if valor_revenda else None,
-        numero_contrato=numero_contrato if numero_contrato else None,
-        observacao=observacao,
-    )
-    db.add(assinatura)
-    db.commit()
-
-    _gerar_cobranca(db, assinatura)
-    return RedirectResponse(url="/assinaturas", status_code=303)
+    try:
+        inicio = date.fromisoformat(data_inicio)
+        fim = date.fromisoformat(data_fim) if data_fim else None
+        assinatura = Assinatura(
+            cliente_id=cliente_id, periodicidade=periodicidade, descricao=descricao,
+            valor=valor, quantidade=quantidade,
+            data_inicio=inicio, data_fim=fim,
+            dia_vencimento=dia_vencimento,
+            mes_vencimento=mes_vencimento,
+            situacao=1,
+            fornecedor_id=fornecedor_id,
+            valor_revenda=valor_revenda,
+            numero_contrato=numero_contrato,
+            observacao=observacao,
+        )
+        db.add(assinatura)
+        db.commit()
+        _gerar_cobranca(db, assinatura)
+        return RedirectResponse(url="/assinaturas", status_code=303)
+    except Exception as e:
+        import traceback
+        return JSONResponse({"error": str(e), "trace": traceback.format_exc()}, status_code=500)
 
 
 def _add_months(source_date, months):
