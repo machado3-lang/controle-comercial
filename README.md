@@ -44,7 +44,12 @@ python -m uvicorn main:app --reload --port 8000
 - Logo Control iZ chanfro
 - Ícones Lucide
 
+## PDFs
+- Logo Control iZ à esquerda, texto MultiCom centralizado
+- Modal de visualização com botões Imprimir/Salvar
+- Botões inativados para boletos cancelados/pago/baixa_solicitada
+
 ## Deploy
-- Configurado para Railway
+- Configurado para Railway via Procfile
 - Banco SQLite local, PostgreSQL no Railway
 - Variáveis: `SECRET_KEY` (opcional)
