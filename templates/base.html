@@ -122,21 +122,21 @@
 
     <div class="modal fade" id="modalConfirmarExclusao" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
-            <form method="post" action="" class="modal-content bg-dark" id="formExcluirModal">
-                <div class="modal-header">
+            <form method="post" action="" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl" id="formExcluirModal">
+                <div class="modal-header border-b border-slate-800/50">
                     <h5 class="modal-title text-cyan-400">Confirmar Exclusão</h5>
-                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Fechar"></button>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
-                    <p class="text-light mb-3">Deseja realmente excluir este registro?</p>
+                    <p class="text-slate-300 mb-3">Deseja realmente excluir este registro?</p>
                     <div class="mb-3">
                         <label class="form-label text-cyan-300">Senha de Administrador *</label>
                         <input type="password" class="form-control" name="senha" required>
                     </div>
                 </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-                    <button type="submit" class="btn btn-danger d-flex align-items-center"><i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Confirmar Exclusão</button>
+                <div class="modal-footer border-t border-slate-800/50">
+                    <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="flex items-center px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-rose-500/10"><i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Confirmar Exclusão</button>
                 </div>
             </form>
         </div>
