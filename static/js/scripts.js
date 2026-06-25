@@ -67,12 +67,13 @@ function confirmarExclusao(url) {
 
 function confirmarExclusaoSimples(url) {
     if (confirm('Deseja realmente excluir este registro?')) {
-        fetch(url, { method: 'POST' })
+        fetch(url, { method: 'POST', redirect: 'manual' })
             .then(r => {
-                if (r.redirected) {
-                    window.location.href = r.url;
-                } else if (r.status === 400) {
-                    r.json().then(d => alert(d.detail || 'Não é possível excluir'));
+                if (r.status === 303 || r.status === 302) {
+                    const redirectUrl = r.headers.get('location');
+                    if (redirectUrl) window.location.href = redirectUrl;
+                } else if (r.status === 400 || r.status === 403) {
+                    r.json().then(d => alert(d.detail || d.erro || 'Não é possível excluir'));
                 } else {
                     window.location.reload();
                 }
