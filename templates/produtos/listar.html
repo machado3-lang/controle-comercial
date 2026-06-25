@@ -99,6 +99,25 @@
     </table>
     </div>
 </div>
+
+<div class="modal fade" id="modalPdfPreview" tabindex="-1">
+    <div class="modal-dialog modal-xl modal-dialog-centered">
+        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <div class="modal-header">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="file-text" class="w-5 h-5 inline me-2"></i> Produtos Selecionados</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0" style="height: 80vh;">
+                <iframe id="pdfPreviewIframe" class="w-100 h-100 border-0"></iframe>
+            </div>
+            <div class="modal-footer border-t border-slate-800/50">
+                <button class="px-3 py-1 text-sm text-slate-300 border border-slate-700 rounded hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Cancelar</button>
+                <button class="flex items-center px-3 py-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium" onclick="imprimirPdf()"><i data-lucide="printer" class="w-4 h-4 me-1"></i> Imprimir</button>
+                <button class="flex items-center px-3 py-1 text-sm bg-cyan-600 hover:bg-cyan-700 text-white rounded font-medium" onclick="salvarPdf()"><i data-lucide="download" class="w-4 h-4 me-1"></i> Salvar PDF</button>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 {% block scripts %}
 <script>
@@ -118,33 +137,28 @@ document.getElementById('pdfSelectedBtn').addEventListener('click', function() {
     }
 });
 function carregarPdfSelecionados(ids) {
+    const modal = new bootstrap.Modal(document.getElementById('modalPdfPreview'));
+    
     fetch('/produtos/pdf-selecionados?ids=' + ids.join(','))
         .then(r => r.text())
         .then(html => {
-            document.getElementById('pdfPreviewContent').innerHTML = html;
-            document.getElementById('pdfPreviewIframe').srcdoc = html;
+            const iframe = document.getElementById('pdfPreviewIframe');
+            const doc = iframe.contentDocument || iframe.contentWindow.document;
+            doc.open();
+            doc.write(html);
+            doc.close();
+            modal.show();
         });
-    const modal = new bootstrap.Modal(document.getElementById('modalPdfPreview'));
-    modal.show();
+}
+function imprimirPdf() {
+    const iframe = document.getElementById('pdfPreviewIframe');
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
+}
+function salvarPdf() {
+    const iframe = document.getElementById('pdfPreviewIframe');
+    iframe.contentWindow.focus();
+    iframe.contentWindow.print();
 }
 </script>
-
-<div class="modal fade" id="modalPdfPreview" tabindex="-1">
-    <div class="modal-dialog modal-xl modal-dialog-centered">
-        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
-            <div class="modal-header">
-                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="file-text" class="w-5 h-5 inline me-2"></i> Produtos Selecionados</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body p-0" style="height: 80vh;">
-                <iframe id="pdfPreviewIframe" class="w-100 h-100 border-0"></iframe>
-            </div>
-            <div class="modal-footer border-t border-slate-800/50">
-                <button class="px-3 py-1 text-sm text-slate-300 border border-slate-700 rounded hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Cancelar</button>
-                <button class="flex items-center px-3 py-1 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded font-medium" onclick="window.print()"><i data-lucide="printer" class="w-4 h-4 me-1"></i> Imprimir</button>
-                <button class="flex items-center px-3 py-1 text-sm bg-cyan-600 hover:bg-cyan-700 text-white rounded font-medium" onclick="downloadPdf()"><i data-lucide="download" class="w-4 h-4 me-1"></i> Salvar PDF</button>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}

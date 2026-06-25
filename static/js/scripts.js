@@ -65,6 +65,22 @@ function confirmarExclusao(url) {
     modal.show();
 }
 
+function confirmarExclusaoSimples(url) {
+    if (confirm('Deseja realmente excluir este registro?')) {
+        fetch(url, { method: 'POST' })
+            .then(r => {
+                if (r.redirected) {
+                    window.location.href = r.url;
+                } else if (r.status === 400) {
+                    r.json().then(d => alert(d.detail || 'Não é possível excluir'));
+                } else {
+                    window.location.reload();
+                }
+            })
+            .catch(() => window.location.reload());
+    }
+}
+
 function excluirDireto(url) {
     fetch(url, { method: 'POST' })
         .then(r => {

@@ -123,6 +123,33 @@ def excluir_conta_pagar(request: Request, conta_id: int, db: Session = Depends(g
     return RedirectResponse(url="/contas/pagar", status_code=303)
 
 
+@router.get("/pagar/{conta_id}/editar")
+def editar_conta_pagar_page(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if not conta:
+        return RedirectResponse(url="/contas/pagar", status_code=303)
+    fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
+    fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
+    return request.app.state.templates.TemplateResponse(
+        "contas/_editar_conta_pagar.html",
+        {"request": request, "conta": conta, "fornecedores": fornecedores, "fornecedores_json": fornecedores_json}
+    )
+
+
+@router.post("/pagar/{conta_id}/editar")
+def editar_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db), fornecedor_id: int = Form(0), descricao: str = Form(...), valor: float = Form(...), data_vencimento: str = Form(None), observacao: str = Form("")):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if conta:
+        conta.fornecedor_id = fornecedor_id if fornecedor_id else None
+        conta.descricao = descricao
+        conta.valor = valor
+        if data_vencimento:
+            conta.data_vencimento = date.fromisoformat(data_vencimento)
+        conta.observacao = observacao
+        db.commit()
+    return RedirectResponse(url="/contas/pagar", status_code=303)
+
+
 # ─── RELATÓRIO DE RECEBIMENTOS ───────────────────────────────────
 
 @router.get("/recebimentos")
@@ -184,9 +211,10 @@ def recebimentos_pdf(
         query = query.filter(ContaReceber.data_recebimento <= date.fromisoformat(data_fim))
     recebimentos = query.order_by(ContaReceber.data_recebimento.desc()).all()
     total_valor = sum(r.valor for r in recebimentos)
+    empresa = db.query(Empresa).first()
     return request.app.state.templates.TemplateResponse(
         "contas/recebimentos_imprimir.html",
-        {"request": request, "recebimentos": recebimentos, "total_valor": total_valor}
+        {"request": request, "recebimentos": recebimentos, "total_valor": total_valor, "empresa": empresa}
     )
 
 
@@ -281,6 +309,33 @@ def receber_conta(
     if conta:
         conta.status = StatusConta.PAGO
         conta.data_recebimento = date.fromisoformat(data_recebimento)
+        db.commit()
+    return RedirectResponse(url="/contas/receber", status_code=303)
+
+
+@router.get("/receber/{conta_id}/editar")
+def editar_conta_receber_page(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
+    if not conta:
+        return RedirectResponse(url="/contas/receber", status_code=303)
+    clientes = db.query(Cliente).order_by(Cliente.nome).all()
+    clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
+    return request.app.state.templates.TemplateResponse(
+        "contas/_editar_conta_receber.html",
+        {"request": request, "conta": conta, "clientes": clientes, "clientes_json": clientes_json}
+    )
+
+
+@router.post("/receber/{conta_id}/editar")
+def editar_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db), cliente_id: int = Form(0), descricao: str = Form(...), valor: float = Form(...), data_vencimento: str = Form(None), observacao: str = Form("")):
+    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
+    if conta:
+        conta.cliente_id = cliente_id if cliente_id else None
+        conta.descricao = descricao
+        conta.valor = valor
+        if data_vencimento:
+            conta.data_vencimento = date.fromisoformat(data_vencimento)
+        conta.observacao = observacao
         db.commit()
     return RedirectResponse(url="/contas/receber", status_code=303)
 

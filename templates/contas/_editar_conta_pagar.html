@@ -1,0 +1,74 @@
+<div class="mb-3 relative">
+    <label class="form-label text-cyan-300">Fornecedor</label>
+    <input type="text" id="fornecedorSearchEditar" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off" value="{{ conta.fornecedor.nome if conta.fornecedor else '' }}">
+    <div id="fornecedorDropdownEditar" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+    <select class="hidden" name="fornecedor_id" id="fornecedorIdEditar">
+        <option value="0">Nenhum</option>
+        {% for f in fornecedores %}<option value="{{ f.id }}" {% if f.id == conta.fornecedor_id %}selected{% endif %}>{{ f.nome }}</option>{% endfor %}
+    </select>
+</div>
+<div class="mb-3">
+    <label class="form-label text-cyan-300">Descrição *</label>
+    <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" required value="{{ conta.descricao }}">
+</div>
+<div class="mb-3">
+    <label class="form-label text-cyan-300">Valor *</label>
+    <input type="number" step="0.01" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="valor" required value="{{ conta.valor }}">
+</div>
+<div class="mb-3">
+    <label class="form-label text-cyan-300">Data Vencimento *</label>
+    <input type="date" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_vencimento" required value="{{ conta.data_vencimento.strftime('%Y-%m-%d') if conta.data_vencimento else '' }}">
+</div>
+<div class="mb-3">
+    <label class="form-label text-cyan-300">Observação</label>
+    <textarea class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="2">{{ conta.observacao or '' }}</textarea>
+</div>
+<script>
+async function buscarFornecedoresEditar(q) {
+    if (!q || q.length < 2) return [];
+    try {
+        const r = await fetch('/fornecedores/buscar?q=' + encodeURIComponent(q));
+        const d = await r.json();
+        return d.fornecedores || [];
+    } catch {
+        return [];
+    }
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    initEditarFornecedor();
+});
+(function() { initEditarFornecedor(); })();
+function initEditarFornecedor() {
+    const fornecedorSearch = document.getElementById('fornecedorSearchEditar');
+    const fornecedorDropdown = document.getElementById('fornecedorDropdownEditar');
+    if (!fornecedorSearch || fornecedorSearch._bound) return;
+    fornecedorSearch._bound = true;
+    fornecedorSearch.addEventListener('input', function(e) {
+        const term = e.target.value;
+        if (term.length >= 2) {
+            buscarFornecedoresEditar(term).then(fornecedores => {
+                if (fornecedores.length > 0) {
+                    fornecedorDropdown.innerHTML = fornecedores.map(f => '<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="' + f.id + '">' + f.nome + (f.fantasia && f.fantasia !== f.nome ? ' - ' + f.fantasia : '') + (f.cpf_cnpj ? ' (<span class="text-cyan-400">' + f.cpf_cnpj + '</span>)' : '') + '</div>').join('');
+                    fornecedorDropdown.classList.remove('hidden');
+                } else {
+                    fornecedorDropdown.classList.add('hidden');
+                }
+            });
+        } else {
+            fornecedorDropdown.classList.add('hidden');
+        }
+    });
+    if (fornecedorDropdown) {
+        fornecedorDropdown.addEventListener('click', function(e) {
+            const item = e.target.closest('[data-id]');
+            if (item) {
+                fornecedorSearch.value = item.textContent;
+                document.getElementById('fornecedorIdEditar').value = item.dataset.id;
+                this.classList.add('hidden');
+            }
+        });
+    }
+}
+if (typeof lucide !== 'undefined') lucide.createIcons();
+</script>

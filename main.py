@@ -36,6 +36,17 @@ def run_migrations():
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS permissoes TEXT",
         "ALTER TABLE pedidos_venda_itens ADD COLUMN IF NOT EXISTS variacao_id INTEGER REFERENCES produto_variacoes(id)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS senha_lembrete VARCHAR(200)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS bling_refresh_token VARCHAR(200)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS bling_token_expires_at TIMESTAMP",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS bling_webhook_secret VARCHAR(100)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS bling_api_key_v2 VARCHAR(100)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_token VARCHAR(3000)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_conta_corrente VARCHAR(30)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_beneficiario VARCHAR(20)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_path VARCHAR(500)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_key_path VARCHAR(500)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_password VARCHAR(100)",
     ]
     # SQLite não suporta IF NOT EXISTS em ADD COLUMN, usar PRAGMA para verificar
     if "sqlite" in str(engine.url):
@@ -100,6 +111,12 @@ def run_migrations():
             conn.commit()
         if "dia_vencimento_novo" not in existing_hist:
             conn.execute(text("ALTER TABLE assinaturas_historico ADD COLUMN dia_vencimento_novo INTEGER"))
+            conn.commit()
+        # Check and add missing columns to empresa
+        cols_emp = inspector.get_columns("empresa")
+        existing_emp = {c['name'] for c in cols_emp}
+        if "senha_lembrete" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN senha_lembrete TEXT"))
             conn.commit()
         conn.close()
     else:

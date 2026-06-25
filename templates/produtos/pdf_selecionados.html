@@ -23,12 +23,13 @@
 </head>
 <body>
     <div class="header">
-        <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ">
-        <h2>PRODUTOS SELECIONADOS</h2>
-        {% if empresa and empresa.logo %}
-        <img src="/{{ empresa.logo }}" alt="Logotipo" style="height: 50px; margin-top: 10px;">
-        <p>{{ empresa.nome_fantasia or empresa.razao_social or 'MultiCom' }}</p>
-        {% endif %}
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+            <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ" style="height: 25px;">
+            <div style="flex: 1; text-align: center;">
+                <h2 style="margin: 0;">PRODUTOS SELECIONADOS</h2>
+            </div>
+        </div>
+        <p style="margin: 0; text-align: center; font-weight: bold;">MultiCom</p>
     </div>
     
     <table>

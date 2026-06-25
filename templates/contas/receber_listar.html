@@ -58,20 +58,21 @@
                     {% set cor = 'emerald' if c.status.value == 'pago' else 'amber' if c.status.value == 'pendente' else 'rose' if c.status.value == 'vencido' else 'slate' %}
                     <span class="px-2 py-1 text-xs font-medium bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 rounded-full">{{ c.status.value }}</span>
                 </td>
-                <td class="px-4 py-3 text-center align-middle" style="min-width: 7rem;">
-                    <div class="flex items-center justify-center gap-1">
-                        {% if c.status.value not in ['pago', 'cancelado', 'baixa_solicitada'] %}
-                        <button class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Receber" onclick="abrirRecebimento({{ c.id }}, '{{ c.descricao|e }}', '{{ c.cliente.nome if c.cliente else '---' }}', {{ c.valor }})"><i data-lucide="check-circle" class="w-4 h-4"></i></button>
-                        {% endif %}
-                        {% if not c.boleto_emitido %}
-                        <button class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Emitir Boleto" onclick="abrirEmitir({{ c.id }}, {{ c.valor }})"><i data-lucide="credit-card" class="w-4 h-4"></i></button>
-                        {% elif c.status.value not in ['cancelado', 'baixa_solicitada'] %}
-                        <a href="{{ c.boleto_url }}" target="_blank" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Ver Boleto"><i data-lucide="eye" class="w-4 h-4"></i></a>
-                        <a href="/contas/receber/{{ c.id }}/imprimir-boleto" target="_blank" class="inline-flex p-1.5 text-slate-300 border border-slate-700 rounded hover:bg-slate-800/50 transition" title="Imprimir Boleto"><i data-lucide="printer" class="w-4 h-4"></i></a>
-                        {% endif %}
-                        <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarExclusao('/contas/receber/{{ c.id }}/excluir')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                    </div>
-                </td>
+<td class="px-4 py-3 text-center align-middle">
+                     <div class="flex items-center justify-center gap-1">
+                         {% if c.status.value not in ['pago', 'cancelado', 'baixa_solicitada'] %}
+                          <button class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Receber" onclick="abrirRecebimento({{ c.id }}, '{{ c.descricao|e }}', '{{ c.cliente.nome if c.cliente else '---' }}', {{ c.valor }})"><i data-lucide="check-circle" class="w-4 h-4"></i></button>
+                          <button class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar" onclick="abrirEditarReceber({{ c.id }})"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                         {% endif %}
+                         {% if c.boleto_emitido and c.status.value not in ['cancelado', 'baixa_solicitada', 'pago'] %}
+                          <a href="{{ c.boleto_url }}" target="_blank" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Ver Boleto"><i data-lucide="eye" class="w-4 h-4"></i></a>
+                          <a href="/contas/receber/{{ c.id }}/imprimir-boleto" target="_blank" class="inline-flex p-1.5 text-slate-300 border border-slate-700 rounded hover:bg-slate-800/50 transition" title="Imprimir Boleto"><i data-lucide="printer" class="w-4 h-4"></i></a>
+                         {% elif c.status.value not in ['cancelado', 'baixa_solicitada', 'pago'] %}
+                          <button class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Emitir Boleto" onclick="abrirEmitir({{ c.id }}, {{ c.valor }})"><i data-lucide="credit-card" class="w-4 h-4"></i></button>
+                         {% endif %}
+                         <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarExclusao('/contas/receber/{{ c.id }}/excluir')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                     </div>
+                 </td>
             </tr>
             {% else %}
             <tr><td colspan="7" class="px-4 py-12 text-center text-slate-500">Nenhuma conta cadastrada</td></tr>
@@ -172,8 +173,25 @@
         </form>
     </div>
 </div>
-{% endblock %}
 
+<div class="modal fade" id="modalEditarConta">
+    <div class="modal-dialog">
+        <form method="post" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl" id="formEditarConta">
+            <div class="modal-header border-b border-slate-800/50">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">Editar Conta a Receber</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body" id="editarContaBody">
+            </div>
+            <div class="modal-footer border-t border-slate-800/50">
+                <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button>
+            </div>
+        </form>
+    </div>
+</div>
+{% endblock %}
+ 
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
@@ -206,6 +224,18 @@ function abrirEmitir(id, valor) {
     modal.show();
 }
 
+function abrirEditarReceber(id) {
+    fetch('/contas/receber/' + id + '/editar')
+        .then(r => r.text())
+        .then(html => {
+            document.getElementById('editarContaBody').innerHTML = html;
+            document.getElementById('formEditarConta').action = '/contas/receber/' + id + '/editar';
+            if (window.initEditarCliente) window.initEditarCliente();
+            lucide.createIcons();
+            new bootstrap.Modal(document.getElementById('modalEditarConta')).show();
+        });
+}
+
 const clientesDataReceber = {{ clientes_json|tojson }};
 
 async function buscarClientesReceber(q) {
@@ -230,7 +260,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (term.length >= 2) {
                 buscarClientesReceber(term).then(clientes => {
                     if (clientes.length > 0) {
-                        clienteDropdown.innerHTML = clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}">${c.nome}${c.fantasia ? ' - ' + c.fantasia : ''}${c.cpf_cnpj ? ' (<span class="text-cyan-400">' + c.cpf_cnpj + '</span>)' : ''}</div>`).join('');
+                        clienteDropdown.innerHTML = clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}">${c.nome}${c.fantasia && c.fantasia !== c.nome ? ' - ' + c.fantasia : ''}${c.cpf_cnpj ? ' (<span class="text-cyan-400">' + c.cpf_cnpj + '</span>)' : ''}</div>`).join('');
                         clienteDropdown.classList.remove('hidden');
                     } else {
                         clienteDropdown.classList.add('hidden');

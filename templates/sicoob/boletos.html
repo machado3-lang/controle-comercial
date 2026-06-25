@@ -135,7 +135,7 @@ function filtrar(situacao) {
                         <button class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition me-1 ${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' || b.situacao === 'pago' ? 'opacity-50 cursor-not-allowed' : ''}" onclick="${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' || b.situacao === 'pago' ? 'return false;' : "baixarPdf('" + b.nossoNumero + "')"}" title="PDF"><i data-lucide="download" class="w-4 h-4"></i></button>
                         <button class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition me-1 ${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' ? 'opacity-50 cursor-not-allowed' : ''}" onclick="${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' ? 'return false;' : "abrirAlterar('" + b.nossoNumero + "', '" + (b.dataVencimento || '') + "')"}" title="Alterar"><i data-lucide="pencil" class="w-4 h-4"></i></button>
                         <button class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition me-1 ${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' || b.situacao === 'pago' ? 'opacity-50 cursor-not-allowed' : ''}" onclick="${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' || b.situacao === 'pago' ? 'return false;' : "baixarBoleto('" + b.nossoNumero + "')"}" title="Baixar"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                        <button class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition ${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' || b.situacao === 'pago' ? 'opacity-50 cursor-not-allowed' : ''}" onclick="${b.situacao === 'cancelado' || b.situacao === 'baixa_solicitada' || b.situacao === 'pago' ? 'return false;' : "confirmarExclusao('/sicoob/boleto/" + b.nossoNumero + "/excluir')"}" title="Excluir"><i data-lucide="x-octagon" class="w-4 h-4"></i></button>
+                        <button class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition me-1" onclick="excluirBoleto('${b.nossoNumero}')" title="Excluir"><i data-lucide="x-octagon" class="w-4 h-4"></i></button>
                     </td>
                 </tr>
             `).join('');
@@ -262,6 +262,23 @@ function salvarAlteracao() {
             if (data.success) {
                 bootstrap.Modal.getInstance(document.getElementById('alterarBoletoModal')).hide();
                 showToast("Alterações salvas com sucesso", "success");
+                carregarBoletos();
+            } else {
+                showToast("Erro: " + data.error, "danger");
+            }
+        });
+}
+
+function excluirBoleto(nossoNumero) {
+    if (!confirm('Deseja realmente excluir este boleto?')) return;
+    fetch('/sicoob/boleto/' + nossoNumero + '/excluir', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+    })
+        .then(r => r.json())
+        .then(data => {
+            if (data.success) {
+                showToast("Boleto excluído com sucesso", "success");
                 carregarBoletos();
             } else {
                 showToast("Erro: " + data.error, "danger");

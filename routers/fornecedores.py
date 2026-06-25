@@ -51,7 +51,7 @@ def listar_fornecedores(request: Request, db: Session = Depends(get_db), busca: 
 def buscar_fornecedores(request: Request, db: Session = Depends(get_db), q: str = Query("")):
     if not q or len(q) < 2:
         return {"fornecedores": []}
-    query = db.query(Fornecedor).filter(Fornecedor.nome.ilike(f"%{q}%") | Fornecedor.cpf_cnpj.ilike(f"%{q}%"))
+    query = db.query(Fornecedor).filter(Fornecedor.nome.ilike(f"%{q}%") | Fornecedor.cpf_cnpj.ilike(f"%{q}%") | Fornecedor.fantasia.ilike(f"%{q}%"))
     fornecedores = query.order_by(Fornecedor.nome).limit(20).all()
     return {"fornecedores": [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]}
 

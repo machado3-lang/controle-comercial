@@ -323,13 +323,12 @@ def excluir_historico(
     if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
         return JSONResponse({"erro": "Senha inválida"}, status_code=403)
     historico = db.query(AssinaturaHistorico).filter(
-        AssinaturaHistorico.id == historico_id,
-        AssinaturaHistorico.assinatura_id == assinatura_id
+        AssinaturaHistorico.id == historico_id
     ).first()
     if historico:
         db.delete(historico)
         db.commit()
-    return RedirectResponse(url=f"/assinaturas/{assinatura_id}", status_code=303)
+    return RedirectResponse(url=f"/assinaturas/{assinatura_id}/editar", status_code=303)
 
 
 @router.get("/{assinatura_id}/cancelar")

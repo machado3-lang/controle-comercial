@@ -436,11 +436,13 @@ async def baixar_boleto_route(request: Request, nosso_numero: str, db: Session =
         conta_inicial = db.query(ContaReceber).filter(
             (ContaReceber.nosso_numero == nosso_numero) | (ContaReceber.api_nosso_numero == nosso_numero)
         ).first()
-    if conta_inicial:
+    if conta_inicial and conta_inicial.status != StatusConta.CANCELADO:
         conta_inicial.status = StatusConta.BAIXA_SOLICITADA
         if motivo:
             conta_inicial.motivo_baixa = motivo
         db.commit()
+    elif conta_inicial and conta_inicial.status == StatusConta.CANCELADO:
+        return {"success": False, "error": "Boleto já cancelado"}
     
     numero_busca = None
     if conta_inicial:

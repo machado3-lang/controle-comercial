@@ -21,11 +21,14 @@
 </head>
 <body>
     <div class="header">
-        <h2>RELATÓRIO - CONTAS A PAGAR</h2>
-        <p>Emitido em: {{ data_geracao.strftime('%d/%m/%Y') }}</p>
-        {% if empresa %}
-        <p><strong>{{ empresa.nome_fantasia or empresa.razao_social }}</strong></p>
-        {% endif %}
+        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 15px;">
+            <img src="/static/img/controliz-logo-chanfro.png" alt="Control iZ" style="height: 25px;">
+            <div style="flex: 1; text-align: center;">
+                <h2 style="margin: 0;">RELATÓRIO - CONTAS A PAGAR</h2>
+                <p style="margin: 5px 0 0 0;">Emitido em: {{ data_geracao.strftime('%d/%m/%Y') }}</p>
+            </div>
+        </div>
+        <p style="margin: 0; text-align: center; font-weight: bold;">MultiCom</p>
     </div>
 
     <table>

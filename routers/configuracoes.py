@@ -106,6 +106,7 @@ async def salvar_configuracoes(
             bairro=bairro, cidade=cidade, estado=estado, cep=cep,
             telefone=telefone, celular=celular, email=email, site=site,
             senha_admin=senha_admin if senha_admin else None,
+            senha_lembrete=senha_lembrete,
             observacao=observacao,
             bling_client_id=bling_client_id,
             bling_client_secret=bling_client_secret,
@@ -114,7 +115,7 @@ async def salvar_configuracoes(
             sicoob_beneficiario=sicoob_beneficiario,
             sicoob_conta_corrente=sicoob_conta_corrente,
             sicoob_cert_path=sicoob_cert_path,
-            sicoob_cert_password=sicoob_cert_password or empresa.sicoob_cert_password,
+            sicoob_cert_password=sicoob_cert_password,
         )
         db.add(empresa)
 

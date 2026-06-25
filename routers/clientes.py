@@ -51,7 +51,7 @@ def listar_clientes(request: Request, db: Session = Depends(get_db), busca: str 
 def buscar_clientes(request: Request, db: Session = Depends(get_db), q: str = Query("")):
     if not q or len(q) < 2:
         return {"clientes": []}
-    query = db.query(Cliente).filter(Cliente.nome.ilike(f"%{q}%") | Cliente.cpf_cnpj.ilike(f"%{q}%"))
+    query = db.query(Cliente).filter(Cliente.nome.ilike(f"%{q}%") | Cliente.cpf_cnpj.ilike(f"%{q}%") | Cliente.fantasia.ilike(f"%{q}%"))
     clientes = query.order_by(Cliente.nome).limit(20).all()
     return {"clientes": [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]}
 
