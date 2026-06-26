@@ -676,6 +676,11 @@ async def alterar_boleto(request: Request, nosso_numero: str, db: Session = Depe
 async def excluir_boleto_api(request: Request, nosso_numero: str, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
         return JSONResponse({"success": False, "error": "Não autenticado"}, status_code=403)
+    form = await request.form()
+    senha = form.get("senha", "")
+    emp = get_empresa(db)
+    if not emp or not emp.senha_admin or senha != emp.senha_admin:
+        return {"success": False, "error": "Senha inválida"}
     emp = get_empresa(db)
     cert_config = get_cert_config(db)
     token = refresh_sicoob_token(db, "boletos_exclusao")

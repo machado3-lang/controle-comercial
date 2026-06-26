@@ -270,20 +270,7 @@ function salvarAlteracao() {
 }
 
 function excluirBoleto(nossoNumero) {
-    if (!confirm('Deseja realmente excluir este boleto?')) return;
-    fetch('/sicoob/boleto/' + nossoNumero + '/excluir', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
-    })
-        .then(r => r.json())
-        .then(data => {
-            if (data.success) {
-                showToast("Boleto excluído com sucesso", "success");
-                carregarBoletos();
-            } else {
-                showToast("Erro: " + data.error, "danger");
-            }
-        });
+    confirmarExclusao('/sicoob/boleto/' + nossoNumero + '/excluir');
 }
 </script>
 {% endblock %}
