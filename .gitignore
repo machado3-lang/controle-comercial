@@ -3,6 +3,8 @@ __pycache__
 *.pyo
 *.db
 *.sqlite
+.env
+.env.*
 certs/
 static/uploads/
 temp_*.pdf
