@@ -48,6 +48,8 @@ def run_migrations():
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_path VARCHAR(500)",
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_key_path VARCHAR(500)",
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_password VARCHAR(100)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_base64 TEXT",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_key_base64 TEXT",
     ]
     # SQLite não suporta IF NOT EXISTS em ADD COLUMN, usar PRAGMA para verificar
     if "sqlite" in str(engine.url):
@@ -121,6 +123,12 @@ def run_migrations():
             conn.commit()
         if "senha_lembrete" not in existing_emp:
             conn.execute(text("ALTER TABLE empresa ADD COLUMN senha_lembrete TEXT"))
+            conn.commit()
+        if "sicoob_cert_base64" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN sicoob_cert_base64 TEXT"))
+            conn.commit()
+        if "sicoob_cert_key_base64" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN sicoob_cert_key_base64 TEXT"))
             conn.commit()
         conn.close()
     else:

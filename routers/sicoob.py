@@ -66,7 +66,25 @@ def get_token_or_error(db: Session, scope: str = "boletos_consulta") -> tuple[st
 
 def get_cert_config(db: Session) -> dict | None:
     emp = get_empresa(db)
-    if not emp or not emp.sicoob_cert_path:
+    if not emp:
+        return None
+    # Preferir certificados em base64 (persistem no banco)
+    if emp.sicoob_cert_base64:
+        import base64
+        cert_content = base64.b64decode(emp.sicoob_cert_base64)
+        import tempfile
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.pem') as f:
+            f.write(cert_content)
+            cert_path = f.name
+        key_path = None
+        if emp.sicoob_cert_key_base64:
+            key_content = base64.b64decode(emp.sicoob_cert_key_base64)
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pem') as f:
+                f.write(key_content)
+                key_path = f.name
+        return {"cert": (cert_path, key_path) if key_path else cert_path, "password": emp.sicoob_cert_password or None}
+    # Fallback para arquivos no disco (não persistem no Railway)
+    if not emp.sicoob_cert_path:
         return None
     cert_path = emp.sicoob_cert_path
     if not os.path.isabs(cert_path):
@@ -234,19 +252,25 @@ async def salvar_credenciais(
         emp.sicoob_cert_password = sicoob_cert_password or emp.sicoob_cert_password
         
         if cert_file and cert_file.filename:
+            import base64
+            content = await cert_file.read()
+            emp.sicoob_cert_base64 = base64.b64encode(content).decode('utf-8')
             os.makedirs("certs", exist_ok=True)
             ext = cert_file.filename.split('.')[-1]
             cert_path = f"certs/cert_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}"
             with open(cert_path, "wb") as f:
-                f.write(cert_file.file.read())
+                f.write(content)
             emp.sicoob_cert_path = cert_path
         
         if key_file and key_file.filename:
+            import base64
+            content = await key_file.read()
+            emp.sicoob_cert_key_base64 = base64.b64encode(content).decode('utf-8')
             os.makedirs("certs", exist_ok=True)
             ext = key_file.filename.split('.')[-1]
             key_path = f"certs/key_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}"
             with open(key_path, "wb") as f:
-                f.write(key_file.file.read())
+                f.write(content)
             emp.sicoob_cert_key_path = key_path
         
         db.commit()

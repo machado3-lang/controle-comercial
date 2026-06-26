@@ -431,6 +431,8 @@ class Empresa(Base):
     sicoob_cert_path = Column(String(500), nullable=True)
     sicoob_cert_key_path = Column(String(500), nullable=True)
     sicoob_cert_password = Column(String(100), nullable=True)
+    sicoob_cert_base64 = Column(Text, nullable=True)  # Certificado armazenado como base64
+    sicoob_cert_key_base64 = Column(Text, nullable=True)  # Chave armazenada como base64
     observacao = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
