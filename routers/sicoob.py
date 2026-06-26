@@ -36,7 +36,7 @@ def refresh_sicoob_token(db: Session, scope: str = "boletos_consulta") -> str | 
     cert_config = get_cert_config(db)
     cert_path = cert_config["cert"] if cert_config else None
     
-    with httpx.Client(timeout=30, cert=cert_path) as client:
+    with httpx.Client(timeout=30, cert=cert_path if cert_path else None) as client:
         resp = client.post(
             SICOOO_AUTH,
             content=f"grant_type=client_credentials&client_id={emp.sicoob_client_id or ''}&scope={scope}",
@@ -682,9 +682,8 @@ async def excluir_boleto_api(request: Request, nosso_numero: str, db: Session = 
     emp = get_empresa(db)
     if not emp or not emp.senha_admin or senha != emp.senha_admin:
         return {"success": False, "error": "Senha inválida"}
-    emp = get_empresa(db)
     cert_config = get_cert_config(db)
-    token = refresh_sicoob_token(db, "boletos_exclusao")
+    token = refresh_sicoob_token(db, "boletos_consulta")
     if not token:
         return {"success": False, "error": "Token Sicoob não configurado"}
     client_args = {"timeout": 30}
