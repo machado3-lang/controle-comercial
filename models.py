@@ -29,6 +29,7 @@ class StatusConta(str, enum.Enum):
     VENCIDO = "vencido"
     CANCELADO = "cancelado"
     BAIXA_SOLICITADA = "baixa_solicitada"
+    EXCLUIDO = "excluido"
 
 
 class Usuario(Base):

@@ -567,7 +567,7 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
                         conta.data_recebimento = date.today()
                         atualizados += 1
                     elif "BAIXADO" in situacao:
-                        conta.status = StatusConta.CANCELADO
+conta.status = StatusConta.EXCLUIDO
                         atualizados += 1
     db.commit()
     return {"success": True, "atualizados": atualizados}
@@ -682,33 +682,12 @@ async def excluir_boleto_api(request: Request, nosso_numero: str, db: Session = 
     emp = get_empresa(db)
     if not emp or not emp.senha_admin or senha != emp.senha_admin:
         return {"success": False, "error": "Senha inválida"}
-    cert_config = get_cert_config(db)
-    token = refresh_sicoob_token(db, "boletos_alteracao")
-    if not token:
-        return {"success": False, "error": "Token Sicoob não configurado"}
     
-    # Buscar conta para obter nossoNumero correto da API
-    conta_inicial = db.query(ContaReceber).filter(
-        (ContaReceber.nosso_numero == nosso_numero) | (ContaReceber.api_nosso_numero == nosso_numero)
+    conta = db.query(ContaReceber).filter(
+        (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
     ).first()
-    
-    numero_real = nosso_numero
-    if conta_inicial and conta_inicial.api_nosso_numero:
-        numero_real = str(conta_inicial.api_nosso_numero)
-    
-    client_args = {"timeout": 30}
-    if cert_config and "cert" in cert_config:
-        client_args["cert"] = cert_config["cert"]
-    with httpx.Client(**client_args) as client:
-        resp = client.post(
-            f"{SICOOO_API}/boletos/{int(numero_real)}/baixar",
-            json={"numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820, "codigoModalidade": 1},
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        )
-        conta = db.query(ContaReceber).filter(
-            (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
-        ).first()
-        if conta:
-            conta.status = StatusConta.CANCELADO
-            db.commit()
-        return {"success": True} if resp.status_code in (200, 204) else {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+    if conta:
+        conta.status = StatusConta.CANCELADO
+        db.commit()
+        return {"success": True, "message": "Boleto excluído do sistema"}
+    return {"success": False, "error": "Boleto não encontrado"}
