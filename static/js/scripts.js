@@ -59,9 +59,21 @@ function aplicarMascaraCep(input) {
 }
 
 function confirmarExclusao(url) {
+    console.log('confirmarExclusao called with url:', url);
     const form = document.getElementById('formExcluirModal');
+    if (!form) {
+        console.error('formExcluirModal not found in DOM');
+        alert('Erro: formulário de exclusão não encontrado');
+        return;
+    }
     form.action = url;
-    const modal = new bootstrap.Modal(document.getElementById('modalConfirmarExclusao'));
+    const modalEl = document.getElementById('modalConfirmarExclusao');
+    if (!modalEl) {
+        console.error('modalConfirmarExclusao not found in DOM');
+        alert('Erro: modal de exclusão não encontrado');
+        return;
+    }
+    const modal = new bootstrap.Modal(modalEl);
     modal.show();
 }
 
