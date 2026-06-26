@@ -136,6 +136,7 @@ def criar_assinatura(
     observacao: str = Form(None),
 ):
     try:
+        print(f"[DEBUG] criar_assinatura: cliente_id={cliente_id}, descricao={descricao}, valor={valor}")
         inicio = date.fromisoformat(data_inicio)
         fim = date.fromisoformat(data_fim) if data_fim else None
         assinatura = Assinatura(
