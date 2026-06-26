@@ -36,6 +36,7 @@ def run_migrations():
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE",
         "ALTER TABLE usuarios ADD COLUMN IF NOT EXISTS permissoes TEXT",
         "ALTER TABLE pedidos_venda_itens ADD COLUMN IF NOT EXISTS variacao_id INTEGER REFERENCES produto_variacoes(id)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS senha_admin VARCHAR(100)",
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS senha_lembrete VARCHAR(200)",
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS bling_refresh_token VARCHAR(200)",
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS bling_token_expires_at TIMESTAMP",
@@ -115,6 +116,9 @@ def run_migrations():
         # Check and add missing columns to empresa
         cols_emp = inspector.get_columns("empresa")
         existing_emp = {c['name'] for c in cols_emp}
+        if "senha_admin" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN senha_admin TEXT"))
+            conn.commit()
         if "senha_lembrete" not in existing_emp:
             conn.execute(text("ALTER TABLE empresa ADD COLUMN senha_lembrete TEXT"))
             conn.commit()
