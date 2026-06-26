@@ -56,7 +56,8 @@ def get_token_or_error(db: Session, scope: str = "boletos_consulta") -> tuple[st
         return None, "Empresa não encontrada - verifique database"
     if not emp.sicoob_client_id:
         return None, "sicoob_client_id não configurado - configure em /sicoob"
-    if not emp.sicoob_cert_path or not os.path.exists(emp.sicoob_cert_path):
+    cert_config = get_cert_config(db)
+    if not cert_config:
         return None, "Certificado Sicoob não configurado - configure em /sicoob"
     token = refresh_sicoob_token(db, scope)
     if not token:
