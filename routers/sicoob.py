@@ -686,13 +686,23 @@ async def excluir_boleto_api(request: Request, nosso_numero: str, db: Session = 
     token = refresh_sicoob_token(db, "boletos_consulta")
     if not token:
         return {"success": False, "error": "Token Sicoob não configurado"}
+    
+    # Buscar conta para obter nossoNumero correto da API
+    conta_inicial = db.query(ContaReceber).filter(
+        (ContaReceber.nosso_numero == nosso_numero) | (ContaReceber.api_nosso_numero == nosso_numero)
+    ).first()
+    
+    numero_real = nosso_numero
+    if conta_inicial and conta_inicial.api_nosso_numero:
+        numero_real = str(conta_inicial.api_nosso_numero)
+    
     client_args = {"timeout": 30}
     if cert_config and "cert" in cert_config:
         client_args["cert"] = cert_config["cert"]
     with httpx.Client(**client_args) as client:
         resp = client.post(
-            f"{SICOOO_API}/boletos/{nosso_numero}/baixa",
-            json={"numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820, "codigoBaixa": "CAC"},
+            f"{SICOOO_API}/boletos/{int(numero_real)}/baixar",
+            json={"numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820, "codigoModalidade": 1},
             headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
         )
         conta = db.query(ContaReceber).filter(
