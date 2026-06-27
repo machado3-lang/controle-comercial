@@ -122,14 +122,19 @@ function handleSubmitExclusao(form) {
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: new URLSearchParams({senha: senha})
     })
-    .then(r => r.json())
-    .then(data => {
-        if (data.success) {
-            showToast(data.message || 'Operação concluída', 'success');
+    .then(r => {
+        if (r.redirected) {
+            showToast('Registro excluído', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('modalConfirmarExclusao')).hide();
+            setTimeout(() => window.location.href = r.url, 1000);
+        } else if (r.status === 403) {
+            r.json().then(d => showToast(d.erro || d.error || 'Senha inválida', 'danger'));
+        } else if (r.ok) {
+            showToast('Operação concluída', 'success');
             bootstrap.Modal.getInstance(document.getElementById('modalConfirmarExclusao')).hide();
             setTimeout(() => window.location.reload(), 1000);
         } else {
-            showToast(data.error || 'Erro ao excluir', 'danger');
+            showToast('Erro na requisição', 'danger');
         }
     })
     .catch(() => showToast('Erro na requisição', 'danger'));

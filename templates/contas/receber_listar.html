@@ -219,7 +219,7 @@ function abrirRecebimento(id, descricao, cliente, valor) {
 
 function abrirEmitir(id, valor) {
     document.getElementById('emitir-valor').value = valor;
-    document.getElementById('formEmitir').action = '/contas/receber/' + id + '/emitir-boleto';
+    document.getElementById('formEmitir').action = '/sicoob/emitir-boleto/' + id;
     const modal = new bootstrap.Modal(document.getElementById('modalEmitir'));
     modal.show();
 }
