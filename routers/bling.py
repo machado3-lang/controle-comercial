@@ -1263,11 +1263,11 @@ def sincronizar_ordens_pendentes(request: Request, db: Session = Depends(get_db)
         else:
             ok += 1
 
-msg = f"{ok} OS(s) sincronizada(s)"
-     if errors:
-         msg += f" | {len(errors)} erro(s): {'; '.join(errors)}"
-     request.session["message"] = {"texto": msg, "tipo": "success" if not errors else "warning"}
-     return RedirectResponse(url="/bling", status_code=303)
+    msg = f"{ok} OS(s) sincronizada(s)"
+    if errors:
+        msg += f" | {len(errors)} erro(s): {'; '.join(errors)}"
+    request.session["message"] = {"texto": msg, "tipo": "success" if not errors else "warning"}
+    return RedirectResponse(url="/bling", status_code=303)
 
 
 @router.get("/testar-conexao")
