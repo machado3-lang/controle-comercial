@@ -402,7 +402,7 @@ def obter_pdf_boleto(request: Request, nosso_numero: str, db: Session = Depends(
                 resultado = data.get("resultado", data)
                 pdf_base64 = resultado.get("pdfBoleto", "")
                 pdf_bytes = base64.b64decode(pdf_base64)
-                headers = {"Content-Disposition": f"attachment; filename=boleto_{nosso_numero}.pdf"}
+                headers = {"Content-Disposition": f"inline; filename=boleto_{nosso_numero}.pdf"}
                 return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
             except Exception as e:
                 import traceback
