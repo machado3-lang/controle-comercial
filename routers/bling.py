@@ -1263,8 +1263,28 @@ def sincronizar_ordens_pendentes(request: Request, db: Session = Depends(get_db)
         else:
             ok += 1
 
-    msg = f"{ok} OS(s) sincronizada(s)"
-    if errors:
-        msg += f" | {len(errors)} erro(s): {'; '.join(errors)}"
-    request.session["message"] = {"texto": msg, "tipo": "success" if not errors else "warning"}
-    return RedirectResponse(url="/bling", status_code=303)
+msg = f"{ok} OS(s) sincronizada(s)"
+     if errors:
+         msg += f" | {len(errors)} erro(s): {'; '.join(errors)}"
+     request.session["message"] = {"texto": msg, "tipo": "success" if not errors else "warning"}
+     return RedirectResponse(url="/bling", status_code=303)
+
+
+@router.get("/testar-conexao")
+def testar_conexao(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"success": False, "error": "Não autenticado"})
+    emp = db.query(Empresa).first()
+    if not emp or not emp.bling_client_id:
+        return JSONResponse({"success": False, "error": "Credenciais Bling não configuradas"})
+    token = get_token(db)
+    if not token:
+        return JSONResponse({"success": False, "error": "Falha ao obter token"})
+    with httpx.Client() as client:
+        try:
+            r = client.get("https://api.bling.com.br/Api/v3/empresas/me", headers={"Authorization": f"Bearer {token}"})
+            if r.status_code == 200:
+                return JSONResponse({"success": True})
+            return JSONResponse({"success": False, "error": f"HTTP {r.status_code}"})
+        except Exception as e:
+            return JSONResponse({"success": False, "error": str(e)})
