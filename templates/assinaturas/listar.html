@@ -101,7 +101,7 @@
 
 <div class="modal fade" id="modalNova">
     <div class="modal-dialog modal-lg">
-        <form method="post" action="/assinaturas/novo" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+        <form method="post" action="/assinaturas/novo" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl" onsubmit="return validarNovaAssinatura(this)">
             <div class="modal-header border-b border-slate-800/50">
                 <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">Nova Assinatura</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
@@ -111,7 +111,7 @@
                     <label class="form-label text-cyan-300">Cliente *</label>
                     <input type="text" id="clienteSearchModal" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar cliente..." autocomplete="off">
                     <div id="clienteDropdownModal" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
-                    <select class="hidden" name="cliente_id" id="clienteIdModal" required>
+                    <select class="hidden" name="cliente_id" id="clienteIdModal">
                         <option value="">Selecione...</option>
                     </select>
                 </div>
@@ -236,16 +236,27 @@ document.addEventListener('DOMContentLoaded', function() {
          });
      }
 if (clienteDropdown) {
-        clienteDropdown.addEventListener('click', function(e) {
-            const item = e.target.closest('[data-id]');
-            if (item) {
-                clienteSearch.value = item.textContent;
-                const select = document.getElementById('clienteIdModal');
-                if (select) select.value = item.dataset.id;
-                this.classList.add('hidden');
-            }
-        });
-    }
+         clienteDropdown.addEventListener('click', function(e) {
+             const item = e.target.closest('[data-id]');
+             if (item) {
+                 clienteSearch.value = item.textContent;
+                 const select = document.getElementById('clienteIdModal');
+                 if (select) {
+                     let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
+                     if (!opt) {
+                         opt = document.createElement('option');
+                         opt.value = item.dataset.id;
+                         opt.textContent = item.textContent;
+                         opt.selected = true;
+                         select.appendChild(opt);
+                     } else {
+                         opt.selected = true;
+                     }
+                 }
+                 this.classList.add('hidden');
+             }
+         });
+     }
      
      // Busca dinâmica de fornecedores no modal
      const fornecedorSearch = document.getElementById('fornecedorSearchModal');
@@ -268,16 +279,35 @@ if (clienteDropdown) {
          });
      }
 if (fornecedorDropdown) {
-        fornecedorDropdown.addEventListener('click', function(e) {
-            const item = e.target.closest('[data-id]');
-            if (item) {
-                fornecedorSearch.value = item.textContent;
-                const select = document.getElementById('fornecedorIdModal');
-                if (select) select.value = item.dataset.id;
-                this.classList.add('hidden');
-            }
-        });
-    }
- });
+         fornecedorDropdown.addEventListener('click', function(e) {
+             const item = e.target.closest('[data-id]');
+             if (item) {
+                 fornecedorSearch.value = item.textContent;
+                 const select = document.getElementById('fornecedorIdModal');
+                 if (select) {
+                     let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
+                     if (!opt) {
+                         opt = document.createElement('option');
+                         opt.value = item.dataset.id;
+                         opt.textContent = item.textContent;
+                         opt.selected = true;
+                         select.appendChild(opt);
+                     } else {
+                         opt.selected = true;
+                     }
+                 }
+                 this.classList.add('hidden');
+             }
+});
+  }
+  
+  function validarNovaAssinatura(form) {
+      const clienteId = document.getElementById('clienteIdModal');
+      if (!clienteId || !clienteId.value) {
+          alert('Selecione um cliente');
+          return false;
+      }
+      return true;
+  }
  </script>
 {% endblock %}
