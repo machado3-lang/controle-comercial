@@ -113,6 +113,29 @@ function excluirDireto(url) {
         .catch(() => window.location.reload());
 }
 
+function handleSubmitExclusao(form) {
+    const url = form.action;
+    const senha = form.senha.value;
+    fetch(url, {
+        method: 'POST',
+        credentials: 'include',
+        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+        body: new URLSearchParams({senha: senha})
+    })
+    .then(r => r.json())
+    .then(data => {
+        if (data.success) {
+            showToast(data.message || 'Operação concluída', 'success');
+            bootstrap.Modal.getInstance(document.getElementById('modalConfirmarExclusao')).hide();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showToast(data.error || 'Erro ao excluir', 'danger');
+        }
+    })
+    .catch(() => showToast('Erro na requisição', 'danger'));
+    return false;
+}
+
 function calcularTotal() {
     var servico = parseFloat(document.getElementById('valor_servico')?.value) || 0;
     var pecas = parseFloat(document.getElementById('valor_pecas')?.value) || 0;
