@@ -10,6 +10,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
 from sqlalchemy import func
 from datetime import date as date_func, datetime, timedelta
 
@@ -244,10 +245,23 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         ContaReceber.data_recebimento >= inicio_mes
     ).scalar() or 0
 
+    # Contas vencendo em 30 dias
+    contas_pagar_vencendo = db.query(func.sum(ContaPagar.valor)).filter(
+        ContaPagar.status == StatusConta.PENDENTE,
+        ContaPagar.data_vencimento >= hoje,
+        ContaPagar.data_vencimento <= hoje + timedelta(days=30)
+    ).scalar() or 0
+
+    contas_receber_vencendo = db.query(func.sum(ContaReceber.valor)).filter(
+        ContaReceber.status == StatusConta.PENDENTE,
+        ContaReceber.data_vencimento >= hoje,
+        ContaReceber.data_vencimento <= hoje + timedelta(days=30)
+    ).scalar() or 0
+
     assinaturas_vencendo = db.query(func.count(Assinatura.id)).filter(
         Assinatura.situacao == 1,
         Assinatura.data_fim >= hoje,
-        Assinatura.data_fim <= date_func.today() + timedelta(days=30)
+        Assinatura.data_fim <= hoje + timedelta(days=30)
     ).scalar() or 0
 
     ordens_abertas = db.query(func.count(OrdemServico.id)).filter(
@@ -257,7 +271,12 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
     clientes_rapidos = db.query(Cliente).order_by(Cliente.nome).all()
     produtos_rapidos = db.query(Produto).order_by(Produto.nome).all()
     ultima_os = db.query(OrdemServico).order_by(OrdemServico.created_at.desc()).limit(5).all()
-    
+    assinaturas_proximas = db.query(Assinatura).options(joinedload(Assinatura.cliente)).filter(
+        Assinatura.situacao == 1,
+        Assinatura.data_fim >= hoje,
+        Assinatura.data_fim <= hoje + timedelta(days=30)
+    ).order_by(Assinatura.data_fim).limit(5).all()
+
     bling_pending = db.query(func.count(Cliente.id)).filter(Cliente.bling_pending_sync == True).scalar() or 0
     bling_pending += db.query(func.count(Fornecedor.id)).filter(Fornecedor.bling_pending_sync == True).scalar() or 0
     bling_pending += db.query(func.count(Assinatura.id)).filter(Assinatura.bling_pending_sync == True).scalar() or 0
@@ -290,12 +309,15 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "total_pedidos": total_pedidos,
         "contas_pagar_pendentes": contas_pagar_pendentes,
         "contas_receber_pendentes": contas_receber_pendentes,
-        "contas_vencidas": contas_vencidas,
-"assinaturas_ativas": assinaturas_ativas,
-         "assinaturas_vencendo": assinaturas_vencendo,
-         "faturamento_mes": faturamento_mes,
-         "ordens_abertas": ordens_abertas,
+"contas_vencidas": contas_vencidas,
+        "assinaturas_ativas": assinaturas_ativas,
+        "assinaturas_vencendo": assinaturas_vencendo,
+        "faturamento_mes": faturamento_mes,
+        "contas_pagar_vencendo": contas_pagar_vencendo,
+        "contas_receber_vencendo": contas_receber_vencendo,
+        "ordens_abertas": ordens_abertas,
         "ultimas_ordens": ultima_os,
+        "assinaturas_proximas": assinaturas_proximas,
         "contas_pagar_proximas": contas_pagar_proximas,
         "contas_receber_proximas": contas_receber_proximas,
         "bling_pending": bling_pending,

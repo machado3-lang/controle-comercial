@@ -14,7 +14,7 @@
     </a>
     <a href="/produtos" class="glass-card stat-card p-4 text-center block hover:bg-slate-800/40 transition">
         <div class="stat-icon mx-auto"><i data-lucide="package" class="w-5 h-5 text-cyan-400"></i></div>
-        <div class="stat-label mb-1">Cadastro de Itens</div>
+        <div class="stat-label mb-1">Itens</div>
         <div class="stat-value text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400">{{ total_produtos }}</div>
         {% if produtos_estoque_baixo > 0 or produtos_estoque_zerado > 0 %}
         <div class="mt-1 text-xs space-y-0.5">
@@ -25,13 +25,8 @@
     </a>
     <a href="/assinaturas" class="glass-card stat-card p-4 text-center block hover:bg-slate-800/40 transition">
         <div class="stat-icon mx-auto"><i data-lucide="calendar-check" class="w-5 h-5 text-cyan-400"></i></div>
-        <div class="stat-label mb-1">Assinaturas Ativas</div>
+        <div class="stat-label mb-1">Assinaturas</div>
         <div class="stat-value text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400">{{ assinaturas_ativas }}</div>
-    </a>
-    <a href="/assinaturas" class="glass-card stat-card p-4 text-center block hover:bg-slate-800/40 transition">
-        <div class="stat-icon mx-auto"><i data-lucide="calendar-alert" class="w-5 h-5 text-amber-400"></i></div>
-        <div class="stat-label mb-1">Vencem em 30 dias</div>
-        <div class="stat-value text-amber-400">{{ assinaturas_vencendo }}</div>
     </a>
 </div>
 
@@ -41,31 +36,40 @@
         <div class="stat-label mb-2">Pedidos</div>
         <div class="stat-value text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 mb-3">{{ total_pedidos }}</div>
     </a>
-    <div class="glass-card p-4 text-center">
+    <a href="/contas/pagar" class="glass-card p-4 text-center block hover:bg-slate-800/40 transition">
         <div class="stat-icon mx-auto"><i data-lucide="arrow-up-circle" class="w-5 h-5 text-rose-400"></i></div>
-        <div class="stat-label mb-1">Contas a Pagar</div>
+        <div class="stat-label mb-1">Pagar (pendente)</div>
         <div class="stat-value text-rose-400 mb-1">R$ {{ "%.2f"|format(contas_pagar_pendentes) }}</div>
         <div class="text-slate-400 text-xs">{{ contas_vencidas }} vencida(s)</div>
-    </div>
-<div class="glass-card p-4 text-center">
+    </a>
+    <a href="/contas/pagar" class="glass-card p-4 text-center block hover:bg-slate-800/40 transition">
+        <div class="stat-icon mx-auto"><i data-lucide="calendar-alert" class="w-5 h-5 text-amber-400"></i></div>
+        <div class="stat-label mb-1">Pagar (30 dias)</div>
+        <div class="stat-value text-amber-400">R$ {{ "%.2f"|format(contas_pagar_vencendo) }}</div>
+    </a>
+    <a href="/contas/receber" class="glass-card p-4 text-center block hover:bg-slate-800/40 transition">
         <div class="stat-icon mx-auto"><i data-lucide="arrow-down-circle" class="w-5 h-5 text-emerald-400"></i></div>
-        <div class="stat-label mb-1">Contas a Receber</div>
-        <div class="stat-value text-emerald-400">R$ {{ "%.2f"|format(contas_receber_pendentes) }}</div>
-    </div>
+        <div class="stat-label mb-1">Receber (pendente)</div>
+        <div class="stat-value text-emerald-400 mb-1">R$ {{ "%.2f"|format(contas_receber_pendentes) }}</div>
+    </a>
+    <a href="/contas/receber" class="glass-card p-4 text-center block hover:bg-slate-800/40 transition">
+        <div class="stat-icon mx-auto"><i data-lucide="calendar-alert" class="w-5 h-5 text-cyan-400"></i></div>
+        <div class="stat-label mb-1">Receber (30 dias)</div>
+        <div class="stat-value text-cyan-400">R$ {{ "%.2f"|format(contas_receber_vencendo) }}</div>
+    </a>
     <div class="glass-card p-4 text-center">
         <div class="stat-icon mx-auto"><i data-lucide="trending-up" class="w-5 h-5 text-cyan-400"></i></div>
         <div class="stat-label mb-1">Faturamento (mês)</div>
         <div class="stat-value text-cyan-400">R$ {{ "%.2f"|format(faturamento_mes) }}</div>
     </div>
-</div>
-    <div class="glass-card p-4 text-center">
+    <a href="/ordens-servico" class="glass-card p-4 text-center block hover:bg-slate-800/40 transition">
         <div class="stat-icon mx-auto"><i data-lucide="wrench" class="w-5 h-5 text-cyan-400"></i></div>
         <div class="stat-label mb-1">OS Abertas</div>
         <div class="stat-value text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400">{{ ordens_abertas }}</div>
-    </div>
+    </a>
 </div>
 
-<div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+<div class="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-6">
     <div class="glass-card">
         <div class="p-4 border-b border-slate-800/60 flex justify-between items-center">
             <span class="text-cyan-400 font-medium"><i data-lucide="clock" class="w-4 h-4 inline me-1"></i> Últimas OS</span>
@@ -94,6 +98,28 @@
         </div>
     </div>
     
+    <div class="glass-card">
+        <div class="p-4 border-b border-slate-800/60 flex justify-between items-center">
+            <span class="text-emerald-400 font-medium"><i data-lucide="calendar-alert" class="w-4 h-4 inline me-1"></i> Assinaturas Vencendo</span>
+            <a href="/assinaturas" class="text-emerald-400 text-xs hover:text-emerald-300">Ver todas</a>
+        </div>
+        <div class="divide-y divide-slate-800/60">
+            {% for a in assinaturas_proximas %}
+            <div class="p-3 hover:bg-slate-800/40 transition">
+                <div class="flex justify-between">
+                    <span class="text-slate-100 text-sm">{{ a.cliente.nome }}</span>
+                    <strong class="text-emerald-400 text-sm">R$ {{ "%.2f"|format(a.valor) }}</strong>
+                </div>
+                <small class="text-slate-400">Vence: {{ a.data_fim }}</small>
+            </div>
+            {% else %}
+            <div class="p-4 text-slate-500 text-sm">Nenhuma assinatura vencendo</div>
+            {% endfor %}
+        </div>
+    </div>
+</div>
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4">
     <div class="glass-card">
         <div class="p-4 border-b border-slate-800/60 flex justify-between items-center">
             <span class="text-rose-400 font-medium"><i data-lucide="arrow-up-circle" class="w-4 h-4 inline me-1"></i> Contas a Pagar</span>
