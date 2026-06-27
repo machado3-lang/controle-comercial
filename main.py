@@ -139,6 +139,10 @@ def run_migrations():
                         conn.execute(text(m))
                     except Exception:
                         pass
+                # Fix sequences after restore from backup
+                if "postgresql" in str(engine.url):
+                    conn.execute(text("SELECT setval('contas_receber_id_seq', COALESCE((SELECT MAX(id)+1 FROM contas_receber), 1))"))
+                    conn.commit()
                 conn.commit()
         except Exception as e:
             print(f"Migration error: {e}")
