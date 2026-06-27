@@ -346,9 +346,10 @@ def cancelar_assinatura(request: Request, assinatura_id: int, db: Session = Depe
 def excluir_assinatura(request: Request, assinatura_id: int, db: Session = Depends(get_db), senha: str = Form("")):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
+        return JSONResponse({"success": False, "error": "Senha inválida"}, status_code=403)
     assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
     if assinatura:
         db.delete(assinatura)
         db.commit()
-    return RedirectResponse(url="/assinaturas", status_code=303)
+        return JSONResponse({"success": True, "message": "Assinatura excluída com sucesso"})
+    return JSONResponse({"success": False, "error": "Assinatura não encontrada"}, status_code=404)
