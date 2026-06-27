@@ -25,8 +25,13 @@
     </a>
     <a href="/assinaturas" class="glass-card stat-card p-4 text-center block hover:bg-slate-800/40 transition">
         <div class="stat-icon mx-auto"><i data-lucide="calendar-check" class="w-5 h-5 text-cyan-400"></i></div>
-        <div class="stat-label mb-1">Assinaturas</div>
+        <div class="stat-label mb-1">Assinaturas Ativas</div>
         <div class="stat-value text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400">{{ assinaturas_ativas }}</div>
+    </a>
+    <a href="/assinaturas" class="glass-card stat-card p-4 text-center block hover:bg-slate-800/40 transition">
+        <div class="stat-icon mx-auto"><i data-lucide="calendar-alert" class="w-5 h-5 text-amber-400"></i></div>
+        <div class="stat-label mb-1">Vencem em 30 dias</div>
+        <div class="stat-value text-amber-400">{{ assinaturas_vencendo }}</div>
     </a>
 </div>
 
@@ -42,11 +47,17 @@
         <div class="stat-value text-rose-400 mb-1">R$ {{ "%.2f"|format(contas_pagar_pendentes) }}</div>
         <div class="text-slate-400 text-xs">{{ contas_vencidas }} vencida(s)</div>
     </div>
-    <div class="glass-card p-4 text-center">
+<div class="glass-card p-4 text-center">
         <div class="stat-icon mx-auto"><i data-lucide="arrow-down-circle" class="w-5 h-5 text-emerald-400"></i></div>
         <div class="stat-label mb-1">Contas a Receber</div>
         <div class="stat-value text-emerald-400">R$ {{ "%.2f"|format(contas_receber_pendentes) }}</div>
     </div>
+    <div class="glass-card p-4 text-center">
+        <div class="stat-icon mx-auto"><i data-lucide="trending-up" class="w-5 h-5 text-cyan-400"></i></div>
+        <div class="stat-label mb-1">Faturamento (mês)</div>
+        <div class="stat-value text-cyan-400">R$ {{ "%.2f"|format(faturamento_mes) }}</div>
+    </div>
+</div>
     <div class="glass-card p-4 text-center">
         <div class="stat-icon mx-auto"><i data-lucide="wrench" class="w-5 h-5 text-cyan-400"></i></div>
         <div class="stat-label mb-1">OS Abertas</div>

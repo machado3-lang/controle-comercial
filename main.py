@@ -237,6 +237,19 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         Assinatura.situacao == 1
     ).scalar()
 
+    # Indicadores extras
+    inicio_mes = date_func.today().replace(day=1)
+    faturamento_mes = db.query(func.sum(ContaReceber.valor)).filter(
+        ContaReceber.status == StatusConta.PAGO,
+        ContaReceber.data_recebimento >= inicio_mes
+    ).scalar() or 0
+
+    assinaturas_vencendo = db.query(func.count(Assinatura.id)).filter(
+        Assinatura.situacao == 1,
+        Assinatura.data_fim >= hoje,
+        Assinatura.data_fim <= date_func.today() + timedelta(days=30)
+    ).scalar() or 0
+
     ordens_abertas = db.query(func.count(OrdemServico.id)).filter(
         OrdemServico.status.in_([StatusOS.ABERTA, StatusOS.EM_ANDAMENTO])
     ).scalar()
@@ -278,8 +291,10 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "contas_pagar_pendentes": contas_pagar_pendentes,
         "contas_receber_pendentes": contas_receber_pendentes,
         "contas_vencidas": contas_vencidas,
-        "assinaturas_ativas": assinaturas_ativas,
-        "ordens_abertas": ordens_abertas,
+"assinaturas_ativas": assinaturas_ativas,
+         "assinaturas_vencendo": assinaturas_vencendo,
+         "faturamento_mes": faturamento_mes,
+         "ordens_abertas": ordens_abertas,
         "ultimas_ordens": ultima_os,
         "contas_pagar_proximas": contas_pagar_proximas,
         "contas_receber_proximas": contas_receber_proximas,
