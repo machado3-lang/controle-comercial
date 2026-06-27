@@ -557,7 +557,7 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
                 },
                 headers={"Authorization": f"Bearer {token}"}
             )
-            if resp.status_code == 200:
+if resp.status_code == 200:
                 data = resp.json()
                 boletos = data.get("resultado", {}).get("boletos", [])
                 if boletos:
@@ -567,9 +567,9 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
                         conta.data_recebimento = date.today()
                         atualizados += 1
                     elif "BAIXADO" in situacao:
-conta.status = StatusConta.EXCLUIDO
+                        conta.status = StatusConta.CANCELADO
                         atualizados += 1
-    db.commit()
+        db.commit()
     return {"success": True, "atualizados": atualizados}
 
 
