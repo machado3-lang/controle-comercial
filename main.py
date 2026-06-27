@@ -141,7 +141,18 @@ def run_migrations():
                         pass
                 # Fix sequences after restore from backup
                 if "postgresql" in str(engine.url):
-                    conn.execute(text("SELECT setval('contas_receber_id_seq', COALESCE((SELECT MAX(id)+1 FROM contas_receber), 1))"))
+                    seq_tables = [
+                        ('contas_receber_id_seq', 'contas_receber'),
+                        ('assinaturas_id_seq', 'assinaturas'),
+                        ('clientes_id_seq', 'clientes'),
+                        ('fornecedores_id_seq', 'fornecedores'),
+                        ('pedidos_venda_id_seq', 'pedidos_venda'),
+                    ]
+                    for seq, table in seq_tables:
+                        try:
+                            conn.execute(text(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE((SELECT MAX(id)+1 FROM {table}), 1), false)"))
+                        except:
+                            pass
                     conn.commit()
                 conn.commit()
         except Exception as e:
