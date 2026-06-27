@@ -53,7 +53,7 @@ def buscar_clientes(request: Request, db: Session = Depends(get_db), q: str = Qu
         return {"clientes": []}
     query = db.query(Cliente).filter(Cliente.nome.ilike(f"%{q}%") | Cliente.cpf_cnpj.ilike(f"%{q}%") | Cliente.fantasia.ilike(f"%{q}%"))
     clientes = query.order_by(Cliente.nome).limit(20).all()
-    return {"clientes": [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]}
+    return {"clientes": [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj, "codigo": c.codigo} for c in clientes]}
 
 @router.get("/novo")
 def novo_cliente(request: Request, db: Session = Depends(get_db)):

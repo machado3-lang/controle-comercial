@@ -224,7 +224,7 @@ document.addEventListener('DOMContentLoaded', function() {
              if (term.length >= 2) {
                  buscarClientes(term).then(clientes => {
                      if (clientes.length > 0) {
-                         clienteDropdown.innerHTML = clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}">${c.nome}${c.fantasia ? ' - ' + c.fantasia : ''}${c.cpf_cnpj ? ' (<span class="text-cyan-400">' + c.cpf_cnpj + '</span>)' : ''}</div>`).join('');
+                         clienteDropdown.innerHTML = clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}" data-codigo="${c.codigo||''}">${c.nome}${c.fantasia ? ' - ' + c.fantasia : ''}${c.cpf_cnpj ? ' (<span class="text-cyan-400">' + c.cpf_cnpj + '</span>)' : ''}</div>`).join('');
                          clienteDropdown.classList.remove('hidden');
                      } else {
                          clienteDropdown.classList.add('hidden');
@@ -238,23 +238,28 @@ document.addEventListener('DOMContentLoaded', function() {
 if (clienteDropdown) {
          clienteDropdown.addEventListener('click', function(e) {
              const item = e.target.closest('[data-id]');
-             if (item) {
-                 clienteSearch.value = item.textContent;
-                 const select = document.getElementById('clienteIdModal');
-                 if (select) {
-                     let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
-                     if (!opt) {
-                         opt = document.createElement('option');
-                         opt.value = item.dataset.id;
-                         opt.textContent = item.textContent;
-                         opt.selected = true;
-                         select.appendChild(opt);
-                     } else {
-                         opt.selected = true;
-                     }
-                 }
-                 this.classList.add('hidden');
-             }
+if (item) {
+                  clienteSearch.value = item.textContent;
+                  const select = document.getElementById('clienteIdModal');
+                  if (select) {
+                      let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
+                      if (!opt) {
+                          opt = document.createElement('option');
+                          opt.value = item.dataset.id;
+                          opt.textContent = item.textContent;
+                          opt.selected = true;
+                          select.appendChild(opt);
+                      } else {
+                          opt.selected = true;
+                      }
+                  }
+// Preencher código do cliente no número do contrato
+                  const contrato = document.getElementById('numeroContrato');
+                  if (contrato && !contrato.value && item.dataset.codigo) {
+                      contrato.value = item.dataset.codigo;
+                  }
+                  this.classList.add('hidden');
+              }
          });
      }
      
