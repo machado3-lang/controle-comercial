@@ -52,9 +52,9 @@
         <div class="stat-label mb-1">Receber (pendente)</div>
         <div class="stat-value text-emerald-400 mb-1">R$ {{ "%.2f"|format(contas_receber_pendentes) }}</div>
     </a>
-    <a href="/contas/receber" class="glass-card p-4 text-center block hover:bg-slate-800/40 transition">
-        <div class="stat-icon mx-auto"><i data-lucide="calendar-alert" class="w-5 h-5 text-cyan-400"></i></div>
-        <div class="stat-label mb-1">Receber (30 dias)</div>
+    <a href="/contas/previsao-recebimentos" class="glass-card p-4 text-center block hover:bg-slate-800/40 transition">
+        <div class="stat-icon mx-auto"><i data-lucide="calendar-days" class="w-5 h-5 text-cyan-400"></i></div>
+        <div class="stat-label mb-1">Previsão Receb.</div>
         <div class="stat-value text-cyan-400">R$ {{ "%.2f"|format(contas_receber_vencendo) }}</div>
     </a>
     <div class="glass-card p-4 text-center">
@@ -62,6 +62,11 @@
         <div class="stat-label mb-1">Faturamento (mês)</div>
         <div class="stat-value text-cyan-400">R$ {{ "%.2f"|format(faturamento_mes) }}</div>
     </div>
+    <a href="/contas/inadimplencia" class="glass-card p-4 text-center block hover:bg-slate-800/40 transition">
+        <div class="stat-icon mx-auto"><i data-lucide="alert-triangle" class="w-5 h-5 text-rose-400"></i></div>
+        <div class="stat-label mb-1">Inadimplência</div>
+        <div class="stat-value text-rose-400">R$ {{ "%.2f"|format(inadimplente_total) }}</div>
+    </a>
     <a href="/ordens-servico" class="glass-card p-4 text-center block hover:bg-slate-800/40 transition">
         <div class="stat-icon mx-auto"><i data-lucide="wrench" class="w-5 h-5 text-cyan-400"></i></div>
         <div class="stat-label mb-1">OS Abertas</div>

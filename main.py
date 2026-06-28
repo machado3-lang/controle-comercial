@@ -277,6 +277,12 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         Assinatura.data_fim <= hoje + timedelta(days=30)
     ).order_by(Assinatura.data_fim).limit(5).all()
 
+    # Inadimplência total
+    inadimplente_total = db.query(func.sum(ContaReceber.valor)).filter(
+        ContaReceber.data_vencimento < hoje,
+        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
+    ).scalar() or 0
+
     bling_pending = db.query(func.count(Cliente.id)).filter(Cliente.bling_pending_sync == True).scalar() or 0
     bling_pending += db.query(func.count(Fornecedor.id)).filter(Fornecedor.bling_pending_sync == True).scalar() or 0
     bling_pending += db.query(func.count(Assinatura.id)).filter(Assinatura.bling_pending_sync == True).scalar() or 0
@@ -315,6 +321,7 @@ def dashboard(request: Request, db: Session = Depends(get_db)):
         "faturamento_mes": faturamento_mes,
         "contas_pagar_vencendo": contas_pagar_vencendo,
         "contas_receber_vencendo": contas_receber_vencendo,
+        "inadimplente_total": inadimplente_total,
         "ordens_abertas": ordens_abertas,
         "ultimas_ordens": ultima_os,
         "assinaturas_proximas": assinaturas_proximas,
