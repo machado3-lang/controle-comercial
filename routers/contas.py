@@ -1,6 +1,7 @@
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
+from sqlalchemy.orm import joinedload
 from sqlalchemy import func as sql_func
 from datetime import datetime, date
 from typing import Optional
@@ -361,4 +362,35 @@ def imprimir_boleto(request: Request, conta_id: int, db: Session = Depends(get_d
     return request.app.state.templates.TemplateResponse(
         "contas/imprimir_boleto.html",
         {"request": request, "conta": conta, "empresa": empresa}
+    )
+
+
+@router.get("/previsao-recebimentos")
+def previsao_recebimentos(request: Request, db: Session = Depends(get_db)):
+    from datetime import date
+    hoje = date.today()
+    contas = db.query(ContaReceber).filter(
+        ContaReceber.data_vencimento >= hoje,
+        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
+    ).order_by(ContaReceber.data_vencimento).all()
+    total_previsto = sum(c.valor for c in contas)
+    return request.app.state.templates.TemplateResponse(
+        "contas/previsao.html",
+        {"request": request, "contas": contas, "total_previsto": total_previsto, "hoje": hoje}
+    )
+
+
+@router.get("/inadimplencia")
+def inadimplencia(request: Request, db: Session = Depends(get_db)):
+    from datetime import date
+    from sqlalchemy.orm import joinedload
+    hoje = date.today()
+    contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
+        ContaReceber.data_vencimento < hoje,
+        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
+    ).order_by(ContaReceber.data_vencimento).all()
+    total_inadimplente = sum(c.valor for c in contas)
+    return request.app.state.templates.TemplateResponse(
+        "contas/inadimplencia.html",
+        {"request": request, "contas": contas, "total_inadimplente": total_inadimplente, "hoje": hoje}
     )
