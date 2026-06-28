@@ -23,16 +23,16 @@ def get_messages(request: Request) -> list:
 @router.get("/pagar")
 def contas_pagar(request: Request, db: Session = Depends(get_db)):
     from sqlalchemy import func
+    fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
+    fornecedores_json = [{"id": f.id, "nome": f.nome} for f in fornecedores]
     contas = db.query(ContaPagar).options(joinedload(ContaPagar.fornecedor)).filter(
-        ContaPagar.status == StatusConta.PENDENTE
+        ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
     ).order_by(ContaPagar.data_vencimento).all()
     total_pendente = func.coalesce(func.sum(ContaPagar.valor), 0).label("total")
-    total_pendente_valor = db.query(total_pendente).filter(
-        ContaPagar.status == StatusConta.PENDENTE
-    ).scalar()
+    total_pendente_valor = db.query(total_pendente).scalar()
     return request.app.state.templates.TemplateResponse(
         "contas/pagar.html",
-        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "fornecedores_json": [], "messages": get_messages(request)}
+        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "fornecedores_json": fornecedores_json, "messages": get_messages(request)}
     )
 
 
@@ -109,19 +109,31 @@ def atualizar_conta_pagar(
     return RedirectResponse(url="/contas/pagar", status_code=303)
 
 
+@router.post("/pagar/{conta_id}/excluir")
+def excluir_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if conta:
+        db.delete(conta)
+        db.commit()
+        request.session["message"] = "Conta a pagar excluída com sucesso!"
+    else:
+        request.session["error"] = "Conta não encontrada"
+    return RedirectResponse(url="/contas/pagar", status_code=303)
+
+
 @router.get("/receber")
 def contas_receber(request: Request, db: Session = Depends(get_db)):
     from sqlalchemy import func
+    clientes = db.query(Cliente).order_by(Cliente.nome).all()
+    clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
     contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
         ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
     ).order_by(ContaReceber.data_vencimento).all()
     total_pendente = func.coalesce(func.sum(ContaReceber.valor), 0).label("total")
-    total_pendente_valor = db.query(total_pendente).filter(
-        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
-    ).scalar()
+    total_pendente_valor = db.query(total_pendente).scalar()
     return request.app.state.templates.TemplateResponse(
         "contas/receber.html",
-        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "fornecedores_json": [], "messages": get_messages(request)}
+        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "clientes_json": clientes_json, "fornecedores_json": [], "messages": get_messages(request)}
     )
 
 
@@ -196,18 +208,6 @@ def atualizar_conta_receber(
     db.commit()
     request.session["message"] = "Conta a receber atualizada com sucesso!"
     return RedirectResponse(url="/contas/receber", status_code=303)
-
-
-@router.post("/pagar/{conta_id}/excluir")
-def excluir_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
-    if conta:
-        db.delete(conta)
-        db.commit()
-        request.session["message"] = "Conta a pagar excluída com sucesso!"
-    else:
-        request.session["error"] = "Conta não encontrada"
-    return RedirectResponse(url="/contas/pagar", status_code=303)
 
 
 @router.post("/receber/{conta_id}/excluir")
@@ -308,4 +308,3 @@ def inadimplencia(request: Request, db: Session = Depends(get_db), dias: int = 0
         "contas/inadimplencia.html",
         {"request": request, "contas": contas, "total_inadimplente": total_inadimplente, "hoje": hoje, "dias": dias}
     )
-
