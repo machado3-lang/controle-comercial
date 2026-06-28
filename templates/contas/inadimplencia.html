@@ -1,14 +1,14 @@
 {% extends "base.html" %}
-{% block title %}Relatório de Inadimplência{% endblock %}
+{% block title %}Relat?rio de Inadimpl?ncia{% endblock %}
 {% block content %}
 <div class="flex justify-between items-center mb-6">
-    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-red-500 font-semibold"><i data-lucide="alert-triangle" class="w-6 h-6 inline me-2"></i> Relatório de Inadimplência</h4>
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-red-500 font-semibold"><i data-lucide="alert-triangle" class="w-6 h-6 inline me-2"></i> Relat?rio de Inadimpl?ncia</h4>
     <div class="flex gap-2">
         <select onchange="location.href='?dias='+this.value" class="px-2 py-1 text-sm bg-slate-800/50 border border-slate-700 rounded-lg text-cyan-400">
             <option value="0" {{ 'selected' if dias == 0 else '' }}>Tudo</option>
-            <option value="30" {{ 'selected' if dias == 30 else '' }}>Últimos 30 dias</option>
-            <option value="60" {{ 'selected' if dias == 60 else '' }}>Últimos 60 dias</option>
-            <option value="90" {{ 'selected' if dias == 90 else '' }}>Últimos 90 dias</option>
+            <option value="30" {{ 'selected' if dias == 30 else '' }}>?ltimos 30 dias</option>
+            <option value="60" {{ 'selected' if dias == 60 else '' }}>?ltimos 60 dias</option>
+            <option value="90" {{ 'selected' if dias == 90 else '' }}>?ltimos 90 dias</option>
         </select>
         <button onclick="exportCSV('inadimplencia')" class="px-3 py-2 text-sm border border-rose-700 rounded-xl text-rose-400 hover:bg-rose-800/50 transition"><i data-lucide="download" class="w-4 h-4 inline me-1"></i> CSV</button>
         <a href="/contas/receber" class="px-3 py-2 text-sm border border-slate-700 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 inline me-1"></i> Voltar</a>
@@ -16,7 +16,7 @@
 </div>
 
 <div class="flex items-center justify-between px-4 py-3 mb-4 bg-rose-950/30 border border-rose-800/50 rounded-xl">
-    <span class="text-rose-300"><strong>Total Inadimplente{% if dias > 0 %} (últimos {{ dias }} dias){% endif %}:</strong></span>
+    <span class="text-rose-300"><strong>Total Inadimplente{% if dias > 0 %} (?ltimos {{ dias }} dias){% endif %}:</strong></span>
     <span class="text-2xl font-bold text-rose-400">R$ {{ "%.2f"|format(total_inadimplente) }}</span>
 </div>
 
@@ -27,7 +27,7 @@
                 <tr>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">Vencimento</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase">Cliente</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">Descrição</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">Descri??o</th>
                     <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase">Valor</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-rose-400 uppercase">Dias Vencido</th>
                 </tr>
@@ -35,14 +35,14 @@
             <tbody class="divide-y divide-slate-800/60">
                 {% for c in contas %}
                 <tr class="hover:bg-slate-800/40 transition">
-                    <td class="px-4 py-3 text-sm text-cyan-300">{{ c.data_vencimento.strftime('%d/%m/%Y') }}</td>
+                    <td class="px-4 py-3 text-sm text-cyan-300">{{ (c.data_vencimento.strftime if c.data_vencimento else \"-\"}('%d/%m/%Y') }}</td>
                     <td class="px-4 py-3 text-sm text-emerald-300">{{ c.cliente.nome if c.cliente else '-' }}</td>
                     <td class="px-4 py-3 text-sm text-slate-100">{{ c.descricao }}</td>
                     <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(c.valor) }}</td>
                     <td class="px-4 py-3 text-sm text-rose-400">{{ (hoje - c.data_vencimento).days }} dias</td>
                 </tr>
                 {% else %}
-                <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">Nenhuma inadimplência</td></tr>
+                <tr><td colspan="5" class="px-4 py-8 text-center text-slate-500">Nenhuma inadimpl?ncia</td></tr>
                 {% endfor %}
             </tbody>
         </table>
@@ -51,7 +51,7 @@
 <script>
 function exportCSV(tipo) {
     const table = document.getElementById('table-' + tipo);
-    let csv = 'Vencimento,Cliente,Descrição,Valor,Dias Vencido\n';
+    let csv = 'Vencimento,Cliente,Descri??o,Valor,Dias Vencido\n';
     table.querySelectorAll('tbody tr').forEach(r => {
         const cells = r.querySelectorAll('td');
         if (cells.length >= 5) {

@@ -29,7 +29,7 @@
 
 <div class="flex items-center justify-between px-4 py-3 mb-4 bg-gradient-to-r from-cyan-950/50 to-blue-950/50 border border-cyan-800/50 rounded-xl">
     <span class="text-cyan-300"><strong>Total Filtrado:</strong> {{ contas|length }} contas</span>
-    <span class="text-emerald-400 font-bold">Valor Total: R$ {{ "%.2f"|format(total_valor) }}</span>
+    <span class="text-emerald-400 font-bold">Valor Total: R$ {{ "%.2f"|format(total_pendente) }}</span>
 </div>
 
 <div class="overflow-x-auto w-full">
@@ -46,7 +46,7 @@
                 <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider">Ações</th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-slate-800/60">
+        <tbody class="divide-y divide-slate-800/60">{% if not busca %}{% set busca = "" %}{% endif %}{% if not status_filtro %}{% set status_filtro = "" %}{% endif %}
             {% for c in contas %}
             <tr class="hover:bg-slate-800/40 transition {% if c.status.value in ['vencido', 'pendente'] and c.data_vencimento < now() %}bg-rose-950/20{% endif %}">
                 <td class="px-4 py-3 text-sm text-slate-100">{{ c.descricao }}</td>

@@ -46,7 +46,7 @@
                 <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider">Ações</th>
             </tr>
         </thead>
-        <tbody class="divide-y divide-slate-800/60">
+        <tbody class="divide-y divide-slate-800/60">{% if not busca %}{% set busca = "" %}{% endif %}{% if not status_filtro %}{% set status_filtro = "" %}{% endif %}{% if not data_inicio %}{% set data_inicio = "" %}{% endif %}{% if not data_fim %}{% set data_fim = "" %}{% endif %}
             {% for c in contas %}
             <tr class="hover:bg-slate-800/40 transition">
                 <td class="px-4 py-3 text-sm text-slate-100">{{ c.descricao }}</td>

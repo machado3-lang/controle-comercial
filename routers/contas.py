@@ -32,7 +32,7 @@ def contas_pagar(request: Request, db: Session = Depends(get_db)):
     ).scalar()
     return request.app.state.templates.TemplateResponse(
         "contas/pagar.html",
-        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "messages": get_messages(request)}
+        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "fornecedores_json": [], "messages": get_messages(request)}
     )
 
 
@@ -121,7 +121,7 @@ def contas_receber(request: Request, db: Session = Depends(get_db)):
     ).scalar()
     return request.app.state.templates.TemplateResponse(
         "contas/receber.html",
-        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "messages": get_messages(request)}
+        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "fornecedores_json": [], "messages": get_messages(request)}
     )
 
 
@@ -308,3 +308,4 @@ def inadimplencia(request: Request, db: Session = Depends(get_db), dias: int = 0
         "contas/inadimplencia.html",
         {"request": request, "contas": contas, "total_inadimplente": total_inadimplente, "hoje": hoje, "dias": dias}
     )
+
