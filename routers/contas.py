@@ -1,9 +1,8 @@
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
-from sqlalchemy.orm import Session
-from sqlalchemy.orm import joinedload
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func as sql_func
-from datetime import datetime, date
+from datetime import datetime, date, timedelta
 from typing import Optional
 
 from database import get_db
@@ -14,383 +13,298 @@ router = APIRouter(prefix="/contas", tags=["Contas"])
 
 def get_messages(request: Request) -> list:
     messages = []
-    msg = request.session.pop("message", None)
-    if msg:
-        messages.append(msg)
+    if "message" in request.session:
+        messages.append({"type": "success", "text": request.session.pop("message")})
+    if "error" in request.session:
+        messages.append({"type": "error", "text": request.session.pop("error")})
     return messages
 
 
-# ─── CONTAS A PAGAR ───────────────────────────────────────────────
-
 @router.get("/pagar")
-def listar_contas_pagar(
-    request: Request, db: Session = Depends(get_db),
-    status_filtro: str = Query(""), busca: str = Query(""),
-    data_inicio: str = Query(""), data_fim: str = Query("")
-):
-    query = db.query(ContaPagar).join(Fornecedor, isouter=True)
-    if status_filtro:
-        query = query.filter(ContaPagar.status == status_filtro)
-    if busca:
-        query = query.filter(
-            ContaPagar.descricao.ilike(f"%{busca}%") |
-            Fornecedor.nome.ilike(f"%{busca}%")
-        )
-    if data_inicio:
-        query = query.filter(ContaPagar.data_vencimento >= date.fromisoformat(data_inicio))
-    if data_fim:
-        query = query.filter(ContaPagar.data_vencimento <= date.fromisoformat(data_fim))
-    contas = query.order_by(ContaPagar.data_vencimento.desc()).all()
-    total_valor = sum(c.valor for c in contas)
-    fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
-    fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
-    messages = get_messages(request)
+def contas_pagar(request: Request, db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    contas = db.query(ContaPagar).options(joinedload(ContaPagar.fornecedor)).filter(
+        ContaPagar.status == StatusConta.PENDENTE
+    ).order_by(ContaPagar.data_vencimento).all()
+    total_pendente = func.coalesce(func.sum(ContaPagar.valor), 0).label("total")
+    total_pendente_valor = db.query(total_pendente).filter(
+        ContaPagar.status == StatusConta.PENDENTE
+    ).scalar()
     return request.app.state.templates.TemplateResponse(
-        "contas/pagar_listar.html",
-        {"request": request, "contas": contas, "fornecedores": fornecedores,
-         "status_filtro": status_filtro, "busca": busca, "StatusConta": StatusConta,
-         "messages": messages, "data_inicio": data_inicio, "data_fim": data_fim,
-         "total_valor": total_valor, "fornecedores_json": fornecedores_json}
+        "contas/pagar.html",
+        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "messages": get_messages(request)}
     )
 
 
-@router.get("/pagar/pdf")
-def relatorio_pdf(
-    request: Request, db: Session = Depends(get_db),
-    status_filtro: str = Query(""), busca: str = Query(""),
-    data_inicio: str = Query(""), data_fim: str = Query("")
-):
-    query = db.query(ContaPagar).join(Fornecedor, isouter=True)
-    if status_filtro:
-        query = query.filter(ContaPagar.status == status_filtro)
-    if busca:
-        query = query.filter(
-            ContaPagar.descricao.ilike(f"%{busca}%") |
-            Fornecedor.nome.ilike(f"%{busca}%")
-        )
-    if data_inicio:
-        query = query.filter(ContaPagar.data_vencimento >= date.fromisoformat(data_inicio))
-    if data_fim:
-        query = query.filter(ContaPagar.data_vencimento <= date.fromisoformat(data_fim))
-    contas = query.order_by(ContaPagar.data_vencimento.desc()).all()
-    total_valor = sum(c.valor for c in contas)
-    empresa = db.query(Empresa).first()
+@router.get("/pagar/nova")
+def nova_conta_pagar(request: Request):
     return request.app.state.templates.TemplateResponse(
-        "contas/pagar_pdf.html",
-        {"request": request, "contas": contas, "empresa": empresa,
-         "total_valor": total_valor, "data_geracao": date.today()}
+        "contas/nova_pagar.html",
+        {"request": request}
     )
 
 
-@router.post("/pagar/novo")
+@router.post("/pagar/nova")
 def criar_conta_pagar(
-    request: Request, db: Session = Depends(get_db),
-    fornecedor_id: int = Form(0),
+    request: Request,
+    db: Session = Depends(get_db),
     descricao: str = Form(...),
     valor: float = Form(...),
-    data_vencimento: str = Form(...),
-    observacao: str = Form(""),
+    data_vencimento: date = Form(...),
+    fornecedor_id: Optional[int] = Form(None),
+    observacoes: Optional[str] = Form(None)
 ):
-    venc = date.fromisoformat(data_vencimento)
+    from sqlalchemy import func
     conta = ContaPagar(
-        fornecedor_id=fornecedor_id if fornecedor_id else None,
-        descricao=descricao, valor=valor,
-        data_vencimento=venc, observacao=observacao
+        descricao=descricao,
+        valor=valor,
+        data_vencimento=data_vencimento,
+        fornecedor_id=fornecedor_id,
+        observacoes=observacoes,
+        status=StatusConta.PENDENTE
     )
     db.add(conta)
     db.commit()
+    request.session["message"] = "Conta a pagar criada com sucesso!"
     return RedirectResponse(url="/contas/pagar", status_code=303)
 
 
-@router.get("/pagar/{conta_id}/pagar")
-def pagar_conta(request: Request, conta_id: int, db: Session = Depends(get_db)):
+@router.get("/pagar/{conta_id}/editar")
+def editar_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if not conta:
+        request.session["error"] = "Conta não encontrada"
+        return RedirectResponse(url="/contas/pagar", status_code=303)
+    fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
+    return request.app.state.templates.TemplateResponse(
+        "contas/editar_pagar.html",
+        {"request": request, "conta": conta, "fornecedores": fornecedores}
+    )
+
+
+@router.post("/pagar/{conta_id}/editar")
+def atualizar_conta_pagar(
+    request: Request,
+    conta_id: int,
+    db: Session = Depends(get_db),
+    descricao: str = Form(...),
+    valor: float = Form(...),
+    data_vencimento: date = Form(...),
+    fornecedor_id: Optional[int] = Form(None),
+    observacoes: Optional[str] = Form(None),
+    status: StatusConta = Form(...)
+):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if not conta:
+        request.session["error"] = "Conta não encontrada"
+        return RedirectResponse(url="/contas/pagar", status_code=303)
+    conta.descricao = descricao
+    conta.valor = valor
+    conta.data_vencimento = data_vencimento
+    conta.fornecedor_id = fornecedor_id
+    conta.observacoes = observacoes
+    conta.status = status
+    db.commit()
+    request.session["message"] = "Conta a pagar atualizada com sucesso!"
+    return RedirectResponse(url="/contas/pagar", status_code=303)
+
+
+@router.get("/receber")
+def contas_receber(request: Request, db: Session = Depends(get_db)):
+    from sqlalchemy import func
+    contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
+        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
+    ).order_by(ContaReceber.data_vencimento).all()
+    total_pendente = func.coalesce(func.sum(ContaReceber.valor), 0).label("total")
+    total_pendente_valor = db.query(total_pendente).filter(
+        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
+    ).scalar()
+    return request.app.state.templates.TemplateResponse(
+        "contas/receber.html",
+        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "messages": get_messages(request)}
+    )
+
+
+@router.get("/receber/nova")
+def nova_conta_receber(request: Request):
+    return request.app.state.templates.TemplateResponse(
+        "contas/nova_receber.html",
+        {"request": request}
+    )
+
+
+@router.post("/receber/nova")
+def criar_conta_receber(
+    request: Request,
+    db: Session = Depends(get_db),
+    descricao: str = Form(...),
+    valor: float = Form(...),
+    data_vencimento: date = Form(...),
+    cliente_id: Optional[int] = Form(None),
+    observacoes: Optional[str] = Form(None)
+):
+    from sqlalchemy import func
+    conta = ContaReceber(
+        descricao=descricao,
+        valor=valor,
+        data_vencimento=data_vencimento,
+        cliente_id=cliente_id,
+        observacoes=observacoes,
+        status=StatusConta.PENDENTE
+    )
+    db.add(conta)
+    db.commit()
+    request.session["message"] = "Conta a receber criada com sucesso!"
+    return RedirectResponse(url="/contas/receber", status_code=303)
+
+
+@router.get("/receber/{conta_id}/editar")
+def editar_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
+    if not conta:
+        request.session["error"] = "Conta não encontrada"
+        return RedirectResponse(url="/contas/receber", status_code=303)
+    clientes = db.query(Cliente).order_by(Cliente.nome).all()
+    return request.app.state.templates.TemplateResponse(
+        "contas/editar_receber.html",
+        {"request": request, "conta": conta, "clientes": clientes}
+    )
+
+
+@router.post("/receber/{conta_id}/editar")
+def atualizar_conta_receber(
+    request: Request,
+    conta_id: int,
+    db: Session = Depends(get_db),
+    descricao: str = Form(...),
+    valor: float = Form(...),
+    data_vencimento: date = Form(...),
+    cliente_id: Optional[int] = Form(None),
+    observacoes: Optional[str] = Form(None),
+    status: StatusConta = Form(...)
+):
+    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
+    if not conta:
+        request.session["error"] = "Conta não encontrada"
+        return RedirectResponse(url="/contas/receber", status_code=303)
+    conta.descricao = descricao
+    conta.valor = valor
+    conta.data_vencimento = data_vencimento
+    conta.cliente_id = cliente_id
+    conta.observacoes = observacoes
+    conta.status = status
+    db.commit()
+    request.session["message"] = "Conta a receber atualizada com sucesso!"
+    return RedirectResponse(url="/contas/receber", status_code=303)
+
+
+@router.post("/pagar/{conta_id}/excluir")
+def excluir_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if conta:
+        db.delete(conta)
+        db.commit()
+        request.session["message"] = "Conta a pagar excluída com sucesso!"
+    else:
+        request.session["error"] = "Conta não encontrada"
+    return RedirectResponse(url="/contas/pagar", status_code=303)
+
+
+@router.post("/receber/{conta_id}/excluir")
+def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
+    if conta:
+        db.delete(conta)
+        db.commit()
+        request.session["message"] = "Conta a receber excluída com sucesso!"
+    else:
+        request.session["error"] = "Conta não encontrada"
+    return RedirectResponse(url="/contas/receber", status_code=303)
+
+
+@router.post("/pagar/{conta_id}/baixar")
+def baixar_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    from sqlalchemy import and_
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if conta:
         conta.status = StatusConta.PAGO
         conta.data_pagamento = date.today()
         db.commit()
+        request.session["message"] = "Conta baixada com sucesso!"
+    else:
+        request.session["error"] = "Conta não encontrada"
     return RedirectResponse(url="/contas/pagar", status_code=303)
 
 
-@router.post("/pagar/{conta_id}/excluir")
-def excluir_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db), senha: str = Form("")):
-    empresa = db.query(Empresa).first()
-    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
-    if conta:
-        db.delete(conta)
-        db.commit()
-    return RedirectResponse(url="/contas/pagar", status_code=303)
-
-
-@router.get("/pagar/{conta_id}/editar")
-def editar_conta_pagar_page(request: Request, conta_id: int, db: Session = Depends(get_db)):
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
-    if not conta:
-        return RedirectResponse(url="/contas/pagar", status_code=303)
-    fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
-    fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
-    return request.app.state.templates.TemplateResponse(
-        "contas/_editar_conta_pagar.html",
-        {"request": request, "conta": conta, "fornecedores": fornecedores, "fornecedores_json": fornecedores_json}
-    )
-
-
-@router.post("/pagar/{conta_id}/editar")
-def editar_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db), fornecedor_id: int = Form(0), descricao: str = Form(...), valor: float = Form(...), data_vencimento: str = Form(None), observacao: str = Form("")):
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
-    if conta:
-        conta.fornecedor_id = fornecedor_id if fornecedor_id else None
-        conta.descricao = descricao
-        conta.valor = valor
-        if data_vencimento:
-            conta.data_vencimento = date.fromisoformat(data_vencimento)
-        conta.observacao = observacao
-        db.commit()
-    return RedirectResponse(url="/contas/pagar", status_code=303)
-
-
-# ─── RELATÓRIO DE RECEBIMENTOS ───────────────────────────────────
-
-@router.get("/recebimentos")
-def listar_recebimentos(
-    request: Request, db: Session = Depends(get_db),
-    forma_pagamento: str = Query("", alias="forma_pagamento"),
-    busca: str = Query("", alias="busca"),
-    data_inicio: str = Query("", alias="data_inicio"),
-    data_fim: str = Query("", alias="data_fim"),
-    cliente_id: Optional[str] = Query("")
-):
-    query = db.query(ContaReceber).join(Cliente, isouter=True).filter(ContaReceber.status == StatusConta.PAGO)
-    if forma_pagamento:
-        query = query.filter(ContaReceber.forma_pagamento == forma_pagamento)
-    if busca:
-        query = query.filter(
-            ContaReceber.descricao.ilike(f"%{busca}%") |
-            Cliente.nome.ilike(f"%{busca}%")
-        )
-    if cliente_id and cliente_id.isdigit():
-        query = query.filter(ContaReceber.cliente_id == int(cliente_id))
-    if data_inicio:
-        query = query.filter(ContaReceber.data_recebimento >= date.fromisoformat(data_inicio))
-    if data_fim:
-        query = query.filter(ContaReceber.data_recebimento <= date.fromisoformat(data_fim))
-    recebimentos = query.order_by(ContaReceber.data_recebimento.desc()).all()
-    total_valor = sum(r.valor for r in recebimentos)
-    clientes = db.query(Cliente).order_by(Cliente.nome).all()
-    return request.app.state.templates.TemplateResponse(
-        "contas/recebimentos.html",
-        {"request": request, "recebimentos": recebimentos, "clientes": clientes,
-         "forma_pagamento": forma_pagamento, "busca": busca, "StatusConta": StatusConta,
-         "data_inicio": data_inicio, "data_fim": data_fim, "total_valor": total_valor, "cliente_id": cliente_id}
-    )
-
-
-@router.get("/recebimentos/pdf")
-def recebimentos_pdf(
-    request: Request, db: Session = Depends(get_db),
-    forma_pagamento: str = Query("", alias="forma_pagamento"),
-    busca: str = Query("", alias="busca"),
-    data_inicio: str = Query("", alias="data_inicio"),
-    data_fim: str = Query("", alias="data_fim"),
-    cliente_id: Optional[str] = Query("")
-):
-    query = db.query(ContaReceber).join(Cliente, isouter=True).filter(ContaReceber.status == StatusConta.PAGO)
-    if forma_pagamento:
-        query = query.filter(ContaReceber.forma_pagamento == forma_pagamento)
-    if busca:
-        query = query.filter(
-            ContaReceber.descricao.ilike(f"%{busca}%") |
-            Cliente.nome.ilike(f"%{busca}%")
-        )
-    if cliente_id and cliente_id.isdigit():
-        query = query.filter(ContaReceber.cliente_id == int(cliente_id))
-    if data_inicio:
-        query = query.filter(ContaReceber.data_recebimento >= date.fromisoformat(data_inicio))
-    if data_fim:
-        query = query.filter(ContaReceber.data_recebimento <= date.fromisoformat(data_fim))
-    recebimentos = query.order_by(ContaReceber.data_recebimento.desc()).all()
-    total_valor = sum(r.valor for r in recebimentos)
-    empresa = db.query(Empresa).first()
-    return request.app.state.templates.TemplateResponse(
-        "contas/recebimentos_imprimir.html",
-        {"request": request, "recebimentos": recebimentos, "total_valor": total_valor, "empresa": empresa}
-    )
-
-
-# ─── CONTAS A RECEBER ─────────────────────────────────────────────
-
-@router.get("/receber")
-def listar_contas_receber(
-    request: Request, db: Session = Depends(get_db),
-    status_filtro: str = Query(""), busca: str = Query(""),
-    data_inicio: str = Query(""), data_fim: str = Query("")
-):
-    query = db.query(ContaReceber).join(Cliente, isouter=True)
-    if status_filtro:
-        query = query.filter(ContaReceber.status == status_filtro)
-    if busca:
-        query = query.filter(
-            ContaReceber.descricao.ilike(f"%{busca}%") |
-            Cliente.nome.ilike(f"%{busca}%")
-        )
-    if data_inicio:
-        query = query.filter(ContaReceber.data_vencimento >= date.fromisoformat(data_inicio))
-    if data_fim:
-        query = query.filter(ContaReceber.data_vencimento <= date.fromisoformat(data_fim))
-    contas = query.order_by(ContaReceber.data_vencimento.desc()).all()
-    total_valor = sum(c.valor for c in contas)
-    clientes = db.query(Cliente).order_by(Cliente.nome).all()
-    clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
-    messages = get_messages(request)
-    return request.app.state.templates.TemplateResponse(
-        "contas/receber_listar.html",
-        {"request": request, "contas": contas, "clientes": clientes,
-         "status_filtro": status_filtro, "busca": busca, "StatusConta": StatusConta,
-         "messages": messages, "data_inicio": data_inicio, "data_fim": data_fim,
-         "total_valor": total_valor, "clientes_json": clientes_json}
-    )
-
-
-@router.get("/receber/pdf")
-def relatorio_pdf_receber(
-    request: Request, db: Session = Depends(get_db),
-    status_filtro: str = Query(""), busca: str = Query(""),
-    data_inicio: str = Query(""), data_fim: str = Query("")
-):
-    query = db.query(ContaReceber).join(Cliente, isouter=True)
-    if status_filtro:
-        query = query.filter(ContaReceber.status == status_filtro)
-    if busca:
-        query = query.filter(
-            ContaReceber.descricao.ilike(f"%{busca}%") |
-            Cliente.nome.ilike(f"%{busca}%")
-        )
-    if data_inicio:
-        query = query.filter(ContaReceber.data_vencimento >= date.fromisoformat(data_inicio))
-    if data_fim:
-        query = query.filter(ContaReceber.data_vencimento <= date.fromisoformat(data_fim))
-    contas = query.order_by(ContaReceber.data_vencimento.desc()).all()
-    total_valor = sum(c.valor for c in contas)
-    empresa = db.query(Empresa).first()
-    return request.app.state.templates.TemplateResponse(
-        "contas/receber_pdf.html",
-        {"request": request, "contas": contas, "empresa": empresa,
-         "total_valor": total_valor, "data_geracao": date.today()}
-    )
-
-
-@router.post("/receber/novo")
-def criar_conta_receber(
-    request: Request, db: Session = Depends(get_db),
-    cliente_id: int = Form(0),
-    descricao: str = Form(...),
-    valor: float = Form(...),
-    data_vencimento: str = Form(...),
-    observacao: str = Form(""),
-):
-    venc = date.fromisoformat(data_vencimento)
-    conta = ContaReceber(
-        cliente_id=cliente_id if cliente_id else None,
-        descricao=descricao, valor=valor,
-        data_vencimento=venc, observacao=observacao
-    )
-    db.add(conta)
-    db.commit()
-    return RedirectResponse(url="/contas/receber", status_code=303)
-
-
-@router.post("/receber/{conta_id}/receber")
-def receber_conta(
-    request: Request, conta_id: int, db: Session = Depends(get_db),
-    data_recebimento: str = Form(...)
-):
+@router.post("/receber/{conta_id}/baixar")
+def baixar_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    from sqlalchemy import and_
     conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
     if conta:
         conta.status = StatusConta.PAGO
-        conta.data_recebimento = date.fromisoformat(data_recebimento)
+        conta.data_pagamento = date.today()
         db.commit()
+        request.session["message"] = "Conta baixada com sucesso!"
+    else:
+        request.session["error"] = "Conta não encontrada"
     return RedirectResponse(url="/contas/receber", status_code=303)
 
 
-@router.get("/receber/{conta_id}/editar")
-def editar_conta_receber_page(request: Request, conta_id: int, db: Session = Depends(get_db)):
-    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
+@router.get("/pagar/{conta_id}")
+def ver_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaPagar).options(joinedload(ContaPagar.fornecedor)).filter(ContaPagar.id == conta_id).first()
     if not conta:
-        return RedirectResponse(url="/contas/receber", status_code=303)
-    clientes = db.query(Cliente).order_by(Cliente.nome).all()
-    clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
+        request.session["error"] = "Conta não encontrada"
+        return RedirectResponse(url="/contas/pagar", status_code=303)
+    empresa = db.query(Empresa).first()
     return request.app.state.templates.TemplateResponse(
-        "contas/_editar_conta_receber.html",
-        {"request": request, "conta": conta, "clientes": clientes, "clientes_json": clientes_json}
+        "contas/ver_pagar.html",
+        {"request": request, "conta": conta, "empresa": empresa}
     )
 
 
-@router.post("/receber/{conta_id}/editar")
-def editar_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db), cliente_id: int = Form(0), descricao: str = Form(...), valor: float = Form(...), data_vencimento: str = Form(None), observacao: str = Form("")):
-    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
-    if conta:
-        conta.cliente_id = cliente_id if cliente_id else None
-        conta.descricao = descricao
-        conta.valor = valor
-        if data_vencimento:
-            conta.data_vencimento = date.fromisoformat(data_vencimento)
-        conta.observacao = observacao
-        db.commit()
-    return RedirectResponse(url="/contas/receber", status_code=303)
-
-
-@router.post("/receber/{conta_id}/excluir")
-def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db), senha: str = Form("")):
-    empresa = db.query(Empresa).first()
-    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
-    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
-    if conta:
-        db.delete(conta)
-        db.commit()
-    return RedirectResponse(url="/contas/receber", status_code=303)
-
-
-@router.get("/receber/{conta_id}/imprimir-boleto")
-def imprimir_boleto(request: Request, conta_id: int, db: Session = Depends(get_db)):
-    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
-    empresa = db.query(Empresa).first()
+@router.get("/receber/{conta_id}")
+def ver_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(ContaReceber.id == conta_id).first()
     if not conta:
+        request.session["error"] = "Conta não encontrada"
         return RedirectResponse(url="/contas/receber", status_code=303)
+    empresa = db.query(Empresa).first()
     return request.app.state.templates.TemplateResponse(
-        "contas/imprimir_boleto.html",
+        "contas/ver_receber.html",
         {"request": request, "conta": conta, "empresa": empresa}
     )
 
 
 @router.get("/previsao-recebimentos")
-def previsao_recebimentos(request: Request, db: Session = Depends(get_db)):
-    from datetime import date
+def previsao_recebimentos(request: Request, db: Session = Depends(get_db), dias: int = 30):
     hoje = date.today()
-    contas = db.query(ContaReceber).filter(
+    data_limite = hoje + timedelta(days=dias)
+    contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
         ContaReceber.data_vencimento >= hoje,
+        ContaReceber.data_vencimento <= data_limite,
         ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
     ).order_by(ContaReceber.data_vencimento).all()
     total_previsto = sum(c.valor for c in contas)
     return request.app.state.templates.TemplateResponse(
         "contas/previsao.html",
-        {"request": request, "contas": contas, "total_previsto": total_previsto, "hoje": hoje}
+        {"request": request, "contas": contas, "total_previsto": total_previsto, "hoje": hoje, "dias": dias}
     )
 
 
 @router.get("/inadimplencia")
-def inadimplencia(request: Request, db: Session = Depends(get_db)):
-    from datetime import date
-    from sqlalchemy.orm import joinedload
+def inadimplencia(request: Request, db: Session = Depends(get_db), dias: int = 0):
     hoje = date.today()
-    contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
+    query = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
         ContaReceber.data_vencimento < hoje,
         ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
-    ).order_by(ContaReceber.data_vencimento).all()
+    )
+    if dias > 0:
+        data_inicio = hoje - timedelta(days=dias)
+        query = query.filter(ContaReceber.data_vencimento >= data_inicio)
+    contas = query.order_by(ContaReceber.data_vencimento.desc()).all()
     total_inadimplente = sum(c.valor for c in contas)
     return request.app.state.templates.TemplateResponse(
         "contas/inadimplencia.html",
-        {"request": request, "contas": contas, "total_inadimplente": total_inadimplente, "hoje": hoje}
+        {"request": request, "contas": contas, "total_inadimplente": total_inadimplente, "hoje": hoje, "dias": dias}
     )

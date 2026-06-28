@@ -3,11 +3,19 @@
 {% block content %}
 <div class="flex justify-between items-center mb-6">
     <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-red-500 font-semibold"><i data-lucide="alert-triangle" class="w-6 h-6 inline me-2"></i> Relatório de Inadimplência</h4>
-    <a href="/contas/receber" class="px-3 py-2 text-sm border border-slate-700 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 inline me-1"></i> Voltar</a>
+    <div class="flex gap-2">
+        <select onchange="location.href='?dias='+this.value" class="px-2 py-1 text-sm bg-slate-800/50 border border-slate-700 rounded-lg text-cyan-400">
+            <option value="0" {{ 'selected' if dias == 0 else '' }}>Tudo</option>
+            <option value="30" {{ 'selected' if dias == 30 else '' }}>Últimos 30 dias</option>
+            <option value="60" {{ 'selected' if dias == 60 else '' }}>Últimos 60 dias</option>
+            <option value="90" {{ 'selected' if dias == 90 else '' }}>Últimos 90 dias</option>
+        </select>
+        <a href="/contas/receber" class="px-3 py-2 text-sm border border-slate-700 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 inline me-1"></i> Voltar</a>
+    </div>
 </div>
 
 <div class="flex items-center justify-between px-4 py-3 mb-4 bg-rose-950/30 border border-rose-800/50 rounded-xl">
-    <span class="text-rose-300"><strong>Total Inadimplente:</strong></span>
+    <span class="text-rose-300"><strong>Total Inadimplente{% if dias > 0 %} (últimos {{ dias }} dias){% endif %}:</strong></span>
     <span class="text-2xl font-bold text-rose-400">R$ {{ "%.2f"|format(total_inadimplente) }}</span>
 </div>
 

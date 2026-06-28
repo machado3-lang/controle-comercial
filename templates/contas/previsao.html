@@ -3,17 +3,26 @@
 {% block content %}
 <div class="flex justify-between items-center mb-6">
     <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="calendar-days" class="w-6 h-6 inline me-2"></i> Previsão de Recebimentos</h4>
-    <a href="/contas/receber" class="px-3 py-2 text-sm border border-slate-700 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 inline me-1"></i> Voltar</a>
+    <div class="flex gap-2">
+        <select onchange="location.href='?dias='+this.value" class="px-2 py-1 text-sm bg-slate-800/50 border border-slate-700 rounded-lg text-cyan-400">
+            <option value="7" {{ 'selected' if dias == 7 else '' }}>Próximos 7 dias</option>
+            <option value="15" {{ 'selected' if dias == 15 else '' }}>Próximos 15 dias</option>
+            <option value="30" {{ 'selected' if dias == 30 else '' }}>Próximos 30 dias</option>
+            <option value="60" {{ 'selected' if dias == 60 else '' }}>Próximos 60 dias</option>
+        </select>
+        <button onclick="exportCSV('previsao')" class="px-3 py-2 text-sm border border-emerald-700 rounded-xl text-emerald-400 hover:bg-emerald-800/50 transition"><i data-lucide="download" class="w-4 h-4 inline me-1"></i> CSV</button>
+        <a href="/contas/receber" class="px-3 py-2 text-sm border border-slate-700 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 inline me-1"></i> Voltar</a>
+    </div>
 </div>
 
 <div class="flex items-center justify-between px-4 py-3 mb-4 bg-emerald-950/30 border border-emerald-800/50 rounded-xl">
-    <span class="text-emerald-300"><strong>Total Previsto:</strong></span>
+    <span class="text-emerald-300"><strong>Total Previsto ({{ dias }} dias):</strong></span>
     <span class="text-2xl font-bold text-emerald-400">R$ {{ "%.2f"|format(total_previsto) }}</span>
 </div>
 
 <div class="glass-card">
     <div class="overflow-x-auto">
-        <table class="w-full divide-y divide-slate-800/60">
+        <table class="w-full divide-y divide-slate-800/60" id="table-previsao">
             <thead class="bg-slate-950/50">
                 <tr>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">Vencimento</th>
@@ -41,4 +50,22 @@
         </table>
     </div>
 </div>
+<script>
+function exportCSV(tipo) {
+    const table = document.getElementById('table-' + tipo);
+    let csv = 'Vencimento,Cliente,Descrição,Valor,Status\n';
+    table.querySelectorAll('tbody tr').forEach(r => {
+        const cells = r.querySelectorAll('td');
+        if (cells.length >= 5) {
+            csv += '"' + cells[0].textContent + '","' + cells[1].textContent + '","' + cells[2].textContent + '","' + cells[3].textContent + '","' + cells[4].textContent.trim() + '"\n';
+        }
+    });
+    const blob = new Blob([csv], {type: 'text/csv'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = tipo + '.csv';
+    a.click();
+}
+</script>
 {% endblock %}
