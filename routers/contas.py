@@ -77,7 +77,7 @@ def editar_conta_pagar(request: Request, conta_id: int, db: Session = Depends(ge
         return RedirectResponse(url="/contas/pagar", status_code=303)
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
     return request.app.state.templates.TemplateResponse(
-        "contas/editar_pagar.html",
+        "contas/nova_pagar.html",
         {"request": request, "conta": conta, "fornecedores": fornecedores}
     )
 
@@ -166,7 +166,7 @@ def editar_conta_receber(request: Request, conta_id: int, db: Session = Depends(
         return RedirectResponse(url="/contas/receber", status_code=303)
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     return request.app.state.templates.TemplateResponse(
-        "contas/editar_receber.html",
+        "contas/nova_receber.html",
         {"request": request, "conta": conta, "clientes": clientes}
     )
 
@@ -258,7 +258,7 @@ def ver_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_d
         return RedirectResponse(url="/contas/pagar", status_code=303)
     empresa = db.query(Empresa).first()
     return request.app.state.templates.TemplateResponse(
-        "contas/ver_pagar.html",
+        "contas/pagar.html",
         {"request": request, "conta": conta, "empresa": empresa}
     )
 
