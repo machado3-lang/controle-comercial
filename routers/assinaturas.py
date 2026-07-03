@@ -5,7 +5,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import (Assinatura, AssinaturaHistorico, Cliente, Fornecedor, Empresa,
+from models import (Assinatura, AssinaturaHistorico, Cliente, Fornecedor, Empresa, Produto,
                    ContaReceber, StatusConta, get_safe_day)
 
 router = APIRouter(prefix="/assinaturas", tags=["Assinaturas"])
@@ -105,12 +105,23 @@ def listar_assinaturas(
 
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
+    
+    empresa = db.query(Empresa).first()
+    categoria_padrao_id = getattr(empresa, 'categoria_servico_padrao_id', None)
+    query_servicos = db.query(Produto).filter(Produto.tipo == 'servico')
+    if categoria_padrao_id:
+        query_servicos = query_servicos.filter(Produto.categoria_id == categoria_padrao_id)
+    servicos = query_servicos.order_by(Produto.nome).all()
+    
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
+    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": s.preco, "fornecedor_id": s.fornecedor_id} for s in servicos]
+    
     return request.app.state.templates.TemplateResponse(
         "assinaturas/listar.html",
         {"request": request, "assinaturas": assinaturas, "clientes": clientes,
-         "fornecedores": fornecedores, "clientes_json": clientes_json, "fornecedores_json": fornecedores_json,
+         "fornecedores": fornecedores, "servicos": servicos,
+         "clientes_json": clientes_json, "fornecedores_json": fornecedores_json, "servicos_json": servicos_json,
          "periodicidade": periodicidade, "status_filtro": status_filtro,
          "busca": busca, "vencimento_dias": vencimento_dias, "SITUACAO_LABELS": SITUACAO_LABELS,
          "PERIODICIDADE_LABELS": PERIODICIDADE_LABELS, "lucro_total": lucro_total}
@@ -122,7 +133,8 @@ def criar_assinatura(
     request: Request, db: Session = Depends(get_db),
     cliente_id: int = Form(...),
     periodicidade: int = Form(1),
-    descricao: str = Form(...),
+    servico_id: int = Form(None),
+    descricao: str = Form(None),
     valor: float = Form(...),
     quantidade: int = Form(None),
     data_inicio: str = Form(...),
@@ -136,20 +148,33 @@ def criar_assinatura(
     observacao: str = Form(None),
 ):
     try:
-        print(f"[DEBUG] criar_assinatura: cliente_id={cliente_id}, descricao={descricao}, valor={valor}")
+        print(f"[DEBUG] criar_assinatura: cliente_id={cliente_id}, servico_id={servico_id}, valor={valor}")
         inicio = date.fromisoformat(data_inicio)
         fim = date.fromisoformat(data_fim) if data_fim else None
+        
+        servico = db.query(Produto).filter(Produto.id == servico_id).first() if servico_id else None
+        descricao_final = descricao
+        produto_id_final = servico_id
+        fornecedor_id_final = fornecedor_id
+        if servico:
+            if not descricao:
+                descricao_final = servico.nome
+                produto_id_final = servico.id
+            if not fornecedor_id and servico.fornecedor_id:
+                fornecedor_id_final = servico.fornecedor_id
+        
         assinatura = Assinatura(
-            cliente_id=cliente_id, periodicidade=periodicidade, descricao=descricao,
+            cliente_id=cliente_id, periodicidade=periodicidade, descricao=descricao_final,
             valor=valor, quantidade=quantidade,
             data_inicio=inicio, data_fim=fim,
             dia_vencimento=dia_vencimento,
             mes_vencimento=mes_vencimento,
             situacao=situacao,
-            fornecedor_id=fornecedor_id,
+            fornecedor_id=fornecedor_id_final,
             valor_revenda=valor_revenda,
             numero_contrato=numero_contrato,
             observacao=observacao,
+            produto_id=produto_id_final,
         )
         db.add(assinatura)
         db.commit()
@@ -257,13 +282,23 @@ def editar_assinatura(request: Request, assinatura_id: int, db: Session = Depend
         AssinaturaHistorico.assinatura_id == assinatura_id
     ).order_by(AssinaturaHistorico.data_alteracao.desc()).all()
     empresa = db.query(Empresa).first()
+    categoria_padrao_id = getattr(empresa, 'categoria_servico_padrao_id', None)
+    query_servicos = db.query(Produto).filter(Produto.tipo == 'servico')
+    if categoria_padrao_id:
+        query_servicos = query_servicos.filter(Produto.categoria_id == categoria_padrao_id)
+    servicos = query_servicos.order_by(Produto.nome).all()
+    
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
+    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '',
+                  "preco": s.preco, "fornecedor_id": s.fornecedor_id} for s in servicos]
+    
     return request.app.state.templates.TemplateResponse(
         "assinaturas/form.html",
         {"request": request, "assinatura": assinatura, "clientes": clientes,
-         "fornecedores": fornecedores, "historico": historico,
-         "clientes_json": clientes_json, "fornecedores_json": fornecedores_json,
+         "fornecedores": fornecedores, "servicos": servicos,
+         "historico": historico,
+         "clientes_json": clientes_json, "fornecedores_json": fornecedores_json, "servicos_json": servicos_json,
          "senha_definida": bool(empresa and empresa.senha_admin)}
     )
 
@@ -273,7 +308,8 @@ def atualizar_assinatura(
     request: Request, assinatura_id: int, db: Session = Depends(get_db),
     cliente_id: int = Form(...),
     periodicidade: int = Form(1),
-    descricao: str = Form(...),
+    servico_id: int = Form(None),
+    descricao: str = Form(None),
     valor: float = Form(...),
     quantidade: int = Form(0),
     data_inicio: str = Form(...),
@@ -294,11 +330,14 @@ def atualizar_assinatura(
     if assinatura.situacao != 1:
         return RedirectResponse(url="/assinaturas", status_code=303)
 
+    servico = db.query(Produto).filter(Produto.id == servico_id).first() if servico_id else None
+    descricao_final = descricao or (servico.nome if servico else '')
+    
     _salvar_historico(db, assinatura, valor, valor_revenda, quantidade if quantidade else None, dia_vencimento)
 
     assinatura.cliente_id = cliente_id
     assinatura.periodicidade = periodicidade
-    assinatura.descricao = descricao
+    assinatura.descricao = descricao_final
     assinatura.valor = valor
     assinatura.quantidade = quantidade if quantidade else None
     assinatura.data_inicio = date.fromisoformat(data_inicio)
@@ -306,7 +345,9 @@ def atualizar_assinatura(
     assinatura.dia_vencimento = dia_vencimento
     assinatura.mes_vencimento = mes_vencimento
     assinatura.situacao = situacao
-    assinatura.fornecedor_id = fornecedor_id if fornecedor_id else None
+    fornecedor_id_final = fornecedor_id if fornecedor_id else (servico.fornecedor_id if servico and servico.fornecedor_id else None)
+    assinatura.fornecedor_id = fornecedor_id_final
+    assinatura.produto_id = servico_id if servico_id else None
     assinatura.valor_revenda = valor_revenda if valor_revenda else None
     assinatura.numero_contrato = numero_contrato if numero_contrato else None
     assinatura.observacao = observacao

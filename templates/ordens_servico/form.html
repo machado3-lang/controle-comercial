@@ -10,11 +10,10 @@
         <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="clipboard" class="w-4 h-4 inline me-1"></i> Dados do Equipamento</h5>
         <div class="mb-3">
             <label class="form-label text-cyan-300">Cliente *</label>
-            <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cliente_id" required>
+            <input type="text" id="clienteSearchOS" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar cliente..." autocomplete="off">
+            <div id="clienteDropdownOS" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+            <select class="hidden" name="cliente_id" id="clienteIdOS">
                 <option value="">Selecione...</option>
-                {% for c in clientes %}
-                <option value="{{ c.id }}">{{ c.nome }}</option>
-                {% endfor %}
             </select>
         </div>
         <div class="mb-3">
@@ -24,7 +23,12 @@
         <div class="grid grid-cols-2 gap-3 mb-3">
             <div>
                 <label class="form-label text-cyan-300">Marca</label>
-                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="marca">
+                <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="marca_id" id="marcaSelectOS">
+                    <option value="">Selecione...</option>
+                    {% for m in marcas %}
+                    <option value="{{ m.id }}">{{ m.nome }}</option>
+                    {% endfor %}
+                </select>
             </div>
             <div>
                 <label class="form-label text-cyan-300">Modelo</label>
@@ -66,4 +70,55 @@
         <a href="/ordens-servico" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition">Cancelar</a>
     </div>
 </form>
+{% endblock %}
+{% block scripts %}
+<script>
+const clientes_json = {{ clientes_json|tojson }};
+const marcas_json = {{ marcas_json|tojson }};
+const servicos_json = {{ servicos_json|tojson }};
+const pecas_json = {{ pecas_json|tojson }};
+document.addEventListener('DOMContentLoaded', function() {
+    lucide.createIcons();
+    // Busca cliente
+    const clienteSearch = document.getElementById('clienteSearchOS');
+    const clienteDropdown = document.getElementById('clienteDropdownOS');
+    if (clienteSearch) {
+        clienteSearch.addEventListener('input', function(e) {
+            const term = e.target.value;
+            if (term.length >= 2) {
+                fetch(`/clientes/buscar?q=${encodeURIComponent(term)}`).then(r => r.json()).then(d => {
+                    if (d.clientes && d.clientes.length > 0) {
+                        clienteDropdown.innerHTML = d.clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}">${c.nome}</div>`).join('');
+                        clienteDropdown.classList.remove('hidden');
+                    } else {
+                        clienteDropdown.classList.add('hidden');
+                    }
+                });
+            } else {
+                clienteDropdown.classList.add('hidden');
+            }
+        });
+    }
+    if (clienteDropdown) {
+        clienteDropdown.addEventListener('click', function(e) {
+            const item = e.target.closest('[data-id]');
+            if (item) {
+                clienteSearch.value = item.textContent;
+                const select = document.getElementById('clienteIdOS');
+                let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
+                if (!opt) {
+                    opt = document.createElement('option');
+                    opt.value = item.dataset.id;
+                    opt.textContent = item.textContent;
+                    opt.selected = true;
+                    select.appendChild(opt);
+                } else {
+                    opt.selected = true;
+                }
+                this.classList.add('hidden');
+            }
+        });
+    }
+});
+</script>
 {% endblock %}

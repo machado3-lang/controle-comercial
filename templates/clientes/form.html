@@ -57,6 +57,12 @@
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="inscricao_estadual" value="{{ cliente.inscricao_estadual if cliente else '' }}">
             </div>
             <div>
+                <label class="form-label text-cyan-300 flex items-center gap-2">
+                    <input type="checkbox" name="isento_ie" value="1" {{ 'checked' if cliente and cliente.isento_ie }} class="w-4 h-4 rounded bg-slate-900/60 border-slate-800/80 text-cyan-500">
+                    Isento IE
+                </label>
+            </div>
+            <div>
                 <label class="form-label text-cyan-300">Inscrição Municipal</label>
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="inscricao_municipal" value="{{ cliente.inscricao_municipal if cliente else '' }}">
             </div>
@@ -84,7 +90,7 @@
                 <label class="form-label text-cyan-300">Bairro</label>
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="bairro" value="{{ cliente.bairro if cliente else '' }}">
             </div>
-            <div class="col-span-2">
+            <div>
                 <label class="form-label text-cyan-300">Cidade</label>
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="cidade" value="{{ cliente.cidade if cliente else '' }}">
             </div>
@@ -120,6 +126,10 @@
                     <option value="SE" {{ 'selected' if cliente and cliente.estado == 'SE' }}>SE</option>
                     <option value="TO" {{ 'selected' if cliente and cliente.estado == 'TO' }}>TO</option>
                 </select>
+            </div>
+            <div>
+                <label class="form-label text-cyan-300">Cód. IBGE</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="codigo_ibge" value="{{ cliente.codigo_ibge if cliente else '' }}" maxlength="7" placeholder="Ex: 3550308">
             </div>
         </div>
         <h6 class="text-cyan-400 border-b border-slate-800/30 pb-1 mb-2 mt-3"><i data-lucide="mail" class="w-3 h-3 inline me-1"></i> Contato</h6>

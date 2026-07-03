@@ -37,10 +37,12 @@ def contas_pagar(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/pagar/nova")
-def nova_conta_pagar(request: Request):
+def nova_conta_pagar(request: Request, db: Session = Depends(get_db)):
+    fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
+    fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     return request.app.state.templates.TemplateResponse(
         "contas/nova_pagar.html",
-        {"request": request}
+        {"request": request, "fornecedores_json": fornecedores_json}
     )
 
 
@@ -69,16 +71,16 @@ def criar_conta_pagar(
     return RedirectResponse(url="/contas/pagar", status_code=303)
 
 
-@router.get("/pagar/{conta_id}/editar")
-def editar_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
+@router.get("/pagar/{conta_id}/editar-form")
+def editar_conta_pagar_form(request: Request, conta_id: int, db: Session = Depends(get_db)):
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta:
-        request.session["error"] = "Conta não encontrada"
-        return RedirectResponse(url="/contas/pagar", status_code=303)
+        return ""
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
+    fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     return request.app.state.templates.TemplateResponse(
-        "contas/nova_pagar.html",
-        {"request": request, "conta": conta, "fornecedores": fornecedores}
+        "contas/editar_pagar_form.html",
+        {"request": request, "conta": conta, "fornecedores": fornecedores, "fornecedores_json": fornecedores_json}
     )
 
 
@@ -138,10 +140,12 @@ def contas_receber(request: Request, db: Session = Depends(get_db)):
 
 
 @router.get("/receber/nova")
-def nova_conta_receber(request: Request):
+def nova_conta_receber(request: Request, db: Session = Depends(get_db)):
+    clientes = db.query(Cliente).order_by(Cliente.nome).all()
+    clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     return request.app.state.templates.TemplateResponse(
         "contas/nova_receber.html",
-        {"request": request}
+        {"request": request, "clientes_json": clientes_json}
     )
 
 
@@ -170,16 +174,16 @@ def criar_conta_receber(
     return RedirectResponse(url="/contas/receber", status_code=303)
 
 
-@router.get("/receber/{conta_id}/editar")
-def editar_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db)):
+@router.get("/receber/{conta_id}/editar-form")
+def editar_conta_receber_form(request: Request, conta_id: int, db: Session = Depends(get_db)):
     conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
     if not conta:
-        request.session["error"] = "Conta não encontrada"
-        return RedirectResponse(url="/contas/receber", status_code=303)
+        return ""
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
+    clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     return request.app.state.templates.TemplateResponse(
-        "contas/nova_receber.html",
-        {"request": request, "conta": conta, "clientes": clientes}
+        "contas/editar_receber_form.html",
+        {"request": request, "conta": conta, "clientes": clientes, "clientes_json": clientes_json}
     )
 
 
@@ -224,13 +228,12 @@ def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends
 
 @router.post("/pagar/{conta_id}/baixar")
 def baixar_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
-    from sqlalchemy import and_
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if conta:
         conta.status = StatusConta.PAGO
         conta.data_pagamento = date.today()
         db.commit()
-        request.session["message"] = "Conta baixada com sucesso!"
+        request.session["message"] = "Conta paga com sucesso!"
     else:
         request.session["error"] = "Conta não encontrada"
     return RedirectResponse(url="/contas/pagar", status_code=303)
@@ -238,15 +241,41 @@ def baixar_conta_pagar(request: Request, conta_id: int, db: Session = Depends(ge
 
 @router.post("/receber/{conta_id}/baixar")
 def baixar_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db)):
-    from sqlalchemy import and_
     conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
     if conta:
         conta.status = StatusConta.PAGO
-        conta.data_pagamento = date.today()
+        conta.data_recebimento = date.today()
         db.commit()
-        request.session["message"] = "Conta baixada com sucesso!"
+        request.session["message"] = "Conta recebida com sucesso!"
     else:
         request.session["error"] = "Conta não encontrada"
+    return RedirectResponse(url="/contas/receber", status_code=303)
+
+
+# Estorno de contas baixadas (reverte status para pendente)
+@router.post("/pagar/{conta_id}/estornar")
+def estornar_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    if conta and conta.status == StatusConta.PAGO:
+        conta.status = StatusConta.PENDENTE
+        conta.data_pagamento = None
+        db.commit()
+        request.session["message"] = "Baixa estornada - conta reaberta!"
+    else:
+        request.session["error"] = "Conta não encontrada ou não está paga"
+    return RedirectResponse(url="/contas/pagar", status_code=303)
+
+
+@router.post("/receber/{conta_id}/estornar")
+def estornar_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
+    if conta and conta.status == StatusConta.PAGO:
+        conta.status = StatusConta.PENDENTE
+        conta.data_recebimento = None
+        db.commit()
+        request.session["message"] = "Baixa estornada - conta reaberta!"
+    else:
+        request.session["error"] = "Conta não encontrada ou não está recebida"
     return RedirectResponse(url="/contas/receber", status_code=303)
 
 

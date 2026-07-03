@@ -1,0 +1,111 @@
+{% extends "base.html" %}
+{% block title %}Prévia NFe #{{ nfe.numero }}{% endblock %}
+{% block content %}
+{% set cliente = nfe.cliente or (nfe.pedido.cliente if nfe.pedido else None) %}
+<div class="max-w-4xl mx-auto">
+  {% if erros and erros|length > 0 %}
+  <div class="bg-rose-950/30 border border-rose-800/50 text-rose-300 px-4 py-3 rounded-xl mb-4">
+    <strong><i data-lucide="alert-triangle" class="w-4 h-4 inline me-1"></i> Corrija antes de transmitir:</strong>
+    <ul class="list-disc list-inside mt-1 text-sm">
+      {% for e in erros %}<li>{{ e }}</li>{% endfor %}
+    </ul>
+  </div>
+  {% endif %}
+  <div class="glass-card mb-4">
+    <div class="p-4 border-b border-slate-800/60 flex items-center justify-between">
+      <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="eye" class="w-5 h-5 inline me-2"></i> Prévia / Espelho NFe #{{ nfe.numero }}</h4>
+      <span class="px-3 py-1 text-xs font-medium bg-amber-950/50 text-amber-400 border border-amber-800/50 rounded-full">RASCUNHO</span>
+    </div>
+    <div class="p-6 space-y-6">
+      <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5">
+        <h5 class="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3"><i data-lucide="building" class="w-4 h-4 inline me-1"></i> Emitente</h5>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+          <div class="md:col-span-2"><span class="text-slate-500">Razão Social:</span> <span class="text-slate-100">{{ empresa.razao_social or '' }}</span></div>
+          <div><span class="text-slate-500">CNPJ:</span> <span class="text-slate-100">{{ empresa.cnpj or '' }}</span></div>
+          <div><span class="text-slate-500">IE:</span> <span class="text-slate-100">{{ empresa.inscricao_estadual or '' }}</span></div>
+          <div><span class="text-slate-500">Endereço:</span> <span class="text-slate-100">{{ empresa.endereco or '' }}, {{ empresa.bairro or '' }} - {{ empresa.cidade or '' }}/{{ empresa.estado or '' }}</span></div>
+          <div><span class="text-slate-500">CEP:</span> <span class="text-slate-100">{{ empresa.cep or '' }}</span></div>
+        </div>
+      </div>
+      <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5">
+        <h5 class="text-xs font-semibold text-emerald-400 uppercase tracking-wider mb-3"><i data-lucide="user" class="w-4 h-4 inline me-1"></i> Destinatário</h5>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+          <div class="md:col-span-2"><span class="text-slate-500">Nome:</span> <span class="text-slate-100">{{ cliente.nome if cliente else '-' }}</span></div>
+          <div><span class="text-slate-500">CPF/CNPJ:</span> <span class="text-slate-100">{{ cliente.cpf_cnpj if cliente else '-' }}</span></div>
+          <div><span class="text-slate-500">IE:</span> <span class="text-slate-100">{{ cliente.inscricao_estadual or 'ISENTO' if cliente.isento_ie else (cliente.inscricao_estadual or '-') }}</span></div>
+          {% if cliente %}
+          <div class="md:col-span-2"><span class="text-slate-500">Endereço:</span> <span class="text-slate-100">{{ cliente.endereco or '' }}, {{ cliente.bairro or '' }} - {{ cliente.cidade or '' }}/{{ cliente.estado or '' }}</span></div>
+          <div><span class="text-slate-500">CEP:</span> <span class="text-slate-100">{{ cliente.cep or '' }}</span></div>
+          {% endif %}
+        </div>
+      </div>
+      <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5">
+        <h5 class="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3"><i data-lucide="info" class="w-4 h-4 inline me-1"></i> Informações da Nota</h5>
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+          <div><span class="text-slate-500">Série:</span> <span class="text-slate-100">{{ nfe.serie }}</span></div>
+          <div><span class="text-slate-500">Número:</span> <span class="text-slate-100">{{ nfe.numero }}</span></div>
+          <div><span class="text-slate-500">CFOP:</span> <span class="text-slate-100">{{ nfe.cfop or '-' }}</span></div>
+          <div><span class="text-slate-500">Natureza:</span> <span class="text-slate-100">{{ nfe.natureza_operacao }}</span></div>
+        </div>
+      </div>
+      <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl overflow-hidden">
+        <h5 class="text-xs font-semibold text-emerald-400 uppercase tracking-wider px-5 pt-4 pb-2"><i data-lucide="package" class="w-4 h-4 inline me-1"></i> Itens</h5>
+        <table class="w-full text-sm">
+          <thead class="bg-slate-900/80">
+            <tr>
+              <th class="px-4 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">#</th>
+              <th class="px-4 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Descrição</th>
+              <th class="px-4 py-2 text-center text-xs font-semibold text-cyan-400 uppercase">NCM</th>
+              <th class="px-4 py-2 text-center text-xs font-semibold text-cyan-400 uppercase">CFOP</th>
+              <th class="px-4 py-2 text-center text-xs font-semibold text-cyan-400 uppercase">UN</th>
+              <th class="px-4 py-2 text-right text-xs font-semibold text-cyan-400 uppercase">Qtd</th>
+              <th class="px-4 py-2 text-right text-xs font-semibold text-cyan-400 uppercase">Vl Unit</th>
+              <th class="px-4 py-2 text-right text-xs font-semibold text-cyan-400 uppercase">Total</th>
+            </tr>
+          </thead>
+          <tbody class="divide-y divide-slate-800/60">
+            {% for item in nfe.itens %}
+            <tr class="hover:bg-slate-800/30">
+              <td class="px-4 py-2 text-slate-400">{{ loop.index }}</td>
+              <td class="px-4 py-2 text-slate-100">{{ item.descricao }}</td>
+              <td class="px-4 py-2 text-center text-slate-300">{{ item.ncm or '-' }}</td>
+              <td class="px-4 py-2 text-center text-slate-300">{{ item.cfop or '-' }}</td>
+              <td class="px-4 py-2 text-center text-slate-300">{{ item.unidade }}</td>
+              <td class="px-4 py-2 text-right text-slate-100">{{ item.quantidade }}</td>
+              <td class="px-4 py-2 text-right text-emerald-400">R$ {{ "%.2f"|format(item.preco_unitario) }}</td>
+              <td class="px-4 py-2 text-right text-emerald-400 font-medium">R$ {{ "%.2f"|format(item.total) }}</td>
+            </tr>
+            {% endfor %}
+          </tbody>
+          <tfoot class="bg-slate-900/60">
+            <tr>
+              <td colspan="7" class="px-4 py-3 text-right text-sm font-semibold text-slate-300">Valor Total da Nota:</td>
+              <td class="px-4 py-3 text-right text-base font-bold text-emerald-400">R$ {{ "%.2f"|format(nfe.valor_total) }}</td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+      <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5">
+        <h5 class="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3"><i data-lucide="credit-card" class="w-4 h-4 inline me-1"></i> Pagamento</h5>
+        <div class="text-sm text-slate-100">À vista / Dinheiro</div>
+      </div>
+    </div>
+    <div class="p-4 border-t border-slate-800/60 flex items-center justify-end gap-3">
+      <a href="/nfe" class="flex items-center px-4 py-2 text-sm text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition">
+        <i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar para Lista
+      </a>
+      {% if erros and erros|length > 0 %}
+      <div class="px-4 py-3 text-sm text-rose-400 border border-rose-800/50 rounded-xl bg-rose-950/20">
+        <i data-lucide="alert-triangle" class="w-4 h-4 inline me-1"></i> Corrija os erros antes de transmitir
+      </div>
+      {% else %}
+      <form method="post" action="/nfe/{{ nfe.id }}/transmitir" onsubmit="return confirm('Confirmar transmissão da NFe #{{ nfe.numero }} para a SEFAZ?')" class="inline">
+        <button type="submit" class="flex items-center px-6 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
+          <i data-lucide="send" class="w-5 h-5 me-2"></i> Transmitir NFe
+        </button>
+      </form>
+      {% endif %}
+    </div>
+  </div>
+</div>
+{% endblock %}

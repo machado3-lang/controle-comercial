@@ -135,8 +135,15 @@
                         <option value="4">Em Avaliação</option>
                     </select>
                 </div>
-                <div class="md:col-span-2"><label class="form-label text-cyan-300">Descrição *</label>
-                    <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" required placeholder="Ex: Manutenção mensal / Anuidade suporte">
+                <div class="md:col-span-2"><label class="form-label text-cyan-300">Serviço *</label>
+                    <input type="text" id="servicoSearchModal" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar serviço..." autocomplete="off">
+                    <div id="servicoDropdownModal" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+                    <select class="hidden" name="servico_id" id="servicoIdModal">
+                        <option value="">Selecione...</option>
+                    </select>
+                </div>
+                <div class="md:col-span-2"><label class="form-label text-cyan-300">Descrição (opcional, preenche automaticamente)</label>
+                    <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" placeholder="Se diferente do serviço selecionado" id="descricaoModal">
                 </div>
                 <div><label class="form-label text-cyan-300">Valor da Mensalidade *</label>
                     <input type="number" step="0.01" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="valor" required placeholder="Valor cobrado do cliente">
@@ -165,14 +172,7 @@
                 <div class="md:col-span-2 mt-3">
                     <h6 class="text-cyan-400 mb-2"><i data-lucide="store" class="w-4 h-4 inline me-1"></i> Revenda (Fornecedor terceirizado)</h6>
                 </div>
-                <div class="md:col-span-2 relative">
-                    <label class="form-label text-cyan-300">Fornecedor / Revenda</label>
-                    <input type="text" id="fornecedorSearchModal" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar fornecedor..." autocomplete="off">
-                    <div id="fornecedorDropdownModal" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
-                    <select class="hidden" name="fornecedor_id" id="fornecedorIdModal">
-                        <option value="">Selecione...</option>
-                    </select>
-                </div>
+                <input type="hidden" name="fornecedor_id" id="fornecedorIdModal" value="">
                 <div><label class="form-label text-cyan-300">Custo da Revenda (valor de referência)</label>
                     <input type="number" step="0.01" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="valor_revenda" placeholder="0,00">
                 </div>
@@ -263,57 +263,78 @@ if (item) {
          });
      }
      
-     // Busca dinâmica de fornecedores no modal
-     const fornecedorSearch = document.getElementById('fornecedorSearchModal');
-     const fornecedorDropdown = document.getElementById('fornecedorDropdownModal');
-     if (fornecedorSearch) {
-         fornecedorSearch.addEventListener('input', function(e) {
-             const term = e.target.value;
-             if (term.length >= 2) {
-                 buscarFornecedores(term).then(fornecedores => {
-                     if (fornecedores.length > 0) {
-                         fornecedorDropdown.innerHTML = fornecedores.map(f => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${f.id}">${f.nome}${f.fantasia ? ' - ' + f.fantasia : ''}${f.cpf_cnpj ? ' (<span class="text-cyan-400">' + f.cpf_cnpj + '</span>)' : ''}</div>`).join('');
-                         fornecedorDropdown.classList.remove('hidden');
-                     } else {
-                         fornecedorDropdown.classList.add('hidden');
-                     }
-                 });
-             } else {
-                 fornecedorDropdown.classList.add('hidden');
-             }
-         });
-     }
-if (fornecedorDropdown) {
-         fornecedorDropdown.addEventListener('click', function(e) {
-             const item = e.target.closest('[data-id]');
-if (item) {
-                  fornecedorSearch.value = item.textContent;
-                  const select = document.getElementById('fornecedorIdModal');
-                  if (select) {
-                      let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
-                      if (!opt) {
-                          opt = document.createElement('option');
-                          opt.value = item.dataset.id;
-                          opt.textContent = item.textContent;
-                          opt.selected = true;
-                          select.appendChild(opt);
-                      } else {
-                          opt.selected = true;
-                      }
+      // Busca dinâmica de serviços no modal
+      const servicoSearch = document.getElementById('servicoSearchModal');
+      const servicoDropdown = document.getElementById('servicoDropdownModal');
+      const servicos_json = {{ servicos_json|tojson }};
+      if (servicoSearch) {
+          servicoSearch.addEventListener('input', function(e) {
+              const term = e.target.value.toLowerCase();
+              if (term.length >= 1) {
+                  const results = servicos_json.filter(s => s.nome.toLowerCase().includes(term));
+                  if (results.length > 0) {
+                      servicoDropdown.innerHTML = results.map(s => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${s.id}" data-preco="${s.preco}" data-fornecedor="${s.fornecedor_id||''}">${s.nome}${s.codigo_lc116 ? ' (<span class="text-cyan-400">' + s.codigo_lc116 + '</span>)' : ''} - R$ ${s.preco.toFixed(2)}</div>`).join('');
+                      servicoDropdown.classList.remove('hidden');
+                  } else {
+                      servicoDropdown.classList.add('hidden');
                   }
-                  this.classList.add('hidden');
+              } else {
+                  servicoDropdown.classList.add('hidden');
               }
           });
       }
-  });
-  
-  function validarNovaAssinatura(form) {
-      const clienteId = document.getElementById('clienteIdModal');
-      if (!clienteId || !clienteId.value) {
-          alert('Selecione um cliente');
-          return false;
+if (servicoDropdown) {
+          servicoDropdown.addEventListener('click', function(e) {
+              const item = e.target.closest('[data-id]');
+if (item) {
+                   servicoSearch.value = item.textContent.split(' - ')[0];
+                   const select = document.getElementById('servicoIdModal');
+                   if (select) {
+                       let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
+                       if (!opt) {
+                           opt = document.createElement('option');
+                           opt.value = item.dataset.id;
+                           opt.textContent = item.textContent;
+                           opt.selected = true;
+                           select.appendChild(opt);
+                       } else {
+                           opt.selected = true;
+                       }
+                   }
+                   // Auto-preenche descrição, valor e fornecedor
+                   const servico = servicos_json.find(s => s.id == item.dataset.id);
+                   if (servico) {
+                       const descricaoInput = document.getElementById('descricaoModal');
+                       if (descricaoInput && !descricaoInput.value) {
+                           descricaoInput.value = servico.nome;
+                       }
+                       const valorInput = document.querySelector('input[name="valor"]');
+                       if (valorInput && !valorInput.value) {
+                           valorInput.value = servico.preco.toFixed(2);
+                       }
+                       const fornecedorInput = document.getElementById('fornecedorIdModal');
+                       if (fornecedorInput && servico.fornecedor_id) {
+                           fornecedorInput.value = servico.fornecedor_id;
+                       }
+                   }
+                   this.classList.add('hidden');
+               }
+          });
       }
-      return true;
-  }
- </script>
+   });
+   
+   function validarNovaAssinatura(form) {
+       const clienteId = document.getElementById('clienteIdModal');
+       if (!clienteId || !clienteId.value) {
+           alert('Selecione um cliente');
+           return false;
+       }
+       const servicoId = document.getElementById('servicoIdModal');
+       if (!servicoId || !servicoId.value) {
+           alert('Selecione um serviço');
+           return false;
+       }
+       return true;
+   }
+   </script>
 {% endblock %}

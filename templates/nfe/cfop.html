@@ -1,0 +1,132 @@
+{% extends "base.html" %}
+{% block title %}CFOPs{% endblock %}
+{% block content %}
+<div class="glass-card mb-6">
+    <div class="p-4 border-b border-slate-800/60 flex items-center justify-between">
+        <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400 font-semibold"><i data-lucide="book-open" class="w-5 h-5 inline me-2"></i> CFOP / Natureza da Operação</h4>
+        <a href="/nfe" class="flex items-center px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar</a>
+    </div>
+    <div class="p-4">
+        <div class="flex justify-end mb-4">
+            <button type="button" class="flex items-center h-9 px-3 text-sm bg-gradient-to-r from-emerald-500 to-teal-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10" onclick="abrirCfopModal()"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> Novo CFOP</button>
+        </div>
+        <div class="overflow-x-auto">
+            <table class="w-full divide-y divide-slate-800/60">
+                <thead class="bg-slate-950/50">
+                    <tr>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">CFOP</th>
+                        <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">Natureza da Operação</th>
+                        <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase">Ações</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                    {% for c in cfop_list %}
+                    <tr class="hover:bg-slate-800/40 transition">
+                        <td class="px-4 py-3 text-sm font-mono text-emerald-400">{{ c.cfop }}</td>
+                        <td class="px-4 py-3 text-sm text-slate-100">{{ c.natureza }}</td>
+                        <td class="px-4 py-3 text-center">
+                            <div class="flex items-center justify-center gap-1">
+                                <button type="button" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" onclick="editarCfop({{ c.id }}, '{{ c.cfop }}', '{{ c.natureza|escape }}')" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                                <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="abrirModalExcluir({{ c.id }}, '{{ c.cfop }}')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                            </div>
+                        </td>
+                    </tr>
+                    {% else %}
+                    <tr><td colspan="3" class="px-4 py-12 text-center text-slate-500">Nenhum CFOP cadastrado. <button class="text-cyan-400 hover:underline bg-transparent border-none cursor-pointer" onclick="abrirCfopModal()">Clique aqui</button> para cadastrar.</td></tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Novo/Editar CFOP -->
+<div class="modal fade" id="modalCfop" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <div class="modal-header border-b border-slate-800/50">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-400 font-semibold" id="modalCfopTitulo">Novo CFOP / Natureza</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <form id="formCfop">
+                <input type="hidden" name="id" id="inputCfopId" value="0">
+                <div class="modal-body">
+                    <div class="mb-3">
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">CFOP *</label>
+                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="cfop" id="inputCfop" maxlength="4" placeholder="Ex: 5102" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Natureza da Operação *</label>
+                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="natureza" id="inputNatureza" placeholder="Ex: Venda de mercadoria" required>
+                    </div>
+                </div>
+                <div class="modal-footer border-t border-slate-800/50">
+                    <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Cancelar</button>
+                    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl font-medium transition-all"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<!-- Modal Excluir CFOP -->
+<div class="modal fade" id="modalExcluirCfop" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <div class="modal-header border-b border-slate-800/50">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-red-400 font-semibold"><i data-lucide="alert-triangle" class="w-5 h-5 inline me-2"></i> Confirmar Exclusão</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-slate-300">Deseja realmente excluir o CFOP <strong class="text-emerald-400" id="excluirCfopCodigo"></strong>?</p>
+                <p class="text-xs text-slate-500 mt-2">Esta ação não pode ser desfeita.</p>
+            </div>
+            <div class="modal-footer border-t border-slate-800/50">
+                <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Cancelar</button>
+                <button type="button" class="flex items-center px-4 py-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-rose-500/10" id="btnConfirmarExclusao"><i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Excluir</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+let cfopExcluirId = null;
+let cfopExcluirModal = null;
+
+function abrirCfopModal(id, cfop, natureza) {
+    document.getElementById('inputCfopId').value = id || 0;
+    document.getElementById('inputCfop').value = cfop || '';
+    document.getElementById('inputNatureza').value = natureza || '';
+    document.getElementById('modalCfopTitulo').textContent = id ? 'Editar CFOP / Natureza' : 'Novo CFOP / Natureza';
+    new bootstrap.Modal(document.getElementById('modalCfop')).show();
+}
+
+function editarCfop(id, cfop, natureza) {
+    abrirCfopModal(id, cfop, natureza);
+}
+
+document.getElementById('formCfop').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const formData = new FormData(this);
+    fetch('/nfe/cfop/salvar', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(d => { if (d.success) location.reload(); });
+});
+
+function abrirModalExcluir(id, cfop) {
+    cfopExcluirId = id;
+    document.getElementById('excluirCfopCodigo').textContent = cfop;
+    if (!cfopExcluirModal) cfopExcluirModal = new bootstrap.Modal(document.getElementById('modalExcluirCfop'));
+    cfopExcluirModal.show();
+}
+
+document.getElementById('btnConfirmarExclusao').addEventListener('click', function() {
+    if (!cfopExcluirId) return;
+    const formData = new FormData();
+    formData.append('id', cfopExcluirId);
+    fetch('/nfe/cfop/excluir', { method: 'POST', body: formData })
+        .then(r => r.json())
+        .then(d => { if (d.success) { cfopExcluirModal.hide(); location.reload(); } });
+});
+</script>
+{% endblock %}

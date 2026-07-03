@@ -157,6 +157,8 @@ def criar_produto(
     situacao: str = Form("A"),
     variacoes: str = Form(""),
     insumos: str = Form(""),
+    codigo_lc116: str = Form(""),
+    codigo_tributacao_municipal: str = Form(""),
     foto: UploadFile = File(None),
 ):
     if not codigo:
@@ -174,6 +176,14 @@ def criar_produto(
     if marca_id:
         m = db.query(MarcaProduto).get(marca_id)
         marca = m.nome if m else None
+    
+    if tipo == 'servico' and (not codigo_lc116 or not codigo_tributacao_municipal):
+        request.session['error'] = 'Código LC116 e Tributação Municipal são obrigatórios para serviços'
+        return RedirectResponse(url='/produtos/novo', status_code=303)
+    
+    codigo_lc116_val = codigo_lc116 if tipo == 'servico' else None
+    codigo_tributacao_val = codigo_tributacao_municipal if tipo == 'servico' else None
+    
     produto = Produto(
         codigo=codigo if codigo else None,
         nome=nome,
@@ -193,8 +203,10 @@ def criar_produto(
         profundidade=profundidade if profundidade else None,
         unidade_medida=unidade_medida,
         estoque=estoque if estoque else 0,
-estoque_minimo=estoque_minimo if estoque_minimo else 0,
+        estoque_minimo=estoque_minimo if estoque_minimo else 0,
         tipo=tipo,
+        codigo_lc116=codigo_lc116_val,
+        codigo_tributacao_municipal=codigo_tributacao_val,
         situacao=situacao,
         foto=foto_path,
     )
@@ -295,6 +307,8 @@ def atualizar_produto(
     situacao: str = Form("A"),
     variacoes: str = Form(""),
     insumos: str = Form(""),
+    codigo_lc116: str = Form(""),
+    codigo_tributacao_municipal: str = Form(""),
     foto: UploadFile = File(None),
 ):
     produto = db.query(Produto).filter(Produto.id == produto_id).first()
@@ -333,6 +347,8 @@ def atualizar_produto(
         produto.estoque = estoque if estoque else 0
         produto.estoque_minimo = estoque_minimo if estoque_minimo else 0
         produto.tipo = tipo
+        produto.codigo_lc116 = codigo_lc116 if tipo == 'servico' else None
+        produto.codigo_tributacao_municipal = codigo_tributacao_municipal if tipo == 'servico' else None
         produto.situacao = situacao
         db.commit()
         

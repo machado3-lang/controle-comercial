@@ -1,1 +1,58 @@
-{% extends "base.html" %}{% block title %}Nova Conta a Receber{% endblock %}{% block content %}<script>window.location="/contas/receber";</script>{% endblock %}
+<div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    <div class="md:col-span-2 relative">
+        <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente</label>
+        <input type="text" id="clienteSearchNova" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off">
+        <div id="clienteDropdownNova" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+        <select class="hidden" name="cliente_id" id="clienteIdNova">
+            <option value="">Selecione...</option>
+            {% for c in clientes %}<option value="{{ c.id }}">{{ c.nome }}</option>{% endfor %}
+        </select>
+    </div>
+    <div><label class="block text-xs font-medium text-emerald-400 mb-1">Valor *</label>
+        <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="valor" required>
+    </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Vencimento *</label>
+        <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_vencimento" required>
+    </div>
+    <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Descrição *</label>
+        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" required>
+    </div>
+    <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
+        <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="2"></textarea>
+    </div>
+</div>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const clientesData = {{ clientes_json|tojson }};
+    const clienteSearch = document.getElementById('clienteSearchNova');
+    const clienteDropdown = document.getElementById('clienteDropdownNova');
+    if (clienteSearch) {
+        clienteSearch.addEventListener('input', function(e) {
+            const term = e.target.value;
+            if (term.length >= 2) {
+                fetch(`/clientes/buscar?q=${encodeURIComponent(term)}`).then(r => r.json()).then(d => {
+                    if (d.clientes && d.clientes.length > 0) {
+                        clienteDropdown.innerHTML = d.clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}">${c.nome}${c.fantasia && c.fantasia !== c.nome ? ' - ' + c.fantasia : ''}${c.cpf_cnpj ? ' (<span class="text-cyan-400">' + c.cpf_cnpj + '</span>)' : ''}</div>`).join('');
+                        clienteDropdown.classList.remove('hidden');
+                    } else {
+                        clienteDropdown.classList.add('hidden');
+                    }
+                });
+            } else {
+                clienteDropdown.classList.add('hidden');
+            }
+        });
+    }
+    if (clienteDropdown) {
+        clienteDropdown.addEventListener('click', function(e) {
+            const item = e.target.closest('[data-id]');
+            if (item) {
+                clienteSearch.value = item.textContent;
+                document.getElementById('clienteIdNova').value = item.dataset.id;
+                this.classList.add('hidden');
+            }
+        });
+    }
+});
+</script>

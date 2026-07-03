@@ -16,6 +16,7 @@ from datetime import date as date_func, datetime, timedelta
 
 from database import engine, Base, get_db
 from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario, MarcaProduto
+import models_nfe
 
 def get_current_user(request: Request, db: Session = Depends(get_db)):
     user_id = request.session.get("user_id")
@@ -51,6 +52,8 @@ def run_migrations():
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_password VARCHAR(100)",
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_base64 TEXT",
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_key_base64 TEXT",
+        "ALTER TABLE assinaturas ADD COLUMN IF NOT EXISTS produto_id INTEGER REFERENCES produtos(id)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS categoria_servico_padrao_id INTEGER REFERENCES categorias_produto(id)",
     ]
     # SQLite não suporta IF NOT EXISTS em ADD COLUMN, usar PRAGMA para verificar
     if "sqlite" in str(engine.url):
@@ -116,7 +119,7 @@ def run_migrations():
         if "dia_vencimento_novo" not in existing_hist:
             conn.execute(text("ALTER TABLE assinaturas_historico ADD COLUMN dia_vencimento_novo INTEGER"))
             conn.commit()
-        # Check and add missing columns to empresa
+# Check and add missing columns to empresa
         cols_emp = inspector.get_columns("empresa")
         existing_emp = {c['name'] for c in cols_emp}
         if "senha_admin" not in existing_emp:
@@ -131,15 +134,98 @@ def run_migrations():
         if "sicoob_cert_key_base64" not in existing_emp:
             conn.execute(text("ALTER TABLE empresa ADD COLUMN sicoob_cert_key_base64 TEXT"))
             conn.commit()
+        if "notaas_api_key" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN notaas_api_key TEXT"))
+            conn.commit()
+        if "notaas_ambiente" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN notaas_ambiente VARCHAR(1) DEFAULT '2'"))
+            conn.commit()
+        if "serie_nfe" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN serie_nfe INTEGER DEFAULT 1"))
+            conn.commit()
+        if "ultimo_numero_nfe" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN ultimo_numero_nfe INTEGER DEFAULT 0"))
+            conn.commit()
+        if "cfop_padrao" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN cfop_padrao VARCHAR(4) DEFAULT '5102'"))
+            conn.commit()
+        if "bling_desabilitado" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN bling_desabilitado BOOLEAN DEFAULT 0"))
+            conn.commit()
+        if "codigo_ibge" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN codigo_ibge VARCHAR(7)"))
+            conn.commit()
+        cols_nfe = inspector.get_columns("nfe")
+        existing_nfe = {c['name'] for c in cols_nfe}
+        if "cliente_id" not in existing_nfe:
+            conn.execute(text("ALTER TABLE nfe ADD COLUMN cliente_id INTEGER REFERENCES clientes(id)"))
+            conn.commit()
+        cols_ass = inspector.get_columns("assinaturas")
+        existing_ass = {c['name'] for c in cols_ass}
+        if "produto_id" not in existing_ass:
+            conn.execute(text("ALTER TABLE assinaturas ADD COLUMN produto_id INTEGER"))
+            conn.commit()
+        # Check codigo_ibge in clientes
+        cols_cli = inspector.get_columns("clientes")
+        existing_cli = {c['name'] for c in cols_cli}
+        if "codigo_ibge" not in existing_cli:
+            conn.execute(text("ALTER TABLE clientes ADD COLUMN codigo_ibge VARCHAR(7)"))
+            conn.commit()
+        if "isento_ie" not in existing_cli:
+            conn.execute(text("ALTER TABLE clientes ADD COLUMN isento_ie BOOLEAN DEFAULT 0"))
+            conn.commit()
         conn.close()
     else:
         try:
             with engine.connect() as conn:
-                for m in migrations:
-                    try:
-                        conn.execute(text(m))
-                    except Exception:
-                        pass
+                conn.execute(text("""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contas_receber' AND column_name='data_emissao') THEN ALTER TABLE contas_receber ADD COLUMN data_emissao DATE; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clientes' AND column_name='telefone_whatsapp') THEN ALTER TABLE clientes ADD COLUMN telefone_whatsapp VARCHAR(20); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clientes' AND column_name='codigo_ibge') THEN ALTER TABLE clientes ADD COLUMN codigo_ibge VARCHAR(7); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clientes' AND column_name='isento_ie') THEN ALTER TABLE clientes ADD COLUMN isento_ie BOOLEAN DEFAULT FALSE; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produtos' AND column_name='codigo_barras') THEN ALTER TABLE produtos ADD COLUMN codigo_barras VARCHAR(50); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produtos' AND column_name='tipo') THEN ALTER TABLE produtos ADD COLUMN tipo VARCHAR(20) DEFAULT 'produto'; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produtos' AND column_name='marca_id') THEN ALTER TABLE produtos ADD COLUMN marca_id INTEGER; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produtos' AND column_name='foto') THEN ALTER TABLE produtos ADD COLUMN foto VARCHAR(500); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='usuarios' AND column_name='is_admin') THEN ALTER TABLE usuarios ADD COLUMN is_admin BOOLEAN DEFAULT FALSE; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='usuarios' AND column_name='permissoes') THEN ALTER TABLE usuarios ADD COLUMN permissoes TEXT; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pedidos_venda_itens' AND column_name='variacao_id') THEN ALTER TABLE pedidos_venda_itens ADD COLUMN variacao_id INTEGER; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='pedidos_venda_itens' AND column_name='item_pai_id') THEN ALTER TABLE pedidos_venda_itens ADD COLUMN item_pai_id INTEGER; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='senha_admin') THEN ALTER TABLE empresa ADD COLUMN senha_admin VARCHAR(100); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='senha_lembrete') THEN ALTER TABLE empresa ADD COLUMN senha_lembrete VARCHAR(200); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='bling_refresh_token') THEN ALTER TABLE empresa ADD COLUMN bling_refresh_token VARCHAR(200); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='bling_token_expires_at') THEN ALTER TABLE empresa ADD COLUMN bling_token_expires_at TIMESTAMP; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='bling_webhook_secret') THEN ALTER TABLE empresa ADD COLUMN bling_webhook_secret VARCHAR(100); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='bling_api_key_v2') THEN ALTER TABLE empresa ADD COLUMN bling_api_key_v2 VARCHAR(100); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='sicoob_token') THEN ALTER TABLE empresa ADD COLUMN sicoob_token VARCHAR(3000); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='sicoob_conta_corrente') THEN ALTER TABLE empresa ADD COLUMN sicoob_conta_corrente VARCHAR(30); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='sicoob_beneficiario') THEN ALTER TABLE empresa ADD COLUMN sicoob_beneficiario VARCHAR(20); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='sicoob_cert_path') THEN ALTER TABLE empresa ADD COLUMN sicoob_cert_path VARCHAR(500); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='sicoob_cert_key_path') THEN ALTER TABLE empresa ADD COLUMN sicoob_cert_key_path VARCHAR(500); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='sicoob_cert_password') THEN ALTER TABLE empresa ADD COLUMN sicoob_cert_password VARCHAR(100); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='sicoob_cert_base64') THEN ALTER TABLE empresa ADD COLUMN sicoob_cert_base64 TEXT; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='sicoob_cert_key_base64') THEN ALTER TABLE empresa ADD COLUMN sicoob_cert_key_base64 TEXT; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='categoria_servico_padrao_id') THEN ALTER TABLE empresa ADD COLUMN categoria_servico_padrao_id INTEGER; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='notaas_api_key') THEN ALTER TABLE empresa ADD COLUMN notaas_api_key TEXT; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='notaas_ambiente') THEN ALTER TABLE empresa ADD COLUMN notaas_ambiente VARCHAR(1) DEFAULT '2'; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='serie_nfe') THEN ALTER TABLE empresa ADD COLUMN serie_nfe INTEGER DEFAULT 1; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='ultimo_numero_nfe') THEN ALTER TABLE empresa ADD COLUMN ultimo_numero_nfe INTEGER DEFAULT 0; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='cfop_padrao') THEN ALTER TABLE empresa ADD COLUMN cfop_padrao VARCHAR(4) DEFAULT '5102'; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='bling_desabilitado') THEN ALTER TABLE empresa ADD COLUMN bling_desabilitado BOOLEAN DEFAULT FALSE; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='codigo_ibge') THEN ALTER TABLE empresa ADD COLUMN codigo_ibge VARCHAR(7); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfe' AND column_name='cliente_id') THEN ALTER TABLE nfe ADD COLUMN cliente_id INTEGER; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assinaturas' AND column_name='produto_id') THEN ALTER TABLE assinaturas ADD COLUMN produto_id INTEGER; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produto_variacoes' AND column_name='created_at') THEN ALTER TABLE produto_variacoes ADD COLUMN created_at TIMESTAMP DEFAULT NOW(); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produto_variacoes' AND column_name='updated_at') THEN ALTER TABLE produto_variacoes ADD COLUMN updated_at TIMESTAMP DEFAULT NOW(); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produto_variacoes' AND column_name='estoque_atual') THEN ALTER TABLE produto_variacoes ADD COLUMN estoque_atual REAL DEFAULT 0; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produto_variacoes' AND column_name='estoque_minimo') THEN ALTER TABLE produto_variacoes ADD COLUMN estoque_minimo REAL DEFAULT 0; END IF;
+                    END $$;
+                """))
+                # CREATE TABLE IF NOT EXISTS for marcas_produto
+                conn.execute(text("CREATE TABLE IF NOT EXISTS marcas_produto (id SERIAL PRIMARY KEY, nome VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT NOW())"))
+                conn.execute(text("CREATE TABLE IF NOT EXISTS cfop_natureza (id SERIAL PRIMARY KEY, cfop VARCHAR(4) NOT NULL, natureza VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW())"))
+                conn.execute(text("CREATE INDEX IF NOT EXISTS idx_cfop_natureza_cfop ON cfop_natureza(cfop)"))
                 # Fix sequences after restore from backup
                 if "postgresql" in str(engine.url):
                     seq_tables = [
@@ -154,7 +240,6 @@ def run_migrations():
                             conn.execute(text(f"SELECT setval(pg_get_serial_sequence('{table}', 'id'), COALESCE((SELECT MAX(id)+1 FROM {table}), 1), false)"))
                         except:
                             pass
-                    conn.commit()
                 conn.commit()
         except Exception as e:
             print(f"Migration error: {e}")
@@ -187,11 +272,12 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "controle-comercial-secret-key-2024"))
 
-from routers import clientes, fornecedores, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth, servicos
+from routers import clientes, fornecedores, nfse, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth, servicos, nfe
 app.include_router(auth.router)
 app.include_router(clientes.router)
 app.include_router(fornecedores.router)
 app.include_router(contas.router)
+app.include_router(nfse.router)
 app.include_router(assinaturas.router)
 app.include_router(ordens_servico.router)
 app.include_router(configuracoes.router)
@@ -200,6 +286,7 @@ app.include_router(sicoob.router)
 app.include_router(produtos.router)
 app.include_router(pedidos.router)
 app.include_router(servicos.router)
+app.include_router(nfe.router)
 
 
 @app.get("/")

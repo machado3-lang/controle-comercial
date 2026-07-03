@@ -316,6 +316,7 @@ Consulte a documentação anterior (seção Integração Bling ERP v3).
 - [x] Máscaras JS para CPF, CNPJ, CEP, telefone
 - [x] Formatação CPF/CNPJ na exibição (filtro Jinja)
 - [x] Impressão térmica 80mm e A4
+- [x] NFSe - Implementado (desativado - ver NFSe.md)
 
 ## Próximos Passos / Melhorias
 

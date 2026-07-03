@@ -66,6 +66,7 @@
             </div>
             <div class="modal-body max-h-96 overflow-y-auto">
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                     <div><label class="block text-xs font-medium text-cyan-400 mb-1">Cliente</label>
                         <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cliente_id">
                             {% for c in clientes %}<option value="{{ c.id }}" {% if ordem.cliente_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}
@@ -83,7 +84,12 @@
                         </select>
                     </div>
                     <div><label class="block text-xs font-medium text-cyan-400 mb-1">Marca</label>
-                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="marca" value="{{ ordem.marca or '' }}">
+                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="marca_id">
+                            <option value="">Selecione...</option>
+                            {% for m in marcas %}
+                            <option value="{{ m.id }}" {% if m.nome == ordem.marca %}selected{% endif %}>{{ m.nome }}</option>
+                            {% endfor %}
+                        </select>
                     </div>
                     <div><label class="block text-xs font-medium text-cyan-400 mb-1">Modelo</label>
                         <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="modelo" value="{{ ordem.modelo or '' }}">
@@ -104,10 +110,20 @@
                         <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="defeito_relatado" rows="2">{{ ordem.defeito_relatado or '' }}</textarea>
                     </div>
                     <div class="md:col-span-3"><label class="block text-xs font-medium text-cyan-400 mb-1">Serviços Executados</label>
-                        <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="servicos_executados" rows="3">{{ ordem.servicos_executados or '' }}</textarea>
+                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="servicos_ids" multiple id="servicosSelect">
+                            {% for s in servicos %}
+                            <option value="{{ s.id }}" data-preco="{{ s.preco }}">{% if s.codigo_lc116 %}{{ s.codigo_lc116 }} - {% endif %}{{ s.nome }}</option>
+                            {% endfor %}
+                        </select>
+                        <textarea class="w-full mt-2 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="servicos_executados_text" rows="3" placeholder="Serviços selecionados aparecerão aqui..." id="servicosText">{{ ordem.servicos_executados or '' }}</textarea>
                     </div>
                     <div class="md:col-span-3"><label class="block text-xs font-medium text-cyan-400 mb-1">Peças Utilizadas</label>
-                        <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="pecas_utilizadas" rows="3">{{ ordem.pecas_utilizadas or '' }}</textarea>
+                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="pecas_ids" multiple id="pecasSelect">
+                            {% for p in pecas %}
+                            <option value="{{ p.id }}" data-preco="{{ p.preco }}">{{ p.nome }}</option>
+                            {% endfor %}
+                        </select>
+                        <textarea class="w-full mt-2 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="pecas_utilizadas_text" rows="3" placeholder="Peças selecionadas aparecerão aqui..." id="pecasText">{{ ordem.pecas_utilizadas or '' }}</textarea>
                     </div>
                     <div><label class="block text-xs font-medium text-emerald-400 mb-1">Valor Serviço</label>
                         <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="valor_servico" id="valor_servico" value="{{ ordem.valor_servico }}" oninput="calcularTotal()">
@@ -177,6 +193,23 @@
 
 {% block scripts %}
 <script>
+const clientesData = {{ clientes_json|tojson }};
+const marcasData = {{ marcas_json|tojson }};
+const servicosData = {{ servicos_json|tojson }};
+const pecasData = {{ pecas_json|tojson }};
+
+// Atualiza texto de serviços quando selecionar
+document.getElementById('servicosSelect')?.addEventListener('change', function() {
+    const selected = Array.from(this.selectedOptions).map(o => o.textContent);
+    document.getElementById('servicosText').value = selected.join(', ');
+});
+
+// Atualiza texto de peças quando selecionar
+document.getElementById('pecasSelect')?.addEventListener('change', function() {
+    const selected = Array.from(this.selectedOptions).map(o => o.textContent);
+    document.getElementById('pecasText').value = selected.join(', ');
+});
+
 function calcularTotal() {
     const servico = parseFloat(document.getElementById('valor_servico').value) || 0;
     const pecas = parseFloat(document.getElementById('valor_pecas').value) || 0;

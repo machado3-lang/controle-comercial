@@ -46,7 +46,15 @@
 <option value="servico" {% if produto and produto.tipo == 'servico' %}selected{% endif %}>Serviço</option>
 <option value="kit" {% if produto and produto.tipo == 'kit' %}selected{% endif %}>Kit / Combo</option>
 </select></div>
-<div class="col-span-12 md:col-span-8 relative"><label class="block text-xs font-medium text-cyan-400 mb-1">Fornecedor</label>
+                    <div class="col-span-12 md:col-span-4 campos-servico" style="display: none;">
+                        <label class="block text-xs font-medium text-emerald-400 mb-1">Código LC 116/03 *</label>
+                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="codigo_lc116" value="{{ produto.codigo_lc116 or '' }}" placeholder="Ex: 14.02">
+                    </div>
+                    <div class="col-span-12 md:col-span-4 campos-servico" style="display: none;">
+                        <label class="block text-xs font-medium text-emerald-400 mb-1">Tributação Municipal *</label>
+                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="codigo_tributacao_municipal" value="{{ produto.codigo_tributacao_municipal or '' }}" placeholder="Ex: 01.01">
+                    </div>
+                    <div class="col-span-12 md:col-span-8 relative"><label class="block text-xs font-medium text-cyan-400 mb-1">Fornecedor</label>
                         <input type="text" id="fornecedorSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off">
                         <div id="fornecedorDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
                         <select class="hidden" name="fornecedor_id" id="fornecedorId">
@@ -223,6 +231,11 @@ function toggleSections() {
     });
     document.querySelectorAll('.estoque-principal').forEach(el => {
         el.classList.toggle('hidden', tipo === 'kit');
+    });
+    document.querySelectorAll('.campos-servico').forEach(function(c) {
+        c.style.display = tipo === 'servico' ? 'block' : 'none';
+        var input = c.querySelector('input');
+        if (input) input.required = tipo === 'servico';
     });
 }
 

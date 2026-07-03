@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Config NFe{% endblock %}
+{% block content %}
+<div class="glass-card mb-6">
+    <div class="p-4 border-b border-slate-800/60 flex items-center justify-between">
+        <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="settings" class="w-5 h-5 inline me-2"></i> Configurações NFe</h4>
+        <a href="/nfe" class="flex items-center px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar</a>
+    </div>
+    <div class="p-4">
+        <div class="p-4 bg-cyan-950/30 border border-cyan-800/50 rounded-xl text-cyan-300 text-sm mb-4">
+            <i data-lucide="info" class="w-4 h-4 inline me-1"></i> As configurações da NFe (API Key, Ambiente, Série) foram movidas para <a href="/configuracoes?aba=nfe" class="text-cyan-400 hover:underline font-medium">Configurações → Config. NFe</a>.
+        </div>
+        <div class="flex items-center gap-3">
+            <a href="/nfe/cfop" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
+                <i data-lucide="book-open" class="w-4 h-4 me-1"></i> Gerenciar CFOPs
+            </a>
+            <a href="/configuracoes?aba=nfe" class="flex items-center px-4 py-2 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition">
+                <i data-lucide="settings" class="w-4 h-4 me-1"></i> Ir para Configurações NFe
+            </a>
+        </div>
+    </div>
+</div>
+{% endblock %}

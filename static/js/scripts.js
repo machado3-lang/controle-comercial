@@ -77,6 +77,22 @@ function confirmarExclusao(url) {
     modal.show();
 }
 
+function confirmarEstorno(url) {
+    if (!confirm('Estornar esta baixa fará a conta voltar para "em aberto". Confirma?')) return;
+    fetch(url, { method: 'POST', credentials: 'include' })
+        .then(r => r.redirected ? window.location.href = r.url : window.location.reload())
+        .catch(() => window.location.reload());
+}
+
+function abrirPagamento(id, descricao, fornecedor, valor) {
+    document.getElementById('pagarDescricao').textContent = descricao;
+    document.getElementById('pagarFornecedor').textContent = fornecedor;
+    document.getElementById('pagarValor').textContent = 'R$ ' + valor.toFixed(2);
+    document.getElementById('formPagar').action = '/contas/pagar/' + id + '/baixar';
+    const modal = new bootstrap.Modal(document.getElementById('modalPagar'));
+    modal.show();
+}
+
 function confirmarExclusaoSimples(url) {
     if (!confirm('Deseja realmente excluir este registro?')) return;
     fetch(url, { method: 'POST', credentials: 'include', redirect: 'follow' })

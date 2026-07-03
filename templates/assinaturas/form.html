@@ -39,7 +39,7 @@
             </select>
         </div>
         <div><label class="block text-xs font-medium text-emerald-400 mb-1">Valor *</label>
-            <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="valor" required value="{{ assinatura.valor }}" {% if not editavel %}readonly{% endif %}>
+            <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="valor" required value="{{ assinatura.valor }}" id="valorEdit" {% if not editavel %}readonly{% endif %}>
         </div>
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Quantidade</label>
             <input type="number" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="quantidade" value="{{ assinatura.quantidade if assinatura.quantidade else '' }}" placeholder="Nº de pessoas" {% if not editavel %}readonly{% endif %}>
@@ -62,23 +62,24 @@
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Data Fim</label>
             <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_fim" value="{{ assinatura.data_fim.strftime('%Y-%m-%d') if assinatura.data_fim else '' }}" {% if not editavel %}readonly{% endif %}>
         </div>
-        <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Descrição *</label>
-            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" required value="{{ assinatura.descricao }}" {% if not editavel %}readonly{% endif %}>
+        <div class="md:col-span-2">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Serviço *</label>
+            <input type="text" id="servicoSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar serviço..." autocomplete="off" {% if not editavel %}readonly{% endif %}>
+            <div id="servicoDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+            <select class="hidden" name="servico_id" id="servicoId">
+                <option value="">Selecione...</option>
+                {% for s in servicos %}
+                <option value="{{ s.id }}" {% if assinatura.produto_id == s.id or (not assinatura.produto_id and assinatura.descricao == s.nome) %}selected{% endif %}>{{ s.nome }}</option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Descrição (opcional, preenche automaticamente)</label>
+            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" value="{{ assinatura.descricao }}" placeholder="Se diferente do serviço selecionado" id="descricaoEdit" {% if not editavel %}readonly{% endif %}>
         </div>
         <div class="md:col-span-2">
             <h6 class="text-cyan-400 mt-2 mb-2"><i data-lucide="store" class="w-4 h-4 inline me-1"></i> Revenda (Fornecedor terceirizado)</h6>
         </div>
-        <div class="relative">
-            <label class="block text-xs font-medium text-cyan-400 mb-1">Fornecedor / Revenda</label>
-            <input type="text" id="fornecedorSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off" {% if not editavel %}readonly{% endif %}>
-            <div id="fornecedorDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
-            <select class="hidden" name="fornecedor_id" id="fornecedorId">
-                <option value="">Selecione...</option>
-                {% for f in fornecedores %}
-                <option value="{{ f.id }}" {% if assinatura.fornecedor_id == f.id %}selected{% endif %}>{{ f.nome }}</option>
-                {% endfor %}
-            </select>
-        </div>
+        <input type="hidden" name="fornecedor_id" id="fornecedorId" value="{{ assinatura.fornecedor_id or '' }}">
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Custo da Revenda (valor de referência)</label>
             <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="valor_revenda" value="{{ assinatura.valor_revenda if assinatura.valor_revenda else '' }}" {% if not editavel %}readonly{% endif %}>
         </div>
@@ -169,6 +170,7 @@
 <script>
 const clientesData = {{ clientes_json|tojson }};
 const fornecedoresData = {{ fornecedores_json|tojson }};
+const servicosData = {{ servicos_json|tojson }};
 
 async function buscarClientesEdit(q) {
     if (!q || q.length < 2) return [];
@@ -241,52 +243,67 @@ if (clienteDropdown) {
          });
      }
     
-    // Busca dinâmica de fornecedores no formulário
-    const fornecedorSearch = document.getElementById('fornecedorSearch');
-    const fornecedorDropdown = document.getElementById('fornecedorDropdown');
-    if (fornecedorSearch && !fornecedorSearch.hasAttribute('readonly')) {
-        const fornecedorAtual = document.querySelector('#fornecedorId option[selected]')?.textContent || '';
-        fornecedorSearch.value = fornecedorAtual;
-        
-        fornecedorSearch.addEventListener('input', function(e) {
-            const term = e.target.value;
-            if (term.length >= 2) {
-                buscarFornecedoresEdit(term).then(fornecedores => {
-                    if (fornecedores.length > 0) {
-                        fornecedorDropdown.innerHTML = fornecedores.map(f => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${f.id}">${f.nome}${f.fantasia ? ' - ' + f.fantasia : ''}${f.cpf_cnpj ? ' (<span class="text-cyan-400">' + f.cpf_cnpj + '</span>)' : ''}</div>`).join('');
-                        fornecedorDropdown.classList.remove('hidden');
-                    } else {
-                        fornecedorDropdown.classList.add('hidden');
-                    }
-                });
-            } else {
-                fornecedorDropdown.classList.add('hidden');
-            }
-        });
-    }
-if (fornecedorDropdown) {
-         fornecedorDropdown.addEventListener('click', function(e) {
-             const item = e.target.closest('[data-id]');
-             if (item) {
-                 fornecedorSearch.value = item.textContent;
-                 const select = document.getElementById('fornecedorId');
-                 if (select) {
-                     let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
-                     if (!opt) {
-                         opt = document.createElement('option');
-                         opt.value = item.dataset.id;
-                         opt.textContent = item.textContent;
-                         opt.selected = true;
-                         select.appendChild(opt);
-                     } else {
-                         opt.selected = true;
-                     }
+     // Busca dinâmica de serviços no formulário
+     const servicoSearch = document.getElementById('servicoSearch');
+     const servicoDropdown = document.getElementById('servicoDropdown');
+     if (servicoSearch && !servicoSearch.hasAttribute('readonly')) {
+         const servicoAtual = document.querySelector('#servicoId option[selected]')?.textContent || '';
+         if (servicoAtual) servicoSearch.value = servicoAtual;
+         
+         servicoSearch.addEventListener('input', function(e) {
+             const term = e.target.value.toLowerCase();
+             if (term.length >= 1) {
+                 const results = servicosData.filter(s => s.nome.toLowerCase().includes(term));
+                 if (results.length > 0) {
+                     servicoDropdown.innerHTML = results.map(s => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${s.id}" data-preco="${s.preco}" data-fornecedor="${s.fornecedor_id||''}">${s.nome}${s.codigo_lc116 ? ' (<span class="text-cyan-400">' + s.codigo_lc116 + '</span>)' : ''} - R$ ${s.preco.toFixed(2)}</div>`).join('');
+                     servicoDropdown.classList.remove('hidden');
+                 } else {
+                     servicoDropdown.classList.add('hidden');
                  }
-                 this.classList.add('hidden');
+             } else {
+                 servicoDropdown.classList.add('hidden');
              }
          });
      }
-});
+ if (servicoDropdown) {
+          servicoDropdown.addEventListener('click', function(e) {
+              const item = e.target.closest('[data-id]');
+              if (item) {
+                  servicoSearch.value = item.textContent.split(' - ')[0];
+                  const select = document.getElementById('servicoId');
+                  if (select) {
+                      let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
+                      if (!opt) {
+                          opt = document.createElement('option');
+                          opt.value = item.dataset.id;
+                          opt.textContent = item.textContent;
+                          opt.selected = true;
+                          select.appendChild(opt);
+                      } else {
+                          opt.selected = true;
+                      }
+                  }
+                  // Auto-preenche descrição, valor e fornecedor
+                  const servico = servicosData.find(s => s.id == item.dataset.id);
+                  if (servico) {
+                      const descricaoInput = document.getElementById('descricaoEdit');
+                      if (descricaoInput) {
+                          descricaoInput.value = servico.nome;
+                      }
+                      const valorInput = document.getElementById('valorEdit');
+                      if (valorInput) {
+                          valorInput.value = servico.preco.toFixed(2);
+                      }
+                      const fornecedorInput = document.getElementById('fornecedorId');
+                      if (fornecedorInput && servico.fornecedor_id) {
+                          fornecedorInput.value = servico.fornecedor_id;
+                      }
+                  }
+                  this.classList.add('hidden');
+              }
+          });
+      }
+ });
 
 function excluirHistorico(id) {
     console.log('excluirHistorico called with id:', id);

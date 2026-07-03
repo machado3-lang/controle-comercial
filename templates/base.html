@@ -69,6 +69,16 @@
                 <a class="flex items-center px-1.5 py-2 text-cyan-400 hover:bg-white/5 rounded-md transition border-r border-white/10 text-sm" href="/assinaturas">
                     <i data-lucide="calendar-check" class="w-4 h-4 me-1"></i> Assinaturas
                 </a>
+                <div class="relative" id="nfe-dropdown">
+                    <button type="button" class="flex items-center px-1.5 py-2 text-emerald-400 hover:bg-white/5 rounded-md transition text-sm" onclick="toggleNfeDropdown()">
+                        <i data-lucide="file-text" class="w-4 h-4 me-1"></i> NFe
+                    </button>
+                    <div id="nfe-menu" class="absolute left-0 mt-2 w-48 bg-slate-900/90 backdrop-blur-md border border-white/10 rounded-xl shadow-lg opacity-0 invisible transition-all duration-200 z-[9999]">
+                        <a href="/nfe" class="block px-4 py-2 text-emerald-400 hover:bg-white/5 rounded-md transition"><i data-lucide="list" class="w-4 h-4 inline me-1"></i> Lista NFe</a>
+                        <a href="/nfe/emitir/avulsa" class="block px-4 py-2 text-cyan-400 hover:bg-white/5 rounded-md transition"><i data-lucide="plus-circle" class="w-4 h-4 inline me-1"></i> NFe Avulsa</a>
+                        <a href="/nfe/cfop" class="block px-4 py-2 text-emerald-400 hover:bg-white/5 rounded-md transition"><i data-lucide="book-open" class="w-4 h-4 inline me-1"></i> CFOPs</a>
+                    </div>
+                </div>
                 <a class="flex items-center px-1.5 py-2 text-cyan-400 hover:bg-white/5 rounded-md transition border-r border-white/10 text-sm" href="/ordens-servico">
                     <i data-lucide="wrench" class="w-4 h-4 me-1"></i> OS
                 </a>
@@ -100,6 +110,9 @@
             <a class="block py-2 text-amber-400 ps-4" href="/sicoob/boletos">Boletos Sicoob</a>
             <a class="block py-2 text-cyan-400" href="/pedidos">Pedidos</a>
             <a class="block py-2 text-cyan-400" href="/assinaturas">Assinaturas</a>
+            <a class="block py-2 text-emerald-400" href="/nfe">NFe</a>
+            <a class="block py-2 text-cyan-400 ps-4" href="/nfe/emitir/avulsa">NFe Avulsa</a>
+            <a class="block py-2 text-emerald-400 ps-4" href="/nfe/cfop">CFOPs</a>
             <a class="block py-2 text-cyan-400" href="/ordens-servico">OS</a>
             <a class="block py-2 text-cyan-400" href="/auth/usuarios">Usuarios</a>
             <a class="block py-2 text-cyan-400" href="/configuracoes">Configurações</a>
@@ -115,8 +128,16 @@
     <div class="w-full px-4 md:px-8 max-w-none container-fluid py-4">
         {% if messages %}
             {% for msg in messages %}
-                <div class="bg-red-950/30 border border-red-800/50 text-red-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
-                    {{ msg.texto }}
+                {% set msg_text = msg.texto if msg.texto is defined else msg.text %}
+                {% set msg_type = msg.tipo if msg.tipo is defined else msg.type %}
+                {% if msg_type == 'success' %}
+                    <div class="bg-emerald-950/30 border border-emerald-800/50 text-emerald-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
+                {% elif msg_type == 'danger' or msg_type == 'error' %}
+                    <div class="bg-red-950/30 border border-red-800/50 text-red-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
+                {% else %}
+                    <div class="bg-cyan-950/30 border border-cyan-800/50 text-cyan-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
+                {% endif %}
+                    {{ msg_text }}
                     <button type="button" class="text-slate-400 hover:text-slate-200" onclick="this.parentElement.remove()"><i data-lucide="x" class="w-4 h-4"></i></button>
                 </div>
             {% endfor %}
@@ -177,6 +198,13 @@
         menu.classList.toggle('opacity-100');
         menu.classList.toggle('visible');
     }
+    function toggleNfeDropdown() {
+        const menu = document.getElementById('nfe-menu');
+        menu.classList.toggle('opacity-0');
+        menu.classList.toggle('invisible');
+        menu.classList.toggle('opacity-100');
+        menu.classList.toggle('visible');
+    }
     document.addEventListener('click', function(e) {
         const contasDropdown = document.getElementById('contas-dropdown');
         if (contasDropdown && !contasDropdown.contains(e.target)) {
@@ -187,6 +215,11 @@
         if (itensDropdown && !itensDropdown.contains(e.target)) {
             document.getElementById('itens-menu').classList.add('opacity-0', 'invisible');
             document.getElementById('itens-menu').classList.remove('opacity-100', 'visible');
+        }
+        const nfeDropdown = document.getElementById('nfe-dropdown');
+        if (nfeDropdown && !nfeDropdown.contains(e.target)) {
+            document.getElementById('nfe-menu').classList.add('opacity-0', 'invisible');
+            document.getElementById('nfe-menu').classList.remove('opacity-100', 'visible');
         }
     });
     </script>

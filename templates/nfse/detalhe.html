@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block title %}NFSe {{ nfse.numero }}{% endblock %}
+{% block content %}
+<div class="max-w-4xl mx-auto">
+    <div class="flex justify-between items-center mb-4">
+        <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="file-text" class="w-6 h-6 inline me-2"></i> NFSe {{ nfse.numero or 'Pendente' }}</h4>
+        <a href="/nfse" class="px-3 py-2 text-sm border border-slate-700 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition">Voltar</a>
+    </div>
+    
+    <div class="glass-card p-6">
+        <div class="grid grid-cols-2 gap-4 mb-4">
+            <div><strong class="text-cyan-300">Cliente:</strong> {{ nfse.pedido.cliente.nome if nfse.pedido and nfse.pedido.cliente else '-' }}</div>
+            <div><strong class="text-emerald-300">Valor Total:</strong> R$ {{ "%.2f"|format(nfse.valor_total) }}</div>
+            <div><strong class="text-amber-300">Data Emissão:</strong> {{ nfse.data_emissao.strftime('%d/%m/%Y') if nfse.data_emissao else '-' }}</div>
+            <div><strong class="text-rose-300">Status:</strong> <span class="px-2 py-1 bg-{{ 'emerald' if nfse.status=='emitida' else 'amber' if nfse.status=='pendente' else 'rose' }}-950/30 rounded">{{ nfse.status }}</span></div>
+        </div>
+        
+        {% if nfse.xml_path %}
+        <a href="{{ nfse.xml_path }}" target="_blank" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl transition me-2"><i data-lucide="download" class="w-4 h-4 inline me-1"></i> XML</a>
+        {% endif %}
+        {% if nfse.pdf_path %}
+        <a href="{{ nfse.pdf_path }}" target="_blank" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition"><i data-lucide="file-text" class="w-4 h-4 inline me-1"></i> PDF</a>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

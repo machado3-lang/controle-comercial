@@ -14,25 +14,20 @@ UPLOAD_DIR = "static/uploads"
 
 
 @router.get("/")
-def configuracoes(request: Request, db: Session = Depends(get_db)):
+def configuracoes(request: Request, db: Session = Depends(get_db), aba: str = "empresa"):
     from sqlalchemy import func
     empresa = db.query(Empresa).first()
     messages = []
     msg = request.session.pop("message", None)
     if msg:
         messages.append(msg)
-    bling_pending = db.query(func.count(Cliente.id)).filter(Cliente.bling_pending_sync == True).scalar() or 0
-    bling_pending += db.query(func.count(Fornecedor.id)).filter(Fornecedor.bling_pending_sync == True).scalar() or 0
-    bling_pending += db.query(func.count(Assinatura.id)).filter(Assinatura.bling_pending_sync == True).scalar() or 0
-    bling_pending += db.query(func.count(OrdemServico.id)).filter(OrdemServico.bling_pending_sync == True).scalar() or 0
-    sincronizados = None if bling_pending == 0 else f"{bling_pending} pendentes"
     return request.app.state.templates.TemplateResponse(
         "configuracoes/form.html",
         {
             "request": request,
             "empresa": empresa,
             "messages": messages,
-            "sincronizados": sincronizados,
+            "aba": aba,
         },
     )
 
@@ -41,6 +36,7 @@ def configuracoes(request: Request, db: Session = Depends(get_db)):
 async def salvar_configuracoes(
     request: Request,
     db: Session = Depends(get_db),
+    aba: str = Form("empresa"),
     razao_social: str = Form(""),
     nome_fantasia: str = Form(""),
     cnpj: str = Form(""),
@@ -51,6 +47,7 @@ async def salvar_configuracoes(
     cidade: str = Form(""),
     estado: str = Form(""),
     cep: str = Form(""),
+    codigo_ibge: str = Form(""),
     telefone: str = Form(""),
     celular: str = Form(""),
     email: str = Form(""),
@@ -62,6 +59,7 @@ async def salvar_configuracoes(
     bling_client_id: str = Form(""),
     bling_client_secret: str = Form(""),
     bling_api_key_v2: str = Form(""),
+    bling_desabilitado: str = Form(""),
     sicoob_client_id: str = Form(""),
     sicoob_beneficiario: str = Form(""),
     sicoob_conta_corrente: str = Form(""),
@@ -70,6 +68,10 @@ async def salvar_configuracoes(
     sicoob_cert_file: UploadFile = File(None),
     sicoob_key_file: UploadFile = File(None),
     logo: UploadFile = File(None),
+    notaas_api_key: str = Form(""),
+    notaas_ambiente: str = Form("2"),
+    serie_nfe: int = Form(1),
+    ultimo_numero_nfe: int = Form(0),
 ):
     empresa = db.query(Empresa).first()
     if empresa:
@@ -83,6 +85,7 @@ async def salvar_configuracoes(
         empresa.cidade = cidade
         empresa.estado = estado
         empresa.cep = cep
+        empresa.codigo_ibge = codigo_ibge or None
         empresa.telefone = telefone
         empresa.celular = celular
         empresa.email = email
@@ -94,16 +97,22 @@ async def salvar_configuracoes(
         empresa.bling_client_id = bling_client_id
         empresa.bling_client_secret = bling_client_secret
         empresa.bling_api_key_v2 = bling_api_key_v2
+        empresa.bling_desabilitado = (bling_desabilitado == "1")
         empresa.sicoob_client_id = sicoob_client_id
         empresa.sicoob_beneficiario = sicoob_beneficiario
         empresa.sicoob_conta_corrente = sicoob_conta_corrente
-
+        if notaas_api_key:
+            empresa.notaas_api_key = notaas_api_key
+        empresa.notaas_ambiente = notaas_ambiente
+        empresa.serie_nfe = serie_nfe
+        empresa.ultimo_numero_nfe = ultimo_numero_nfe
     else:
         empresa = Empresa(
             razao_social=razao_social, nome_fantasia=nome_fantasia,
             cnpj=cnpj, inscricao_estadual=inscricao_estadual,
             inscricao_municipal=inscricao_municipal, endereco=endereco,
             bairro=bairro, cidade=cidade, estado=estado, cep=cep,
+            codigo_ibge=codigo_ibge or None,
             telefone=telefone, celular=celular, email=email, site=site,
             senha_admin=senha_admin if senha_admin else None,
             senha_lembrete=senha_lembrete,
@@ -111,11 +120,16 @@ async def salvar_configuracoes(
             bling_client_id=bling_client_id,
             bling_client_secret=bling_client_secret,
             bling_api_key_v2=bling_api_key_v2,
+            bling_desabilitado=(bling_desabilitado == "1"),
             sicoob_client_id=sicoob_client_id,
             sicoob_beneficiario=sicoob_beneficiario,
             sicoob_conta_corrente=sicoob_conta_corrente,
             sicoob_cert_path=sicoob_cert_path,
             sicoob_cert_password=sicoob_cert_password,
+            notaas_api_key=notaas_api_key or None,
+            notaas_ambiente=notaas_ambiente,
+            serie_nfe=serie_nfe,
+            ultimo_numero_nfe=ultimo_numero_nfe,
         )
         db.add(empresa)
 
@@ -154,4 +168,4 @@ async def salvar_configuracoes(
     empresa.updated_at = datetime.now()
     db.commit()
     request.session["message"] = {"tipo": "success", "texto": "Dados salvos com sucesso!"}
-    return RedirectResponse(url="/configuracoes", status_code=303)
+    return RedirectResponse(url=f"/configuracoes?aba={aba}", status_code=303)

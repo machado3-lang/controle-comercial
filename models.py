@@ -75,6 +75,8 @@ class Cliente(Base):
     fantasia = Column(String(200), nullable=True)
     inscricao_estadual = Column(String(20), nullable=True)
     inscricao_municipal = Column(String(20), nullable=True)
+    isento_ie = Column(Boolean, default=False)
+    codigo_ibge = Column(String(7), nullable=True)
     situacao = Column(String(1), default="A")
     observacao = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -182,11 +184,13 @@ class Assinatura(Base):
     valor_revenda = Column(Float, nullable=True)
     numero_contrato = Column(String(50), nullable=True)
     observacao = Column(Text, nullable=True)
+    produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     cliente = relationship("Cliente", back_populates="assinaturas")
     fornecedor = relationship("Fornecedor", back_populates="assinaturas")
+    produto = relationship("Produto")
     historico = relationship("AssinaturaHistorico", back_populates="assinatura", cascade="all, delete-orphan",
                              order_by="AssinaturaHistorico.data_alteracao.desc()")
 
@@ -295,6 +299,8 @@ class Produto(Base):
     variacoes = relationship("ProdutoVariacao", back_populates="produto", cascade="all, delete-orphan")
     composicoes = relationship("ProdutoComposicao", foreign_keys="[ProdutoComposicao.produto_pai_id]", back_populates="produto_pai", cascade="all, delete-orphan")
     tipo = Column(String(20), default="produto")  # "produto", "servico" ou "kit"
+    codigo_lc116 = Column(String(10), nullable=True)
+    codigo_tributacao_municipal = Column(String(10), nullable=True)
 
     @property
     def preco_padrao(self):
@@ -371,6 +377,7 @@ class PedidoVenda(Base):
 
     cliente = relationship("Cliente")
     itens = relationship("PedidoVendaItem", back_populates="pedido", cascade="all, delete-orphan")
+    nfse = relationship("NFSe", back_populates="pedido", uselist=False)
     pedido_agrupado = relationship("PedidoVenda", remote_side=[id])
 
 
@@ -411,6 +418,7 @@ class Empresa(Base):
     cidade = Column(String(100), nullable=True)
     estado = Column(String(2), nullable=True)
     cep = Column(String(10), nullable=True)
+    codigo_ibge = Column(String(7), nullable=True)
     telefone = Column(String(20), nullable=True)
     celular = Column(String(20), nullable=True)
     email = Column(String(200), nullable=True)
@@ -425,6 +433,7 @@ class Empresa(Base):
     bling_token_expires_at = Column(DateTime, nullable=True)
     bling_webhook_secret = Column(String(100), nullable=True)
     bling_api_key_v2 = Column(String(100), nullable=True)
+    bling_desabilitado = Column(Boolean, default=False)
     sicoob_client_id = Column(String(200), nullable=True)
     sicoob_token = Column(String(3000), nullable=True)
     sicoob_conta_corrente = Column(String(30), nullable=True)
@@ -435,5 +444,21 @@ class Empresa(Base):
     sicoob_cert_base64 = Column(Text, nullable=True)  # Certificado armazenado como base64
     sicoob_cert_key_base64 = Column(Text, nullable=True)  # Chave armazenada como base64
     observacao = Column(Text, nullable=True)
+    categoria_servico_padrao_id = Column(Integer, ForeignKey("categorias_produto.id"), nullable=True)
+    notaas_api_key = Column(Text, nullable=True)
+    notaas_ambiente = Column(String(1), nullable=False, default="2")
+    serie_nfe = Column(Integer, nullable=False, default=1)
+    ultimo_numero_nfe = Column(Integer, nullable=False, default=0)
+    cfop_padrao = Column(String(4), nullable=False, default="5102")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+
+    categoria_servico_padrao = relationship("CategoriaProduto")
+
+
+class CfopNatureza(Base):
+    __tablename__ = "cfop_natureza"
+    id = Column(Integer, primary_key=True)
+    cfop = Column(String(4), nullable=False, index=True)
+    natureza = Column(String(200), nullable=False)
+    created_at = Column(DateTime, default=datetime.now)
