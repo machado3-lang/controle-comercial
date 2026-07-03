@@ -2,7 +2,6 @@
 NFSe Service - Emissão Nota Fiscal de Serviço (DPS Nacional)
 Padrão Nacional + Betha Fly Notas para Dourados-MS
 """
-from lxml import etree
 from typing import Dict, Optional, Any
 import os
 
@@ -86,6 +85,7 @@ def validar_xml_against_xsd(xml_string: str, xsd_path: str) -> bool:
     Returns:
         True se válido, lança exceção se inválido
     """
+    from lxml import etree
     # Carrega XSD
     if not os.path.exists(xsd_path):
         raise FileNotFoundError(f"XSD não encontrado: {xsd_path}")
@@ -111,6 +111,7 @@ def gerar_xml_dps(dps: Dict, assinatura: Optional[str] = None) -> str:
         dps: estrutura montada por montar_dps()
         assinatura: XML Signature (opcional, adicionado após assinatura)
     """
+    from lxml import etree
     root = etree.Element('DPS', nsmap=NSMAP)
     
     # infDPS - Informações da DPS

@@ -12,12 +12,8 @@ IMPORTANTE:
 import os
 import logging
 from typing import Optional
-from lxml import etree
-from cryptography.hazmat.primitives.serialization import pkcs12
-from signxml import XMLSigner, methods
 from requests import Session
 from requests.auth import HTTPBasicAuth
-import warnings
 from datetime import datetime
 
 logging.basicConfig(level=logging.INFO)
@@ -39,19 +35,20 @@ class BethaNfseService:
             raise NFSeBethaError("Credenciais Betha não configuradas no .env")
 
     def _get_pem_combined(self) -> str:
-        from cryptography.hazmat.primitives import serialization
+        import os
+        from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
+        import tempfile
         with open(self.cert_path, 'rb') as f:
             pfx_data = f.read()
         private_key, cert, _ = pkcs12.load_key_and_certificates(
             pfx_data, 
             password=self.cert_password.encode() if self.cert_password else None
         )
-        import tempfile
         combined = private_key.private_bytes(
-            encoding=serialization.Encoding.PEM,
-            format=serialization.PrivateFormat.TraditionalOpenSSL,
-            encryption_algorithm=serialization.NoEncryption()
-        ) + cert.public_bytes(serialization.Encoding.PEM)
+            encoding=Encoding.PEM,
+            format=PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=NoEncryption()
+        ) + cert.public_bytes(Encoding.PEM)
         tmp_path = os.path.join(tempfile.gettempdir(), 'cert_combined.pem')
         with open(tmp_path, 'wb') as f:
             f.write(combined)
@@ -72,6 +69,7 @@ class BethaNfseService:
         return f'DPS{cmun}{p1}{p2}'
 
     def enviar_dps(self, dps_xml: str, tpAmb: int = 1) -> dict:
+        from lxml import etree
         try:
             logger.info(f"Enviando DPS para Betha (tpAmb={tpAmb})...")
             session = self._get_session()
@@ -115,6 +113,7 @@ class BethaNfseService:
             raise NFSeBethaError(f"Erro SOAP: {e}")
 
     def consultar_status(self, protocolo: str, tpAmb: int = 1) -> dict:
+        from lxml import etree
         """Consulta status da DPS enviada"""
         try:
             logger.info(f"Consultando status da DPS {protocolo}...")

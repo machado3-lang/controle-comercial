@@ -2,8 +2,6 @@
 NFSe PDF Generator - Gera espelho da NFS-e a partir do XML autorizado
 Extrai dados e gera PDF com WeasyPrint
 """
-from lxml import etree
-from weasyprint import HTML
 import os
 from datetime import datetime
 
@@ -103,6 +101,7 @@ NFSe_TEMPLATE = """<!DOCTYPE html>
 
 
 def extract_nfse_data(xml_string: str) -> dict:
+    from lxml import etree
     """
     Extrai dados essenciais do XML de NFS-e autorizada
     Tags conforme padrão Nacional/Betha
