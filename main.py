@@ -69,6 +69,11 @@ def run_migrations():
         "ALTER TABLE nfse ADD COLUMN IF NOT EXISTS protocolo VARCHAR(50)",
         "ALTER TABLE nfse ALTER COLUMN numero TYPE VARCHAR(50)",
         "ALTER TABLE nfse ALTER COLUMN codigo_verificacao TYPE VARCHAR(100)",
+        "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS codigo_lc116 VARCHAR(10)",
+        "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS codigo_tributacao_municipal VARCHAR(10)",
+        "ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS isento_ie BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS indicador_ie VARCHAR(20) DEFAULT 'contribuidor'",
+        "ALTER TABLE fornecedores ADD COLUMN IF NOT EXISTS codigo_ibge VARCHAR(7)",
     ]
     # SQLite não suporta IF NOT EXISTS em ADD COLUMN, usar PRAGMA para verificar
     if "sqlite" in str(engine.url):
@@ -295,6 +300,11 @@ def run_migrations():
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produto_variacoes' AND column_name='updated_at') THEN ALTER TABLE produto_variacoes ADD COLUMN updated_at TIMESTAMP DEFAULT NOW(); END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produto_variacoes' AND column_name='estoque_atual') THEN ALTER TABLE produto_variacoes ADD COLUMN estoque_atual REAL DEFAULT 0; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produto_variacoes' AND column_name='estoque_minimo') THEN ALTER TABLE produto_variacoes ADD COLUMN estoque_minimo REAL DEFAULT 0; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produtos' AND column_name='codigo_lc116') THEN ALTER TABLE produtos ADD COLUMN codigo_lc116 VARCHAR(10); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produtos' AND column_name='codigo_tributacao_municipal') THEN ALTER TABLE produtos ADD COLUMN codigo_tributacao_municipal VARCHAR(10); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fornecedores' AND column_name='isento_ie') THEN ALTER TABLE fornecedores ADD COLUMN isento_ie BOOLEAN DEFAULT FALSE; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fornecedores' AND column_name='indicador_ie') THEN ALTER TABLE fornecedores ADD COLUMN indicador_ie VARCHAR(20) DEFAULT 'contribuidor'; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='fornecedores' AND column_name='codigo_ibge') THEN ALTER TABLE fornecedores ADD COLUMN codigo_ibge VARCHAR(7); END IF;
                     END $$;
                 """))
                 # CREATE TABLE IF NOT EXISTS for marcas_produto
