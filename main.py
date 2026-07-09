@@ -220,6 +220,23 @@ def run_migrations():
         if "origem" not in existing_prod:
             conn.execute(text("ALTER TABLE produtos ADD COLUMN origem INTEGER DEFAULT 0"))
             conn.commit()
+        if "codigo_lc116" not in existing_prod:
+            conn.execute(text("ALTER TABLE produtos ADD COLUMN codigo_lc116 VARCHAR(10)"))
+            conn.commit()
+        if "codigo_tributacao_municipal" not in existing_prod:
+            conn.execute(text("ALTER TABLE produtos ADD COLUMN codigo_tributacao_municipal VARCHAR(10)"))
+            conn.commit()
+        cols_forn = inspector.get_columns("fornecedores")
+        existing_forn = {c['name'] for c in cols_forn}
+        if "isento_ie" not in existing_forn:
+            conn.execute(text("ALTER TABLE fornecedores ADD COLUMN isento_ie BOOLEAN DEFAULT 0"))
+            conn.commit()
+        if "indicador_ie" not in existing_forn:
+            conn.execute(text("ALTER TABLE fornecedores ADD COLUMN indicador_ie VARCHAR(20) DEFAULT 'contribuidor'"))
+            conn.commit()
+        if "codigo_ibge" not in existing_forn:
+            conn.execute(text("ALTER TABLE fornecedores ADD COLUMN codigo_ibge VARCHAR(7)"))
+            conn.commit()
         cols_nfse = inspector.get_columns("nfse")
         existing_nfse = {c['name'] for c in cols_nfse}
         if "natureza_operacao" not in existing_nfse:
@@ -233,6 +250,18 @@ def run_migrations():
             conn.commit()
         if "municipio_nome" not in existing_nfse:
             conn.execute(text("ALTER TABLE nfse ADD COLUMN municipio_nome VARCHAR(100)"))
+            conn.commit()
+        if "cliente_id" not in existing_nfse:
+            conn.execute(text("ALTER TABLE nfse ADD COLUMN cliente_id INTEGER REFERENCES clientes(id)"))
+            conn.commit()
+        if "protocolo" not in existing_nfse:
+            conn.execute(text("ALTER TABLE nfse ADD COLUMN protocolo VARCHAR(50)"))
+            conn.commit()
+        if "iss_retido" not in existing_nfse:
+            conn.execute(text("ALTER TABLE nfse ADD COLUMN iss_retido BOOLEAN DEFAULT 0"))
+            conn.commit()
+        if "aliquota_iss" not in existing_nfse:
+            conn.execute(text("ALTER TABLE nfse ADD COLUMN aliquota_iss FLOAT DEFAULT 2.0"))
             conn.commit()
         cols_nfse_itens = inspector.get_columns("nfse_itens")
         existing_nfse_itens = {c['name'] for c in cols_nfse_itens}
@@ -293,6 +322,10 @@ def run_migrations():
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='regime_especial') THEN ALTER TABLE nfse ADD COLUMN regime_especial VARCHAR(100); END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='municipio_codigo') THEN ALTER TABLE nfse ADD COLUMN municipio_codigo VARCHAR(10); END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='municipio_nome') THEN ALTER TABLE nfse ADD COLUMN municipio_nome VARCHAR(100); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='cliente_id') THEN ALTER TABLE nfse ADD COLUMN cliente_id INTEGER REFERENCES clientes(id); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='protocolo') THEN ALTER TABLE nfse ADD COLUMN protocolo VARCHAR(50); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='iss_retido') THEN ALTER TABLE nfse ADD COLUMN iss_retido BOOLEAN DEFAULT FALSE; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='aliquota_iss') THEN ALTER TABLE nfse ADD COLUMN aliquota_iss FLOAT DEFAULT 2.0; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produtos' AND column_name='origem') THEN ALTER TABLE produtos ADD COLUMN origem INTEGER DEFAULT 0; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clientes' AND column_name='indicador_ie') THEN ALTER TABLE clientes ADD COLUMN indicador_ie VARCHAR(20) DEFAULT 'contribuidor'; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clientes' AND column_name='iss_retido') THEN ALTER TABLE clientes ADD COLUMN iss_retido BOOLEAN DEFAULT FALSE; END IF;
