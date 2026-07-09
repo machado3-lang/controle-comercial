@@ -51,7 +51,7 @@
                         <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="codigo_lc116" value="{{ produto.codigo_lc116 or '' }}" placeholder="Ex: 14.02">
                     </div>
                     <div class="col-span-12 md:col-span-4 campos-servico" style="display: none;">
-                        <label class="block text-xs font-medium text-emerald-400 mb-1">Tributação Municipal *</label>
+                        <label class="block text-xs font-medium text-emerald-400 mb-1">Tributação Municipal</label>
                         <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="codigo_tributacao_municipal" value="{{ produto.codigo_tributacao_municipal or '' }}" placeholder="Ex: 01.01">
                     </div>
                     <div class="col-span-12 md:col-span-8 relative"><label class="block text-xs font-medium text-cyan-400 mb-1">Fornecedor</label>
@@ -64,7 +64,18 @@
                     </div>
                      
                     <div class="col-span-12 md:col-span-2 campos-fisicos"><label class="block text-xs font-medium text-cyan-400 mb-1">NCM</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="ncm" value="{{ produto.ncm or '' }}"></div>
-                    <div class="col-span-12 md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Unidade</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="unidade" value="{{ produto.unidade or 'UN' }}"></div>
+                    <div class="col-span-12 md:col-span-1"><label class="block text-xs font-medium text-cyan-400 mb-1">Unidade</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="unidade" value="{{ produto.unidade or 'UN' }}"></div>
+                    <div class="col-span-12 md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Origem</label><select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 text-xs" name="origem">
+<option value="0" {% if produto and produto.origem == 0 %}selected{% endif %}>0 - Nacional</option>
+<option value="1" {% if produto and produto.origem == 1 %}selected{% endif %}>1 - Estrangeira (Importação direta)</option>
+<option value="2" {% if produto and produto.origem == 2 %}selected{% endif %}>2 - Estrangeira (Adquirida mercado interno)</option>
+<option value="3" {% if produto and produto.origem == 3 %}selected{% endif %}>3 - Nacional (conteúdo import. &gt;40% e ≤70%)</option>
+<option value="4" {% if produto and produto.origem == 4 %}selected{% endif %}>4 - Nacional (produção conforme PPB)</option>
+<option value="5" {% if produto and produto.origem == 5 %}selected{% endif %}>5 - Nacional (conteúdo import. ≤40%)</option>
+<option value="6" {% if produto and produto.origem == 6 %}selected{% endif %}>6 - Estrangeira (import. direta, s/ similar)</option>
+<option value="7" {% if produto and produto.origem == 7 %}selected{% endif %}>7 - Estrangeira (adq. mercado interno, s/ similar)</option>
+<option value="8" {% if produto and produto.origem == 8 %}selected{% endif %}>8 - Nacional (conteúdo import. &gt;70%)</option>
+</select></div>
                     
 <div class="col-span-3 campos-preco"><label class="block text-xs font-medium text-rose-400 mb-1">Preço Custo</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-rose-500/50" name="preco_custo" id="precoCusto" value="{{ produto.preco_custo or '' }}"></div>
                      <div class="col-span-3 campos-preco"><label class="block text-xs font-medium text-cyan-400 mb-1">Margem %</label><input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="margem" id="margemInput" value=""></div>
@@ -235,7 +246,8 @@ function toggleSections() {
     document.querySelectorAll('.campos-servico').forEach(function(c) {
         c.style.display = tipo === 'servico' ? 'block' : 'none';
         var input = c.querySelector('input');
-        if (input) input.required = tipo === 'servico';
+        if (input && input.name === 'codigo_lc116') input.required = tipo === 'servico';
+        else if (input) input.required = false;
     });
 }
 

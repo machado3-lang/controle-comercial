@@ -5,6 +5,9 @@ import enum
 
 from database import Base, engine
 
+# Import NFSe from models_nfe for PedidoVenda.nfse relationship
+from models_nfe import NFSe, NFe  # noqa: F401
+
 
 def get_safe_day(date_obj, target_day: int) -> date:
     year = date_obj.year
@@ -76,8 +79,10 @@ class Cliente(Base):
     inscricao_estadual = Column(String(20), nullable=True)
     inscricao_municipal = Column(String(20), nullable=True)
     isento_ie = Column(Boolean, default=False)
+    indicador_ie = Column(String(20), default="contribuidor")  # contribuidor, isento, nao_contribuinte
     codigo_ibge = Column(String(7), nullable=True)
     situacao = Column(String(1), default="A")
+    iss_retido = Column(Boolean, default=False)
     observacao = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
@@ -110,6 +115,9 @@ class Fornecedor(Base):
     fantasia = Column(String(200), nullable=True)
     inscricao_estadual = Column(String(20), nullable=True)
     inscricao_municipal = Column(String(20), nullable=True)
+    isento_ie = Column(Boolean, default=False)
+    indicador_ie = Column(String(20), default="contribuidor")
+    codigo_ibge = Column(String(7), nullable=True)
     situacao = Column(String(1), default="A")
     observacao = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
@@ -272,6 +280,7 @@ class Produto(Base):
     preco = Column(Float, nullable=False, default=0)
     preco_custo = Column(Float, nullable=True)
     ncm = Column(String(10), nullable=True)
+    origem = Column(Integer, default=0)  # 0=nacional, 1=importado
     unidade = Column(String(10), nullable=True, default="UN")
     categoria_id = Column(Integer, ForeignKey("categorias_produto.id"), nullable=True)
     foto = Column(String(500), nullable=True)
@@ -378,6 +387,7 @@ class PedidoVenda(Base):
     cliente = relationship("Cliente")
     itens = relationship("PedidoVendaItem", back_populates="pedido", cascade="all, delete-orphan")
     nfse = relationship("NFSe", back_populates="pedido", uselist=False)
+    nfes = relationship("NFe", back_populates="pedido")
     pedido_agrupado = relationship("PedidoVenda", remote_side=[id])
 
 
@@ -446,9 +456,11 @@ class Empresa(Base):
     observacao = Column(Text, nullable=True)
     categoria_servico_padrao_id = Column(Integer, ForeignKey("categorias_produto.id"), nullable=True)
     notaas_api_key = Column(Text, nullable=True)
+    aliquota_iss = Column(Float, nullable=False, default=2.0)
     notaas_ambiente = Column(String(1), nullable=False, default="2")
     serie_nfe = Column(Integer, nullable=False, default=1)
     ultimo_numero_nfe = Column(Integer, nullable=False, default=0)
+    ultimo_numero_nfse = Column(Integer, nullable=False, default=0)
     cfop_padrao = Column(String(4), nullable=False, default="5102")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

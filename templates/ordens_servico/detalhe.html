@@ -6,7 +6,13 @@
         <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="wrench" class="w-6 h-6 inline me-2"></i> Ordem de Serviço #{{ ordem.id }}</h4>
         <div class="flex flex-wrap gap-2">
             <button type="button" id="btnPreviewOS" class="flex items-center px-3 py-2 text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition"><i data-lucide="printer" class="w-4 h-4 me-1"></i> Emitir / Finalizar</button>
-            <button class="flex items-center px-3 py-2 text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition" data-bs-toggle="modal" data-bs-target="#modalEditar"><i data-lucide="pencil" class="w-4 h-4 me-1"></i> Editar</button>
+            {% if ordem.valor_pecas and ordem.valor_pecas > 0 %}
+            <a href="/nfe/emitir/os/{{ ordem.id }}" class="flex items-center px-3 py-2 text-sky-400 border border-sky-800/50 rounded-xl hover:bg-sky-950/30 transition"><i data-lucide="file-text" class="w-4 h-4 me-1"></i> Gerar NFe</a>
+            {% endif %}
+            {% if ordem.valor_servico and ordem.valor_servico > 0 %}
+            <a href="/nfse/emitir/os/{{ ordem.id }}" class="flex items-center px-3 py-2 text-indigo-400 border border-indigo-800/50 rounded-xl hover:bg-indigo-950/30 transition"><i data-lucide="file-text" class="w-4 h-4 me-1"></i> Gerar NFSe</a>
+            {% endif %}
+            <a href="/ordens-servico/{{ ordem.id }}/editar" class="flex items-center px-3 py-2 text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition"><i data-lucide="pencil" class="w-4 h-4 me-1"></i> Editar</a>
             <a href="/ordens-servico" class="flex items-center px-3 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar</a>
         </div>
     </div>
@@ -40,8 +46,31 @@
     </div>
     <div class="p-4">
         <div id="defeito-tab" class="tab-content"><p class="text-slate-300">{{ ordem.defeito_relatado or 'Não informado' }}</p></div>
-        <div id="servicos-tab" class="tab-content hidden"><p class="text-slate-300">{{ ordem.servicos_executados or '-' }}</p></div>
-        <div id="pecas-tab" class="tab-content hidden"><p class="text-slate-300">{{ ordem.pecas_utilizadas or '-' }}</p></div>
+        <div id="servicos-tab" class="tab-content hidden">
+            {% set serv_items = ordem.servicos_executados|tojson if ordem.servicos_executados else '[]' %}
+            {% set serv_texto = ordem.servicos_executados or '' %}
+            {% if serv_texto and serv_texto[0] == '[' %}
+            <table class="w-full text-sm"><thead><tr class="text-indigo-400 border-b border-slate-800/60"><th class="px-2 py-1 text-left">Serviço</th><th class="px-2 py-1 text-right w-16">Qtd</th><th class="px-2 py-1 text-right w-24">Valor</th><th class="px-2 py-1 text-right w-24">Total</th></tr></thead><tbody>
+                {% for s in serv_texto|fromjson %}
+                <tr class="border-b border-slate-800/30"><td class="px-2 py-1 text-slate-100">{{ s.nome }}</td><td class="px-2 py-1 text-right text-slate-300">{{ s.qtd }}</td><td class="px-2 py-1 text-right text-emerald-400">R$ {{ "%.2f"|format(s.preco) }}</td><td class="px-2 py-1 text-right text-emerald-400">R$ {{ "%.2f"|format(s.qtd * s.preco) }}</td></tr>
+                {% endfor %}
+            </tbody></table>
+            {% else %}
+            <p class="text-slate-300">{{ serv_texto or '-' }}</p>
+            {% endif %}
+        </div>
+        <div id="pecas-tab" class="tab-content hidden">
+            {% set pecas_texto = ordem.pecas_utilizadas or '' %}
+            {% if pecas_texto and pecas_texto[0] == '[' %}
+            <table class="w-full text-sm"><thead><tr class="text-amber-400 border-b border-slate-800/60"><th class="px-2 py-1 text-left">Peça</th><th class="px-2 py-1 text-right w-16">Qtd</th><th class="px-2 py-1 text-right w-24">Valor</th><th class="px-2 py-1 text-right w-24">Total</th></tr></thead><tbody>
+                {% for p in pecas_texto|fromjson %}
+                <tr class="border-b border-slate-800/30"><td class="px-2 py-1 text-slate-100">{{ p.nome }}</td><td class="px-2 py-1 text-right text-slate-300">{{ p.qtd }}</td><td class="px-2 py-1 text-right text-amber-400">R$ {{ "%.2f"|format(p.preco) }}</td><td class="px-2 py-1 text-right text-amber-400">R$ {{ "%.2f"|format(p.qtd * p.preco) }}</td></tr>
+                {% endfor %}
+            </tbody></table>
+            {% else %}
+            <p class="text-slate-300">{{ pecas_texto or '-' }}</p>
+            {% endif %}
+        </div>
     </div>
 </div>
 
@@ -56,102 +85,6 @@
 {% if ordem.observacao %}
 <div class="glass-card mb-6"><div class="p-4 text-amber-300">{{ ordem.observacao }}</div></div>
 {% endif %}
-
-<div class="modal fade" id="modalEditar">
-    <div class="modal-dialog w-full max-w-3xl">
-        <form method="post" action="/ordens-servico/{{ ordem.id }}/editar" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
-            <div class="modal-header border-b border-slate-800/50">
-                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">Editar OS #{{ ordem.id }}</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body max-h-96 overflow-y-auto">
-                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Cliente</label>
-                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cliente_id">
-                            {% for c in clientes %}<option value="{{ c.id }}" {% if ordem.cliente_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}
-                        </select>
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Equipamento *</label>
-                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="equipamento" required value="{{ ordem.equipamento }}">
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Status</label>
-                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="status">
-                            <option value="aberta" {% if ordem.status.value == 'aberta' %}selected{% endif %}>Aberta</option>
-                            <option value="em_andamento" {% if ordem.status.value == 'em_andamento' %}selected{% endif %}>Em Andamento</option>
-                            <option value="finalizada" {% if ordem.status.value == 'finalizada' %}selected{% endif %}>Finalizada</option>
-                            <option value="cancelada" {% if ordem.status.value == 'cancelada' %}selected{% endif %}>Cancelada</option>
-                        </select>
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Marca</label>
-                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="marca_id">
-                            <option value="">Selecione...</option>
-                            {% for m in marcas %}
-                            <option value="{{ m.id }}" {% if m.nome == ordem.marca %}selected{% endif %}>{{ m.nome }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Modelo</label>
-                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="modelo" value="{{ ordem.modelo or '' }}">
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Nº Série</label>
-                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_serie" value="{{ ordem.numero_serie or '' }}">
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Técnico</label>
-                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tecnico" value="{{ ordem.tecnico or '' }}">
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Data Entrada</label>
-                        <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_entrada" value="{{ ordem.data_entrada }}">
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Data Saída</label>
-                        <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_saida" value="{{ ordem.data_saida if ordem.data_saida else '' }}">
-                    </div>
-                    <div class="md:col-span-3"><label class="block text-xs font-medium text-cyan-400 mb-1">Defeito Relatado</label>
-                        <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="defeito_relatado" rows="2">{{ ordem.defeito_relatado or '' }}</textarea>
-                    </div>
-                    <div class="md:col-span-3"><label class="block text-xs font-medium text-cyan-400 mb-1">Serviços Executados</label>
-                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="servicos_ids" multiple id="servicosSelect">
-                            {% for s in servicos %}
-                            <option value="{{ s.id }}" data-preco="{{ s.preco }}">{% if s.codigo_lc116 %}{{ s.codigo_lc116 }} - {% endif %}{{ s.nome }}</option>
-                            {% endfor %}
-                        </select>
-                        <textarea class="w-full mt-2 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="servicos_executados_text" rows="3" placeholder="Serviços selecionados aparecerão aqui..." id="servicosText">{{ ordem.servicos_executados or '' }}</textarea>
-                    </div>
-                    <div class="md:col-span-3"><label class="block text-xs font-medium text-cyan-400 mb-1">Peças Utilizadas</label>
-                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="pecas_ids" multiple id="pecasSelect">
-                            {% for p in pecas %}
-                            <option value="{{ p.id }}" data-preco="{{ p.preco }}">{{ p.nome }}</option>
-                            {% endfor %}
-                        </select>
-                        <textarea class="w-full mt-2 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="pecas_utilizadas_text" rows="3" placeholder="Peças selecionadas aparecerão aqui..." id="pecasText">{{ ordem.pecas_utilizadas or '' }}</textarea>
-                    </div>
-                    <div><label class="block text-xs font-medium text-emerald-400 mb-1">Valor Serviço</label>
-                        <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="valor_servico" id="valor_servico" value="{{ ordem.valor_servico }}" oninput="calcularTotal()">
-                    </div>
-                    <div><label class="block text-xs font-medium text-amber-400 mb-1">Valor Peças</label>
-                        <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-amber-500/50" name="valor_pecas" id="valor_pecas" value="{{ ordem.valor_pecas }}" oninput="calcularTotal()">
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Valor Total</label>
-                        <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="valor_total" id="valor_total" value="{{ ordem.valor_total }}">
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Autorizado por</label>
-                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="autorizado_por" value="{{ ordem.autorizado_por or '' }}">
-                    </div>
-                    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Nº Requisição</label>
-                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_requisicao" value="{{ ordem.numero_requisicao or '' }}">
-                    </div>
-                    <div class="md:col-span-3"><label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
-                        <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="2">{{ ordem.observacao or '' }}</textarea>
-                    </div>
-                </div>
-            </div>
-            <div class="modal-footer border-t border-slate-800/50">
-                <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Cancelar</button>
-                <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button>
-            </div>
-        </form>
-    </div>
-</div>
 
 <div class="modal fade" id="modalPreviewOS" tabindex="-1">
     <div class="modal-dialog max-w-3xl">
@@ -198,23 +131,6 @@ const marcasData = {{ marcas_json|tojson }};
 const servicosData = {{ servicos_json|tojson }};
 const pecasData = {{ pecas_json|tojson }};
 
-// Atualiza texto de serviços quando selecionar
-document.getElementById('servicosSelect')?.addEventListener('change', function() {
-    const selected = Array.from(this.selectedOptions).map(o => o.textContent);
-    document.getElementById('servicosText').value = selected.join(', ');
-});
-
-// Atualiza texto de peças quando selecionar
-document.getElementById('pecasSelect')?.addEventListener('change', function() {
-    const selected = Array.from(this.selectedOptions).map(o => o.textContent);
-    document.getElementById('pecasText').value = selected.join(', ');
-});
-
-function calcularTotal() {
-    const servico = parseFloat(document.getElementById('valor_servico').value) || 0;
-    const pecas = parseFloat(document.getElementById('valor_pecas').value) || 0;
-    document.getElementById('valor_total').value = (servico + pecas).toFixed(2);
-}
 document.addEventListener('DOMContentLoaded', function() {
     lucide.createIcons();
     document.querySelectorAll('[data-tab]').forEach(btn => {

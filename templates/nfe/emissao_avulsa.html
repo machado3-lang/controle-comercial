@@ -1,15 +1,33 @@
 {% extends "base.html" %}
 {% block title %}NFe Avulsa{% endblock %}
 {% block content %}
+{% if erro_ie_cliente_id %}
+<div class="mb-4 p-4 bg-rose-950/30 border border-rose-800/50 rounded-xl flex items-start gap-3">
+    <i data-lucide="alert-triangle" class="w-5 h-5 text-rose-400 mt-0.5 shrink-0"></i>
+    <div class="flex-1">
+        <p class="text-rose-300 text-sm font-medium">Cliente sem Inscrição Estadual</p>
+        <p class="text-slate-300 text-xs mt-1">O cliente selecionado não possui Inscrição Estadual e não está marcado como Isento IE.</p>
+        <div class="flex gap-2 mt-3">
+            <a href="/clientes/{{ erro_ie_cliente_id }}/editar" target="_blank" class="inline-flex items-center px-3 py-1.5 bg-rose-600/20 border border-rose-700/50 rounded-lg text-rose-300 text-xs hover:bg-rose-600/30 transition">
+                <i data-lucide="external-link" class="w-3.5 h-3.5 me-1"></i> Editar Cliente
+            </a>
+            <button type="button" onclick="fecharAvisoIE()" class="inline-flex items-center px-3 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-slate-300 text-xs hover:bg-slate-700/50 transition">
+                <i data-lucide="x" class="w-3.5 h-3.5 me-1"></i> Fechar
+            </button>
+        </div>
+        <p class="text-slate-500 text-xs mt-2">Após editar o cliente, feche este aviso e prossiga com a nota.</p>
+    </div>
+</div>
+{% endif %}
 <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
     <div class="lg:col-span-2">
         <div class="glass-card mb-6">
             <div class="p-4 border-b border-slate-800/60 flex items-center justify-between">
-                <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="file-text" class="w-5 h-5 inline me-2"></i> NFe Avulsa</h4>
+                <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="file-text" class="w-5 h-5 inline me-2"></i> {{ 'Editar NFe Avulsa' if editar else 'NFe Avulsa' }}</h4>
                 <a href="/nfe" class="flex items-center px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar</a>
             </div>
             <div class="p-4">
-                <form method="post" id="formNfeAvulsa">
+                <form method="post" id="formNfeAvulsa" action="{{ '/nfe/' ~ editar ~ '/editar' if editar else '/nfe/emitir/avulsa' }}">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <div class="relative">
                             <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>
@@ -27,6 +45,47 @@
                                 <label class="block text-xs font-medium text-cyan-400 mb-1">Natureza da Operação</label>
                                 <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="natureza_operacao" id="inputNatureza" value="Venda de mercadoria" required>
                             </div>
+                        </div>
+                    </div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                        <div class="col-span-1">
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Finalidade</label>
+                            <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="finalidade" id="inputFinalidade">
+                                <option value="normal" {{ 'selected' if saved_finalidade == 'normal' or (nfe and nfe.finalidade == 'normal') }}>NF-e normal</option>
+                                <option value="complementar" {{ 'selected' if saved_finalidade == 'complementar' or (nfe and nfe.finalidade == 'complementar') }}>NF-e complementar</option>
+                                <option value="ajuste" {{ 'selected' if saved_finalidade == 'ajuste' or (nfe and nfe.finalidade == 'ajuste') }}>NF-e de ajuste</option>
+                                <option value="devolucao" {{ 'selected' if saved_finalidade == 'devolucao' or (nfe and nfe.finalidade == 'devolucao') }}>Devolução de Mercadoria</option>
+                                <option value="credito" {{ 'selected' if saved_finalidade == 'credito' or (nfe and nfe.finalidade == 'credito') }}>Nota de Crédito</option>
+                                <option value="debito" {{ 'selected' if saved_finalidade == 'debito' or (nfe and nfe.finalidade == 'debito') }}>Nota de Débito</option>
+                            </select>
+                        </div>
+                        <div class="col-span-1">
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Indicador de Presença</label>
+                            <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="indicador_presenca" id="inputPresenca">
+                                <option value="0" {{ 'selected' if (saved_indicador_presenca == '0') or (nfe and nfe.indicador_presenca == 0) }}>0 - Não se aplica</option>
+                                <option value="1" {{ 'selected' if (saved_indicador_presenca == '1' or saved_indicador_presenca is none) and not (nfe and nfe.indicador_presenca) or (nfe and nfe.indicador_presenca == 1) }}>1 - Operação presencial</option>
+                                <option value="2" {{ 'selected' if saved_indicador_presenca == '2' or (nfe and nfe.indicador_presenca == 2) }}>2 - Não presencial - pela internet</option>
+                                <option value="3" {{ 'selected' if saved_indicador_presenca == '3' or (nfe and nfe.indicador_presenca == 3) }}>3 - Não presencial - teleatendimento</option>
+                                <option value="4" {{ 'selected' if saved_indicador_presenca == '4' or (nfe and nfe.indicador_presenca == 4) }}>4 - NFce com entrega em domicílio</option>
+                                <option value="5" {{ 'selected' if saved_indicador_presenca == '5' or (nfe and nfe.indicador_presenca == 5) }}>5 - Presencial fora do estabelecimento</option>
+                                <option value="9" {{ 'selected' if saved_indicador_presenca == '9' or (nfe and nfe.indicador_presenca == 9) }}>9 - Não presencial, outros</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Data Emissão</label>
+                            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="data_emissao" id="inputDataEmissao" value="{{ saved_data_emissao or '' }}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Hora Emissão</label>
+                            <input type="time" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="hora_emissao" id="inputHoraEmissao" value="{{ saved_hora_emissao or '' }}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Data Saída</label>
+                            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="data_saida" id="inputDataSaida" value="{{ saved_data_saida or '' }}">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Hora Saída</label>
+                            <input type="time" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="hora_saida" id="inputHoraSaida" value="{{ saved_hora_saida or '' }}">
                         </div>
                     </div>
 
@@ -76,12 +135,37 @@
                     <input type="hidden" name="itens_json" id="itensJson">
                     <input type="hidden" name="desconto" id="descontoHidden" value="0">
 
-                    <div class="flex justify-end pt-3">
-                        <button type="submit" id="btnSalvar" class="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10 disabled:opacity-50">
-                            <i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar Rascunho
-                        </button>
+                    <div class="flex items-center justify-between pt-3">
+                        <label class="flex items-center gap-2 text-emerald-300 cursor-pointer">
+                            <input type="checkbox" name="gerar_cobranca" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded">
+                            <span class="text-sm">Gerar Cobrança</span>
+                        </label>
+                        <div class="flex justify-end">
+                            <button type="submit" id="btnSalvar" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10 disabled:opacity-50">
+                                <i data-lucide="save" class="w-4 h-4 me-1"></i> {{ 'Salvar Alterações' if editar else 'Salvar Rascunho' }}
+                            </button>
+                        </div>
                     </div>
                 </form>
+            </div>
+        </div>
+    </div>
+
+    <div id="modalEstoqueNegativo" class="fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="absolute inset-0 bg-black/60 backdrop-blur-sm" onclick="fecharModalEstoque()"></div>
+        <div class="relative bg-slate-900/95 backdrop-blur-md border border-amber-800/50 rounded-2xl shadow-2xl max-w-md w-full mx-4 p-6">
+            <div class="flex items-start gap-3 mb-4">
+                <div class="p-2 bg-amber-950/40 rounded-lg">
+                    <i data-lucide="alert-triangle" class="w-6 h-6 text-amber-400"></i>
+                </div>
+                <div>
+                    <h5 class="text-amber-300 font-semibold text-lg">Estoque Negativo</h5>
+                    <p class="text-slate-300 text-sm mt-1" id="modalEstoqueTexto">Estoque negativo (0). Deseja inserir o item mesmo assim?</p>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 mt-6">
+                <button type="button" onclick="fecharModalEstoque()" class="px-4 py-2 border border-slate-700/60 rounded-xl text-slate-300 hover:bg-slate-800/50 transition text-sm">Não</button>
+                <button type="button" id="btnConfirmarEstoque" class="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all text-sm">Sim, Inserir</button>
             </div>
         </div>
     </div>
@@ -100,12 +184,14 @@
                     <div class="border-t border-slate-700 pt-3">
                         <label class="block text-xs font-medium text-cyan-400 mb-1">Desconto</label>
                         <div class="flex items-center gap-2">
-                            <input type="number" id="descontoPct" class="w-full px-2 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-xs text-slate-200 text-right" placeholder="%" value="0" min="0" max="100" step="0.5">
-                            <span class="text-xs text-slate-500">%</span>
-                        </div>
-                        <div class="flex items-center gap-2 mt-1">
-                            <input type="number" id="descontoValor" class="w-full px-2 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-xs text-slate-200 text-right" placeholder="R$" value="0" min="0" step="0.01">
-                            <span class="text-xs text-slate-500">R$</span>
+                            <div class="flex items-center gap-1 w-1/2">
+                                <input type="number" id="descontoPct" class="w-full px-2 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-xs text-slate-200 text-right" placeholder="%" value="0" min="0" max="100" step="0.5">
+                                <span class="text-xs text-slate-500 w-4">%</span>
+                            </div>
+                            <div class="flex items-center gap-1 w-1/2">
+                                <input type="number" id="descontoValor" class="w-full px-2 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-xs text-slate-200 text-right" placeholder="R$" value="0" min="0" step="0.01">
+                                <span class="text-xs text-slate-500 w-4">R$</span>
+                            </div>
                         </div>
                     </div>
                     <div class="flex justify-between text-rose-400 text-sm">
@@ -162,7 +248,7 @@ function atualizarItensJson() {
     document.getElementById('emptyItens').style.display = itens.length > 0 ? 'none' : '';
 }
 
-function adicionarItem(produto) {
+function adicionarItem(produto, quantidade) {
     const tbody = document.getElementById('itensBody');
     const tr = document.createElement('tr');
     tr.className = 'item-row border-b border-slate-800/30';
@@ -170,6 +256,7 @@ function adicionarItem(produto) {
     const estoque = produto.estoque || 0;
     const warning = estoque <= 0 ? '<span class="text-rose-400 text-xs ms-1">(sem estoque)</span>' : '';
     const preco = produto.preco || 0;
+    const qtd = quantidade || 1;
     tr.innerHTML =
         '<td>' +
             '<input type="hidden" class="item-produto-id" value="' + (produto.id || '') + '">' +
@@ -178,11 +265,11 @@ function adicionarItem(produto) {
         '</td>' +
         '<td><span class="text-sm text-slate-300 item-ncm">' + (produto.ncm || '99999999') + '</span></td>' +
         '<td><span class="text-sm text-slate-300 item-un">' + (produto.unidade || 'UN') + '</span></td>' +
-        '<td><input type="number" step="0.001" class="w-20 px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-slate-100 text-sm item-qtd text-right" value="1" min="0.001" onchange="atualizarTotais()" oninput="atualizarTotais()"></td>' +
+        '<td><input type="number" step="0.001" class="w-20 px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-slate-100 text-sm item-qtd text-right" value="' + qtd + '" min="0.001" onchange="atualizarTotais()" oninput="atualizarTotais()"></td>' +
         '<td class="text-right">' +
             '<input type="number" step="0.01" class="w-24 px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-slate-100 text-sm item-valor text-right" value="' + preco.toFixed(2) + '" min="0" onchange="atualizarTotais()" oninput="atualizarTotais()">' +
         '</td>' +
-        '<td class="text-right text-sm text-emerald-400 font-medium item-total">' + preco.toFixed(2) + '</td>' +
+        '<td class="text-right text-sm text-emerald-400 font-medium item-total">' + (preco * qtd).toFixed(2) + '</td>' +
         '<td class="text-center text-sm ' + (estoque > 0 ? 'text-emerald-400' : 'text-rose-400') + '">' + estoque + '</td>' +
         '<td class="text-center">' +
             '<button type="button" class="remove-item p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Remover"><i data-lucide="trash-2" class="w-4 h-4"></i></button>' +
@@ -223,22 +310,44 @@ document.getElementById('produtoSearch').addEventListener('input', function(e) {
     }
 });
 
+let ultimoItemSelecionado = null;
+
 document.getElementById('produtoDropdown').addEventListener('click', function(e) {
     const item = e.target.closest('[data-id]');
     if (!item) return;
     this.classList.add('hidden');
+    ultimoItemSelecionado = item;
     document.getElementById('produtoSearch').value = item.dataset.nome;
     document.getElementById('produtoSelecionado').value = item.dataset.id;
     document.getElementById('precoDisplay').value = parseFloat(item.dataset.preco).toFixed(2);
     document.getElementById('btnAdicionar').disabled = false;
 
     if (parseInt(item.dataset.estoque) <= 0) {
-        if (!confirm('Estoque negativo (' + item.dataset.estoque + '). Deseja inserir o item mesmo assim?')) {
-            document.getElementById('produtoSearch').value = '';
-            document.getElementById('produtoSelecionado').value = '';
-            document.getElementById('precoDisplay').value = '';
-            document.getElementById('btnAdicionar').disabled = true;
-        }
+        document.getElementById('modalEstoqueTexto').textContent = 'Estoque negativo (' + item.dataset.estoque + '). Deseja inserir o item mesmo assim?';
+        document.getElementById('modalEstoqueNegativo').classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+    }
+});
+
+function fecharModalEstoque() {
+    document.getElementById('modalEstoqueNegativo').classList.add('hidden');
+    if (ultimoItemSelecionado) {
+        document.getElementById('produtoSearch').value = '';
+        document.getElementById('produtoSelecionado').value = '';
+        document.getElementById('precoDisplay').value = '';
+        document.getElementById('btnAdicionar').disabled = true;
+        ultimoItemSelecionado = null;
+    }
+}
+
+document.getElementById('btnConfirmarEstoque').addEventListener('click', function() {
+    document.getElementById('modalEstoqueNegativo').classList.add('hidden');
+    if (ultimoItemSelecionado) {
+        document.getElementById('produtoSearch').value = ultimoItemSelecionado.dataset.nome;
+        document.getElementById('produtoSelecionado').value = ultimoItemSelecionado.dataset.id;
+        document.getElementById('precoDisplay').value = parseFloat(ultimoItemSelecionado.dataset.preco).toFixed(2);
+        document.getElementById('btnAdicionar').disabled = false;
+        ultimoItemSelecionado = null;
     }
 });
 
@@ -247,7 +356,8 @@ document.getElementById('btnAdicionar').addEventListener('click', function() {
     if (!produtoId) return;
     const produto = produtosData.find(p => p.id == produtoId);
     if (!produto) return;
-    adicionarItem(produto);
+    const qtd = parseFloat(document.getElementById('qtdAdd').value) || 1;
+    adicionarItem(produto, qtd);
     document.getElementById('produtoSearch').value = '';
     document.getElementById('produtoSelecionado').value = '';
     document.getElementById('precoDisplay').value = '';
@@ -281,6 +391,12 @@ document.getElementById('descontoPct').addEventListener('input', recalcularDesco
 document.getElementById('descontoValor').addEventListener('input', recalcularDesconto);
 
 document.getElementById('formNfeAvulsa').addEventListener('submit', function(e) {
+    const clienteId = document.getElementById('clienteId').value;
+    if (!clienteId) {
+        e.preventDefault();
+        showToast('Selecione um cliente antes de salvar.', 'danger');
+        return;
+    }
     const itens = [];
     document.querySelectorAll('#itensBody .item-row').forEach(row => {
         const produtoId = row.querySelector('.item-produto-id')?.value || '';
@@ -295,7 +411,7 @@ document.getElementById('formNfeAvulsa').addEventListener('submit', function(e) 
     });
     if (itens.length === 0) {
         e.preventDefault();
-        alert('Adicione pelo menos um item.');
+        showToast('Adicione pelo menos um item.', 'warning');
         return;
     }
     document.getElementById('itensJson').value = JSON.stringify(itens);
@@ -343,8 +459,68 @@ document.addEventListener('click', function(e) {
     });
 });
 
+function fecharAvisoIE() {
+    document.querySelector('[class*="bg-rose-950/30"]')?.remove();
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     lucide.createIcons();
+
+    {% if not saved_data_emissao %}
+    (function() {
+        const now = new Date();
+        const pad = (n) => String(n).padStart(2, '0');
+        const data = now.getFullYear() + '-' + pad(now.getMonth()+1) + '-' + pad(now.getDate());
+        const hora = pad(now.getHours()) + ':' + pad(now.getMinutes());
+        const de = document.getElementById('inputDataEmissao');
+        const he = document.getElementById('inputHoraEmissao');
+        if (de && !de.value) de.value = data;
+        if (he && !he.value) he.value = hora;
+        const ds = document.getElementById('inputDataSaida');
+        const hs = document.getElementById('inputHoraSaida');
+        if (ds && !ds.value) ds.value = data;
+        if (hs && !hs.value) hs.value = hora;
+    })();
+    {% endif %}
+
+    {% if saved_cliente_id %}
+    (function() {
+        const cliId = {{ saved_cliente_id }};
+        const cfop = {{ saved_cfop|tojson if saved_cfop else 'null' }};
+        const natureza = {{ saved_natureza|tojson if saved_natureza else 'null' }};
+        const itensJson = {{ saved_itens|tojson if saved_itens else 'null' }};
+        const desconto = {{ saved_desconto|tojson if saved_desconto else '0' }};
+
+        if (cfop) document.getElementById('inputCfop').value = cfop;
+        if (natureza) document.getElementById('inputNatureza').value = natureza;
+        if (desconto > 0) document.getElementById('descontoValor').value = desconto;
+
+        const clientes = {{ clientes_json|tojson }};
+        const cli = clientes.find(c => c.id == cliId);
+        if (cli) {
+            document.getElementById('clienteSearch').value = cli.nome;
+            document.getElementById('clienteId').value = cli.id;
+        }
+
+        if (itensJson) {
+            try {
+                const itens = JSON.parse(itensJson);
+                itens.forEach(function(item) {
+                    const prod = produtosData.find(p => p.id == item.produto_id);
+                    if (prod) {
+                        adicionarItem(prod, item.quantidade);
+                        const rows = document.querySelectorAll('#itensBody .item-row');
+                        const lastRow = rows[rows.length - 1];
+                        if (lastRow && item.preco_unitario) {
+                            lastRow.querySelector('.item-valor').value = item.preco_unitario;
+                        }
+                    }
+                });
+                atualizarTotais();
+            } catch(e) {}
+        }
+    })();
+    {% endif %}
 
     const clienteSearch = document.getElementById('clienteSearch');
     const clienteDropdown = document.getElementById('clienteDropdown');

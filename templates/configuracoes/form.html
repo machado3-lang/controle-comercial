@@ -31,6 +31,11 @@
             <i data-lucide="file-text" class="w-4 h-4 inline me-1"></i> Config. NFSe
         </button>
     </li>
+    <li class="nav-item">
+        <button class="tab-btn px-4 py-2.5 text-sm font-medium rounded-t-xl transition-all {{ 'bg-gradient-to-r from-cyan-500 to-blue-600 text-white shadow-lg shadow-cyan-500/10' if aba == 'backup' else 'text-slate-400 hover:text-slate-200 hover:bg-slate-800/40' }}" onclick="mudarAba('backup')">
+            <i data-lucide="hard-drive" class="w-4 h-4 inline me-1"></i> Backup
+        </button>
+    </li>
 </ul>
 
 <form method="post" enctype="multipart/form-data" id="formConfig">
@@ -124,6 +129,30 @@
                             <span id="blingTestStatus" class="text-xs ms-2 self-center"></span>
                         </div>
                     </div>
+
+                    <hr class="border-slate-800/60 my-4">
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                        <div class="p-3 bg-slate-800/40 rounded-xl">
+                            <div class="text-xs text-slate-400 mb-1">Clientes</div>
+                            <div class="text-sm"><span class="text-emerald-400">{{ bling_synced_clientes }}</span> sinc. · <span class="text-amber-400">{{ bling_pending_clientes }}</span> pend.</div>
+                        </div>
+                        <div class="p-3 bg-slate-800/40 rounded-xl">
+                            <div class="text-xs text-slate-400 mb-1">Fornecedores</div>
+                            <div class="text-sm"><span class="text-emerald-400">{{ bling_synced_fornecedores }}</span> sinc. · <span class="text-amber-400">{{ bling_pending_fornecedores }}</span> pend.</div>
+                        </div>
+                        <div class="p-3 bg-slate-800/40 rounded-xl">
+                            <div class="text-xs text-slate-400 mb-1">Produtos</div>
+                            <div class="text-sm"><span class="text-emerald-400">{{ bling_synced_produtos }}</span> sinc. · <span class="text-amber-400">{{ bling_pending_produtos }}</span> pend.</div>
+                        </div>
+                    </div>
+
+                    <div class="flex flex-wrap gap-2">
+                        <button type="button" class="btn-bling-import flex items-center px-3 py-1.5 text-xs text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition" data-url="/bling/importar-contatos"><i data-lucide="download" class="w-3.5 h-3.5 me-1"></i> Importar Contatos</button>
+                        <button type="button" class="btn-bling-import flex items-center px-3 py-1.5 text-xs text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition" data-url="/bling/importar-produtos"><i data-lucide="download" class="w-3.5 h-3.5 me-1"></i> Importar Produtos</button>
+                        <button type="button" class="btn-bling-import flex items-center px-3 py-1.5 text-xs text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition" data-url="/bling/sincronizar-pendentes"><i data-lucide="upload" class="w-3.5 h-3.5 me-1"></i> Sincronizar Pendentes</button>
+                    </div>
+                    <div id="blingImportStatus" class="text-xs mt-2 text-slate-400"></div>
                 </div>
             </div>
         </div>
@@ -191,6 +220,38 @@
         </div>
     </div>
 
+    <!-- Aba: Backup -->
+    <div class="aba-conteudo {{ 'hidden' if aba != 'backup' }}" id="aba-backup">
+        <div class="glass-card mb-6">
+            <div class="p-4 border-b border-slate-800/60">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="hard-drive" class="w-5 h-5 inline me-2"></i> Backup e Restauração</h5>
+            </div>
+            <div class="p-4 space-y-6">
+                <p class="text-xs text-slate-400">Exporte todos os dados do sistema para um arquivo JSON ou restaure um backup anterior. A tabela <code>empresa</code> (credenciais) não é sobrescrita na restauração.</p>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    <div class="p-4 bg-slate-800/40 rounded-xl">
+                        <h6 class="text-sm font-semibold text-emerald-400 mb-3"><i data-lucide="download" class="w-4 h-4 inline me-1"></i> Exportar Backup</h6>
+                        <p class="text-xs text-slate-400 mb-3">Baixe um arquivo .json com todos os registros do banco de dados.</p>
+                        <a href="/configuracoes/backup" class="inline-flex items-center px-4 py-2 text-sm bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition-all font-medium">
+                            <i data-lucide="download" class="w-4 h-4 me-2"></i> Baixar Backup
+                        </a>
+                    </div>
+                    <div class="p-4 bg-slate-800/40 rounded-xl">
+                        <h6 class="text-sm font-semibold text-amber-400 mb-3"><i data-lucide="upload" class="w-4 h-4 inline me-1"></i> Restaurar Backup</h6>
+                        <p class="text-xs text-slate-400 mb-3">Envie um arquivo .json de backup para restaurar os dados.</p>
+                        <div class="flex flex-col gap-3">
+                            <input type="file" id="restoreFile" accept=".json" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm file:mr-3 file:py-1 file:px-3 file:rounded-lg file:border-0 file:bg-amber-600 file:text-white file:text-xs file:cursor-pointer">
+                            <button type="button" id="btnRestore" class="inline-flex items-center px-4 py-2 text-sm bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed" disabled>
+                                <i data-lucide="upload" class="w-4 h-4 me-2"></i> Restaurar
+                            </button>
+                            <div id="restoreStatus" class="text-xs text-slate-400"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Aba: Config. NFSe -->
     <div class="aba-conteudo {{ 'hidden' if aba != 'nfse' }}" id="aba-nfse">
         <div class="glass-card mb-6">
@@ -198,8 +259,12 @@
                 <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="file-text" class="w-5 h-5 inline me-2"></i> Configurações NFSe</h5>
             </div>
             <div class="p-4">
-                <div class="p-4 bg-amber-950/30 border border-amber-800/50 rounded-xl text-amber-300 text-sm">
-                    <i data-lucide="clock" class="w-4 h-4 inline me-1"></i> Módulo NFSe em desenvolvimento. Em breve você poderá configurar a emissão de Notas Fiscais de Serviço aqui.
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Alíquota ISS (%)</label>
+                        <input type="number" step="0.01" min="0" max="100" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="aliquota_iss" value="{{ empresa.aliquota_iss or '2.00' }}">
+                        <p class="text-xs text-slate-500 mt-1">Alíquota do ISS para cálculo do imposto na NFS-e. Ex: 2.00, 3.00, 5.00</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -293,5 +358,74 @@ document.getElementById('btnTestarBling')?.addEventListener('click', function() 
             status.className = 'text-rose-400';
         });
 });
+
+document.querySelectorAll('.btn-bling-import').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const url = this.dataset.url;
+        const originalHtml = this.innerHTML;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Aguarde...';
+        this.disabled = true;
+        const statusEl = document.getElementById('blingImportStatus');
+        statusEl.textContent = 'Processando...';
+        statusEl.className = 'text-xs mt-2 text-slate-400';
+        fetch(url, { method: 'POST' })
+            .then(r => {
+                if (r.redirected) {
+                    statusEl.textContent = 'Operação concluída. Recarregue a página para ver os números atualizados.';
+                    statusEl.className = 'text-xs mt-2 text-emerald-400';
+                } else {
+                    return r.text().then(t => { throw new Error(t); });
+                }
+            })
+            .catch(e => {
+                statusEl.textContent = 'Erro: ' + e.message;
+                statusEl.className = 'text-xs mt-2 text-rose-400';
+            })
+            .finally(() => {
+                this.innerHTML = originalHtml;
+                this.disabled = false;
+            });
+    });
+});
+
+// Backup restore
+const restoreFile = document.getElementById('restoreFile');
+const btnRestore = document.getElementById('btnRestore');
+const restoreStatus = document.getElementById('restoreStatus');
+if (restoreFile && btnRestore) {
+    restoreFile.addEventListener('change', function() {
+        btnRestore.disabled = !this.files || this.files.length === 0;
+    });
+    btnRestore.addEventListener('click', function() {
+        const file = restoreFile.files[0];
+        if (!file) return;
+        const formData = new FormData();
+        formData.append('arquivo', file);
+        this.disabled = true;
+        this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Restaurando...';
+        restoreStatus.textContent = 'Enviando e processando...';
+        restoreStatus.className = 'text-xs mt-2 text-slate-400';
+        fetch('/configuracoes/restore', { method: 'POST', body: formData })
+            .then(r => r.json())
+            .then(data => {
+                if (data.error) {
+                    restoreStatus.textContent = 'Erro: ' + data.error;
+                    restoreStatus.className = 'text-xs mt-2 text-rose-400';
+                } else {
+                    restoreStatus.innerHTML = '<span class="text-emerald-400">✓ Restaurado!</span> ' + data.imported + ' registros importados, ' + data.errors + ' erros.';
+                    restoreStatus.className = 'text-xs mt-2';
+                }
+            })
+            .catch(e => {
+                restoreStatus.textContent = 'Erro na requisição: ' + e.message;
+                restoreStatus.className = 'text-xs mt-2 text-rose-400';
+            })
+            .finally(() => {
+                btnRestore.disabled = false;
+                btnRestore.innerHTML = '<i data-lucide="upload" class="w-4 h-4 me-2"></i> Restaurar';
+                lucide.createIcons();
+            });
+    });
+}
 </script>
 {% endblock %}

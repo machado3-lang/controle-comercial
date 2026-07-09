@@ -85,6 +85,8 @@ def criar_cliente(
     inscricao_municipal: str = Form(""),
     codigo_ibge: str = Form(""),
     isento_ie: str = Form(""),
+    indicador_ie: str = Form("contribuidor"),
+    iss_retido: str = Form(""),
     situacao: str = Form("A"),
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
@@ -103,8 +105,9 @@ def criar_cliente(
         estado=estado, cep=cep, contato=contato, fantasia=fantasia,
         inscricao_estadual=inscricao_estadual, inscricao_municipal=inscricao_municipal,
         codigo_ibge=codigo_ibge or None, isento_ie=(isento_ie == "1"),
-        situacao=situacao, observacao=observacao, created_at=created_at,
-        bling_pending_sync=True
+        indicador_ie=indicador_ie, iss_retido=(iss_retido == "1"),
+        situacao=situacao, observacao=observacao,
+        created_at=created_at, bling_pending_sync=True
     )
     db.add(cliente)
     db.commit()
@@ -160,6 +163,8 @@ def atualizar_cliente(
     data_cadastro: str = Form(""),
     codigo_ibge: str = Form(""),
     isento_ie: str = Form(""),
+    indicador_ie: str = Form("contribuidor"),
+    iss_retido: str = Form(""),
     observacao: str = Form(""),
 ):
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
@@ -182,6 +187,8 @@ def atualizar_cliente(
     cliente.inscricao_municipal = inscricao_municipal
     cliente.codigo_ibge = codigo_ibge or None
     cliente.isento_ie = (isento_ie == "1")
+    cliente.indicador_ie = indicador_ie
+    cliente.iss_retido = (iss_retido == "1")
     cliente.situacao = situacao
     if data_cadastro:
         cliente.created_at = datetime.strptime(data_cadastro, "%Y-%m-%d")

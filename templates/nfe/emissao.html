@@ -9,12 +9,38 @@
     <div class="p-4">
         <div class="mb-4 p-3 bg-slate-800/40 rounded-xl">
             <p class="text-sm text-slate-300"><strong>Cliente:</strong> {{ pedido.cliente.nome }} ({{ pedido.cliente.cpf_cnpj or '---' }})</p>
-            <p class="text-sm text-slate-300"><strong>Total do Pedido:</strong> R$ {{ "%.2f"|format(pedido.total) }}</p>
+            <p class="text-sm text-slate-300"><strong>Total:</strong> R$ {{ "%.2f"|format(total_os if total_os is defined else pedido.total) }}</p>
         </div>
 
         {% if itens_nfse %}
-        <div class="mb-4 p-3 bg-amber-950/30 border border-amber-800/50 rounded-xl">
-            <p class="text-sm text-amber-400"><i data-lucide="info" class="w-4 h-4 inline me-1"></i> <strong>Itens de Serviço ignorados:</strong> {{ itens_nfse|length }} item(ns) de serviço não serão incluídos na NFe (aguardando módulo NFSe).</p>
+        <div class="mb-4 p-3 bg-indigo-950/30 border border-indigo-800/50 rounded-xl">
+            <p class="text-sm text-indigo-400"><i data-lucide="info" class="w-4 h-4 inline me-1"></i> <strong>Itens de Serviço:</strong> {{ itens_nfse|length }} item(ns) de serviço — serão utilizados para gerar um rascunho de NFSe.</p>
+        </div>
+
+        <h5 class="text-indigo-400 font-semibold mb-3"><i data-lucide="briefcase" class="w-4 h-4 inline me-1"></i> Itens da NFSe (Serviços)</h5>
+        <div class="overflow-x-auto mb-4">
+            <table class="w-full divide-y divide-slate-800/60">
+                <thead class="bg-slate-950/50">
+                    <tr>
+                        <th class="px-3 py-2 text-xs font-semibold text-indigo-400 uppercase">Descrição</th>
+                        <th class="px-3 py-2 text-xs font-semibold text-indigo-400 uppercase">LC116</th>
+                        <th class="px-3 py-2 text-right text-xs font-semibold text-indigo-400 uppercase">Qtd</th>
+                        <th class="px-3 py-2 text-right text-xs font-semibold text-indigo-400 uppercase">Vl Unit</th>
+                        <th class="px-3 py-2 text-right text-xs font-semibold text-indigo-400 uppercase">Total</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                    {% for item in itens_nfse %}
+                    <tr>
+                        <td class="px-3 py-2 text-sm text-slate-100">{{ item.descricao or item.produto.nome }}</td>
+                        <td class="px-3 py-2 text-sm text-slate-300">{{ item.produto.codigo_lc116 or '---' }}</td>
+                        <td class="px-3 py-2 text-right text-sm text-slate-100">{{ item.quantidade }}</td>
+                        <td class="px-3 py-2 text-right text-sm text-emerald-400">R$ {{ "%.2f"|format(item.preco_unitario) }}</td>
+                        <td class="px-3 py-2 text-right text-sm text-emerald-400">R$ {{ "%.2f"|format(item.total or item.preco_unitario * item.quantidade) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
         </div>
         {% endif %}
 

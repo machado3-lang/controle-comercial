@@ -1,0 +1,480 @@
+{% extends "base.html" %}
+{% block title %}Editar OS #{{ ordem.id }}{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between mb-6">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">
+        <i data-lucide="wrench" class="w-6 h-6 inline me-2"></i> Editar OS #{{ ordem.id }}
+    </h4>
+    <a href="/ordens-servico/{{ ordem.id }}" class="flex items-center px-3 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition">
+        <i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar
+    </a>
+</div>
+
+<form method="post" action="/ordens-servico/{{ ordem.id }}/editar" class="grid grid-cols-1 xl:grid-cols-5 gap-6">
+    <div class="xl:col-span-2 space-y-6">
+
+        <div class="glass-card p-4">
+            <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="clipboard" class="w-4 h-4 inline me-1"></i> Equipamento</h5>
+            <div class="mb-3 relative">
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>
+                <input type="text" id="clienteSearchEdit" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off" value="{{ ordem.cliente.nome }}">
+                <div id="clienteDropdownEdit" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+                <select name="cliente_id" id="clienteIdEdit" class="hidden">
+                    <option value="{{ ordem.cliente_id }}" selected>{{ ordem.cliente.nome }}</option>
+                </select>
+            </div>
+            <div class="mb-3">
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Equipamento *</label>
+                <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="equipamento" required value="{{ ordem.equipamento }}">
+            </div>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Marca</label>
+                    <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="marca_id" id="marcaSelectEdit">
+                        <option value="">Selecione...</option>
+                        {% for m in marcas %}
+                        <option value="{{ m.id }}" {% if m.nome == ordem.marca %}selected{% endif %}>{{ m.nome }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Modelo</label>
+                    <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="modelo" value="{{ ordem.modelo or '' }}">
+                </div>
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Nº Série</label>
+                    <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_serie" value="{{ ordem.numero_serie or '' }}">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Nº Requisição</label>
+                    <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_requisicao" value="{{ ordem.numero_requisicao or '' }}">
+                </div>
+            </div>
+        </div>
+
+        <div class="glass-card p-4">
+            <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="file-text" class="w-4 h-4 inline me-1"></i> Detalhes</h5>
+            <div class="grid grid-cols-2 gap-3 mb-3">
+                <div>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Técnico</label>
+                    <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tecnico" value="{{ ordem.tecnico or '' }}">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Autorizado por</label>
+                    <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="autorizado_por" value="{{ ordem.autorizado_por or '' }}">
+                </div>
+            </div>
+            <div class="grid grid-cols-3 gap-3 mb-3">
+                <div>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Status</label>
+                    <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="status">
+                        <option value="aberta" {% if ordem.status.value == 'aberta' %}selected{% endif %}>Aberta</option>
+                        <option value="em_andamento" {% if ordem.status.value == 'em_andamento' %}selected{% endif %}>Em Andamento</option>
+                        <option value="finalizada" {% if ordem.status.value == 'finalizada' %}selected{% endif %}>Finalizada</option>
+                        <option value="cancelada" {% if ordem.status.value == 'cancelada' %}selected{% endif %}>Cancelada</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Data Entrada</label>
+                    <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_entrada" value="{{ ordem.data_entrada }}">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Data Saída</label>
+                    <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_saida" value="{{ ordem.data_saida if ordem.data_saida else '' }}">
+                </div>
+            </div>
+            <div class="mb-3">
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Defeito Relatado</label>
+                <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="defeito_relatado" rows="3">{{ ordem.defeito_relatado or '' }}</textarea>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
+                <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="2">{{ ordem.observacao or '' }}</textarea>
+            </div>
+        </div>
+
+    </div>
+
+    <div class="xl:col-span-3 space-y-6">
+
+        <div class="glass-card p-4">
+            <h5 class="text-indigo-400 border-b border-slate-800/50 pb-2 mb-3 flex items-center justify-between">
+                <span><i data-lucide="briefcase" class="w-4 h-4 inline me-1"></i> Serviços Executados</span>
+                <span class="text-xs text-slate-500">Filtrar: <select id="filtroCategoriaServico" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-300 text-xs"><option value="">Todas</option>{% for cat in categorias %}<option value="{{ cat.id }}">{{ cat.nome }}</option>{% endfor %}</select></span>
+            </h5>
+            <div class="flex gap-2 mb-3">
+                <div class="relative flex-1">
+                    <input type="text" id="servicoSearchEdit" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-indigo-500/50" placeholder="Buscar serviço..." autocomplete="off">
+                    <div id="servicoDropdownEdit" class="absolute z-[1000] w-full bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-64 overflow-y-auto shadow-lg"></div>
+                </div>
+                <button type="button" id="btnAddServico" class="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-medium transition disabled:opacity-40 text-sm" disabled><i data-lucide="plus" class="w-4 h-4"></i></button>
+            </div>
+            <div class="overflow-x-auto mb-3">
+                <table class="w-full" id="tabelaServicos">
+                    <thead><tr class="text-xs text-indigo-400 uppercase border-b border-slate-800/60">
+                        <th class="px-2 py-1 text-left">Serviço</th>
+                        <th class="px-2 py-1 text-right w-20">Qtd</th>
+                        <th class="px-2 py-1 text-right w-24">Valor Unit.</th>
+                        <th class="px-2 py-1 text-right w-24">Total</th>
+                        <th class="px-2 py-1 text-center w-10"></th>
+                    </tr></thead>
+                    <tbody id="servicosTableBody"></tbody>
+                </table>
+                <div id="emptyServicos" class="p-4 text-center text-slate-500 text-sm">Nenhum serviço adicionado. Busque acima.</div>
+            </div>
+        </div>
+
+        <div class="glass-card p-4">
+            <h5 class="text-amber-400 border-b border-slate-800/50 pb-2 mb-3 flex items-center justify-between">
+                <span><i data-lucide="package" class="w-4 h-4 inline me-1"></i> Peças Utilizadas</span>
+                <span class="text-xs text-slate-500">Filtrar: <select id="filtroCategoriaPeca" class="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-300 text-xs"><option value="">Todas</option>{% for cat in categorias %}<option value="{{ cat.id }}">{{ cat.nome }}</option>{% endfor %}</select></span>
+            </h5>
+            <div class="flex gap-2 mb-3">
+                <div class="relative flex-1">
+                    <input type="text" id="pecaSearchEdit" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-amber-500/50" placeholder="Buscar peça..." autocomplete="off">
+                    <div id="pecaDropdownEdit" class="absolute z-[1000] w-full bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-64 overflow-y-auto shadow-lg"></div>
+                </div>
+                <button type="button" id="btnAddPeca" class="px-4 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl font-medium transition disabled:opacity-40 text-sm" disabled><i data-lucide="plus" class="w-4 h-4"></i></button>
+            </div>
+            <div class="overflow-x-auto mb-3">
+                <table class="w-full" id="tabelaPecas">
+                    <thead><tr class="text-xs text-amber-400 uppercase border-b border-slate-800/60">
+                        <th class="px-2 py-1 text-left">Peça</th>
+                        <th class="px-2 py-1 text-right w-20">Qtd</th>
+                        <th class="px-2 py-1 text-right w-24">Valor Unit.</th>
+                        <th class="px-2 py-1 text-right w-24">Total</th>
+                        <th class="px-2 py-1 text-center w-10"></th>
+                    </tr></thead>
+                    <tbody id="pecasTableBody"></tbody>
+                </table>
+                <div id="emptyPecas" class="p-4 text-center text-slate-500 text-sm">Nenhuma peça adicionada. Busque acima.</div>
+            </div>
+        </div>
+
+        <div class="glass-card p-4">
+            <div class="flex flex-wrap items-end justify-end gap-6">
+                <div>
+                    <label class="block text-xs font-medium text-indigo-400 mb-1">Total Serviços</label>
+                    <div class="text-xl font-bold text-indigo-400" id="totalServicosDisplay">R$ 0.00</div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-amber-400 mb-1">Total Peças</label>
+                    <div class="text-xl font-bold text-amber-400" id="totalPecasDisplay">R$ 0.00</div>
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">Total Geral</label>
+                    <div class="text-2xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400" id="totalGeralDisplay">R$ 0.00</div>
+                </div>
+            </div>
+            <input type="hidden" name="servicos_json_data" id="servicosJsonData" value="">
+            <input type="hidden" name="pecas_json_data" id="pecasJsonData" value="">
+            <input type="hidden" name="valor_servico" id="valorServicoHidden" value="0">
+            <input type="hidden" name="valor_pecas" id="valorPecasHidden" value="0">
+            <input type="hidden" name="valor_total" id="valorTotalHidden" value="0">
+            <div class="flex justify-end gap-3 mt-4 pt-4 border-t border-slate-800/50">
+                <a href="/ordens-servico/{{ ordem.id }}" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition">Cancelar</a>
+                <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar OS</button>
+            </div>
+        </div>
+
+    </div>
+</form>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const clientes = {{ clientes_json|tojson }};
+const marcasData = {{ marcas_json|tojson }};
+const servicosData = {{ servicos_json|tojson }};
+const pecasData = {{ pecas_json|tojson }};
+const categoriasData = {{ categorias_json|tojson }};
+const servicosExistentes = {{ servicos_existentes|safe }};
+const pecasExistentes = {{ pecas_existentes|safe }};
+
+let servicosItens = Array.isArray(servicosExistentes) ? [...servicosExistentes] : [];
+let pecasItens = Array.isArray(pecasExistentes) ? [...pecasExistentes] : [];
+
+function atualizarServicos() {
+    const tbody = document.getElementById('servicosTableBody');
+    tbody.innerHTML = '';
+    servicosItens.forEach((item, i) => {
+        const total = (item.qtd || 1) * (item.preco || 0);
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-slate-800/30 text-sm';
+        tr.innerHTML = `
+            <td class="px-2 py-1.5 text-slate-100">${item.nome}</td>
+            <td class="px-2 py-1.5"><input type="number" step="0.001" min="0.001" value="${item.qtd || 1}" class="w-16 px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-slate-100 text-right text-sm servico-qtd" data-index="${i}"></td>
+            <td class="px-2 py-1.5"><input type="number" step="0.01" min="0" value="${(item.preco || 0).toFixed(2)}" class="w-24 px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-slate-100 text-right text-sm servico-preco" data-index="${i}"></td>
+            <td class="px-2 py-1.5 text-right text-indigo-400 font-medium servico-total">${total.toFixed(2)}</td>
+            <td class="px-2 py-1.5 text-center"><button type="button" class="remove-servico p-1 text-rose-400 hover:text-rose-300 transition" data-index="${i}"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+    document.getElementById('emptyServicos').style.display = servicosItens.length > 0 ? 'none' : '';
+    recalcularTudo();
+    lucide.createIcons();
+}
+
+function atualizarPecas() {
+    const tbody = document.getElementById('pecasTableBody');
+    tbody.innerHTML = '';
+    pecasItens.forEach((item, i) => {
+        const total = (item.qtd || 1) * (item.preco || 0);
+        const tr = document.createElement('tr');
+        tr.className = 'border-b border-slate-800/30 text-sm';
+        tr.innerHTML = `
+            <td class="px-2 py-1.5 text-slate-100">${item.nome}</td>
+            <td class="px-2 py-1.5"><input type="number" step="0.001" min="0.001" value="${item.qtd || 1}" class="w-16 px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-slate-100 text-right text-sm peca-qtd" data-index="${i}"></td>
+            <td class="px-2 py-1.5"><input type="number" step="0.01" min="0" value="${(item.preco || 0).toFixed(2)}" class="w-24 px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-slate-100 text-right text-sm peca-preco" data-index="${i}"></td>
+            <td class="px-2 py-1.5 text-right text-amber-400 font-medium peca-total">${total.toFixed(2)}</td>
+            <td class="px-2 py-1.5 text-center"><button type="button" class="remove-peca p-1 text-rose-400 hover:text-rose-300 transition" data-index="${i}"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button></td>
+        `;
+        tbody.appendChild(tr);
+    });
+    document.getElementById('emptyPecas').style.display = pecasItens.length > 0 ? 'none' : '';
+    recalcularTudo();
+    lucide.createIcons();
+}
+
+function recalcularTudo() {
+    let totalServicos = 0;
+    document.querySelectorAll('#servicosTableBody tr').forEach(tr => {
+        const qtd = parseFloat(tr.querySelector('.servico-qtd')?.value) || 0;
+        const preco = parseFloat(tr.querySelector('.servico-preco')?.value) || 0;
+        const total = qtd * preco;
+        tr.querySelector('.servico-total').textContent = total.toFixed(2);
+        totalServicos += total;
+    });
+    let totalPecas = 0;
+    document.querySelectorAll('#pecasTableBody tr').forEach(tr => {
+        const qtd = parseFloat(tr.querySelector('.peca-qtd')?.value) || 0;
+        const preco = parseFloat(tr.querySelector('.peca-preco')?.value) || 0;
+        const total = qtd * preco;
+        tr.querySelector('.peca-total').textContent = total.toFixed(2);
+        totalPecas += total;
+    });
+    const totalGeral = totalServicos + totalPecas;
+    document.getElementById('totalServicosDisplay').textContent = `R$ ${totalServicos.toFixed(2)}`;
+    document.getElementById('totalPecasDisplay').textContent = `R$ ${totalPecas.toFixed(2)}`;
+    document.getElementById('totalGeralDisplay').textContent = `R$ ${totalGeral.toFixed(2)}`;
+    document.getElementById('valorServicoHidden').value = totalServicos.toFixed(2);
+    document.getElementById('valorPecasHidden').value = totalPecas.toFixed(2);
+    document.getElementById('valorTotalHidden').value = totalGeral.toFixed(2);
+    // Sync hidden JSON inputs
+    const servAtualizados = [];
+    document.querySelectorAll('#servicosTableBody tr').forEach((tr, i) => {
+        servAtualizados.push({
+            id: servicosItens[i]?.id || null,
+            nome: servicosItens[i]?.nome || '',
+            qtd: parseFloat(tr.querySelector('.servico-qtd')?.value) || 1,
+            preco: parseFloat(tr.querySelector('.servico-preco')?.value) || 0,
+        });
+    });
+    document.getElementById('servicosJsonData').value = JSON.stringify(servAtualizados);
+    const pecasAtualizadas = [];
+    document.querySelectorAll('#pecasTableBody tr').forEach((tr, i) => {
+        pecasAtualizadas.push({
+            id: pecasItens[i]?.id || null,
+            nome: pecasItens[i]?.nome || '',
+            qtd: parseFloat(tr.querySelector('.peca-qtd')?.value) || 1,
+            preco: parseFloat(tr.querySelector('.peca-preco')?.value) || 0,
+        });
+    });
+    document.getElementById('pecasJsonData').value = JSON.stringify(pecasAtualizadas);
+}
+
+// Event delegation for dynamic inputs
+document.getElementById('servicosTableBody').addEventListener('input', function(e) {
+    if (e.target.classList.contains('servico-qtd') || e.target.classList.contains('servico-preco')) {
+        const idx = parseInt(e.target.dataset.index);
+        if (!isNaN(idx) && servicosItens[idx]) {
+            servicosItens[idx].qtd = parseFloat(e.target.closest('tr').querySelector('.servico-qtd').value) || 0;
+            servicosItens[idx].preco = parseFloat(e.target.closest('tr').querySelector('.servico-preco').value) || 0;
+        }
+        recalcularTudo();
+    }
+});
+document.getElementById('pecasTableBody').addEventListener('input', function(e) {
+    if (e.target.classList.contains('peca-qtd') || e.target.classList.contains('peca-preco')) {
+        const idx = parseInt(e.target.dataset.index);
+        if (!isNaN(idx) && pecasItens[idx]) {
+            pecasItens[idx].qtd = parseFloat(e.target.closest('tr').querySelector('.peca-qtd').value) || 0;
+            pecasItens[idx].preco = parseFloat(e.target.closest('tr').querySelector('.peca-preco').value) || 0;
+        }
+        recalcularTudo();
+    }
+});
+document.getElementById('servicosTableBody').addEventListener('click', function(e) {
+    const btn = e.target.closest('.remove-servico');
+    if (btn) {
+        const idx = parseInt(btn.dataset.index);
+        if (!isNaN(idx)) { servicosItens.splice(idx, 1); atualizarServicos(); }
+    }
+});
+document.getElementById('pecasTableBody').addEventListener('click', function(e) {
+    const btn = e.target.closest('.remove-peca');
+    if (btn) {
+        const idx = parseInt(btn.dataset.index);
+        if (!isNaN(idx)) { pecasItens.splice(idx, 1); atualizarPecas(); }
+    }
+});
+
+// Search + Category filter for Servicos
+function filtrarServicos(termo, categoriaId) {
+    const term = (termo || '').toLowerCase();
+    return servicosData.filter(s => {
+        const matchNome = !term || s.nome.toLowerCase().includes(term);
+        const matchCat = !categoriaId || s.categoria_id == categoriaId;
+        return matchNome && matchCat;
+    }).slice(0, 20);
+}
+
+const servicoSearch = document.getElementById('servicoSearchEdit');
+const servicoDropdown = document.getElementById('servicoDropdownEdit');
+const filtroServico = document.getElementById('filtroCategoriaServico');
+let servicoSelecionado = null;
+
+function atualizarDropdownServicos() {
+    const term = servicoSearch.value;
+    const catId = filtroServico.value;
+    const results = filtrarServicos(term, catId);
+    if (results.length === 0) {
+        servicoDropdown.innerHTML = '<div class="p-2.5 text-slate-500 text-sm">Nenhum serviço encontrado</div>';
+        servicoDropdown.classList.remove('hidden');
+        return;
+    }
+    servicoDropdown.innerHTML = results.map(s => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer border-b border-slate-800/30 last:border-0 transition" data-id="${s.id}" data-nome="${s.nome.replace(/'/g, '&#39;')}" data-preco="${s.preco}"><div class="font-medium text-indigo-300">${s.nome}</div><div class="text-xs text-slate-400">R$ ${s.preco.toFixed(2)}</div></div>`).join('');
+    servicoDropdown.classList.remove('hidden');
+}
+
+servicoSearch.addEventListener('input', atualizarDropdownServicos);
+filtroServico.addEventListener('change', atualizarDropdownServicos);
+servicoSearch.addEventListener('focus', function() { if (this.value.length >= 1 || filtroServico.value) atualizarDropdownServicos(); });
+
+servicoDropdown.addEventListener('click', function(e) {
+    const item = e.target.closest('[data-id]');
+    if (!item) return;
+    this.classList.add('hidden');
+    servicoSearch.value = item.dataset.nome;
+    servicoSelecionado = { id: parseInt(item.dataset.id), nome: item.dataset.nome, preco: parseFloat(item.dataset.preco), qtd: 1 };
+    document.getElementById('btnAddServico').disabled = false;
+});
+
+document.getElementById('btnAddServico').addEventListener('click', function() {
+    if (!servicoSelecionado) return;
+    const existente = servicosItens.find(s => s.id === servicoSelecionado.id);
+    if (existente) {
+        existente.qtd = (existente.qtd || 1) + 1;
+    } else {
+        servicosItens.push({ ...servicoSelecionado });
+    }
+    servicoSelecionado = null;
+    servicoSearch.value = '';
+    this.disabled = true;
+    atualizarServicos();
+});
+
+// Search + Category filter for Pecas
+function filtrarPecas(termo, categoriaId) {
+    const term = (termo || '').toLowerCase();
+    return pecasData.filter(p => {
+        const matchNome = !term || p.nome.toLowerCase().includes(term);
+        const matchCat = !categoriaId || p.categoria_id == categoriaId;
+        return matchNome && matchCat;
+    }).slice(0, 20);
+}
+
+const pecaSearch = document.getElementById('pecaSearchEdit');
+const pecaDropdown = document.getElementById('pecaDropdownEdit');
+const filtroPeca = document.getElementById('filtroCategoriaPeca');
+let pecaSelecionada = null;
+
+function atualizarDropdownPecas() {
+    const term = pecaSearch.value;
+    const catId = filtroPeca.value;
+    const results = filtrarPecas(term, catId);
+    if (results.length === 0) {
+        pecaDropdown.innerHTML = '<div class="p-2.5 text-slate-500 text-sm">Nenhuma peça encontrada</div>';
+        pecaDropdown.classList.remove('hidden');
+        return;
+    }
+    pecaDropdown.innerHTML = results.map(p => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer border-b border-slate-800/30 last:border-0 transition" data-id="${p.id}" data-nome="${p.nome.replace(/'/g, '&#39;')}" data-preco="${p.preco}"><div class="font-medium text-amber-300">${p.nome}</div><div class="text-xs text-slate-400">R$ ${p.preco.toFixed(2)}</div></div>`).join('');
+    pecaDropdown.classList.remove('hidden');
+}
+
+pecaSearch.addEventListener('input', atualizarDropdownPecas);
+filtroPeca.addEventListener('change', atualizarDropdownPecas);
+pecaSearch.addEventListener('focus', function() { if (this.value.length >= 1 || filtroPeca.value) atualizarDropdownPecas(); });
+
+pecaDropdown.addEventListener('click', function(e) {
+    const item = e.target.closest('[data-id]');
+    if (!item) return;
+    this.classList.add('hidden');
+    pecaSearch.value = item.dataset.nome;
+    pecaSelecionada = { id: parseInt(item.dataset.id), nome: item.dataset.nome, preco: parseFloat(item.dataset.preco), qtd: 1 };
+    document.getElementById('btnAddPeca').disabled = false;
+});
+
+document.getElementById('btnAddPeca').addEventListener('click', function() {
+    if (!pecaSelecionada) return;
+    const existente = pecasItens.find(p => p.id === pecaSelecionada.id);
+    if (existente) {
+        existente.qtd = (existente.qtd || 1) + 1;
+    } else {
+        pecasItens.push({ ...pecaSelecionada });
+    }
+    pecaSelecionada = null;
+    pecaSearch.value = '';
+    this.disabled = true;
+    atualizarPecas();
+});
+
+// Client search
+document.getElementById('clienteSearchEdit')?.addEventListener('input', function(e) {
+    const term = e.target.value.toLowerCase();
+    const dropdown = document.getElementById('clienteDropdownEdit');
+    if (term.length >= 2) {
+        const results = clientes.filter(c => c.nome.toLowerCase().includes(term) || (c.cpf_cnpj && c.cpf_cnpj.includes(term)));
+        dropdown.innerHTML = results.length > 0
+            ? results.map(c => '<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="' + c.id + '">' + c.nome + (c.cpf_cnpj ? ' (<span class="text-cyan-400">' + c.cpf_cnpj + '</span>)' : '') + '</div>').join('')
+            : '<div class="p-2.5 text-slate-500 text-sm">Nenhum resultado</div>';
+        dropdown.classList.remove('hidden');
+    } else {
+        dropdown.classList.add('hidden');
+    }
+});
+document.getElementById('clienteDropdownEdit')?.addEventListener('click', function(e) {
+    const item = e.target.closest('[data-id]');
+    if (item) {
+        document.getElementById('clienteSearchEdit').value = item.textContent.trim();
+        const sel = document.getElementById('clienteIdEdit');
+        let opt = sel.querySelector('option[value="' + item.dataset.id + '"]');
+        if (!opt) {
+            opt = document.createElement('option');
+            opt.value = item.dataset.id;
+            opt.selected = true;
+            sel.appendChild(opt);
+        } else opt.selected = true;
+        this.classList.add('hidden');
+    }
+});
+
+// Dismiss dropdowns on outside click
+document.addEventListener('click', function(e) {
+    ['servicoDropdownEdit', 'pecaDropdownEdit', 'clienteDropdownEdit'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el && !e.target.closest('#' + id) && !e.target.closest('#' + id.replace('Dropdown', 'Search')) && !e.target.closest('#' + id.replace('Dropdown', 'Select'))) {
+            el.classList.add('hidden');
+        }
+    });
+});
+
+document.addEventListener('DOMContentLoaded', function() {
+    lucide.createIcons();
+    if (servicosItens.length > 0) atualizarServicos();
+    if (pecasItens.length > 0) atualizarPecas();
+});
+</script>
+{% endblock %}

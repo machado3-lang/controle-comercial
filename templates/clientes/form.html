@@ -58,13 +58,27 @@
             </div>
             <div>
                 <label class="form-label text-cyan-300 flex items-center gap-2">
-                    <input type="checkbox" name="isento_ie" value="1" {{ 'checked' if cliente and cliente.isento_ie }} class="w-4 h-4 rounded bg-slate-900/60 border-slate-800/80 text-cyan-500">
+                    <input type="checkbox" name="isento_ie" value="1" id="isentoIeCheck" {{ 'checked' if cliente and cliente.isento_ie }} class="w-4 h-4 rounded bg-slate-900/60 border-slate-800/80 text-cyan-500">
                     Isento IE
                 </label>
             </div>
             <div>
+                <label class="form-label text-cyan-300">Tipo Contribuinte *</label>
+                <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="indicador_ie" id="indicadorIeSelect">
+                    <option value="contribuidor" {{ 'selected' if not cliente or cliente.indicador_ie == 'contribuidor' }}>1 - Contribuinte ICMS</option>
+                    <option value="isento" {{ 'selected' if cliente and cliente.indicador_ie == 'isento' }}>2 - Contribuinte isento de Inscrição</option>
+                    <option value="nao_contribuinte" {{ 'selected' if cliente and cliente.indicador_ie == 'nao_contribuinte' }}>9 - Não contribuinte</option>
+                </select>
+            </div>
+            <div>
                 <label class="form-label text-cyan-300">Inscrição Municipal</label>
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="inscricao_municipal" value="{{ cliente.inscricao_municipal if cliente else '' }}">
+            </div>
+            <div class="flex items-end pb-2">
+                <label class="flex items-center gap-2 text-amber-300 cursor-pointer">
+                    <input type="checkbox" name="iss_retido" value="1" {{ 'checked' if cliente and cliente.iss_retido }} class="w-4 h-4 rounded bg-slate-900/60 border-slate-800/80 text-amber-500">
+                    <span class="text-sm">ISS Retido pelo Tomador</span>
+                </label>
             </div>
         </div>
         <div class="mb-3">
@@ -154,4 +168,49 @@
         <a href="/clientes" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition">Cancelar</a>
     </div>
 </form>
+{% block scripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    function mascaraTelefone(input) {
+        input.addEventListener('input', function() {
+            let v = this.value.replace(/\D/g, '').slice(0, 11);
+            if (v.length > 6) {
+                v = '(' + v.slice(0, 2) + ') ' + v.slice(2, 7) + '-' + v.slice(7);
+            } else if (v.length > 2) {
+                v = '(' + v.slice(0, 2) + ') ' + v.slice(2);
+            } else if (v.length > 0) {
+                v = '(' + v;
+            }
+            this.value = v;
+        });
+        input.addEventListener('blur', function() {
+            const nums = this.value.replace(/\D/g, '');
+            if (nums.length > 0 && nums.length < 10) {
+                this.classList.add('border-rose-500/50');
+            } else {
+                this.classList.remove('border-rose-500/50');
+            }
+        });
+        input.addEventListener('focus', function() {
+            this.classList.remove('border-rose-500/50');
+        });
+    }
+
+    const tel = document.querySelector('input[name="telefone"]');
+    const cel = document.querySelector('input[name="celular"]');
+    if (tel) mascaraTelefone(tel);
+    if (cel) mascaraTelefone(cel);
+
+    const isentoCheck = document.getElementById('isentoIeCheck');
+    const indicadorSelect = document.getElementById('indicadorIeSelect');
+    if (isentoCheck && indicadorSelect) {
+        isentoCheck.addEventListener('change', function() {
+            if (this.checked) {
+                indicadorSelect.value = 'isento';
+            }
+        });
+    }
+});
+</script>
+{% endblock %}
 {% endblock %}

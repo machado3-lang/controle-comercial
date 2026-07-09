@@ -28,6 +28,7 @@
             <tr>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">Nº</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">Série</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">Origem</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase">Cliente</th>
                 <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase">Valor</th>
                 <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">Status</th>
@@ -40,6 +41,15 @@
             <tr class="hover:bg-slate-800/40 transition">
                 <td class="px-4 py-3 text-sm font-medium text-slate-100">{{ n.numero }}</td>
                 <td class="px-4 py-3 text-sm text-slate-300">{{ n.serie }}</td>
+                <td class="px-4 py-3 text-sm">
+                    {% if n.origem == 'pedido' and n.pedido %}
+                    <a href="/pedidos/{{ n.pedido_id }}" class="text-amber-400 hover:text-amber-300 flex items-center gap-1">
+                        <i data-lucide="receipt" class="w-3.5 h-3.5"></i> Pedido #{{ n.pedido.numero or n.pedido.id }}
+                    </a>
+                    {% else %}
+                    <span class="text-slate-400 flex items-center gap-1"><i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> Avulsa</span>
+                    {% endif %}
+                </td>
                 <td class="px-4 py-3 text-sm text-cyan-300">{{ n.cliente.nome if n.cliente else (n.pedido.cliente.nome if n.pedido and n.pedido.cliente else '-') }}</td>
                 <td class="px-4 py-3 text-right text-sm text-emerald-400">R$ {{ "%.2f"|format(n.valor_total) }}</td>
                 <td class="px-4 py-3 text-center">
@@ -50,22 +60,88 @@
                 <td class="px-4 py-3 text-xs text-slate-400 max-w-[200px] truncate">{{ n.chave_acesso or '-' }}</td>
                 <td class="px-4 py-3 text-center">
                     <div class="flex items-center justify-center gap-1">
-                        {% if n.status == 'rascunho' %}
                         <a href="/nfe/{{ n.id }}/previa" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Revisar"><i data-lucide="eye" class="w-4 h-4"></i></a>
-                        {% else %}
-                        <a href="/nfe/{{ n.id }}" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Detalhes"><i data-lucide="eye" class="w-4 h-4"></i></a>
+                        {% if n.status == 'rascunho' %}
+                        <button type="button" onclick="confirmTransmitir({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Transmitir"><i data-lucide="send" class="w-4 h-4"></i></button>
+                        <a href="/nfe/{{ n.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="edit" class="w-4 h-4"></i></a>
+                        <button type="button" onclick="confirmExcluir({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        {% endif %}
+                        {% if n.invoice_id and n.status in ('queued', 'processing') %}
+                        <a href="/nfe/invoices/{{ n.invoice_id }}/status?redirect=1" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Consultar Status"><i data-lucide="refresh-cw" class="w-4 h-4"></i></a>
                         {% endif %}
                         {% if n.invoice_id and n.status == 'issued' %}
                         <a href="/nfe/{{ n.id }}/pdf" target="_blank" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="DANFE"><i data-lucide="file-down" class="w-4 h-4"></i></a>
+                        <a href="/nfe/{{ n.id }}/xml" target="_blank" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="XML"><i data-lucide="file-code" class="w-4 h-4"></i></a>
+                        {% endif %}
+                        {% if n.invoice_id and n.status == 'issued' %}
+                        <a href="/nfe/{{ n.id }}" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Cancelar"><i data-lucide="x-circle" class="w-4 h-4"></i></a>
                         {% endif %}
                     </div>
                 </td>
             </tr>
             {% else %}
-            <tr><td colspan="7" class="px-4 py-12 text-center text-slate-500">Nenhuma NFe emitida</td></tr>
+            <tr><td colspan="8" class="px-4 py-12 text-center text-slate-500">Nenhuma NFe emitida</td></tr>
             {% endfor %}
         </tbody>
     </table>
     </div>
 </div>
+
+<div class="modal fade" id="modalConfirmTransmitir">
+    <div class="modal-dialog">
+        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <div class="modal-header border-b border-slate-800/50">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-green-400 font-semibold"><i data-lucide="send" class="w-5 h-5 inline me-1"></i> Transmitir NFe</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-slate-300">Confirmar transmissão da <strong>NFe #<span id="transmitirNumero"></span></strong> para a SEFAZ?</p>
+            </div>
+            <div class="modal-footer border-t border-slate-800/50">
+                <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Voltar</button>
+                <form method="post" id="formTransmitir" class="inline">
+                    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
+                        <i data-lucide="send" class="w-4 h-4 me-1"></i> Sim, Transmitir
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="modalConfirmExcluir">
+    <div class="modal-dialog">
+        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <div class="modal-header border-b border-slate-800/50">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-red-400 font-semibold"><i data-lucide="trash-2" class="w-5 h-5 inline me-1"></i> Excluir NFe</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-slate-300">Excluir o rascunho da <strong>NFe #<span id="excluirNumero"></span></strong>?</p>
+                <p class="text-slate-500 text-xs mt-2">O estoque dos itens será restaurado.</p>
+            </div>
+            <div class="modal-footer border-t border-slate-800/50">
+                <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Voltar</button>
+                <form method="post" id="formExcluir" class="inline">
+                    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-rose-500/10">
+                        <i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Sim, Excluir
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+function confirmTransmitir(nfeId, numero) {
+    document.getElementById('transmitirNumero').textContent = numero;
+    document.getElementById('formTransmitir').action = '/nfe/' + nfeId + '/transmitir';
+    new bootstrap.Modal(document.getElementById('modalConfirmTransmitir')).show();
+}
+function confirmExcluir(nfeId, numero) {
+    document.getElementById('excluirNumero').textContent = numero;
+    document.getElementById('formExcluir').action = '/nfe/' + nfeId + '/excluir';
+    new bootstrap.Modal(document.getElementById('modalConfirmExcluir')).show();
+}
+</script>
 {% endblock %}

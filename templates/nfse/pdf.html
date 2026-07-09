@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @page { margin: 2cm 1.5cm; size: A4; }
+  body { font-family: 'DejaVu Sans', Arial, sans-serif; font-size: 11pt; color: #1a1a2e; margin: 0; padding: 0; }
+  .header { border-bottom: 3px solid #0ea5e9; padding-bottom: 15px; margin-bottom: 20px; display: flex; justify-content: space-between; }
+  .header-left h1 { font-size: 14pt; color: #0ea5e9; margin: 0 0 5px 0; }
+  .header-left p { margin: 2px 0; font-size: 9pt; color: #555; }
+  .header-right { text-align: right; font-size: 9pt; color: #555; }
+  .title { text-align: center; margin: 20px 0; }
+  .title h2 { font-size: 16pt; color: #0ea5e9; margin: 0; }
+  .title p { font-size: 9pt; color: #888; margin: 5px 0 0 0; }
+  .info-box { border: 1px solid #ddd; border-radius: 6px; padding: 12px; margin-bottom: 15px; }
+  .info-box h3 { font-size: 10pt; color: #0ea5e9; margin: 0 0 8px 0; border-bottom: 1px solid #eee; padding-bottom: 5px; }
+  .info-grid { display: flex; flex-wrap: wrap; }
+  .info-grid .field { width: 48%; margin-bottom: 5px; }
+  .info-grid .field .label { font-size: 8pt; color: #888; }
+  .info-grid .field .value { font-size: 10pt; color: #1a1a2e; }
+  table { width: 100%; border-collapse: collapse; margin: 15px 0; }
+  th { background: #0ea5e9; color: white; font-size: 9pt; padding: 8px 10px; text-align: left; }
+  td { padding: 8px 10px; border-bottom: 1px solid #eee; font-size: 10pt; }
+  tr:nth-child(even) td { background: #f8f9fa; }
+  .total-row td { font-weight: bold; border-top: 2px solid #0ea5e9; }
+  .total-row td:last-child { color: #0ea5e9; font-size: 11pt; }
+  .status-badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 9pt; font-weight: bold; }
+  .status-autorizada { background: #d1fae5; color: #065f46; }
+  .status-rascunho { background: #fef3c7; color: #92400e; }
+  .status-cancelada { background: #f1f1f1; color: #666; }
+  .status-erro { background: #fee2e2; color: #991b1b; }
+  .status-pendente { background: #fef3c7; color: #92400e; }
+  .footer { text-align: center; font-size: 8pt; color: #aaa; margin-top: 30px; border-top: 1px solid #eee; padding-top: 10px; }
+  .obs { font-size: 8pt; color: #888; margin-top: 10px; }
+</style>
+</head>
+<body>
+  <div class="header">
+    <div class="header-left">
+      <h1>{{ empresa.razao_social or empresa.nome_fantasia or 'Empresa' }}</h1>
+      <p>CNPJ: {{ empresa.cnpj or '-' }}</p>
+      <p>{{ empresa.endereco or '' }}{% if empresa.bairro %} - {{ empresa.bairro }}{% endif %}</p>
+      <p>{{ empresa.cidade or '' }}{% if empresa.estado %} - {{ empresa.estado }}{% endif %}{% if empresa.cep %} - CEP: {{ empresa.cep }}{% endif %}</p>
+      {% if empresa.inscricao_municipal %}<p>Inscrição Municipal: {{ empresa.inscricao_municipal }}</p>{% endif %}
+    </div>
+    <div class="header-right">
+      <p><strong>NFSe {{ nfse.numero or 'Pendente' }}</strong></p>
+      <p>Data: {{ nfse.data_emissao.strftime('%d/%m/%Y %H:%M') if nfse.data_emissao else '-' }}</p>
+      {% if nfse.codigo_verificacao %}<p>Código: {{ nfse.codigo_verificacao }}</p>{% endif %}
+      <p><span class="status-badge status-{{ nfse.status }}">{{ STATUS_LABELS.get(nfse.status, nfse.status) }}</span></p>
+    </div>
+  </div>
+
+  <div class="title">
+    <h2>NOTA FISCAL DE SERVIÇO ELETRÔNICA</h2>
+    <p>NFS-e {{ nfse.numero or '' }}</p>
+  </div>
+
+  <div class="info-box">
+    <h3>Tomador / Cliente</h3>
+    {% if cliente %}
+    <div class="info-grid">
+      <div class="field"><div class="label">Nome</div><div class="value">{{ cliente.nome or '' }}</div></div>
+      <div class="field"><div class="label">CPF/CNPJ</div><div class="value">{{ cliente.cpf_cnpj or '' }}</div></div>
+      <div class="field"><div class="label">Endereço</div><div class="value">{{ cliente.endereco or '' }}{% if cliente.bairro %} - {{ cliente.bairro }}{% endif %}</div></div>
+      <div class="field"><div class="label">Cidade/UF</div><div class="value">{{ cliente.cidade or '' }}{% if cliente.estado %} - {{ cliente.estado }}{% endif %}</div></div>
+      {% if cliente.cep %}<div class="field"><div class="label">CEP</div><div class="value">{{ cliente.cep }}</div></div>{% endif %}
+      {% if cliente.email %}<div class="field"><div class="label">Email</div><div class="value">{{ cliente.email }}</div></div>{% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="info-box">
+    <h3>Informações da Nota</h3>
+    <div class="info-grid">
+      {% if nfse.natureza_operacao %}<div class="field"><div class="label">Natureza da Operação</div><div class="value">{{ nfse.natureza_operacao }}</div></div>{% endif %}
+      {% if nfse.regime_especial %}<div class="field"><div class="label">Regime Especial</div><div class="value">{{ nfse.regime_especial }}</div></div>{% endif %}
+      {% if nfse.municipio_nome %}<div class="field"><div class="label">Município</div><div class="value">{{ nfse.municipio_nome }} ({{ nfse.municipio_codigo }})</div></div>{% endif %}
+    </div>
+  </div>
+
+  <h3 style="font-size: 10pt; color: #0ea5e9; margin-bottom: 5px;">Itens</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Descrição</th>
+        <th>LC 116</th>
+        <th style="text-align: center;">Qtd</th>
+        <th style="text-align: right;">Vl. Unit.</th>
+        <th style="text-align: right;">Total</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for item in itens %}
+      <tr>
+        <td>{{ item.descricao or '' }}</td>
+        <td>{{ item.codigo_servico or '-' }}</td>
+        <td style="text-align: center;">{{ item.quantidade }}</td>
+        <td style="text-align: right;">R$ {{ "%.2f"|format(item.valor_unitario or 0) }}</td>
+        <td style="text-align: right;">R$ {{ "%.2f"|format(item.valor_total or 0) }}</td>
+      </tr>
+      {% endfor %}
+      <tr class="total-row">
+        <td colspan="4" style="text-align: right;">Valor Total</td>
+        <td style="text-align: right;">R$ {{ "%.2f"|format(nfse.valor_total or 0) }}</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <div class="footer">
+    <p>Documento emitido em {{ nfse.data_emissao.strftime('%d/%m/%Y às %H:%M') if nfse.data_emissao else '-' }}</p>
+    <p>NFSe {{ nfse.numero or '' }} - Código de Verificação: {{ nfse.codigo_verificacao or 'N/D' }}</p>
+    <p>Este documento é uma representação visual da NFS-e. Consulte o XML para validade jurídica.</p>
+  </div>
+</body>
+</html>

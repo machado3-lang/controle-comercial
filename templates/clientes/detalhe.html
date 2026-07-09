@@ -19,8 +19,9 @@
         <div><small class="text-slate-500">Email</small><div class="text-slate-100 font-medium">{{ cliente.email or '-' }}</div></div>
         <div><small class="text-slate-500">Contato</small><div class="text-slate-100 font-medium">{{ cliente.contato or '-' }}</div></div>
         <div><small class="text-slate-500">Fantasia</small><div class="text-slate-100 font-medium">{{ cliente.fantasia or '-' }}</div></div>
-        <div><small class="text-slate-500">IE</small><div class="text-slate-100 font-medium">{{ cliente.inscricao_estadual or '-' }}</div></div>
+        <div><small class="text-slate-500">IE</small><div class="text-slate-100 font-medium">{{ cliente.inscricao_estadual or 'ISENTO' if cliente.isento_ie else (cliente.inscricao_estadual or '-') }}</div></div>
         <div><small class="text-slate-500">IM</small><div class="text-slate-100 font-medium">{{ cliente.inscricao_municipal or '-' }}</div></div>
+        <div><small class="text-slate-500">Tipo Contribuinte</small><div class="text-slate-100 font-medium">{% set ic = {'contribuidor': '1 - Contribuinte ICMS', 'isento': '2 - Contribuinte isento de Inscrição', 'nao_contribuinte': '9 - Não contribuinte'} %}{{ ic.get(cliente.indicador_ie, cliente.indicador_ie or '-') }}</div></div>
         <div><small class="text-slate-500">Situação</small><div>
             {% if cliente.situacao == 'A' %}<span class="px-2 py-1 text-xs font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded">Ativo</span>
             {% elif cliente.situacao == 'I' %}<span class="px-2 py-1 text-xs font-medium bg-rose-950/50 text-rose-400 border border-rose-800/50 rounded">Inativo</span>

@@ -1,3 +1,4 @@
+import json
 import re
 import os
 from dotenv import load_dotenv
@@ -54,6 +55,20 @@ def run_migrations():
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS sicoob_cert_key_base64 TEXT",
         "ALTER TABLE assinaturas ADD COLUMN IF NOT EXISTS produto_id INTEGER REFERENCES produtos(id)",
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS categoria_servico_padrao_id INTEGER REFERENCES categorias_produto(id)",
+        "ALTER TABLE nfe ADD COLUMN IF NOT EXISTS origem VARCHAR(10) DEFAULT 'avulsa'",
+        "ALTER TABLE nfe ADD COLUMN IF NOT EXISTS finalidade VARCHAR(30) DEFAULT 'normal'",
+        "ALTER TABLE nfe ADD COLUMN IF NOT EXISTS indicador_presenca INTEGER DEFAULT 1",
+        "ALTER TABLE produtos ADD COLUMN IF NOT EXISTS origem INTEGER DEFAULT 0",
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS indicador_ie VARCHAR(20) DEFAULT 'contribuidor'",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS ultimo_numero_nfse INTEGER DEFAULT 0",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS aliquota_iss FLOAT DEFAULT 2.0",
+        "ALTER TABLE clientes ADD COLUMN IF NOT EXISTS iss_retido BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE nfse ADD COLUMN IF NOT EXISTS iss_retido BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE nfse ADD COLUMN IF NOT EXISTS aliquota_iss FLOAT DEFAULT 2.0",
+        "ALTER TABLE nfse ADD COLUMN IF NOT EXISTS cliente_id INTEGER REFERENCES clientes(id)",
+        "ALTER TABLE nfse ADD COLUMN IF NOT EXISTS protocolo VARCHAR(50)",
+        "ALTER TABLE nfse ALTER COLUMN numero TYPE VARCHAR(50)",
+        "ALTER TABLE nfse ALTER COLUMN codigo_verificacao TYPE VARCHAR(100)",
     ]
     # SQLite não suporta IF NOT EXISTS em ADD COLUMN, usar PRAGMA para verificar
     if "sqlite" in str(engine.url):
@@ -146,6 +161,12 @@ def run_migrations():
         if "ultimo_numero_nfe" not in existing_emp:
             conn.execute(text("ALTER TABLE empresa ADD COLUMN ultimo_numero_nfe INTEGER DEFAULT 0"))
             conn.commit()
+        if "ultimo_numero_nfse" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN ultimo_numero_nfse INTEGER DEFAULT 0"))
+            conn.commit()
+        if "aliquota_iss" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN aliquota_iss FLOAT DEFAULT 2.0"))
+            conn.commit()
         if "cfop_padrao" not in existing_emp:
             conn.execute(text("ALTER TABLE empresa ADD COLUMN cfop_padrao VARCHAR(4) DEFAULT '5102'"))
             conn.commit()
@@ -160,6 +181,15 @@ def run_migrations():
         if "cliente_id" not in existing_nfe:
             conn.execute(text("ALTER TABLE nfe ADD COLUMN cliente_id INTEGER REFERENCES clientes(id)"))
             conn.commit()
+        if "origem" not in existing_nfe:
+            conn.execute(text("ALTER TABLE nfe ADD COLUMN origem VARCHAR(10) DEFAULT 'avulsa'"))
+            conn.commit()
+        if "finalidade" not in existing_nfe:
+            conn.execute(text("ALTER TABLE nfe ADD COLUMN finalidade VARCHAR(30) DEFAULT 'normal'"))
+            conn.commit()
+        if "indicador_presenca" not in existing_nfe:
+            conn.execute(text("ALTER TABLE nfe ADD COLUMN indicador_presenca INTEGER DEFAULT 1"))
+            conn.commit()
         cols_ass = inspector.get_columns("assinaturas")
         existing_ass = {c['name'] for c in cols_ass}
         if "produto_id" not in existing_ass:
@@ -173,6 +203,39 @@ def run_migrations():
             conn.commit()
         if "isento_ie" not in existing_cli:
             conn.execute(text("ALTER TABLE clientes ADD COLUMN isento_ie BOOLEAN DEFAULT 0"))
+            conn.commit()
+        if "indicador_ie" not in existing_cli:
+            conn.execute(text("ALTER TABLE clientes ADD COLUMN indicador_ie VARCHAR(20) DEFAULT 'contribuidor'"))
+            conn.commit()
+        if "iss_retido" not in existing_cli:
+            conn.execute(text("ALTER TABLE clientes ADD COLUMN iss_retido BOOLEAN DEFAULT 0"))
+            conn.commit()
+        cols_prod = inspector.get_columns("produtos")
+        existing_prod = {c['name'] for c in cols_prod}
+        if "origem" not in existing_prod:
+            conn.execute(text("ALTER TABLE produtos ADD COLUMN origem INTEGER DEFAULT 0"))
+            conn.commit()
+        cols_nfse = inspector.get_columns("nfse")
+        existing_nfse = {c['name'] for c in cols_nfse}
+        if "natureza_operacao" not in existing_nfse:
+            conn.execute(text("ALTER TABLE nfse ADD COLUMN natureza_operacao VARCHAR(100)"))
+            conn.commit()
+        if "regime_especial" not in existing_nfse:
+            conn.execute(text("ALTER TABLE nfse ADD COLUMN regime_especial VARCHAR(100)"))
+            conn.commit()
+        if "municipio_codigo" not in existing_nfse:
+            conn.execute(text("ALTER TABLE nfse ADD COLUMN municipio_codigo VARCHAR(10)"))
+            conn.commit()
+        if "municipio_nome" not in existing_nfse:
+            conn.execute(text("ALTER TABLE nfse ADD COLUMN municipio_nome VARCHAR(100)"))
+            conn.commit()
+        cols_nfse_itens = inspector.get_columns("nfse_itens")
+        existing_nfse_itens = {c['name'] for c in cols_nfse_itens}
+        if "codigo_servico" not in existing_nfse_itens:
+            conn.execute(text("ALTER TABLE nfse_itens ADD COLUMN codigo_servico VARCHAR(20)"))
+            conn.commit()
+        if "tributacao_municipal" not in existing_nfse_itens:
+            conn.execute(text("ALTER TABLE nfse_itens ADD COLUMN tributacao_municipal VARCHAR(20)"))
             conn.commit()
         conn.close()
     else:
@@ -211,11 +274,23 @@ def run_migrations():
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='notaas_ambiente') THEN ALTER TABLE empresa ADD COLUMN notaas_ambiente VARCHAR(1) DEFAULT '2'; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='serie_nfe') THEN ALTER TABLE empresa ADD COLUMN serie_nfe INTEGER DEFAULT 1; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='ultimo_numero_nfe') THEN ALTER TABLE empresa ADD COLUMN ultimo_numero_nfe INTEGER DEFAULT 0; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='ultimo_numero_nfse') THEN ALTER TABLE empresa ADD COLUMN ultimo_numero_nfse INTEGER DEFAULT 0; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='aliquota_iss') THEN ALTER TABLE empresa ADD COLUMN aliquota_iss FLOAT DEFAULT 2.0; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='cfop_padrao') THEN ALTER TABLE empresa ADD COLUMN cfop_padrao VARCHAR(4) DEFAULT '5102'; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='bling_desabilitado') THEN ALTER TABLE empresa ADD COLUMN bling_desabilitado BOOLEAN DEFAULT FALSE; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='codigo_ibge') THEN ALTER TABLE empresa ADD COLUMN codigo_ibge VARCHAR(7); END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfe' AND column_name='cliente_id') THEN ALTER TABLE nfe ADD COLUMN cliente_id INTEGER; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='assinaturas' AND column_name='produto_id') THEN ALTER TABLE assinaturas ADD COLUMN produto_id INTEGER; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfe' AND column_name='origem') THEN ALTER TABLE nfe ADD COLUMN origem VARCHAR(10) DEFAULT 'avulsa'; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfe' AND column_name='finalidade') THEN ALTER TABLE nfe ADD COLUMN finalidade VARCHAR(30) DEFAULT 'normal'; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfe' AND column_name='indicador_presenca') THEN ALTER TABLE nfe ADD COLUMN indicador_presenca INTEGER DEFAULT 1; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='natureza_operacao') THEN ALTER TABLE nfse ADD COLUMN natureza_operacao VARCHAR(100); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='regime_especial') THEN ALTER TABLE nfse ADD COLUMN regime_especial VARCHAR(100); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='municipio_codigo') THEN ALTER TABLE nfse ADD COLUMN municipio_codigo VARCHAR(10); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='municipio_nome') THEN ALTER TABLE nfse ADD COLUMN municipio_nome VARCHAR(100); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produtos' AND column_name='origem') THEN ALTER TABLE produtos ADD COLUMN origem INTEGER DEFAULT 0; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clientes' AND column_name='indicador_ie') THEN ALTER TABLE clientes ADD COLUMN indicador_ie VARCHAR(20) DEFAULT 'contribuidor'; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clientes' AND column_name='iss_retido') THEN ALTER TABLE clientes ADD COLUMN iss_retido BOOLEAN DEFAULT FALSE; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produto_variacoes' AND column_name='created_at') THEN ALTER TABLE produto_variacoes ADD COLUMN created_at TIMESTAMP DEFAULT NOW(); END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produto_variacoes' AND column_name='updated_at') THEN ALTER TABLE produto_variacoes ADD COLUMN updated_at TIMESTAMP DEFAULT NOW(); END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produto_variacoes' AND column_name='estoque_atual') THEN ALTER TABLE produto_variacoes ADD COLUMN estoque_atual REAL DEFAULT 0; END IF;
@@ -262,6 +337,7 @@ def format_cpf_cnpj(value):
 
 
 templates.env.filters["format_cpf_cnpj"] = format_cpf_cnpj
+templates.env.filters["fromjson"] = lambda v: json.loads(v) if isinstance(v, str) else v
 templates.env.globals["now"] = lambda: date_func.today()
 
 app = FastAPI(title="Controle Comercial")

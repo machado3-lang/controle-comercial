@@ -11,6 +11,7 @@ IMPORTANTE:
 """
 import os
 import logging
+import warnings
 from typing import Optional
 from requests import Session
 from requests.auth import HTTPBasicAuth
@@ -24,6 +25,13 @@ class NFSeBethaError(Exception):
     pass
 
 BETHA_NFSE_URL = os.getenv('BETHA_NFSE_DPS_URL', 'https://nota-eletronica.betha.cloud/dps/ws')
+BETHA_NFSE_CANCEL_URL = os.getenv('BETHA_NFSE_CANCEL_URL', BETHA_NFSE_URL)
+BETHA_NFSE_REST_URL = os.getenv('BETHA_NFSE_REST_URL', 'https://nota-eletronica.betha.cloud/api/v1/nfse')
+BETHA_RECOVER_PDF_URL = os.getenv('BETHA_RECOVER_PDF_URL', 'https://e-gov.betha.com.br/e-nota/recoverpdfservlet')
+
+# API do Ambiente de Dados Nacional (ADN) / SEFIN
+ADN_NFSE_URL = os.getenv('ADN_NFSE_URL', 'https://sefin.nfse.gov.br/SefinNacional')
+ADN_DANFSE_URL = os.getenv('ADN_DANFSE_URL', 'https://adn.nfse.gov.br/danfse')
 
 class BethaNfseService:
     def __init__(self):
@@ -74,7 +82,7 @@ class BethaNfseService:
             logger.info(f"Enviando DPS para Betha (tpAmb={tpAmb})...")
             session = self._get_session()
             session.verify = False
-            
+
             soap_xml = f'''<soapenv:Envelope xmlns="http://www.betha.com.br/e-nota-dps" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
    <soapenv:Header/>
    <soapenv:Body>
@@ -83,7 +91,7 @@ class BethaNfseService:
       </RecepcionarDpsEnvio>
    </soapenv:Body>
 </soapenv:Envelope>'''
-            
+
             response = session.post(
                 BETHA_NFSE_URL,
                 data=soap_xml.encode('utf-8'),
@@ -91,21 +99,26 @@ class BethaNfseService:
                 timeout=60
             )
             response.raise_for_status()
+            logger.info(f"HTTP {response.status_code}, raw:\n{response.text[:2000]}")
             root = etree.fromstring(response.content)
-            ns = '{http://www.betha.com.br/e-nota-dps}'
-            protocolo_el = root.find(f'.//{ns}protocolo')
+            protocolo_el = root.find('.//{http://www.betha.com.br/e-nota-dps}protocolo')
+            if protocolo_el is None:
+                protocolo_el = root.find('.//protocolo')
             if protocolo_el is not None:
                 logger.info(f"Protocolo recebido: {protocolo_el.text}")
                 return {'protocolo': protocolo_el.text, 'status': 'sucesso'}
-            lista_msg = root.find(f'.//{ns}listaMensagens')
+            lista_msg = root.find('.//{http://www.betha.com.br/e-nota-dps}listaMensagens')
+            if lista_msg is None:
+                lista_msg = root.find('.//listaMensagens')
             if lista_msg is not None:
-                mensagens = root.findall(f'.//{ns}mensagem')
+                mensagens = lista_msg.findall('{http://www.betha.com.br/e-nota-dps}mensagem') or lista_msg.findall('mensagem')
                 erros = []
                 for m in mensagens:
-                    cod = m.find(f'{ns}codigo')
-                    msg = m.find(f'{ns}mensagem')
+                    cod = m.find('{http://www.betha.com.br/e-nota-dps}codigo') or m.find('codigo')
+                    msg = m.find('{http://www.betha.com.br/e-nota-dps}mensagem') or m.find('mensagem')
                     erros.append({'codigo': cod.text if cod is not None else 'N/A', 'mensagem': msg.text if msg is not None else 'N/A'})
-                    logger.error(f"Erro DPS {cod.text}: {msg.text}")
+                    if cod is not None:
+                        logger.error(f"Erro DPS {cod.text}: {msg.text if msg is not None else 'N/A'}")
                 return {'protocolo': None, 'erros': erros}
             raise NFSeBethaError("Protocolo não retornado")
         except Exception as e:
@@ -113,17 +126,16 @@ class BethaNfseService:
             raise NFSeBethaError(f"Erro SOAP: {e}")
 
     def consultar_status(self, protocolo: str, tpAmb: int = 1) -> dict:
-        from lxml import etree
+        import re
         """Consulta status da DPS enviada"""
-        try:
-            logger.info(f"Consultando status da DPS {protocolo}...")
-            session = self._get_session()
-            session.verify = False
-            
-            cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
-            cnpj = os.getenv('BETHA_CNPJ', '13133714000110')
-            
-            soap_xml = f'''<soapenv:Envelope xmlns="http://www.betha.com.br/e-nota-dps" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+        logger.info(f"Consultando status da DPS {protocolo}...")
+        session = self._get_session()
+        session.verify = False
+        
+        cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
+        cnpj = os.getenv('BETHA_CNPJ', '13133714000110')
+        
+        soap_xml = f'''<soapenv:Envelope xmlns="http://www.betha.com.br/e-nota-dps" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
    <soapenv:Header/>
    <soapenv:Body>
       <ConsultarStatusDpsEnvio>
@@ -135,7 +147,226 @@ class BethaNfseService:
       </ConsultarStatusDpsEnvio>
    </soapenv:Body>
 </soapenv:Envelope>'''
-            
+        
+        response = session.post(
+            BETHA_NFSE_URL,
+            data=soap_xml.encode('utf-8'),
+            headers={'Content-Type': 'text/xml; charset=utf-8'},
+            timeout=60
+        )
+        response.raise_for_status()
+        text = response.text
+        
+        def _val(name):
+            m = re.search(rf'<[^:>]*:?{name}[^>]*>([^<]*)</[^:>]*:?{name}[^>]*>', text)
+            return m.group(1).strip() if m else None
+        
+        result = {
+            'status': _val('statusProcessamento') or 'DESCONHECIDO',
+            'data_hora': _val('dataHoraRecebimento'),
+            'situacao_nfse': _val('situacaoNfse') or _val('situacao'),
+        }
+        
+        msgs = re.findall(r'<[^:>]*:?mensagem[^>]*>([^<]+)</[^:>]*:?mensagem[^>]*>', text)
+        msgs = list(dict.fromkeys(m.strip() for m in msgs if m.strip()))
+        if msgs:
+            result['erros'] = [{'mensagem': m} for m in msgs]
+        
+        emissao = re.search(r'<[^:>]*:?emissao[^>]*>(.*?)</[^:>]*:?emissao[^>]*>', text, re.DOTALL)
+        if emissao:
+            e = emissao.group(1)
+            result['numero_nfse'] = _val('numeroNotaFiscal')
+            result['chave_acesso'] = _val('chaveAcesso')
+            result['numero_dps'] = _val('numeroDps')
+            result['serie_dps'] = _val('serieDps')
+            result['id_dps'] = _val('idDps')
+            # Tenta extrair XML completo da NFSe (CDATA ou elemento)
+            cdata = re.search(r'<!\[CDATA\[(.*?)\]\]>', text, re.DOTALL)
+            if cdata:
+                result['xml_documento'] = cdata.group(1).strip()
+            else:
+                # Tenta extrair qualquer XML dentro de compNfse ou dpsXml
+                comp = re.search(r'<[^:>]*:?compNfse[^>]*>(.*?)</[^:>]*:?compNfse[^>]*>', text, re.DOTALL)
+                if comp:
+                    result['xml_documento'] = comp.group(1).strip()
+                else:
+                    dps_xml = re.search(r'<[^:>]*:?dpsXml[^>]*>(.*?)</[^:>]*:?dpsXml[^>]*>', text, re.DOTALL)
+                    if dps_xml:
+                        result['xml_documento'] = dps_xml.group(1).strip()
+            # Tenta extrair URL do DANFSe
+            url = _val('urlDanfse') or _val('danfseUrl')
+            if url:
+                result['url_danfse'] = url
+            # Tenta extrair tokens de download do PDF (recoverpdfservlet)
+            for param in ('p1', 'p2', 'p3', 'p4', 'param1', 'param2', 'param3', 'param4'):
+                val = _val(param)
+                if val:
+                    result[f'pdf_{param}'] = val
+            # Tenta extrair link direto do recoverpdf
+            pdf_link = re.search(r'recoverpdfservlet[^"\']*', text)
+            if pdf_link:
+                result['url_danfse'] = pdf_link.group(0)
+        
+        return result
+
+    def consultar_nfse_rest(self, numero: str, codigo_verificacao: str = None) -> dict:
+        """Consulta dados da NFSe via REST API (Fly e-Nota) para obter URL do DANFSe"""
+        try:
+            session = self._get_session()
+            session.verify = False
+            params = {'numero': numero}
+            if codigo_verificacao:
+                params['codigoVerificacao'] = codigo_verificacao
+            response = session.get(BETHA_NFSE_REST_URL, params=params, timeout=30)
+            if response.status_code == 200:
+                return response.json()
+            logger.warning(f"REST API retornou HTTP {response.status_code}: {response.text[:500]}")
+            return {}
+        except Exception as e:
+            logger.warning(f"Erro ao consultar REST API: {e}")
+            return {}
+
+    def obter_danfse_url(self, numero: str, codigo_verificacao: str = None,
+                          pdf_params: dict = None) -> str:
+        """Tenta obter URL do DANFSe da Betha"""
+        # Tenta REST API primeiro
+        dados = self.consultar_nfse_rest(numero, codigo_verificacao)
+        url = dados.get('urlDanfse') or dados.get('linkDanfse') or dados.get('url')
+        if url:
+            if not url.startswith('http'):
+                url = f"https://e-gov.betha.com.br{url}" if url.startswith('/') else url
+            return url
+        # Tenta tokens do PDF salvos do ConsultarStatus
+        if pdf_params:
+            params = '&'.join(f"{k}={v}" for k, v in pdf_params.items() if v)
+            if params:
+                return f"{BETHA_RECOVER_PDF_URL}?{params}&local=C"
+        # Tenta URL padrão Fly Notas
+        if codigo_verificacao:
+            url_pattern = os.getenv('BETHA_DANFSE_URL_PATTERN',
+                'https://nota-eletronica.betha.cloud/fly/notas/danfse/{codigo}')
+            return url_pattern.replace('{codigo}', codigo_verificacao).replace('{numero}', numero)
+        return None
+
+    def baixar_danfse_adn(self, chave_acesso: str) -> bytes | None:
+        """Tenta baixar o DANFSe (PDF) do ADN: GET https://adn.nfse.gov.br/danfse/{chaveAcesso}"""
+        import logging as _lg
+        _lg.info(f"Baixando DANFSe ADN {chave_acesso[:10]}...")
+        session = self._get_session()
+        session.verify = False
+        try:
+            r = session.get(f"{ADN_DANFSE_URL}/{chave_acesso}", timeout=30)
+            ct = r.headers.get('content-type', '')
+            if r.status_code == 200 and 'application/pdf' in ct:
+                _lg.info(f"DANFSe baixado ({len(r.content)} bytes)")
+                return r.content
+            _lg.warning(f"DANFSe ADN HTTP {r.status_code} ct={ct}")
+            return None
+        except Exception as e:
+            _lg.warning(f"Erro baixar DANFSe ADN: {e}")
+            return None
+
+    def consultar_situacao_nfse(self, numero_nfse: str, codigo_verificacao: str = None) -> dict:
+        """Consulta situação real via ADN SEFIN — GET /nfse + GET /eventos"""
+        import json, re, base64, gzip
+        if not codigo_verificacao:
+            return {'situacao': None, 'aviso': 'sem chave'}
+        chave = codigo_verificacao
+        logger.info(f"Consultando NFSe {numero_nfse} no SEFIN ({chave[:10]}...)...")
+        session = self._get_session()
+        session.verify = False
+        situacao = 'normal'
+
+        try:
+            # 1) GET /nfse/{chaveAcesso} — retorna JSON com XML compactado
+            resp = session.get(f"{ADN_NFSE_URL}/nfse/{chave}", timeout=30)
+            if resp.status_code == 404:
+                return {'situacao': situacao if situacao == 'cancelada' else None, 'aviso': 'SEFIN 404'}
+            if resp.status_code != 200:
+                return {'situacao': situacao if situacao == 'cancelada' else None, 'aviso': f'SEFIN HTTP {resp.status_code}'}
+
+            data = resp.json()
+            # Extrai XML da NFSe
+            xml_nfse = None
+            xml_b64 = data.get('nfseXmlGZipB64')
+            if xml_b64:
+                try: xml_nfse = gzip.decompress(base64.b64decode(xml_b64)).decode('utf-8')
+                except Exception: pass
+
+            # 2) Busca evento de cancelamento no SEFIN (tipoEvento 101101 = cancelamento)
+            if situacao == 'normal':
+                for tp in ('101101', '101103', '202201', '202205'):
+                    ev_url = f"{ADN_NFSE_URL}/nfse/{chave}/eventos/{tp}/1"
+                    try:
+                        ev_r = session.get(ev_url, timeout=30)
+                        if ev_r.status_code == 200:
+                            ev_data = ev_r.json()
+                            ev_xml_b64 = ev_data.get('eventoXmlGZipB64')
+                            if ev_xml_b64:
+                                try:
+                                    ev_xml = gzip.decompress(base64.b64decode(ev_xml_b64)).decode('utf-8')
+                                    logger.info(f"Evento SEFIN {tp} XML: {ev_xml[:500]}")
+                                except Exception:
+                                    pass
+                            # tipoEvento 101101 é exclusivamente cancelamento
+                            situacao = 'cancelada'
+                            logger.info(f"Cancelamento detectado via evento SEFIN {tp}")
+                            break
+                        else:
+                            logger.info(f"SEFIN evento {tp} => HTTP {ev_r.status_code}")
+                    except Exception as e:
+                        logger.warning(f"SEFIN evento {tp} exception: {e}")
+
+            # 3) Verifica cStat/tpEvento no XML da NFSe (fallback)
+            if situacao == 'normal' and xml_nfse:
+                if re.search(r'<[^:>]*:?cStat[^>]*>10[12]</', xml_nfse) or \
+                   re.search(r'<[^:>]*:?tpEvento[^>]*>110111</', xml_nfse):
+                    situacao = 'cancelada'
+                    logger.info(f"Situação detectada como cancelada via XML NFSe")
+
+            return {
+                'situacao': situacao,
+                'xml': xml_nfse,
+                'chaveAcesso': chave,
+                'eventos_debug': 'cancelada' if situacao == 'cancelada' else 'sem_eventos_cancelamento',
+                'codigo': '2' if situacao == 'cancelada' else '1',
+            }
+        except Exception as e:
+            logger.error(f"Erro consulta situação: {e}")
+            return {
+                'situacao': situacao if situacao == 'cancelada' else None,
+                'erro': str(e),
+                'eventos_debug': f'{situacao}_erro:{e}',
+            }
+
+    def cancelar_dps(self, tpAmb: int = 1, codigo_cancelamento: str = "1",
+                      numero_nfse: str = None, protocolo: str = None) -> dict:
+        """Cancela uma NFS-e via CancelarDpsEnvio"""
+        import re
+        ref = numero_nfse or protocolo or '?'
+        tag = 'numeroNfse' if numero_nfse else 'protocolo'
+        val = numero_nfse or protocolo
+        logger.info(f"CancelarDpsEnvio {tag}={ref}...")
+        session = self._get_session()
+        session.verify = False
+
+        cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
+        cnpj = os.getenv('BETHA_CNPJ', '13133714000110')
+
+        soap_xml = f'''<soapenv:Envelope xmlns="http://www.betha.com.br/e-nota-dps" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      <CancelarDpsEnvio>
+         <tpAmb>{tpAmb}</tpAmb>
+         <codigoIbge>{cmun}</codigoIbge>
+         <cpfCnpjPrestador>{cnpj}</cpfCnpjPrestador>
+         <{tag}>{val}</{tag}>
+         <codigoCancelamento>{codigo_cancelamento}</codigoCancelamento>
+      </CancelarDpsEnvio>
+   </soapenv:Body>
+</soapenv:Envelope>'''
+
+        try:
             response = session.post(
                 BETHA_NFSE_URL,
                 data=soap_xml.encode('utf-8'),
@@ -143,57 +374,276 @@ class BethaNfseService:
                 timeout=60
             )
             response.raise_for_status()
-            root = etree.fromstring(response.content)
-            ns = '{http://www.betha.com.br/e-nota-dps}'
-            status_el = root.find(f'.//{ns}statusProcessamento')
-            if status_el is not None:
-                data_hora = root.find(f'.//{ns}dataHoraRecebimento')
-                return {'status': status_el.text, 'data_hora': data_hora.text if data_hora is not None else None}
-            lista_msg = root.find(f'.//{ns}listaMensagens')
-            if lista_msg is not None:
-                mensagens = root.findall(f'.//{ns}mensagem')
-                for m in mensagens:
-                    msg_el = m.find(f'{ns}mensagem')
-                    if msg_el is not None:
-                        return {'status': 'ERRO', 'mensagem': msg_el.text}
-            return {'status': 'DESCONHECIDO'}
-        except Exception as e:
-            logger.error(f"Erro consulta: {e}")
-            raise NFSeBethaError(f"Erro consulta: {e}")
+            text = response.text
+            logger.info(f"Cancelamento response: {text[:2000]}")
 
-def gerar_dps_xml(pedido, db, tpAmb: int = 1) -> str:
+            def _v(name):
+                m = re.search(rf'<[^:>]*:?{name}[^>]*>([^<]*)</[^:>]*:?{name}[^>]*>', text)
+                return m.group(1).strip() if m else None
+
+            if 'sucesso' in text.lower() or _v('CancelamentoHomologado'):
+                return {'sucesso': True, 'protocolo': _v('protocolo')}
+            msgs = re.findall(r'<[^:>]*:?mensagem[^>]*>([^<]+)</[^:>]*:?mensagem[^>]*>', text)
+            msgs = list(dict.fromkeys(m.strip() for m in msgs if m.strip()))
+            return {'sucesso': False, 'erros': [{'mensagem': m} for m in msgs] if msgs else [{'mensagem': 'Erro desconhecido no cancelamento'}]}
+        except Exception as e:
+            logger.error(f"Erro SOAP cancelamento: {e}")
+            raise NFSeBethaError(f"Erro SOAP cancelamento: {e}")
+
+    def cancelar_nfse_assinado(self, numero_nfse: str, tpAmb: int = 1,
+                                motivo: str = "Cancelamento solicitado",
+                                chave_acesso: str = None,
+                                protocolo_dps: str = None) -> dict:
+        """Cancela NFS-e via RecepcionarEventoCancelamentoEnvio (DPS cloud)"""
+        import re
+        from datetime import datetime, timezone, timedelta
+
+        logger.info(f"Cancelando NFS-e {numero_nfse} via evento...")
+        cnpj = os.getenv('BETHA_CNPJ', '13133714000110')
+        im = os.getenv('BETHA_INSCRICAO_MUNICIPAL', '')
+        cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
+        if not chave_acesso:
+            raise NFSeBethaError("chave_acesso é obrigatória para cancelamento via evento")
+        ns_e = "http://www.betha.com.br/e-nota-dps"
+        # Formato ISO sem microssegundos para evitar JAXB parsing issues
+        agora_s = datetime.now(timezone(timedelta(hours=-3))).strftime('%Y-%m-%dT%H:%M:%S-03:00')
+        evt_id = f"EVT{datetime.now().strftime('%Y%m%d%H%M%S%f')[:22]}"
+        pre_id = f"PRE{datetime.now().strftime('%Y%m%d%H%M%S%f')[:22]}"
+        n_dfe = f"{datetime.now().year}{str(numero_nfse).zfill(11)}"
+
+        evento_xml = f'''<RecepcionarEventoCancelamentoEnvio xmlns="{ns_e}">
+  <evento versao="1.0">
+    <infEvento id="{evt_id}">
+      <verAplic>1.0</verAplic>
+      <ambGer>{tpAmb}</ambGer>
+      <nSeqEvento>1</nSeqEvento>
+      <dhProc>{agora_s}</dhProc>
+      <nDFe>{n_dfe}</nDFe>
+      <pedRegEvento versao="1.0">
+        <infPedReg id="{pre_id}">
+          <chNFSe>{chave_acesso}</chNFSe>
+          <CNPJAutor>{cnpj}</CNPJAutor>
+          <dhEvento>{agora_s}</dhEvento>
+          <tpAmb>{tpAmb}</tpAmb>
+          <verAplic>1.0</verAplic>
+          <e101101>
+            <xDesc>Cancelamento de NFS-e</xDesc>
+            <cMotivo>1</cMotivo>
+            <xMotivo>{motivo}</xMotivo>
+          </e101101>
+        </infPedReg>
+      </pedRegEvento>
+    </infEvento>
+  </evento>
+</RecepcionarEventoCancelamentoEnvio>'''
+
+        xml_assinado = evento_xml
+        logger.info(f"XML evento cancel:\n{xml_assinado[:500]}")
+
+        # Envelopa SOAP
+        soap_xml = f'''<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+   <soapenv:Header/>
+   <soapenv:Body>
+      {xml_assinado}
+   </soapenv:Body>
+</soapenv:Envelope>'''
+
+        session = self._get_session()
+        session.verify = False
+        try:
+            response = session.post(
+                BETHA_NFSE_URL,
+                data=soap_xml.encode('utf-8'),
+                headers={'Content-Type': 'text/xml; charset=utf-8'},
+                timeout=60
+            )
+            response.raise_for_status()
+            text = response.text
+            logger.info(f"Cancelamento evento response: {text[:2000]}")
+
+            def _v(name):
+                m = re.search(rf'<[^:>]*:?{name}[^>]*>([^<]*)</[^:>]*:?{name}[^>]*>', text)
+                return m.group(1).strip() if m else None
+
+            status = _v('status')
+            protocolo = _v('protocolo')
+            if status and status in ('Aguardando validação do ambiente nacional', 'sucesso'):
+                return {'sucesso': True, 'protocolo': protocolo}
+            if status and status.lower() != 'sucesso':
+                msg = f"Status: {status}"
+                if protocolo:
+                    msg += f" (protocolo: {protocolo})"
+                # Tenta consultar o protocolo para erro detalhado
+                logger.info(f"Evento não processado, tentando CancelarDpsEnvio...")
+                for param in [{'numero_nfse': numero_nfse},
+                              {'protocolo': protocolo_dps}] if protocolo_dps else [{'numero_nfse': numero_nfse}]:
+                    try:
+                        fb = self.cancelar_dps(tpAmb=tpAmb, codigo_cancelamento="1", **param)
+                        if fb.get('sucesso'):
+                            return fb
+                        logger.info(f"CancelarDpsEnvio {list(param.keys())[0]} falhou: {fb.get('erros')}")
+                    except Exception as e:
+                        logger.warning(f"CancelarDpsEnvio {list(param.keys())[0]} erro: {e}")
+                return {'sucesso': False, 'erros': [{'mensagem': msg}]}
+            if 'sucesso' in text.lower():
+                return {'sucesso': True, 'protocolo': protocolo}
+            msgs = re.findall(r'<[^:>]*:?mensagem[^>]*>([^<]+)</[^:>]*:?mensagem[^>]*>', text)
+            msgs = list(dict.fromkeys(m.strip() for m in msgs if m.strip()))
+            if msgs:
+                return {'sucesso': False, 'erros': [{'mensagem': m} for m in msgs]}
+            fault = re.search(r'<[^:>]*:?faultstring[^>]*>(.*?)</[^:>]*:?faultstring[^>]*>', text, re.DOTALL)
+            if fault:
+                return {'sucesso': False, 'erros': [{'mensagem': fault.group(1).strip()}]}
+            logger.warning(f"Resposta cancelamento não reconhecida:\n{text[:3000]}")
+            return {'sucesso': False, 'erros': [{'mensagem': f'Resposta não reconhecida: {text[:500]}'}]}
+        except Exception as e:
+            logger.error(f"Erro SOAP cancelamento evento: {e}")
+            raise NFSeBethaError(f"Erro SOAP cancelamento evento: {e}")
+
+    def _cancelar_abrasf(self, numero_nfse, motivo, tpAmb=1):
+        """Fallback: ABRASF CancelarNfseEnvio com assinatura"""
+        import re
+        from lxml import etree
+        from signxml import XMLSigner, methods
+        from cryptography.hazmat.primitives.serialization import pkcs12, Encoding
+        from datetime import datetime, timezone, timedelta
+
+        logger.info(f"ABRASF cancel fallback NFS-e {numero_nfse}...")
+        cnpj = os.getenv('BETHA_CNPJ', '13133714000110')
+        im = os.getenv('BETHA_INSCRICAO_MUNICIPAL', '')
+        cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
+        ns = "http://www.betha.com.br/e-nota-dps"
+
+        with open(self.cert_path, 'rb') as f:
+            pfx_data = f.read()
+        private_key, cert, _ = pkcs12.load_key_and_certificates(
+            pfx_data,
+            password=self.cert_password.encode() if self.cert_password else None
+        )
+        cert_pem = cert.public_bytes(Encoding.PEM).decode()
+
+        cancel_xml = f'''<CancelarNfseEnvio xmlns="{ns}">
+  <Pedido>
+    <InfPedidoCancelamento Id="Cancelamento1">
+      <IdentificacaoNfse>
+        <Numero>{numero_nfse}</Numero>
+        <CpfCnpj><Cnpj>{cnpj}</Cnpj></CpfCnpj>
+        <InscricaoMunicipal>{im}</InscricaoMunicipal>
+        <CodigoMunicipio>{cmun}</CodigoMunicipio>
+      </IdentificacaoNfse>
+      <CodigoCancelamento>1</CodigoCancelamento>
+    </InfPedidoCancelamento>
+  </Pedido>
+</CancelarNfseEnvio>'''
+        root = etree.fromstring(cancel_xml.encode())
+        signer = XMLSigner(method=methods.enveloped, signature_algorithm='rsa-sha256',
+                           digest_algorithm='sha256')
+        signed_root = signer.sign(root, key=private_key, cert=cert_pem, reference_uri='#Cancelamento1')
+        xml_assinado = etree.tostring(signed_root, encoding='unicode', pretty_print=True)
+
+        soap_xml = f'''<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+   <soapenv:Header/>
+   <soapenv:Body>{xml_assinado}</soapenv:Body>
+</soapenv:Envelope>'''
+
+        session = self._get_session()
+        session.verify = False
+        response = session.post(
+            BETHA_NFSE_CANCEL_URL, data=soap_xml.encode('utf-8'),
+            headers={'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'CancelarNfseEnvio'},
+            timeout=60
+        )
+        response.raise_for_status()
+        text = response.text
+        logger.info(f"ABRASF cancel response: {text[:1000]}")
+        if 'sucesso' in text.lower() or re.search(r'CancelamentoHomologado', text):
+            return {'sucesso': True}
+        msgs = re.findall(r'<[^:>]*:?mensagem[^>]*>([^<]+)</[^:>]*:?mensagem[^>]*>', text)
+        if msgs:
+            return {'sucesso': False, 'erros': [{'mensagem': m} for m in msgs]}
+        raise NFSeBethaError(f"ABRASF resposta não reconhecida: {text[:300]}")
+
+def _limpar_codigo(valor) -> str:
+    if not valor:
+        return ""
+    return "".join(c for c in str(valor) if c.isdigit())
+
+
+def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
     """Gera XML DPS Nacional - formato ID 45 chars - filtra apenas serviços"""
     from models import Empresa
     empresa = db.query(Empresa).first()
-    
+
     itens_servico = [i for i in pedido.itens if i.produto and i.produto.tipo == 'servico']
-    vlr = sum(float(i.total or 0) for i in itens_servico)
-    if vlr == 0:
-        vlr = float(pedido.total or 0)
-    
-    cod_serv = '010101'
-    desc_serv = 'Servicos de internet'
-    for item in itens_servico:
-        if item.produto and item.produto.codigo_lc116:
-            cod_serv = ''.join(filter(str.isdigit, item.produto.codigo_lc116)).zfill(6)
-            desc_serv = item.produto.nome or item.descricao or desc_serv
-            break
-    
-    cnpj_prest = ''.join(filter(str.isdigit, empresa.cnpj or ''))
-    cpf_cnpj_toma = ''.join(filter(str.isdigit, pedido.cliente.cpf_cnpj or ''))
-    
+
+    cnpj_prest = _limpar_codigo(empresa.cnpj or '')
+    cpf_cnpj_toma = _limpar_codigo(pedido.cliente.cpf_cnpj or '')
+
+    cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
+
+    cli = pedido.cliente
+    cli_end = (cli.endereco or '').strip()
+    cli_bairro = (cli.bairro or '').strip()
+    cli_cep = _limpar_codigo(cli.cep or '')
+    cli_cmun = _limpar_codigo(cli.codigo_ibge or '') or cmun
+    cli_fone = _limpar_codigo(cli.celular or cli.telefone or '')
+    cli_email = (cli.email or '').strip()
+    cli_im = _limpar_codigo(cli.inscricao_municipal or '')
+
+    toma_end = f'''<end>
+         <endNac>
+            <cMun>{cli_cmun}</cMun>
+            <CEP>{cli_cep}</CEP>
+         </endNac>
+         <xLgr>{cli_end}</xLgr>
+         <nro>SN</nro>
+         <xBairro>{cli_bairro}</xBairro>
+      </end>'''
+
     if len(cpf_cnpj_toma) == 11:
         toma_doc = f'<CPF>{cpf_cnpj_toma}</CPF>'
     else:
         toma_doc = f'<CNPJ>{cpf_cnpj_toma}</CNPJ>'
-    
-    cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
+        if cli_im:
+            toma_doc += f'\n         <IM>{cli_im}</IM>'
+
     serie = '1'
-    ndps = f"{pedido.id:015d}"
-    
+    ndps_num = numero_nfse if numero_nfse is not None else pedido.id
+    ndps = f"{ndps_num:015d}"
+
     service = BethaNfseService()
     id_dps = service.gerar_id_dps(cmun, cnpj_prest, serie, ndps)
-    
+
+    total_vlr = sum(float(i.total or 0) for i in itens_servico)
+    if total_vlr == 0:
+        total_vlr = float(pedido.total or 0)
+
+    cod_serv = "010101"
+    desc_serv = "Servicos"
+    cod_trib = "000001"
+    discriminacao = ""
+
+    for i, item in enumerate(itens_servico, 1):
+        prod = item.produto
+        desc = item.descricao or (prod.nome if prod else "Servico")
+        qtd = float(item.quantidade or 1)
+        if i == 1:
+            if prod and prod.codigo_lc116:
+                cod_serv = (_limpar_codigo(prod.codigo_lc116)).ljust(6, '0')
+            desc_serv = desc
+            if prod and prod.codigo_tributacao_municipal:
+                cod_trib = (_limpar_codigo(prod.codigo_tributacao_municipal)).zfill(6)
+        if discriminacao:
+            discriminacao += " | "
+        discriminacao += f"{i}. {desc} (qtd: {qtd})"
+
+    if not discriminacao:
+        discriminacao = desc_serv
+
+    aliquota = empresa.aliquota_iss or 2.0
+    iss_retido = getattr(pedido.cliente, 'iss_retido', False) or False
+    tp_ret = 1
+
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
@@ -206,16 +656,21 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1) -> str:
       <cLocEmi>{cmun}</cLocEmi>
       <prest>
          <CNPJ>{cnpj_prest}</CNPJ>
+         <fone>{_limpar_codigo(empresa.celular or empresa.telefone or '')}</fone>
+         <email>{empresa.email or ''}</email>
          <regTrib>
             <opSimpNac>1</opSimpNac>
             <regEspTrib>0</regEspTrib>
          </regTrib>
       </prest>
-      <toma>
-         {toma_doc}
-         <xNome>{pedido.cliente.nome or ''}</xNome>
-      </toma>
-      <serv>
+       <toma>
+          {toma_doc}
+          <xNome>{cli.nome or ''}</xNome>
+          {toma_end}
+          <fone>{cli_fone}</fone>
+          <email>{cli_email}</email>
+       </toma>
+       <serv>
          <locPrest>
             <cLocPrestacao>{cmun}</cLocPrestacao>
          </locPrest>
@@ -227,47 +682,345 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1) -> str:
       </serv>
       <valores>
          <vServPrest>
-            <vServ>{vlr:.2f}</vServ>
+            <vServ>{total_vlr:.2f}</vServ>
          </vServPrest>
          <trib>
             <tribMun>
                <tribISSQN>1</tribISSQN>
-               <pAliq>2.00</pAliq>
-               <tpRetISSQN>1</tpRetISSQN>
+               <pAliq>{aliquota:.2f}</pAliq>
+               <tpRetISSQN>{tp_ret}</tpRetISSQN>
             </tribMun>
             <totTrib>
                <indTotTrib>0</indTotTrib>
             </totTrib>
          </trib>
       </valores>
-      <IBSCBS>
-         <finNFSe>0</finNFSe>
-         <cIndOp>050102</cIndOp>
-         <indDest>0</indDest>
-         <valores>
-            <trib>
-               <gIBSCBS>
-                  <CST>000</CST>
-                  <cClassTrib>000001</cClassTrib>
-               </gIBSCBS>
-            </trib>
-         </valores>
-      </IBSCBS>
    </infDPS>
 </DPS>'''
 
-def emitir_completa(pedido, db, tpAmb: int = 1) -> dict:
+def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
+    from models import Empresa
+    empresa = db.query(Empresa).first()
+
+    itens = nfse.itens or []
+    cnpj_prest = _limpar_codigo(empresa.cnpj or '')
+    cpf_cnpj_toma = _limpar_codigo(nfse.cliente.cpf_cnpj or '') if nfse.cliente else ''
+    cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
+    cli = nfse.cliente
+
+    cli_end = (cli.endereco or '').strip() if cli else ''
+    cli_bairro = (cli.bairro or '').strip() if cli else ''
+    cli_cep = _limpar_codigo(cli.cep or '') if cli else ''
+    cli_cmun = _limpar_codigo(cli.codigo_ibge or '') or cmun if cli else cmun
+    cli_fone = _limpar_codigo(cli.celular or cli.telefone or '') if cli else ''
+    cli_email = (cli.email or '').strip() if cli else ''
+    cli_im = _limpar_codigo(cli.inscricao_municipal or '') if cli else ''
+    cli_nome = (cli.nome or '') if cli else ''
+
+    toma_end = f'''<end>
+         <endNac>
+            <cMun>{cli_cmun}</cMun>
+            <CEP>{cli_cep}</CEP>
+         </endNac>
+         <xLgr>{cli_end}</xLgr>
+         <nro>SN</nro>
+         <xBairro>{cli_bairro}</xBairro>
+      </end>'''
+
+    if len(cpf_cnpj_toma) == 11:
+        toma_doc = f'<CPF>{cpf_cnpj_toma}</CPF>'
+    else:
+        toma_doc = f'<CNPJ>{cpf_cnpj_toma}</CNPJ>'
+        if cli_im:
+            toma_doc += f'\n         <IM>{cli_im}</IM>'
+
+    serie = '1'
+    ndps_num = numero_nfse if numero_nfse is not None else (int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else nfse.id)
+    ndps = f"{ndps_num:015d}"
+
+    service = BethaNfseService()
+    id_dps = service.gerar_id_dps(cmun, cnpj_prest, serie, ndps)
+
+    total_vlr = sum(float(i.valor_total or 0) for i in itens)
+    if total_vlr == 0:
+        total_vlr = float(nfse.valor_total or 0)
+
+    data_emissao = nfse.data_emissao or datetime.now()
+
+    cod_serv = "010101"
+    desc_serv = "Servicos"
+    cod_trib = "000001"
+    discriminacao = ""
+
+    for i, item in enumerate(itens, 1):
+        desc = item.descricao or "Servico"
+        qtd = float(item.quantidade or 1)
+        if i == 1:
+            cod_serv = (_limpar_codigo(item.codigo_servico or '')).ljust(6, '0') or cod_serv
+            desc_serv = desc
+            cod_trib = (_limpar_codigo(item.tributacao_municipal or '')).zfill(6) or cod_trib
+        if discriminacao:
+            discriminacao += " | "
+        discriminacao += f"{i}. {desc} (qtd: {qtd})"
+
+    if not discriminacao:
+        discriminacao = desc_serv
+
+    aliquota = empresa.aliquota_iss or 2.0
+    iss_retido = getattr(nfse, 'iss_retido', False) or False
+    tp_ret = 1
+
+    return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
+   <infDPS id="{id_dps}">
+      <tpAmb>{tpAmb}</tpAmb>
+      <dhEmi>{data_emissao.strftime('%Y-%m-%dT%H:%M:%S')}</dhEmi>
+      <verAplic>fly_WS_1.1.0</verAplic>
+      <serie>{serie}</serie>
+      <nDPS>{ndps}</nDPS>
+      <dCompet>{data_emissao.strftime('%Y-%m-%d')}</dCompet>
+      <tpEmit>1</tpEmit>
+      <cLocEmi>{cmun}</cLocEmi>
+      <prest>
+         <CNPJ>{cnpj_prest}</CNPJ>
+         <fone>{_limpar_codigo(empresa.celular or empresa.telefone or '')}</fone>
+         <email>{empresa.email or ''}</email>
+         <regTrib>
+            <opSimpNac>1</opSimpNac>
+            <regEspTrib>0</regEspTrib>
+         </regTrib>
+      </prest>
+       <toma>
+          {toma_doc}
+          <xNome>{cli_nome}</xNome>
+          {toma_end}
+          <fone>{cli_fone}</fone>
+          <email>{cli_email}</email>
+       </toma>
+       <serv>
+         <locPrest>
+            <cLocPrestacao>{cmun}</cLocPrestacao>
+         </locPrest>
+         <cServ>
+            <cTribNac>{cod_serv}</cTribNac>
+            <xDescServ>{desc_serv}</xDescServ>
+            <cNBS>101011200</cNBS>
+         </cServ>
+      </serv>
+      <valores>
+         <vServPrest>
+            <vServ>{total_vlr:.2f}</vServ>
+                   </vServPrest>
+         <trib>
+            <tribMun>
+               <tribISSQN>1</tribISSQN>
+               <pAliq>{aliquota:.2f}</pAliq>
+               <tpRetISSQN>{tp_ret}</tpRetISSQN>
+            </tribMun>
+            <totTrib>
+               <indTotTrib>0</indTotTrib>
+            </totTrib>
+         </trib>
+      </valores>
+   </infDPS>
+</DPS>'''
+
+
+def emitir_rascunho(nfse, db, tpAmb: int = 1) -> dict:
+    import time
     try:
         service = BethaNfseService()
-        dps_xml = gerar_dps_xml(pedido, db, tpAmb)
+        numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
+        dps_xml = gerar_dps_xml_nfse(nfse, db, tpAmb, numero)
         resultado = service.enviar_dps(dps_xml, tpAmb)
+
+        retry_iss_retido = False
+        if resultado.get('erros') and _erro_iss_retido(resultado['erros']):
+            logger.info("Betha rejeitou por ISS retido — corrigindo e reenviando...")
+            nfse.iss_retido = True
+            if nfse.cliente:
+                nfse.cliente.iss_retido = True
+            db.commit()
+            dps_xml = gerar_dps_xml_nfse(nfse, db, tpAmb, numero)
+            resultado = service.enviar_dps(dps_xml, tpAmb)
+            retry_iss_retido = True
+
+        protocolo = resultado.get('protocolo')
+        erros = resultado.get('erros', [])
+        if erros:
+            return {
+                'status_processamento': 'erro',
+                'protocolo': protocolo,
+                'numero': None,
+                'codigo_verificacao': None,
+                'xml': dps_xml,
+                'data_emissao': datetime.now(),
+                'erros': erros,
+                'retry_iss_retido': retry_iss_retido,
+            }
+        for tentativa in range(6):
+            time.sleep(5)
+            status = service.consultar_status(protocolo, tpAmb)
+            st = status.get('status', '')
+            if st == 'Processado com sucesso':
+                return {
+                    'status_processamento': 'sucesso',
+                    'protocolo': protocolo,
+                    'numero': status.get('numero_nfse'),
+                    'codigo_verificacao': status.get('chave_acesso'),
+                    'xml': dps_xml,
+                    'data_emissao': datetime.now(),
+                    'erros': [],
+                    'retry_iss_retido': retry_iss_retido,
+                }
+            elif st == 'Processado com erro':
+                return {
+                    'status_processamento': 'erro',
+                    'protocolo': protocolo,
+                    'numero': None,
+                    'codigo_verificacao': None,
+                    'xml': dps_xml,
+                    'data_emissao': datetime.now(),
+                    'erros': status.get('erros', []),
+                    'retry_iss_retido': retry_iss_retido,
+                }
         return {
-            'protocolo': resultado.get('protocolo'),
+            'status_processamento': 'processando',
+            'protocolo': protocolo,
+            'numero': None,
+            'codigo_verificacao': None,
+            'xml': None,
+            'data_emissao': datetime.now(),
+            'erros': [{'mensagem': 'NFSe enviada, aguardando processamento na prefeitura'}],
+            'retry_iss_retido': retry_iss_retido,
+        }
+    except NFSeBethaError:
+        raise
+    except Exception as e:
+        raise NFSeBethaError(f"Erro inesperado: {e}")
+
+
+def sincronizar_nfse(protocolo: str, tpAmb: int = 1, numero_nfse: str = None) -> dict:
+    try:
+        service = BethaNfseService()
+        status = service.consultar_status(protocolo, tpAmb)
+        st = status.get('status', '')
+        sit_raw = None
+        adn_xml = None
+        if numero_nfse:
+            sit_resp = service.consultar_situacao_nfse(numero_nfse, status.get('chave_acesso'))
+            eventos = sit_resp.get('eventos')
+            ev_debug = sit_resp.get('eventos_debug') or ''
+            sit_raw = f"sit={sit_resp.get('situacao')} eventos:{ev_debug[:400]}"
+            sit = (sit_resp.get('situacao') or '').lower()
+            codigo = sit_resp.get('codigo', '')
+            adn_xml = sit_resp.get('xml')
+            chave_adn = sit_resp.get('chaveAcesso') or status.get('chave_acesso')
+            if codigo == '2' or 'cancelada' in sit or 'cancelado' in sit:
+                return {
+                    'status_processamento': 'cancelada',
+                    'numero': numero_nfse,
+                    'codigo_verificacao': chave_adn,
+                    'erros': [],
+                }
+        if st == 'Processado com sucesso':
+            return {
+                'status_processamento': 'sucesso',
+                'numero': status.get('numero_nfse'),
+                'codigo_verificacao': status.get('chave_acesso'),
+                'xml_documento': adn_xml or status.get('xml_documento'),
+                'url_danfse': status.get('url_danfse'),
+                'erros': [],
+                '_debug_raw': sit_raw,
+                '_adn_xml': adn_xml,
+            }
+        elif st == 'Processado com erro':
+            return {
+                'status_processamento': 'erro',
+                'numero': None,
+                'codigo_verificacao': None,
+                'erros': status.get('erros', []),
+            }
+        else:
+            return {
+                'status_processamento': 'processando',
+                'numero': None,
+                'codigo_verificacao': None,
+                'erros': [{'mensagem': 'Ainda em processamento na prefeitura'}],
+            }
+    except NFSeBethaError:
+        raise
+    except Exception as e:
+        raise NFSeBethaError(f"Erro ao sincronizar: {e}")
+
+
+def _erro_iss_retido(erros: list) -> bool:
+    if not erros:
+        return False
+    msg = ' '.join((e.get('mensagem') or '').lower() for e in erros)
+    return 'iss' in msg and any(kw in msg for kw in ('retenção', 'retido', 'retencao', 'tomador'))
+
+
+def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> dict:
+    import time
+    try:
+        service = BethaNfseService()
+        dps_xml = gerar_dps_xml(pedido, db, tpAmb, numero_nfse)
+        resultado = service.enviar_dps(dps_xml, tpAmb)
+
+        retry_iss_retido = False
+        if resultado.get('erros') and _erro_iss_retido(resultado['erros']):
+            logger.info("Betha rejeitou por ISS retido — corrigindo e reenviando...")
+            pedido.cliente.iss_retido = True
+            db.commit()
+            dps_xml = gerar_dps_xml(pedido, db, tpAmb, numero_nfse)
+            resultado = service.enviar_dps(dps_xml, tpAmb)
+            retry_iss_retido = True
+
+        protocolo = resultado.get('protocolo')
+        erros = resultado.get('erros', [])
+        if erros:
+            return {
+                'protocolo': protocolo,
+                'numero': None,
+                'codigo_verificacao': None,
+                'xml': dps_xml,
+                'data_emissao': datetime.now(),
+                'erros': erros,
+                'retry_iss_retido': retry_iss_retido,
+            }
+        # Aguarda processamento nacional (consulta com retry até 120s)
+        for tentativa in range(24):
+            time.sleep(5)
+            status = service.consultar_status(protocolo, tpAmb)
+            st = status.get('status', '')
+            if st == 'Processado com sucesso':
+                return {
+                    'protocolo': protocolo,
+                    'numero': status.get('numero_nfse'),
+                    'codigo_verificacao': status.get('chave_acesso'),
+                    'xml': dps_xml,
+                    'data_emissao': datetime.now(),
+                    'erros': [],
+                    'retry_iss_retido': retry_iss_retido,
+                }
+            elif st == 'Processado com erro':
+                return {
+                    'protocolo': protocolo,
+                    'numero': None,
+                    'codigo_verificacao': None,
+                    'xml': dps_xml,
+                    'data_emissao': datetime.now(),
+                    'erros': status.get('erros', []),
+                    'retry_iss_retido': retry_iss_retido,
+                }
+        return {
+            'protocolo': protocolo,
             'numero': None,
             'codigo_verificacao': None,
             'xml': dps_xml,
             'data_emissao': datetime.now(),
-            'erros': resultado.get('erros', [])
+            'erros': [{'mensagem': 'Tempo limite excedido aguardando processamento'}],
+            'retry_iss_retido': retry_iss_retido,
         }
     except NFSeBethaError:
         raise

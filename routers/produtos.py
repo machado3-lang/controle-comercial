@@ -142,6 +142,7 @@ def criar_produto(
     preco_custo: float = Form(0),
     ncm: str = Form(""),
     unidade: str = Form("UN"),
+    origem: int = Form(0),
     categoria_id: int = Form(0),
     fornecedor_id: int = Form(0),
     marca_id: int = Form(0),
@@ -177,8 +178,8 @@ def criar_produto(
         m = db.query(MarcaProduto).get(marca_id)
         marca = m.nome if m else None
     
-    if tipo == 'servico' and (not codigo_lc116 or not codigo_tributacao_municipal):
-        request.session['error'] = 'Código LC116 e Tributação Municipal são obrigatórios para serviços'
+    if tipo == 'servico' and not codigo_lc116:
+        request.session['error'] = 'Código LC116 é obrigatório para serviços'
         return RedirectResponse(url='/produtos/novo', status_code=303)
     
     codigo_lc116_val = codigo_lc116 if tipo == 'servico' else None
@@ -192,6 +193,7 @@ def criar_produto(
         preco_custo=preco_custo if preco_custo else None,
         ncm=ncm if ncm else None,
         unidade=unidade,
+        origem=origem,
         categoria_id=categoria_id if categoria_id else None,
         fornecedor_id=fornecedor_id if fornecedor_id else None,
         marca_id=marca_id if marca_id else None,
@@ -209,6 +211,7 @@ def criar_produto(
         codigo_tributacao_municipal=codigo_tributacao_val,
         situacao=situacao,
         foto=foto_path,
+        bling_pending_sync=True,
     )
     db.add(produto)
     db.commit()
@@ -292,6 +295,7 @@ def atualizar_produto(
     preco_custo: float = Form(0),
     ncm: str = Form(""),
     unidade: str = Form("UN"),
+    origem: int = Form(0),
     categoria_id: int = Form(0),
     fornecedor_id: int = Form(0),
     marca_id: int = Form(0),
@@ -323,6 +327,7 @@ def atualizar_produto(
         produto.preco_custo = preco_custo if preco_custo else None
         produto.ncm = ncm if ncm else None
         produto.unidade = unidade
+        produto.origem = origem
         produto.categoria_id = categoria_id if categoria_id else None
         produto.fornecedor_id = fornecedor_id if fornecedor_id else None
         if marca_id:
@@ -350,6 +355,7 @@ def atualizar_produto(
         produto.codigo_lc116 = codigo_lc116 if tipo == 'servico' else None
         produto.codigo_tributacao_municipal = codigo_tributacao_municipal if tipo == 'servico' else None
         produto.situacao = situacao
+        produto.bling_pending_sync = True
         db.commit()
         
         # Salvar variações se for produto

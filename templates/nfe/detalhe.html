@@ -40,6 +40,12 @@
                 <p class="text-sm text-slate-100">{{ nfe.data_emissao.strftime('%d/%m/%Y %H:%M') }}</p>
             </div>
             {% endif %}
+            {% if cobranca %}
+            <div class="p-3 bg-slate-800/40 rounded-xl">
+                <p class="text-xs text-slate-500">Cobrança</p>
+                <a href="/contas/receber/{{ cobranca.id }}" class="text-sm text-emerald-400 hover:text-emerald-300">R$ {{ "%.2f"|format(cobranca.valor) }} - {{ cobranca.status.value if cobranca.status else 'Pendente' }}</a>
+            </div>
+            {% endif %}
         </div>
 
         {% if nfe.pedido %}
@@ -89,10 +95,23 @@
             <a href="/nfe/{{ nfe.id }}/previa" class="flex items-center px-4 py-2 text-sm bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10">
                 <i data-lucide="eye" class="w-4 h-4 me-1"></i> Revisar e Transmitir
             </a>
-            {% elif nfe.status == 'queued' or nfe.status == 'processing' %}
-            <a href="/nfe/{{ nfe.id }}" class="flex items-center px-3 py-2 text-sm text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition">
-                <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Atualizar Status
+            <a href="/nfe/{{ nfe.id }}/editar" class="flex items-center px-3 py-2 text-sm text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition">
+                <i data-lucide="edit" class="w-4 h-4 me-1"></i> Editar
             </a>
+            <button type="button" onclick="confirmExcluir({{ nfe.id }}, '{{ nfe.numero }}')" class="flex items-center px-3 py-2 text-sm text-rose-400 border border-rose-800/50 rounded-xl hover:bg-rose-950/30 transition">
+                <i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Excluir
+            </button>
+            {% elif nfe.invoice_id and (nfe.status == 'queued' or nfe.status == 'processing') %}
+            <a href="/nfe/invoices/{{ nfe.invoice_id }}/status?redirect=1" class="flex items-center px-3 py-2 text-sm text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition">
+                <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Consultar Status
+            </a>
+            {% endif %}
+            {% if not cobranca and nfe.status in ('rascunho', 'issued') %}
+            <form method="post" action="/nfe/{{ nfe.id }}/gerar-cobranca" class="inline">
+                <button type="submit" class="flex items-center px-3 py-2 text-sm text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition">
+                    <i data-lucide="banknote" class="w-4 h-4 me-1"></i> Gerar Cobrança
+                </button>
+            </form>
             {% endif %}
             {% if nfe.invoice_id and nfe.status == 'issued' %}
             <a href="/nfe/{{ nfe.id }}/pdf" target="_blank" class="flex items-center px-3 py-2 text-sm text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition">
@@ -128,9 +147,37 @@
     </div>
 </div>
 
+<div class="modal fade" id="modalConfirmExcluir">
+    <div class="modal-dialog">
+        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <div class="modal-header border-b border-slate-800/50">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-red-400 font-semibold"><i data-lucide="trash-2" class="w-5 h-5 inline me-1"></i> Excluir NFe</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <p class="text-slate-300">Excluir o rascunho da <strong>NFe #<span id="excluirNumero"></span></strong>?</p>
+                <p class="text-slate-500 text-xs mt-2">O estoque dos itens será restaurado.</p>
+            </div>
+            <div class="modal-footer border-t border-slate-800/50">
+                <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Voltar</button>
+                <form method="post" id="formExcluir" class="inline">
+                    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-rose-500/10">
+                        <i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Sim, Excluir
+                    </button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
 function abrirCancelamento() {
     new bootstrap.Modal(document.getElementById('modalCancelar')).show();
+}
+function confirmExcluir(nfeId, numero) {
+    document.getElementById('excluirNumero').textContent = numero;
+    document.getElementById('formExcluir').action = '/nfe/' + nfeId + '/excluir';
+    new bootstrap.Modal(document.getElementById('modalConfirmExcluir')).show();
 }
 </script>
 {% endblock %}

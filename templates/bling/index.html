@@ -3,19 +3,21 @@
 {% block content %}
 <h2><i class="bi bi-cloud-download"></i> Bling</h2>
 
-<div class="col-md-6 d-grid gap-2">
-    <a href="/configuracoes" class="btn btn-outline-secondary">
-        <i class="bi bi-gear"></i> Ver Credenciais Bling
-    </a>
-    <a href="/contas/receber" class="btn btn-outline-primary">
-        <i class="bi bi-arrow-down-circle"></i> Contas a Receber
-    </a>
+<div class="row mb-3">
+    <div class="col-md-6 d-grid gap-2">
+        <a href="/configuracoes" class="btn btn-outline-secondary">
+            <i class="bi bi-gear"></i> Ver Credenciais Bling
+        </a>
+        <a href="/contas/receber" class="btn btn-outline-primary">
+            <i class="bi bi-arrow-down-circle"></i> Contas a Receber
+        </a>
+    </div>
 </div>
 
 <div class="mt-3">
     <h5>Status da Integração</h5>
     <p>
-        Token configurado: 
+        Token configurado:
         {% if token_valido %}
             <span class="badge bg-success">Sim</span>
         {% else %}
@@ -23,9 +25,135 @@
         {% endif %}
     </p>
     <p class="text-muted small">
-        <i class="bi bi-info-circle"></i> Para configurar, acesse 
+        <i class="bi bi-info-circle"></i> Para configurar, acesse
         <a href="https://developer.bling.com.br/aplicativos" target="_blank">developer.bling.com.br/aplicativos</a>
-        , crie um aplicativo e configure as credenciais em Configurações > Bling.
+        , crie um aplicativo e configure as credenciais em Configurações &gt; Bling.
     </p>
+</div>
+
+<div class="row mt-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-people"></i> Contatos (Clientes / Fornecedores)</div>
+            <ul class="list-group list-group-flush small">
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Sincronizados
+                    <span class="badge bg-primary rounded-pill">{{ synced_clientes + synced_fornecedores }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Clientes sincronizados
+                    <span class="badge bg-info rounded-pill">{{ synced_clientes }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Fornecedores sincronizados
+                    <span class="badge bg-info rounded-pill">{{ synced_fornecedores }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Pendentes
+                    <span class="badge bg-warning rounded-pill">{{ pending_clientes + pending_fornecedores }}</span>
+                </li>
+            </ul>
+            <div class="card-body d-grid gap-2">
+                <form action="/bling/importar-contatos" method="post">
+                    <button class="btn btn-success w-100 btn-sm"><i class="bi bi-download"></i> Importar Contatos do Bling</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-box"></i> Produtos</div>
+            <ul class="list-group list-group-flush small">
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Sincronizados
+                    <span class="badge bg-primary rounded-pill">{{ synced_produtos }}</span>
+                </li>
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Pendentes
+                    <span class="badge bg-warning rounded-pill">{{ pending_produtos }}</span>
+                </li>
+            </ul>
+            <div class="card-body d-grid gap-2">
+                <form action="/bling/importar-produtos" method="post">
+                    <button class="btn btn-success w-100 btn-sm"><i class="bi bi-download"></i> Importar Produtos do Bling</button>
+                </form>
+                <form action="/bling/sincronizar-produtos" method="post">
+                    <button class="btn btn-primary w-100 btn-sm"><i class="bi bi-upload"></i> Sincronizar Produtos Pendentes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-file-text"></i> Assinaturas / Contratos</div>
+            <ul class="list-group list-group-flush small">
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Pendentes
+                    <span class="badge bg-warning rounded-pill">{{ pending_assinaturas }}</span>
+                </li>
+            </ul>
+            <div class="card-body d-grid gap-2">
+                <form action="/bling/importar-contratos" method="post">
+                    <button class="btn btn-success w-100 btn-sm"><i class="bi bi-download"></i> Importar Contratos</button>
+                </form>
+                <form action="/bling/sincronizar-assinaturas" method="post">
+                    <button class="btn btn-primary w-100 btn-sm"><i class="bi bi-upload"></i> Sincronizar Assinaturas Pendentes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-tools"></i> Ordens de Serviço</div>
+            <ul class="list-group list-group-flush small">
+                <li class="list-group-item d-flex justify-content-between align-items-center">
+                    Pendentes
+                    <span class="badge bg-warning rounded-pill">{{ pending_ordens }}</span>
+                </li>
+            </ul>
+            <div class="card-body d-grid gap-2">
+                <form action="/bling/importar-ordens-servico" method="post">
+                    <button class="btn btn-success w-100 btn-sm"><i class="bi bi-download"></i> Importar Ordens de Serviço</button>
+                </form>
+                <form action="/bling/sincronizar-ordens" method="post">
+                    <button class="btn btn-primary w-100 btn-sm"><i class="bi bi-upload"></i> Sincronizar OS Pendentes</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="row mt-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-arrow-repeat"></i> Ações Gerais</div>
+            <div class="card-body d-grid gap-2">
+                <form action="/bling/sincronizar-pendentes" method="post">
+                    <button class="btn btn-warning w-100 btn-sm"><i class="bi bi-arrow-up-circle"></i> Sincronizar Todos Pendentes</button>
+                </form>
+                <form action="/bling/limpar-importar" method="post" onsubmit="return confirm('Limpar dados locais e reimportar do Bling?')">
+                    <button class="btn btn-danger w-100 btn-sm"><i class="bi bi-arrow-repeat"></i> Limpar e Reimportar Tudo</button>
+                </form>
+                <form action="/bling/gerar-webhook-secret" method="post">
+                    <button class="btn btn-outline-secondary w-100 btn-sm"><i class="bi bi-key"></i> Gerar Webhook Secret</button>
+                </form>
+                <a href="/bling/callback?code=teste" class="btn btn-outline-info btn-sm">Callback Test</a>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><i class="bi bi-info-circle"></i> Webhook</div>
+            <div class="card-body small">
+                <p><strong>Secret:</strong> <code>{{ webhook_secret or "—" }}</code></p>
+                <p><strong>URL:</strong> <code>{{ base_url }}/bling/webhook?secret={{ webhook_secret or "" }}</code></p>
+            </div>
+        </div>
+    </div>
 </div>
 {% endblock %}

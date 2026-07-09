@@ -1,11 +1,13 @@
 import os
+import json
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, Response, JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 
 from database import get_db
-from models import Empresa, Cliente, Fornecedor, Assinatura, OrdemServico
+from models import Empresa, Cliente, Fornecedor, Assinatura, OrdemServico, Produto
+from services.backup import generate_backup, restore_backup
 
 router = APIRouter(prefix="/configuracoes", tags=["Configuracoes"])
 
@@ -28,6 +30,12 @@ def configuracoes(request: Request, db: Session = Depends(get_db), aba: str = "e
             "empresa": empresa,
             "messages": messages,
             "aba": aba,
+            "bling_pending_clientes": db.query(Cliente).filter(Cliente.bling_pending_sync == True).count(),
+            "bling_pending_fornecedores": db.query(Fornecedor).filter(Fornecedor.bling_pending_sync == True).count(),
+            "bling_pending_produtos": db.query(Produto).filter(Produto.bling_pending_sync == True).count(),
+            "bling_synced_clientes": db.query(Cliente).filter(Cliente.bling_id.isnot(None)).count(),
+            "bling_synced_fornecedores": db.query(Fornecedor).filter(Fornecedor.bling_id.isnot(None)).count(),
+            "bling_synced_produtos": db.query(Produto).filter(Produto.bling_id.isnot(None)).count(),
         },
     )
 
@@ -72,6 +80,7 @@ async def salvar_configuracoes(
     notaas_ambiente: str = Form("2"),
     serie_nfe: int = Form(1),
     ultimo_numero_nfe: int = Form(0),
+    aliquota_iss: float = Form(2.0),
 ):
     empresa = db.query(Empresa).first()
     if empresa:
@@ -106,6 +115,7 @@ async def salvar_configuracoes(
         empresa.notaas_ambiente = notaas_ambiente
         empresa.serie_nfe = serie_nfe
         empresa.ultimo_numero_nfe = ultimo_numero_nfe
+        empresa.aliquota_iss = aliquota_iss
     else:
         empresa = Empresa(
             razao_social=razao_social, nome_fantasia=nome_fantasia,
@@ -169,3 +179,36 @@ async def salvar_configuracoes(
     db.commit()
     request.session["message"] = {"tipo": "success", "texto": "Dados salvos com sucesso!"}
     return RedirectResponse(url=f"/configuracoes?aba={aba}", status_code=303)
+
+
+@router.get("/backup")
+def download_backup(request: Request):
+    if not request.session.get("user_id"):
+        return JSONResponse({"error": "Não autenticado"}, status_code=401)
+    try:
+        backup = generate_backup()
+        content = json.dumps(backup, ensure_ascii=False, indent=2, default=str)
+        data = f"{'versao': '1', 'criado_em': backup['created_at']}"
+        filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+        return Response(
+            content=content,
+            media_type="application/json",
+            headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        )
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.post("/restore")
+async def upload_restore(request: Request, arquivo: UploadFile = File(...)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"error": "Não autenticado"}, status_code=401)
+    if not arquivo.filename or not arquivo.filename.endswith(".json"):
+        return JSONResponse({"error": "Envie um arquivo .json válido"}, status_code=400)
+    try:
+        content = await arquivo.read()
+        backup = json.loads(content)
+        stats = restore_backup(backup)
+        return JSONResponse(stats)
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)

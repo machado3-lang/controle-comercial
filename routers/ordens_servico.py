@@ -1,3 +1,4 @@
+import json
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -113,6 +114,58 @@ def detalhe_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)
     )
 
 
+@router.get("/{ordem_id}/editar")
+def editar_ordem_form(request: Request, ordem_id: int, db: Session = Depends(get_db)):
+    ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
+    if not ordem:
+        return RedirectResponse(url="/ordens-servico", status_code=303)
+    clientes = db.query(Cliente).order_by(Cliente.nome).all()
+    marcas = db.query(MarcaProduto).order_by(MarcaProduto.nome).all()
+    categorias = db.query(CategoriaProduto).order_by(CategoriaProduto.nome).all()
+    servicos = db.query(Produto).filter(
+        Produto.tipo == 'servico', Produto.situacao == 'A'
+    ).order_by(Produto.nome).all()
+    pecas = db.query(Produto).filter(
+        Produto.tipo == 'produto', Produto.situacao == 'A'
+    ).order_by(Produto.nome).all()
+    clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
+    marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
+    categorias_json = [{"id": c.id, "nome": c.nome} for c in categorias]
+    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": s.preco, "categoria_id": s.categoria_id} for s in servicos]
+    pecas_json = [{"id": p.id, "nome": p.nome, "preco": p.preco, "categoria_id": p.categoria_id} for p in pecas]
+
+    # Parse existing items data (JSON or fallback to text)
+    servicos_existentes = []
+    if ordem.servicos_executados:
+        try:
+            servicos_existentes = json.loads(ordem.servicos_executados)
+            if isinstance(servicos_existentes, str):
+                servicos_existentes = []
+        except (json.JSONDecodeError, TypeError):
+            servicos_existentes = []
+
+    pecas_existentes = []
+    if ordem.pecas_utilizadas:
+        try:
+            pecas_existentes = json.loads(ordem.pecas_utilizadas)
+            if isinstance(pecas_existentes, str):
+                pecas_existentes = []
+        except (json.JSONDecodeError, TypeError):
+            pecas_existentes = []
+
+    return request.app.state.templates.TemplateResponse(
+        "ordens_servico/editar.html",
+        {"request": request, "ordem": ordem, "clientes": clientes, "marcas": marcas,
+         "categorias": categorias, "servicos": servicos, "pecas": pecas,
+         "clientes_json": clientes_json, "marcas_json": marcas_json,
+         "categorias_json": categorias_json,
+         "servicos_json": servicos_json, "pecas_json": pecas_json,
+         "servicos_existentes": json.dumps(servicos_existentes, ensure_ascii=False),
+         "pecas_existentes": json.dumps(pecas_existentes, ensure_ascii=False),
+         "StatusOS": StatusOS}
+    )
+
+
 @router.post("/{ordem_id}/editar")
 def atualizar_ordem(
     request: Request, ordem_id: int, db: Session = Depends(get_db),
@@ -122,8 +175,8 @@ def atualizar_ordem(
     modelo: str = Form(""),
     numero_serie: str = Form(""),
     defeito_relatado: str = Form(""),
-    servicos_ids: str = Form(""),
-    pecas_ids: str = Form(""),
+    servicos_json_data: str = Form(""),
+    pecas_json_data: str = Form(""),
     valor_servico: float = Form(0),
     valor_pecas: float = Form(0),
     valor_total: float = Form(0),
@@ -151,21 +204,27 @@ def atualizar_ordem(
     ordem.numero_serie = numero_serie
     ordem.defeito_relatado = defeito_relatado
     
-    # Montar serviços executados da lista
-    if servicos_ids:
-        ids_servicos = [int(s) for s in servicos_ids.split(',') if s.isdigit()]
-        servicos = db.query(Produto).filter(Produto.id.in_(ids_servicos), Produto.tipo == 'servico').all()
-        ordem.servicos_executados = ', '.join([s.nome for s in servicos])
-        if not ordem.valor_servico or ordem.valor_servico == 0:
-            ordem.valor_servico = sum([s.preco for s in servicos])
+    # Montar serviços executados da lista (JSON estruturado)
+    if servicos_json_data:
+        try:
+            itens_servico = json.loads(servicos_json_data)
+            ordem.servicos_executados = json.dumps([{
+                "id": s.get("id"), "nome": s.get("nome", ""),
+                "qtd": float(s.get("qtd", 1)), "preco": float(s.get("preco", 0))
+            } for s in itens_servico], ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError):
+            pass
     
-    # Montar peças utilizadas da lista
-    if pecas_ids:
-        ids_pecas = [int(p) for p in pecas_ids.split(',') if p.isdigit()]
-        pecas = db.query(Produto).filter(Produto.id.in_(ids_pecas), Produto.tipo == 'produto').all()
-        ordem.pecas_utilizadas = ', '.join([p.nome for p in pecas])
-        if not ordem.valor_pecas or ordem.valor_pecas == 0:
-            ordem.valor_pecas = sum([p.preco for p in pecas])
+    # Montar peças utilizadas da lista (JSON estruturado)
+    if pecas_json_data:
+        try:
+            itens_pecas = json.loads(pecas_json_data)
+            ordem.pecas_utilizadas = json.dumps([{
+                "id": p.get("id"), "nome": p.get("nome", ""),
+                "qtd": float(p.get("qtd", 1)), "preco": float(p.get("preco", 0))
+            } for p in itens_pecas], ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError):
+            pass
     
     ordem.valor_servico = valor_servico
     ordem.valor_pecas = valor_pecas

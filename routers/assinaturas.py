@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import (Assinatura, AssinaturaHistorico, Cliente, Fornecedor, Empresa, Produto,
                    ContaReceber, StatusConta, get_safe_day)
+from models_nfe import NFSe, NFSeItem
 
 router = APIRouter(prefix="/assinaturas", tags=["Assinaturas"])
 
@@ -175,6 +176,7 @@ def criar_assinatura(
             numero_contrato=numero_contrato,
             observacao=observacao,
             produto_id=produto_id_final,
+            bling_pending_sync=True,
         )
         db.add(assinatura)
         db.commit()
@@ -271,6 +273,59 @@ def gerar_cobranca(request: Request, assinatura_id: int, db: Session = Depends(g
     return RedirectResponse(url="/assinaturas", status_code=303)
 
 
+@router.post("/{assinatura_id}/gerar-nfse")
+def gerar_nfse_assinatura(request: Request, assinatura_id: int, db: Session = Depends(get_db)):
+    assinatura = db.query(Assinatura).options(
+        joinedload(Assinatura.cliente), joinedload(Assinatura.produto)
+    ).filter(Assinatura.id == assinatura_id).first()
+    if not assinatura:
+        request.session["error"] = "Assinatura não encontrada"
+        return RedirectResponse(url="/assinaturas", status_code=303)
+
+    empresa = db.query(Empresa).first()
+    if not empresa:
+        request.session["error"] = "Empresa não configurada"
+        return RedirectResponse(url="/assinaturas", status_code=303)
+
+    try:
+        numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
+        empresa.ultimo_numero_nfse = int(numero_nfse)
+
+        iss_retido = getattr(assinatura.cliente, 'iss_retido', False) or False
+        nfse = NFSe(
+            numero=numero_nfse,
+            status="rascunho",
+            valor_total=assinatura.valor,
+            data_emissao=datetime.now(),
+            iss_retido=iss_retido,
+            aliquota_iss=empresa.aliquota_iss or 2.0,
+        )
+        db.add(nfse)
+        db.flush()
+
+        servico = assinatura.produto
+
+        nfse_item = NFSeItem(
+            nfse_id=nfse.id,
+            produto_id=servico.id if servico else None,
+            descricao=assinatura.descricao,
+            quantidade=assinatura.quantidade or 1,
+            valor_unitario=assinatura.valor / (assinatura.quantidade or 1),
+            valor_total=assinatura.valor,
+            codigo_servico=servico.codigo_lc116 if servico else "",
+            tributacao_municipal=servico.codigo_tributacao_municipal if servico else "",
+        )
+        db.add(nfse_item)
+
+        db.commit()
+        request.session["message"] = f"Rascunho NFSe #{numero_nfse} gerado para assinatura! Revise antes de emitir."
+        return RedirectResponse(url=f"/nfse/detalhe/{nfse.id}", status_code=303)
+    except Exception as e:
+        db.rollback()
+        request.session["error"] = f"Erro ao gerar NFSe: {str(e)}"
+        return RedirectResponse(url="/assinaturas", status_code=303)
+
+
 @router.get("/{assinatura_id}/editar")
 def editar_assinatura(request: Request, assinatura_id: int, db: Session = Depends(get_db)):
     assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
@@ -352,6 +407,7 @@ def atualizar_assinatura(
     assinatura.numero_contrato = numero_contrato if numero_contrato else None
     assinatura.observacao = observacao
     assinatura.updated_at = datetime.now()
+    assinatura.bling_pending_sync = True
     db.commit()
     return RedirectResponse(url="/assinaturas", status_code=303)
 

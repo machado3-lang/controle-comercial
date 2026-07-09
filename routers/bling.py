@@ -3,6 +3,7 @@ import httpx
 import re
 import secrets
 import urllib.parse
+from urllib.parse import urlencode
 from datetime import datetime, timedelta, date
 from typing import Optional
 from pydantic import BaseModel
@@ -10,7 +11,7 @@ from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Cliente, Fornecedor, Empresa, Assinatura, OrdemServico, StatusOS
+from models import Cliente, Fornecedor, Empresa, Assinatura, OrdemServico, StatusOS, Produto, CategoriaProduto, MarcaProduto
 
 router = APIRouter(prefix="/bling", tags=["Bling"])
 
@@ -101,13 +102,18 @@ def call_bling(token: str, method: str, path: str, json_body: dict = None) -> di
 
 def contato_to_cliente(item: dict, eh_fornecedor: bool = False) -> dict:
     parsed_date = None
-    data_criacao = item.get("dataCriacao")
-    if data_criacao:
-        try:
-            parsed_date = datetime.strptime(data_criacao[:10], "%Y-%m-%d")
-        except (ValueError, TypeError):
+    # Tenta vários campos de data que o Bling pode retornar
+    data_raw = item.get("dataCriacao") or item.get("dataInclusao") or item.get("dataCadastro")
+    if data_raw:
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%d/%m/%Y %H:%M:%S", "%Y-%m-%dT%H:%M:%S"):
             try:
-                parsed_date = datetime.fromisoformat(data_criacao.replace("Z", ""))
+                parsed_date = datetime.strptime(data_raw[:19], fmt)
+                break
+            except (ValueError, TypeError):
+                continue
+        if parsed_date is None:
+            try:
+                parsed_date = datetime.fromisoformat(data_raw.replace("Z", ""))
             except (ValueError, TypeError):
                 pass
 
@@ -153,6 +159,23 @@ def contato_to_cliente(item: dict, eh_fornecedor: bool = False) -> dict:
         if not telefone and not celular and pessoas:
             celular = pessoas[0].get("contato", "")
 
+    # Bling v3 usa "ie" e "indicadorIe"
+    ie_raw = item.get("ie") or item.get("inscricaoEstadual") or ""
+    indicador_raw = item.get("indicadorIe") or item.get("indicadorInscricaoEstadual")
+
+    if indicador_raw in (1, "1"):
+        indicador_ie = "contribuidor"
+        isento_ie = False
+    elif indicador_raw in (2, "2"):
+        indicador_ie = "isento"
+        isento_ie = True
+    elif indicador_raw in (9, "9"):
+        indicador_ie = "nao_contribuinte"
+        isento_ie = False
+    else:
+        indicador_ie = ""
+        isento_ie = False
+
     return {
         "nome": item.get("nome", ""),
         "codigo": codigo,
@@ -168,8 +191,11 @@ def contato_to_cliente(item: dict, eh_fornecedor: bool = False) -> dict:
         "email": email,
         "contato": "",
         "fantasia": item.get("fantasia", "") or "",
-        "inscricao_estadual": item.get("inscricaoEstadual", "") or "",
+        "inscricao_estadual": ie_raw,
         "inscricao_municipal": item.get("inscricaoMunicipal", "") or "",
+        "isento_ie": isento_ie,
+        "indicador_ie": indicador_ie,
+        "codigo_ibge": str(item.get("codigoIbge") or ""),
         "situacao": item.get("situacao") or "A",
         "observacao": "",
         "created_at": parsed_date,
@@ -204,14 +230,19 @@ def cliente_to_contato(entity) -> dict:
         except Exception:
             pass
 
+    indicador_map = {"contribuidor": 1, "isento": 2, "nao_contribuinte": 9}
+    indicador_val = indicador_map.get(getattr(entity, "indicador_ie", ""), 1)
+
     return {
         "nome": entity.nome or "",
         "situacao": entity.situacao or "A",
         "tipo": "F" if entity.tipo_pessoa and entity.tipo_pessoa.lower().startswith("f") else "J" if entity.tipo_pessoa and entity.tipo_pessoa.lower().startswith("j") else None,
         "numeroDocumento": entity.cpf_cnpj or "",
         "fantasia": entity.fantasia or entity.contato or "",
-        "inscricaoEstadual": entity.inscricao_estadual or "",
+        "ie": entity.inscricao_estadual or "",
         "inscricaoMunicipal": entity.inscricao_municipal or "",
+        "indicadorIe": indicador_val,
+        "codigoIbge": int(entity.codigo_ibge) if getattr(entity, "codigo_ibge", None) and entity.codigo_ibge.strip().isdigit() else None,
         "email": entity.email or "",
         "dataCriacao": data_criacao,
         "endereco": {
@@ -301,8 +332,10 @@ def pagina_bling(request: Request, db: Session = Depends(get_db)):
     pending_fornecedores = db.query(Fornecedor).filter(Fornecedor.bling_pending_sync == True).count()
     pending_assinaturas = db.query(Assinatura).filter(Assinatura.bling_pending_sync == True).count()
     pending_ordens = db.query(OrdemServico).filter(OrdemServico.bling_pending_sync == True).count()
+    pending_produtos = db.query(Produto).filter(Produto.bling_pending_sync == True).count()
     synced_clientes = db.query(Cliente).filter(Cliente.bling_id.isnot(None)).count()
     synced_fornecedores = db.query(Fornecedor).filter(Fornecedor.bling_id.isnot(None)).count()
+    synced_produtos = db.query(Produto).filter(Produto.bling_id.isnot(None)).count()
 
     return request.app.state.templates.TemplateResponse(
         "bling/index.html", {
@@ -318,8 +351,10 @@ def pagina_bling(request: Request, db: Session = Depends(get_db)):
             "pending_fornecedores": pending_fornecedores,
             "pending_assinaturas": pending_assinaturas,
             "pending_ordens": pending_ordens,
+            "pending_produtos": pending_produtos,
             "synced_clientes": synced_clientes,
             "synced_fornecedores": synced_fornecedores,
+            "synced_produtos": synced_produtos,
         }
     )
 
@@ -478,31 +513,39 @@ def importar_contatos(db: Session, token: str, errors: list, tipo_filtro: str = 
 
         mapped = contato_to_cliente(item, eh_fornecedor=eh_fornecedor)
 
-        if eh_cliente:
-            entity = db.query(Cliente).filter(Cliente.bling_id == bling_id).first()
-            if entity:
-                for k, v in mapped.items():
-                    setattr(entity, k, v)
-                entity.bling_pending_sync = False
-                updated_clientes += 1
-            else:
-                entity = Cliente(bling_id=bling_id, **mapped)
-                db.add(entity)
-                imported_clientes += 1
+        try:
+            if eh_cliente:
+                entity = db.query(Cliente).filter(Cliente.bling_id == bling_id).first()
+                if entity:
+                    for k, v in mapped.items():
+                        if k == "created_at" and v is None and getattr(entity, k) is not None:
+                            continue
+                        setattr(entity, k, v)
+                    entity.bling_pending_sync = False
+                    updated_clientes += 1
+                else:
+                    entity = Cliente(bling_id=bling_id, **mapped)
+                    db.add(entity)
+                    imported_clientes += 1
 
-        if eh_fornecedor:
-            entity = db.query(Fornecedor).filter(Fornecedor.bling_id == bling_id).first()
-            if entity:
-                for k, v in mapped.items():
-                    setattr(entity, k, v)
-                entity.bling_pending_sync = False
-                updated_fornecedores += 1
-            else:
-                entity = Fornecedor(bling_id=bling_id, **mapped)
-                db.add(entity)
-                imported_fornecedores += 1
+            if eh_fornecedor:
+                entity = db.query(Fornecedor).filter(Fornecedor.bling_id == bling_id).first()
+                if entity:
+                    for k, v in mapped.items():
+                        if k == "created_at" and v is None and getattr(entity, k) is not None:
+                            continue
+                        setattr(entity, k, v)
+                    entity.bling_pending_sync = False
+                    updated_fornecedores += 1
+                else:
+                    entity = Fornecedor(bling_id=bling_id, **mapped)
+                    db.add(entity)
+                    imported_fornecedores += 1
 
-        db.commit()
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            errors.append(f"Erro ao processar {'fornecedor' if eh_fornecedor else 'cliente'} {bling_id}: {str(e)[:200]}")
 
     return imported_clientes, updated_clientes, imported_fornecedores, updated_fornecedores
 
@@ -667,6 +710,7 @@ def sincronizar_pendentes(request: Request, db: Session = Depends(get_db)):
     fornecedores_ok = 0
     assinaturas_ok = 0
     ordens_ok = 0
+    produtos_ok = 0
     for c in db.query(Cliente).filter(Cliente.bling_pending_sync == True).all():
         err = push_cliente(db, c, token)
         if err:
@@ -691,6 +735,12 @@ def sincronizar_pendentes(request: Request, db: Session = Depends(get_db)):
             errors.append(err)
         else:
             ordens_ok += 1
+    for p in db.query(Produto).filter(Produto.bling_pending_sync == True).all():
+        err = push_produto(db, p, token)
+        if err:
+            errors.append(err)
+        else:
+            produtos_ok += 1
 
     partes = []
     if clientes_ok:
@@ -701,6 +751,8 @@ def sincronizar_pendentes(request: Request, db: Session = Depends(get_db)):
         partes.append(f"{assinaturas_ok} assinatura(s) OK")
     if ordens_ok:
         partes.append(f"{ordens_ok} OS(s) OK")
+    if produtos_ok:
+        partes.append(f"{produtos_ok} produto(s) OK")
     if errors:
         partes.append(f"{len(errors)} erro(s)")
     msg = " | ".join(partes) if partes else "Nenhum pendente"
@@ -1190,6 +1242,178 @@ def importar_ordens_servico(db: Session, token: str, errors: list) -> tuple:
     return imported, updated
 
 
+# ─── Produtos sync ──────────────────────────────────────────
+
+
+def _produto_tipo_to_str(t: str) -> str:
+    return {"P": "produto", "S": "servico", "K": "kit"}.get(t, "produto")
+
+
+def _produto_tipo_to_api(t: str) -> str:
+    return {"produto": "P", "servico": "S", "kit": "K"}.get(t, "P")
+
+
+def _nested_get(item: dict, *keys, default=None):
+    """Segue uma cadeia de chaves ex: _nested_get(item, 'tributacao', 'ncm')"""
+    cur = item
+    for k in keys:
+        if isinstance(cur, dict):
+            cur = cur.get(k)
+        else:
+            return default
+    return cur if cur is not None else default
+
+
+def produto_to_produto(item: dict) -> dict:
+    tributacao = item.get("tributacao") or {}
+    fornecedor = item.get("fornecedor") or {}
+    dimensoes = item.get("dimensoes") or {}
+    estoque = item.get("estoque") or {}
+
+    return {
+        "codigo": item.get("codigo") or "",
+        "nome": item.get("nome") or "",
+        "descricao": item.get("descricao") or item.get("descricaoCurta") or "",
+        "preco": float(item.get("preco") or 0),
+        "preco_custo": float(fornecedor.get("precoCusto")) if fornecedor.get("precoCusto") else None,
+        "ncm": re.sub(r"\D", "", tributacao.get("ncm") or ""),
+        "origem": int(tributacao.get("origem") or 0),
+        "unidade": item.get("unidade") or "UN",
+        "peso_liq": float(item["pesoLiquido"]) if item.get("pesoLiquido") else None,
+        "peso_bruto": float(item["pesoBruto"]) if item.get("pesoBruto") else None,
+        "altura": float(dimensoes.get("altura")) if dimensoes.get("altura") else None,
+        "largura": float(dimensoes.get("largura")) if dimensoes.get("largura") else None,
+        "profundidade": float(dimensoes.get("profundidade")) if dimensoes.get("profundidade") else None,
+        "unidade_medida": str(dimensoes.get("unidadeMedida") or "cm"),
+        "estoque": float(estoque.get("saldoVirtualTotal", 0) or 0),
+        "estoque_minimo": float(estoque.get("minimo", 0) or 0),
+        "situacao": item.get("situacao") or "A",
+        "tipo": _produto_tipo_to_str(item.get("tipo")),
+    }
+
+
+def _produto_to_api(entity: Produto) -> dict:
+    body = {
+        "codigo": entity.codigo or "",
+        "nome": entity.nome or "",
+        "descricao": entity.descricao or "",
+        "preco": entity.preco or 0,
+        "situacao": entity.situacao or "A",
+        "tipo": _produto_tipo_to_api(entity.tipo or "produto"),
+        "unidade": entity.unidade or "UN",
+        "pesoLiquido": entity.peso_liq if entity.peso_liq else 0,
+        "pesoBruto": entity.peso_bruto if entity.peso_bruto else 0,
+        "estoque": {
+            "saldoVirtualTotal": entity.estoque or 0,
+            "minimo": entity.estoque_minimo or 0,
+        },
+        "fornecedor": {
+            "precoCusto": entity.preco_custo if entity.preco_custo else 0,
+        },
+        "tributacao": {
+            "ncm": entity.ncm or "",
+            "origem": entity.origem or 0,
+        },
+        "dimensoes": {
+            "altura": entity.altura if entity.altura else 0,
+            "largura": entity.largura if entity.largura else 0,
+            "profundidade": entity.profundidade if entity.profundidade else 0,
+            "unidadeMedida": entity.unidade_medida or "cm",
+        },
+    }
+    return body
+
+
+def importar_produtos(db: Session, token: str, errors: list) -> tuple:
+    imported = 0
+    updated = 0
+
+    todos_ids = []
+    pagina = 1
+    while True:
+        result = call_bling(token, "GET", f"produtos?pagina={pagina}&limite=100")
+        if result["status"] != 200:
+            errors.append(f"Erro ao buscar produtos (página {pagina}): {result['body']}")
+            break
+        items = result["data"]
+        if not items:
+            break
+        for item in items:
+            bling_id = item.get("id")
+            if bling_id:
+                todos_ids.append(bling_id)
+        pagina += 1
+
+    import time
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    def fetch_one(cid):
+        for tentativa in range(3):
+            r = call_bling(token, "GET", f"produtos/{cid}")
+            if r["status"] == 200:
+                return cid, r["data"], None
+            if r["status"] == 429:
+                time.sleep(2 ** tentativa)
+                continue
+            if tentativa == 2:
+                return cid, None, f"Erro ao buscar produto {cid}: {r['body']}"
+        return cid, None, f"Erro ao buscar produto {cid} após 3 tentativas"
+
+    items_detalhados = []
+    with ThreadPoolExecutor(max_workers=3) as pool:
+        fut_map = {pool.submit(fetch_one, cid): cid for cid in todos_ids}
+        for fut in as_completed(fut_map):
+            cid, data, err = fut.result()
+            if err:
+                errors.append(err)
+            elif data:
+                items_detalhados.append(data)
+
+    for item in items_detalhados:
+        bling_id = item.get("id")
+        if not bling_id:
+            continue
+        try:
+            mapped = produto_to_produto(item)
+            entity = db.query(Produto).filter(Produto.bling_id == bling_id).first()
+            if entity:
+                for k, v in mapped.items():
+                    setattr(entity, k, v)
+                entity.bling_pending_sync = False
+                updated += 1
+            else:
+                entity = Produto(bling_id=bling_id, **mapped)
+                db.add(entity)
+                imported += 1
+            db.commit()
+        except Exception as e:
+            db.rollback()
+            errors.append(f"Erro ao processar produto {bling_id}: {str(e)[:200]}")
+
+    return imported, updated
+
+
+def push_produto(db: Session, produto: Produto, token: str) -> str | None:
+    data = _produto_to_api(produto)
+    if produto.bling_id:
+        result = call_bling(token, "PUT", f"produtos/{produto.bling_id}", data)
+        if result["status"] in (200, 204):
+            produto.bling_pending_sync = False
+            db.commit()
+            return None
+        return f"Erro ao atualizar produto #{produto.bling_id} ('{produto.nome}'): {result['body']}"
+    else:
+        result = call_bling(token, "POST", "produtos", data)
+        if result["status"] in (200, 201):
+            bling_id = result["data"].get("id")
+            if bling_id:
+                produto.bling_id = bling_id
+            produto.bling_pending_sync = False
+            db.commit()
+            return None
+        return f"Erro ao criar produto '{produto.nome}': {result['body']}"
+
+
 # ─── Contratos sync routes ──────────────────────────────────
 
 @router.post("/importar-contratos")
@@ -1270,6 +1494,46 @@ def sincronizar_ordens_pendentes(request: Request, db: Session = Depends(get_db)
     return RedirectResponse(url="/bling", status_code=303)
 
 
+# ─── Produtos sync routes ───────────────────────────────────
+
+@router.post("/importar-produtos")
+def importar_produtos_route(request: Request, db: Session = Depends(get_db)):
+    token = get_token(db)
+    if not token:
+        request.session["message"] = {"tipo": "danger", "texto": "Token inválido ou expirado. Reautorize no Bling."}
+        return RedirectResponse(url="/bling", status_code=303)
+    errors = []
+    imp, upd = importar_produtos(db, token, errors)
+    msg = f"Produtos: {imp} importado(s), {upd} atualizado(s)"
+    if errors:
+        msg += f" | Erros: {'; '.join(errors)}"
+    request.session["message"] = {"texto": msg, "tipo": "success" if not errors else "warning"}
+    return RedirectResponse(url="/bling", status_code=303)
+
+
+@router.post("/sincronizar-produtos")
+def sincronizar_produtos_pendentes(request: Request, db: Session = Depends(get_db)):
+    token = get_token(db)
+    if not token:
+        request.session["message"] = {"tipo": "danger", "texto": "Token inválido ou expirado. Reautorize no Bling."}
+        return RedirectResponse(url="/bling", status_code=303)
+
+    errors = []
+    ok = 0
+    for p in db.query(Produto).filter(Produto.bling_pending_sync == True).all():
+        err = push_produto(db, p, token)
+        if err:
+            errors.append(err)
+        else:
+            ok += 1
+
+    msg = f"{ok} produto(s) sincronizado(s)"
+    if errors:
+        msg += f" | {len(errors)} erro(s): {'; '.join(errors)}"
+    request.session["message"] = {"texto": msg, "tipo": "success" if not errors else "warning"}
+    return RedirectResponse(url="/bling", status_code=303)
+
+
 @router.get("/testar-conexao")
 def testar_conexao(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
@@ -1282,9 +1546,144 @@ def testar_conexao(request: Request, db: Session = Depends(get_db)):
         return JSONResponse({"success": False, "error": "Falha ao obter token"})
     with httpx.Client() as client:
         try:
-            r = client.get("https://api.bling.com.br/Api/v3/empresas/me", headers={"Authorization": f"Bearer {token}"})
+            r = client.get("https://api.bling.com.br/Api/v3/contatos?pagina=1&limite=1", headers={"Authorization": f"Bearer {token}"})
             if r.status_code == 200:
                 return JSONResponse({"success": True})
             return JSONResponse({"success": False, "error": f"HTTP {r.status_code}"})
         except Exception as e:
             return JSONResponse({"success": False, "error": str(e)})
+
+
+@router.get("/debug-contato/{bling_id}")
+def debug_contato(bling_id: int, request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"error": "Não autenticado"})
+    token = get_token(db)
+    if not token:
+        return JSONResponse({"error": "Sem token"})
+    # raw call to see exactly what the v3 API returns
+    import httpx
+    try:
+        with httpx.Client(timeout=15) as client:
+            resp = client.get(
+                f"https://api.bling.com.br/Api/v3/contatos/{bling_id}",
+                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"}
+            )
+            return JSONResponse({
+                "status": resp.status_code,
+                "raw_body": resp.json() if resp.status_code == 200 else resp.text[:3000]
+            })
+    except Exception as e:
+        return JSONResponse({"error": str(e)})
+
+
+@router.get("/debug-produto/{bling_id}")
+def debug_produto(bling_id: int, request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"error": "Não autenticado"})
+    token = get_token(db)
+    if not token:
+        return JSONResponse({"error": "Sem token"})
+    r = call_bling(token, "GET", f"produtos/{bling_id}")
+    return JSONResponse(r)
+
+
+@router.get("/debug-ids")
+def debug_ids(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"error": "Não autenticado"})
+    clientes = db.query(Cliente.bling_id, Cliente.nome).filter(Cliente.bling_id.isnot(None)).limit(5).all()
+    fornecedores = db.query(Fornecedor.bling_id, Fornecedor.nome).filter(Fornecedor.bling_id.isnot(None)).limit(5).all()
+    produtos = db.query(Produto.bling_id, Produto.nome).filter(Produto.bling_id.isnot(None)).limit(5).all()
+    return JSONResponse({
+        "clientes": [{"id": c.bling_id, "nome": c.nome} for c in clientes],
+        "fornecedores": [{"id": f.bling_id, "nome": f.nome} for f in fornecedores],
+        "produtos": [{"id": p.bling_id, "nome": p.nome} for p in produtos],
+    })
+
+
+@router.get("/debug-primeiro-contato")
+def debug_primeiro_contato(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"error": "Não autenticado"})
+    token = get_token(db)
+    if not token:
+        return JSONResponse({"error": "Sem token"})
+    lista = call_bling(token, "GET", "contatos?pagina=1&limite=1")
+    if lista["status"] != 200 or not lista["data"]:
+        return JSONResponse({"error": "Não achou contatos", "raw": lista})
+    cid = lista["data"][0].get("id")
+    if not cid:
+        return JSONResponse({"error": "Contato sem ID"})
+    detalhe = call_bling(token, "GET", f"contatos/{cid}")
+    return JSONResponse({"id_usado": cid, "detalhe": detalhe})
+
+
+@router.get("/debug-primeiro-produto")
+def debug_primeiro_produto(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"error": "Não autenticado"})
+    token = get_token(db)
+    if not token:
+        return JSONResponse({"error": "Sem token"})
+    # pegar primeiro ID da lista
+    lista = call_bling(token, "GET", "produtos?pagina=1&limite=1")
+    if lista["status"] != 200 or not lista["data"]:
+        return JSONResponse({"error": "Não achou produtos", "raw": lista})
+    pid = lista["data"][0].get("id")
+    if not pid:
+        return JSONResponse({"error": "Produto sem ID"})
+    detalhe = call_bling(token, "GET", f"produtos/{pid}")
+    return JSONResponse({"id_usado": pid, "detalhe": detalhe})
+
+
+@router.get("/debug-raw-contatos")
+def debug_raw_contatos(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"error": "Não autenticado"})
+    token = get_token(db)
+    if not token:
+        return JSONResponse({"error": "Sem token"})
+    r = call_bling(token, "GET", "contatos?pagina=1&limite=2")
+    return JSONResponse(r)
+
+
+@router.get("/debug-raw-produtos")
+def debug_raw_produtos(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"error": "Não autenticado"})
+    token = get_token(db)
+    if not token:
+        return JSONResponse({"error": "Sem token"})
+    r = call_bling(token, "GET", "produtos?pagina=1&limite=2")
+    return JSONResponse(r)
+
+
+@router.get("/debug-v2-contato/{bling_id}")
+def debug_v2_contato(bling_id: int, request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"error": "Não autenticado"})
+    emp = db.query(Empresa).first()
+    if not emp or not emp.bling_api_key_v2:
+        return JSONResponse({"error": "API Key v2 não configurada. Configure em Configurações > Integr. Bling."})
+    resultados = {}
+    key = emp.bling_api_key_v2
+    headers = {"Accept": "application/json"}
+    urls = [
+        f"https://bling.com.br/Api/v2/contato/{bling_id}/json/",
+        f"https://bling.com.br/Api/v2/contatos/{bling_id}/json/",
+        f"https://bling.com.br/contato/{bling_id}",
+        f"https://bling.com.br/{bling_id}",
+        f"https://www.bling.com.br/Api/v2/contato/{bling_id}/json/",
+    ]
+    try:
+        with httpx.Client(timeout=15) as client:
+            for url in urls:
+                try:
+                    r = client.get(url, params={"apikey": key}, headers=headers)
+                    resultados[url] = {"status": r.status_code, "body": r.text[:2000]}
+                except Exception as ex:
+                    resultados[url] = {"error": str(ex)}
+            return JSONResponse(resultados)
+    except Exception as e:
+        return JSONResponse({"error": str(e)})

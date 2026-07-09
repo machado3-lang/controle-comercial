@@ -1,3 +1,4 @@
+import json
 import httpx
 from typing import Optional
 from models import Empresa
@@ -80,11 +81,15 @@ def montar_payload_nfe(
     empresa: Empresa,
     cliente,
     itens: list,
-    numero_nfe: int,
-    serie: int = 1,
+    numero_nfe: int = None,
+    serie: int = None,
     modelo: int = 55,
     natureza_operacao: str = "Venda de mercadoria",
     cfop: str = None,
+    finalidade: str = "normal",
+    indicador_presenca: int = 1,
+    data_emissao: str = None,
+    data_saida: str = None,
 ) -> dict:
     cfop = cfop or empresa.cfop_padrao or "5102"
     destino_operacao = 1
@@ -95,26 +100,26 @@ def montar_payload_nfe(
     dest_cnpj = _limpar_doc(cliente.cpf_cnpj) if getattr(cliente, 'tipo_pessoa', None) == "juridica" else None
     dest_cpf = _limpar_doc(cliente.cpf_cnpj) if getattr(cliente, 'tipo_pessoa', None) == "fisica" else None
     dest_ie = _limpar_doc(cliente.inscricao_estadual) or None
-    indicador_ie = 9
-    if dest_ie:
+    indicador_ie_map = {"contribuidor": 1, "isento": 2, "nao_contribuinte": 9}
+    indicador_ie = indicador_ie_map.get(getattr(cliente, 'indicador_ie', None), 9)
+    if indicador_ie == 9 and dest_ie:
         indicador_ie = 1
 
     tem_endereco = bool(cliente.endereco and cliente.bairro and cliente.cidade and cliente.estado)
-    consumidor_final = 1 if not dest_cnpj else 0
+    consumidor_final = 1 if (not dest_cnpj or indicador_ie == 9) else 0
+
+    cod_mun = _to_int(_limpar_doc(cliente.codigo_ibge))
+    cep_clean = _limpar_doc(cliente.cep) or ""
+
+    finalidade_map = {"normal": 1, "complementar": 2, "ajuste": 3, "devolucao": 4, "credito": 4, "debito": 1}
 
     payload = {
         "modelo": modelo,
-        "serie": serie,
-        "numero": numero_nfe,
+        "finalidade": finalidade_map.get(finalidade, 1),
         "naturezaOperacao": natureza_operacao,
         "destinoOperacao": destino_operacao,
-        "presencaComprador": 1,
+        "presencaComprador": indicador_presenca,
         "consumidorFinal": consumidor_final,
-        "emitente": {
-            "endereco": {
-                "codigoMunicipio": _limpar_doc(empresa.codigo_ibge) or None,
-            },
-        } if empresa.codigo_ibge else None,
         "dest": {
             "nome": cliente.nome or "Consumidor",
             "cnpj": dest_cnpj,
@@ -126,13 +131,13 @@ def montar_payload_nfe(
                 "logradouro": cliente.endereco or "",
                 "numero": "SN",
                 "bairro": cliente.bairro or "",
+                "codigoMunicipio": cod_mun,
                 "cidade": cliente.cidade or "",
                 "uf": cliente.estado or "",
-                "cep": _limpar_doc(cliente.cep) or "",
-                "codigoMunicipio": _limpar_doc(cliente.codigo_ibge) or None,
+                "cep": cep_clean,
             } if tem_endereco else None,
         },
-        "itens": [],
+        "items": [],
         "pagamentos": [
             {"tipoPagamento": "01", "valor": 0}
         ],
@@ -146,7 +151,7 @@ def montar_payload_nfe(
         total_item = round(preco * qtd, 2)
         codigo = str(item.get("produto_id", i + 1))
 
-        payload["itens"].append({
+        payload["items"].append({
             "codigo": codigo,
             "descricao": descricao,
             "ncm": ncm,
@@ -155,12 +160,27 @@ def montar_payload_nfe(
             "quantidade": qtd,
             "valorUnitario": preco,
             "valorTotal": total_item,
+            "origem": item.get("origem", 0),
         })
 
-    total_nota = sum(i.get("valorTotal", 0) for i in payload["itens"])
+    if data_emissao:
+        payload["dataEmissao"] = data_emissao
+    if data_saida:
+        payload["dataSaida"] = data_saida
+
+    total_nota = sum(i.get("valorTotal", 0) for i in payload["items"])
     payload["pagamentos"][0]["valor"] = total_nota
 
     return payload
+
+
+def _to_int(val):
+    if val is None:
+        return None
+    try:
+        return int(val)
+    except (ValueError, TypeError):
+        return None
 
 
 def _limpar_doc(valor) -> Optional[str]:
@@ -190,6 +210,7 @@ def explodir_itens(pedido=None, os=None, db=None) -> tuple:
                     "unidade": produto.unidade or "UN",
                     "quantidade": item.quantidade or 1,
                     "preco_unitario": item.preco_unitario or 0,
+                    "origem": produto.origem or 0,
                 })
             elif produto.tipo == "servico":
                 itens_nfse.append(item)
@@ -197,7 +218,24 @@ def explodir_itens(pedido=None, os=None, db=None) -> tuple:
                 _explodir_kit(db, produto, item.quantidade or 1, itens_nfe, itens_nfse)
 
     if os:
-        pass
+        if os.valor_pecas and os.valor_pecas > 0:
+            nomes_pecas = "Peças diversas"
+            if os.pecas_utilizadas:
+                try:
+                    pecas_data = json.loads(os.pecas_utilizadas)
+                    if isinstance(pecas_data, list):
+                        nomes_pecas = "; ".join(p.get("nome", "") for p in pecas_data if p.get("nome"))
+                except (json.JSONDecodeError, TypeError):
+                    nomes_pecas = os.pecas_utilizadas[:280]
+            itens_nfe.append({
+                "produto_id": None,
+                "descricao": nomes_pecas[:300],
+                "ncm": "99999999",
+                "unidade": "UN",
+                "quantidade": 1,
+                "preco_unitario": os.valor_pecas,
+                "origem": 0,
+            })
 
     return itens_nfe, itens_nfse
 
@@ -218,6 +256,7 @@ def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse):
                 "unidade": insumo.unidade or "UN",
                 "quantidade": qtd,
                 "preco_unitario": insumo.preco,
+                "origem": insumo.origem or 0,
             })
         elif insumo.tipo == "servico":
             itens_nfse.append(insumo)

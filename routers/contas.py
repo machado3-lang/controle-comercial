@@ -287,7 +287,7 @@ def ver_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_d
         return RedirectResponse(url="/contas/pagar", status_code=303)
     empresa = db.query(Empresa).first()
     return request.app.state.templates.TemplateResponse(
-        "contas/pagar.html",
+        "contas/ver_pagar.html",
         {"request": request, "conta": conta, "empresa": empresa}
     )
 

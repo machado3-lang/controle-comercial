@@ -320,7 +320,8 @@ def finalizar_pedido(
     tipo_pedido: str = Form(...),
     forma_pagamento: str = Form(None),
     gerar_boleto: bool = Form(False),
-    terminos_boleto: str = Form("")
+    terminos_boleto: str = Form(""),
+    gerar_cobranca: bool = Form(False),
 ):
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
     if pedido:
@@ -334,13 +335,13 @@ def finalizar_pedido(
         pedido.gerar_boleto = gerar_boleto
         pedido.terminos_boleto = terminos_boleto
         # Cria conta a receber automática
-        if forma_pagamento == "boleto":
+        if gerar_cobranca or forma_pagamento == "boleto":
             cr = ContaReceber(
                 cliente_id=pedido.cliente_id,
                 descricao=f"Pedido {pedido.numero or '#' + str(pedido.id)}",
                 valor=pedido.total or 0,
                 data_vencimento=pedido.data,
-                forma_pagamento="Boleto"
+                forma_pagamento=forma_pagamento or "NFSe",
             )
             db.add(cr)
         db.commit()

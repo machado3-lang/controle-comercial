@@ -10,6 +10,13 @@
         
         {% set servicos = pedido.itens | selectattr('produto.tipo', 'equalto', 'servico') | list %}
         {% if servicos | length > 0 %}
+            {% set codigos_serv = servicos | map(attribute='produto.codigo_lc116') | select('string') | list %}
+            {% set codigos_unicos = codigos_serv | unique | list %}
+            {% if codigos_unicos | length > 1 %}
+            <div class="mb-3 p-3 bg-rose-900/30 border border-rose-700/50 rounded-xl">
+                <p class="text-rose-300 text-sm"><i data-lucide="alert-triangle" class="w-4 h-4 inline me-1"></i> <strong>Atenção:</strong> Este pedido possui itens com códigos LC116 diferentes ({{ codigos_unicos | join(', ') }}). A prefeitura de Dourados-MS não aceita múltiplos serviços na mesma NFS-e. Remova ou divida os itens em pedidos separados.</p>
+            </div>
+            {% endif %}
             <div class="mb-3">
                 <label class="form-label text-cyan-300">Serviços no Pedido:</label>
                 <ul class="text-sm text-slate-300">

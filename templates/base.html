@@ -79,6 +79,15 @@
                         <a href="/nfe/cfop" class="block px-4 py-2 text-emerald-400 hover:bg-white/5 rounded-md transition"><i data-lucide="book-open" class="w-4 h-4 inline me-1"></i> CFOPs</a>
                     </div>
                 </div>
+                <div class="relative" id="nfse-dropdown">
+                    <button type="button" class="flex items-center px-1.5 py-2 text-cyan-400 hover:bg-white/5 rounded-md transition border-r border-white/10 text-sm" onclick="toggleNfseDropdown()">
+                        <i data-lucide="file-text" class="w-4 h-4 me-1"></i> NFSe
+                    </button>
+                    <div id="nfse-menu" class="absolute left-0 mt-2 w-48 bg-slate-900/90 backdrop-blur-md border border-white/10 rounded-xl shadow-lg opacity-0 invisible transition-all duration-200 z-[9999]">
+                        <a href="/nfse" class="block px-4 py-2 text-emerald-400 hover:bg-white/5 rounded-md transition"><i data-lucide="list" class="w-4 h-4 inline me-1"></i> Lista NFSe</a>
+                        <a href="/nfse/emitir/avulsa" class="block px-4 py-2 text-cyan-400 hover:bg-white/5 rounded-md transition"><i data-lucide="plus-circle" class="w-4 h-4 inline me-1"></i> NFSe Avulsa</a>
+                    </div>
+                </div>
                 <a class="flex items-center px-1.5 py-2 text-cyan-400 hover:bg-white/5 rounded-md transition border-r border-white/10 text-sm" href="/ordens-servico">
                     <i data-lucide="wrench" class="w-4 h-4 me-1"></i> OS
                 </a>
@@ -113,6 +122,8 @@
             <a class="block py-2 text-emerald-400" href="/nfe">NFe</a>
             <a class="block py-2 text-cyan-400 ps-4" href="/nfe/emitir/avulsa">NFe Avulsa</a>
             <a class="block py-2 text-emerald-400 ps-4" href="/nfe/cfop">CFOPs</a>
+            <a class="block py-2 text-cyan-400" href="/nfse">NFSe</a>
+            <a class="block py-2 text-cyan-400 ps-4" href="/nfse/emitir/avulsa">NFSe Avulsa</a>
             <a class="block py-2 text-cyan-400" href="/ordens-servico">OS</a>
             <a class="block py-2 text-cyan-400" href="/auth/usuarios">Usuarios</a>
             <a class="block py-2 text-cyan-400" href="/configuracoes">Configurações</a>
@@ -181,6 +192,10 @@
         const toastTipo = sessionStorage.getItem('toast-tipo');
         if (toastMsg) { showToast(toastMsg, toastTipo); sessionStorage.removeItem('toast-mensagem'); sessionStorage.removeItem('toast-tipo'); }
         if (window.lucide) lucide.createIcons();
+        document.addEventListener('submit', function(e) {
+            const btn = e.target.querySelector('button[type="submit"]');
+            if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 me-1 animate-spin"></i> Aguarde...'; if (window.lucide) lucide.createIcons(); }
+        });
     });
     </script>
     <script>
@@ -205,6 +220,13 @@
         menu.classList.toggle('opacity-100');
         menu.classList.toggle('visible');
     }
+    function toggleNfseDropdown() {
+        const menu = document.getElementById('nfse-menu');
+        menu.classList.toggle('opacity-0');
+        menu.classList.toggle('invisible');
+        menu.classList.toggle('opacity-100');
+        menu.classList.toggle('visible');
+    }
     document.addEventListener('click', function(e) {
         const contasDropdown = document.getElementById('contas-dropdown');
         if (contasDropdown && !contasDropdown.contains(e.target)) {
@@ -220,6 +242,11 @@
         if (nfeDropdown && !nfeDropdown.contains(e.target)) {
             document.getElementById('nfe-menu').classList.add('opacity-0', 'invisible');
             document.getElementById('nfe-menu').classList.remove('opacity-100', 'visible');
+        }
+        const nfseDropdown = document.getElementById('nfse-dropdown');
+        if (nfseDropdown && !nfseDropdown.contains(e.target)) {
+            document.getElementById('nfse-menu').classList.add('opacity-0', 'invisible');
+            document.getElementById('nfse-menu').classList.remove('opacity-100', 'visible');
         }
     });
     </script>
