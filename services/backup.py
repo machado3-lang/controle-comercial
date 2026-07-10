@@ -71,12 +71,15 @@ def _get_pg_columns(conn, table_name):
 
 def restore_backup(backup_dict: dict) -> dict:
     tables_data = backup_dict.get("tables", {})
-    tables = {"imported": 0, "erros": 0, "detalhes": []}
-    backup_counts = {}
+    total_imported = 0
+    total_errors = 0
+    total_skipped = 0
+    detalhes = []
+    tabelas = {}
 
     for table_name in TABLES_IN_ORDER:
-        rows = tables_data.get(table_name, [])
-        backup_counts[table_name] = len(rows)
+        backup_rows = tables_data.get(table_name, [])
+        tabelas[table_name] = {"backup": len(backup_rows), "importado": 0, "erros": 0, "ignorado": 0}
 
     with engine.connect() as conn:
         trans = conn.begin()
@@ -85,6 +88,7 @@ def restore_backup(backup_dict: dict) -> dict:
 
             for table_name in TABLES_IN_ORDER:
                 if table_name in SKIP_TABLES_ON_RESTORE:
+                    tabelas[table_name]["ignorado"] = tabelas[table_name]["backup"]
                     continue
 
                 rows = tables_data.get(table_name, [])
@@ -118,6 +122,7 @@ def restore_backup(backup_dict: dict) -> dict:
                             col_values[k] = v
 
                         if not col_names:
+                            tabelas[table_name]["ignorado"] += 1
                             continue
 
                         placeholders = ", ".join(col_placeholders)
@@ -138,17 +143,26 @@ def restore_backup(backup_dict: dict) -> dict:
                             stmt = f"INSERT OR IGNORE INTO {table_name} ({names}) VALUES ({placeholders})"
                             conn.execute(text(stmt), col_values)
 
-                        tables["imported"] += 1
+                        tabelas[table_name]["importado"] += 1
+                        total_imported += 1
 
                     except Exception as e:
-                        tables["erros"] += 1
-                        tables["detalhes"].append(f"{table_name}:{row_data.get('id', '?')} erro: {str(e)[:200]}")
+                        tabelas[table_name]["erros"] += 1
+                        total_errors += 1
+                        detalhes.append(f"{table_name}:{row_data.get('id', '?')} erro: {str(e)[:200]}")
 
             trans.commit()
         except Exception as e:
             trans.rollback()
-            tables["erros"] += 1
-            tables["detalhes"].append(f"ROLLBACK GERAL: {str(e)[:300]}")
+            total_errors += 1
+            detalhes.append(f"ROLLBACK GERAL: {str(e)[:300]}")
 
-    tables["backup_counts"] = backup_counts
-    return tables
+    for tn, t in tabelas.items():
+        t["nao_processado"] = t["backup"] - t["importado"] - t["erros"] - t["ignorado"]
+
+    return {
+        "imported": total_imported,
+        "erros": total_errors,
+        "detalhes": detalhes,
+        "tabelas": tabelas,
+    }
