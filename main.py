@@ -326,6 +326,8 @@ def run_migrations():
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='protocolo') THEN ALTER TABLE nfse ADD COLUMN protocolo VARCHAR(50); END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='iss_retido') THEN ALTER TABLE nfse ADD COLUMN iss_retido BOOLEAN DEFAULT FALSE; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfse' AND column_name='aliquota_iss') THEN ALTER TABLE nfse ADD COLUMN aliquota_iss FLOAT DEFAULT 2.0; END IF;
+                        IF (SELECT character_maximum_length FROM information_schema.columns WHERE table_name='nfse' AND column_name='codigo_verificacao') < 100 THEN ALTER TABLE nfse ALTER COLUMN codigo_verificacao TYPE VARCHAR(100); END IF;
+                        IF (SELECT character_maximum_length FROM information_schema.columns WHERE table_name='nfse' AND column_name='numero') < 50 THEN ALTER TABLE nfse ALTER COLUMN numero TYPE VARCHAR(50); END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='produtos' AND column_name='origem') THEN ALTER TABLE produtos ADD COLUMN origem INTEGER DEFAULT 0; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clientes' AND column_name='indicador_ie') THEN ALTER TABLE clientes ADD COLUMN indicador_ie VARCHAR(20) DEFAULT 'contribuidor'; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='clientes' AND column_name='iss_retido') THEN ALTER TABLE clientes ADD COLUMN iss_retido BOOLEAN DEFAULT FALSE; END IF;

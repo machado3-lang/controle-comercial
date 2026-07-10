@@ -97,8 +97,11 @@ def restore_backup(backup_dict: dict) -> dict:
                 columns_info = _get_pg_columns(conn, table_name) if is_pg else {}
                 db_columns = set(columns_info.keys()) if is_pg else None
 
-                for row_data in rows:
+                for i, row_data in enumerate(rows):
                     try:
+                        if is_pg:
+                            conn.execute(text(f"SAVEPOINT sp_{i}"))
+
                         col_names = []
                         col_placeholders = []
                         col_values = {}
@@ -146,6 +149,8 @@ def restore_backup(backup_dict: dict) -> dict:
                         tabelas[table_name]["importado"] += 1
 
                     except Exception as e:
+                        if is_pg:
+                            conn.execute(text(f"ROLLBACK TO SAVEPOINT sp_{i}"))
                         tabelas[table_name]["erros"] += 1
                         total_errors += 1
                         detalhes.append(f"{table_name}:{row_data.get('id', '?')} erro: {str(e)[:200]}")
