@@ -412,7 +412,11 @@ if (restoreFile && btnRestore) {
                     restoreStatus.textContent = 'Erro: ' + data.error;
                     restoreStatus.className = 'text-xs mt-2 text-rose-400';
                 } else {
-                    restoreStatus.innerHTML = '<span class="text-emerald-400">✓ Restaurado!</span> ' + data.imported + ' registros importados, ' + data.errors + ' erros.';
+                    let html = '<span class="text-emerald-400">✓ Restaurado!</span> ' + data.imported + ' registros importados, ' + data.erros + ' erros.';
+                    if (data.backup_counts) {
+                        html += '<br><span class="text-slate-400 text-xs">Backup: ' + Object.entries(data.backup_counts).filter(([,c]) => c > 0).map(([t,c]) => t + '=' + c).join(', ') + '</span>';
+                    }
+                    restoreStatus.innerHTML = html;
                     restoreStatus.className = 'text-xs mt-2';
                 }
             })

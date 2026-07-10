@@ -40,10 +40,6 @@ def _serialize(val):
     return val
 
 
-def _row_to_dict(row, columns):
-    return {col: _serialize(getattr(row, col)) for col in columns}
-
-
 def generate_backup():
     with engine.connect() as conn:
         tables = {}
@@ -74,8 +70,13 @@ def _get_pg_columns(conn, table_name):
 
 
 def restore_backup(backup_dict: dict) -> dict:
-    stats = {"imported": 0, "skipped": 0, "errors": 0, "details": []}
     tables_data = backup_dict.get("tables", {})
+    tables = {"imported": 0, "erros": 0, "detalhes": []}
+    backup_counts = {}
+
+    for table_name in TABLES_IN_ORDER:
+        rows = tables_data.get(table_name, [])
+        backup_counts[table_name] = len(rows)
 
     with engine.connect() as conn:
         trans = conn.begin()
@@ -84,7 +85,6 @@ def restore_backup(backup_dict: dict) -> dict:
 
             for table_name in TABLES_IN_ORDER:
                 if table_name in SKIP_TABLES_ON_RESTORE:
-                    stats["details"].append(f"{table_name}: tabela ignorada")
                     continue
 
                 rows = tables_data.get(table_name, [])
@@ -92,7 +92,7 @@ def restore_backup(backup_dict: dict) -> dict:
                     continue
 
                 columns_info = _get_pg_columns(conn, table_name) if is_pg else {}
-                columns = list(rows[0].keys())
+                db_columns = set(columns_info.keys()) if is_pg else None
 
                 for row_data in rows:
                     try:
@@ -101,10 +101,11 @@ def restore_backup(backup_dict: dict) -> dict:
                         col_values = {}
 
                         for k, v in row_data.items():
+                            if db_columns and k not in db_columns:
+                                continue
                             if v is None:
                                 continue
 
-                            # Handle enum types for PostgreSQL
                             col_type = columns_info.get(k, {})
                             if is_pg and col_type.get("udt_name") in (
                                 "statusconta", "statusos", "statuspedido", "formapagamento"
@@ -123,7 +124,7 @@ def restore_backup(backup_dict: dict) -> dict:
                         names = ", ".join(col_names)
 
                         if is_pg:
-                            conflict_cols = ", ".join(c for c in columns if c in ("id",))
+                            conflict_cols = ", ".join(c for c in col_names if c == "id")
                             if conflict_cols:
                                 stmt = (
                                     f"INSERT INTO {table_name} ({names}) "
@@ -137,19 +138,17 @@ def restore_backup(backup_dict: dict) -> dict:
                             stmt = f"INSERT OR IGNORE INTO {table_name} ({names}) VALUES ({placeholders})"
                             conn.execute(text(stmt), col_values)
 
-                        stats["imported"] += 1
-                        pk = row_data.get("id", "?")
-                        stats["details"].append(f"{table_name}:{pk} inserido")
+                        tables["imported"] += 1
 
                     except Exception as e:
-                        stats["errors"] += 1
-                        stats["details"].append(f"{table_name}:{row_data.get('id', '?')} erro: {str(e)[:200]}")
-                        continue
+                        tables["erros"] += 1
+                        tables["detalhes"].append(f"{table_name}:{row_data.get('id', '?')} erro: {str(e)[:200]}")
 
             trans.commit()
         except Exception as e:
             trans.rollback()
-            stats["errors"] += 1
-            stats["details"].append(f"ROLLBACK: {str(e)[:300]}")
+            tables["erros"] += 1
+            tables["detalhes"].append(f"ROLLBACK GERAL: {str(e)[:300]}")
 
-    return stats
+    tables["backup_counts"] = backup_counts
+    return tables
