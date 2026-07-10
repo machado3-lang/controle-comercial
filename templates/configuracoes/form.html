@@ -420,6 +420,10 @@ if (restoreFile && btnRestore) {
                             html += '<span class="' + cor + ' text-xs">' + t + ': ' + v.importado + '/' + v.backup + '</span><br>';
                         });
                     }
+                    if (data.detalhes && data.detalhes.length > 0) {
+                        html += '<br><span class="text-rose-400 text-xs">Erros:</span>';
+                        data.detalhes.forEach(d => { html += '<br><span class="text-rose-400/70 text-xs">' + d + '</span>'; });
+                    }
                     restoreStatus.innerHTML = html;
                     restoreStatus.className = 'text-xs mt-2';
                 }
