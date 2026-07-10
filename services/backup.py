@@ -152,6 +152,17 @@ def restore_backup(backup_dict: dict) -> dict:
                 trans.commit()
                 total_imported += tabelas[table_name]["importado"]
 
+                if is_pg and tabelas[table_name]["importado"] > 0:
+                    try:
+                        with engine.connect() as conn_seq:
+                            conn_seq.execute(text(
+                                f"SELECT setval(pg_get_serial_sequence('{table_name}', 'id'), "
+                                f"COALESCE((SELECT MAX(id)+1 FROM {table_name}), 1), false)"
+                            ))
+                            conn_seq.commit()
+                    except:
+                        pass
+
             except Exception as e:
                 trans.rollback()
                 tabelas[table_name]["erros"] = tabelas[table_name]["backup"]
