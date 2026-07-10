@@ -188,7 +188,6 @@ def download_backup(request: Request):
     try:
         backup = generate_backup()
         content = json.dumps(backup, ensure_ascii=False, indent=2, default=str)
-        data = f"{'versao': '1', 'criado_em': backup['created_at']}"
         filename = f"backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
         return Response(
             content=content,
