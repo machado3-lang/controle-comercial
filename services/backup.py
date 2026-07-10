@@ -124,22 +124,23 @@ def restore_backup(backup_dict: dict) -> dict:
                             tabelas[table_name]["ignorado"] += 1
                             continue
 
-                        placeholders = ", ".join(col_placeholders)
                         names = ", ".join(col_names)
+                        placeholders = ", ".join(col_placeholders)
 
                         if is_pg:
-                            conflict_cols = ", ".join(c for c in col_names if c == "id")
-                            if conflict_cols:
+                            upsert_cols = [c for c in col_names if c != "id"]
+                            if upsert_cols:
+                                update_set = ", ".join(f"{c} = EXCLUDED.{c}" for c in upsert_cols)
                                 stmt = (
                                     f"INSERT INTO {table_name} ({names}) "
                                     f"VALUES ({placeholders}) "
-                                    f"ON CONFLICT ({conflict_cols}) DO NOTHING"
+                                    f"ON CONFLICT (id) DO UPDATE SET {update_set}"
                                 )
                             else:
-                                stmt = f"INSERT INTO {table_name} ({names}) VALUES ({placeholders})"
+                                stmt = f"INSERT INTO {table_name} ({names}) VALUES ({placeholders}) ON CONFLICT (id) DO NOTHING"
                             conn.execute(text(stmt), col_values)
                         else:
-                            stmt = f"INSERT OR IGNORE INTO {table_name} ({names}) VALUES ({placeholders})"
+                            stmt = f"INSERT OR REPLACE INTO {table_name} ({names}) VALUES ({placeholders})"
                             conn.execute(text(stmt), col_values)
 
                         tabelas[table_name]["importado"] += 1
