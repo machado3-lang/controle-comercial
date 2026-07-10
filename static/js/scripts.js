@@ -138,19 +138,16 @@ function handleSubmitExclusao(form) {
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
         body: new URLSearchParams({senha: senha})
     })
-    .then(r => {
-        if (r.redirected) {
+    .then(r => r.json().then(d => ({status: r.status, data: d})))
+    .then(({status, data}) => {
+        if (status === 403) {
+            showToast(data.erro || data.error || 'Senha inválida', 'danger');
+        } else if (data.ok) {
             showToast('Registro excluído', 'success');
             bootstrap.Modal.getInstance(document.getElementById('modalConfirmarExclusao')).hide();
-            setTimeout(() => window.location.href = r.url, 1000);
-        } else if (r.status === 403) {
-            r.json().then(d => showToast(d.erro || d.error || 'Senha inválida', 'danger'));
-        } else if (r.ok) {
-            showToast('Operação concluída', 'success');
-            bootstrap.Modal.getInstance(document.getElementById('modalConfirmarExclusao')).hide();
-            setTimeout(() => window.location.reload(), 1000);
+            setTimeout(() => window.location.href = data.redirect || '/pedidos', 500);
         } else {
-            showToast('Erro na requisição', 'danger');
+            showToast(data.erro || data.error || 'Erro na requisição', 'danger');
         }
     })
     .catch(() => showToast('Erro na requisição', 'danger'));

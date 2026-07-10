@@ -272,7 +272,7 @@ def excluir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_d
     if pedido:
         db.delete(pedido)
         db.commit()
-    return RedirectResponse(url="/pedidos", status_code=303)
+    return JSONResponse({"ok": True, "redirect": "/pedidos"})
 
 
 @router.post("/{pedido_id}/status")
