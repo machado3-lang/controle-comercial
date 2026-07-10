@@ -151,9 +151,14 @@ def restore_backup(backup_dict: dict) -> dict:
                     except Exception as e:
                         if is_pg:
                             conn.execute(text(f"ROLLBACK TO SAVEPOINT sp_{i}"))
-                        tabelas[table_name]["erros"] += 1
-                        total_errors += 1
-                        detalhes.append(f"{table_name}:{row_data.get('id', '?')} erro: {str(e)[:200]}")
+                        is_dup = "UniqueViolation" in type(e).__name__ or "duplicate key" in str(e).lower()
+                        if is_dup:
+                            tabelas[table_name]["ignorado"] += 1
+                            detalhes.append(f"{table_name}:{row_data.get('id', '?')} ignorado (j� existente no banco)")
+                        else:
+                            tabelas[table_name]["erros"] += 1
+                            total_errors += 1
+                            detalhes.append(f"{table_name}:{row_data.get('id', '?')} erro: {str(e)[:200]}")
 
                 trans.commit()
                 total_imported += tabelas[table_name]["importado"]

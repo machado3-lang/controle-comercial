@@ -412,17 +412,26 @@ if (restoreFile && btnRestore) {
                     restoreStatus.textContent = 'Erro: ' + data.error;
                     restoreStatus.className = 'text-xs mt-2 text-rose-400';
                 } else {
-                    let html = '<span class="text-emerald-400">✓ Restaurado!</span> ' + data.imported + ' registros importados, ' + data.erros + ' erros.';
+                    let totalIgnored = 0;
+                    if (data.tabelas) Object.values(data.tabelas).forEach(v => totalIgnored += v.ignorado || 0);
+                    let html = '<span class="text-emerald-400">✓ Restaurado!</span> ' + data.imported + ' registros importados' +
+                        (totalIgnored ? ', ' + totalIgnored + ' ignorados (j� existentes)' : '') +
+                        (data.erros ? ', ' + data.erros + ' erros' : '') + '.';
                     if (data.tabelas) {
                         html += '<br><span class="text-slate-300 text-xs">Por tabela:</span><br>';
                         Object.entries(data.tabelas).filter(([,v]) => v.backup > 0).forEach(([t,v]) => {
                             const cor = v.importado == v.backup ? 'text-emerald-400' : v.erros > 0 ? 'text-rose-400' : 'text-amber-400';
-                            html += '<span class="' + cor + ' text-xs">' + t + ': ' + v.importado + '/' + v.backup + '</span><br>';
+                            let label = t + ': ' + v.importado + '/' + v.backup;
+                            if (v.ignorado) label += ' (' + v.ignorado + ' ignorados)';
+                            html += '<span class="' + cor + ' text-xs">' + label + '</span><br>';
                         });
                     }
                     if (data.detalhes && data.detalhes.length > 0) {
-                        html += '<br><span class="text-rose-400 text-xs">Erros:</span>';
-                        data.detalhes.forEach(d => { html += '<br><span class="text-rose-400/70 text-xs">' + d + '</span>'; });
+                        html += '<br><span class="text-slate-400 text-xs">Detalhes:</span>';
+                        data.detalhes.forEach(d => {
+                            const isErr = d.includes('erro:');
+                            html += '<br><span class="' + (isErr ? 'text-rose-400/70' : 'text-amber-400/70') + ' text-xs">' + d + '</span>';
+                        });
                     }
                     restoreStatus.innerHTML = html;
                     restoreStatus.className = 'text-xs mt-2';
