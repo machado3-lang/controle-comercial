@@ -144,7 +144,7 @@ def restore_backup(backup_dict: dict) -> dict:
                     except Exception as e:
                         stats["errors"] += 1
                         stats["details"].append(f"{table_name}:{row_data.get('id', '?')} erro: {str(e)[:200]}")
-                        raise
+                        continue
 
             trans.commit()
         except Exception as e:
