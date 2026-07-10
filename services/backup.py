@@ -73,7 +73,6 @@ def restore_backup(backup_dict: dict) -> dict:
     tables_data = backup_dict.get("tables", {})
     total_imported = 0
     total_errors = 0
-    total_skipped = 0
     detalhes = []
     tabelas = {}
 
@@ -81,20 +80,20 @@ def restore_backup(backup_dict: dict) -> dict:
         backup_rows = tables_data.get(table_name, [])
         tabelas[table_name] = {"backup": len(backup_rows), "importado": 0, "erros": 0, "ignorado": 0}
 
-    with engine.connect() as conn:
-        trans = conn.begin()
-        try:
-            is_pg = "postgresql" in str(engine.url)
+    is_pg = "postgresql" in str(engine.url)
 
-            for table_name in TABLES_IN_ORDER:
-                if table_name in SKIP_TABLES_ON_RESTORE:
-                    tabelas[table_name]["ignorado"] = tabelas[table_name]["backup"]
-                    continue
+    for table_name in TABLES_IN_ORDER:
+        if table_name in SKIP_TABLES_ON_RESTORE:
+            tabelas[table_name]["ignorado"] = tabelas[table_name]["backup"]
+            continue
 
-                rows = tables_data.get(table_name, [])
-                if not rows:
-                    continue
+        rows = tables_data.get(table_name, [])
+        if not rows:
+            continue
 
+        with engine.connect() as conn:
+            trans = conn.begin()
+            try:
                 columns_info = _get_pg_columns(conn, table_name) if is_pg else {}
                 db_columns = set(columns_info.keys()) if is_pg else None
 
@@ -144,18 +143,21 @@ def restore_backup(backup_dict: dict) -> dict:
                             conn.execute(text(stmt), col_values)
 
                         tabelas[table_name]["importado"] += 1
-                        total_imported += 1
 
                     except Exception as e:
                         tabelas[table_name]["erros"] += 1
                         total_errors += 1
                         detalhes.append(f"{table_name}:{row_data.get('id', '?')} erro: {str(e)[:200]}")
 
-            trans.commit()
-        except Exception as e:
-            trans.rollback()
-            total_errors += 1
-            detalhes.append(f"ROLLBACK GERAL: {str(e)[:300]}")
+                trans.commit()
+                total_imported += tabelas[table_name]["importado"]
+
+            except Exception as e:
+                trans.rollback()
+                tabelas[table_name]["erros"] = tabelas[table_name]["backup"]
+                tabelas[table_name]["importado"] = 0
+                total_errors += 1
+                detalhes.append(f"{table_name}: TABELA NAO IMPORTADA - erro: {str(e)[:300]}")
 
     for tn, t in tabelas.items():
         t["nao_processado"] = t["backup"] - t["importado"] - t["erros"] - t["ignorado"]
