@@ -81,6 +81,11 @@ async def salvar_configuracoes(
     serie_nfe: int = Form(1),
     ultimo_numero_nfe: int = Form(0),
     aliquota_iss: float = Form(2.0),
+    aliquota_federal: float = Form(0.0),
+    aliquota_estadual: float = Form(0.0),
+    aliquota_municipal: float = Form(0.0),
+    nfe_aliquota_federal: float = Form(0.0),
+    nfe_aliquota_estadual: float = Form(0.0),
 ):
     empresa = db.query(Empresa).first()
     if empresa:
@@ -116,6 +121,11 @@ async def salvar_configuracoes(
         empresa.serie_nfe = serie_nfe
         empresa.ultimo_numero_nfe = ultimo_numero_nfe
         empresa.aliquota_iss = aliquota_iss
+        empresa.aliquota_federal = aliquota_federal
+        empresa.aliquota_estadual = aliquota_estadual
+        empresa.aliquota_municipal = aliquota_municipal
+        empresa.nfe_aliquota_federal = nfe_aliquota_federal
+        empresa.nfe_aliquota_estadual = nfe_aliquota_estadual
     else:
         empresa = Empresa(
             razao_social=razao_social, nome_fantasia=nome_fantasia,
@@ -140,6 +150,8 @@ async def salvar_configuracoes(
             notaas_ambiente=notaas_ambiente,
             serie_nfe=serie_nfe,
             ultimo_numero_nfe=ultimo_numero_nfe,
+            nfe_aliquota_federal=nfe_aliquota_federal,
+            nfe_aliquota_estadual=nfe_aliquota_estadual,
         )
         db.add(empresa)
 

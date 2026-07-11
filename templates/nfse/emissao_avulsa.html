@@ -88,7 +88,13 @@
                         <div id="emptyItens" class="p-6 text-center text-slate-500 text-sm">Nenhum serviço adicionado. Busque um serviço acima.</div>
                     </div>
 
+                    <div class="mb-4">
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Observações (aparece na discriminação da NFSe)</label>
+                        <textarea name="observacoes" rows="3" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Observações adicionais..."></textarea>
+                    </div>
+
                     <input type="hidden" name="itens_json" id="itensJson">
+                    <input type="hidden" name="desconto" id="descontoHidden" value="0">
 
                     <div class="flex items-center justify-between pt-3">
                         <label class="flex items-center gap-2 text-emerald-300 cursor-pointer">
@@ -114,7 +120,28 @@
             <div class="p-4">
                 <div class="space-y-3 mb-4">
                     <div class="flex justify-between">
-                        <span class="text-slate-400">Total:</span>
+                        <span class="text-slate-400">Subtotal:</span>
+                        <span class="text-slate-200 font-medium">R$ <span id="subtotal">0.00</span></span>
+                    </div>
+                    <div class="border-t border-slate-700 pt-3">
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Desconto</label>
+                        <div class="flex items-center gap-2">
+                            <div class="flex items-center gap-1 w-1/2">
+                                <input type="number" id="descontoPct" class="w-full px-2 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-xs text-slate-200 text-right" placeholder="%" value="0" min="0" max="100" step="0.5">
+                                <span class="text-xs text-slate-500 w-4">%</span>
+                            </div>
+                            <div class="flex items-center gap-1 w-1/2">
+                                <input type="number" id="descontoValor" class="w-full px-2 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-xs text-slate-200 text-right" placeholder="R$" value="0" min="0" step="0.01">
+                                <span class="text-xs text-slate-500 w-4">R$</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="flex justify-between text-rose-400 text-sm">
+                        <span>Valor Desconto:</span>
+                        <span>- R$ <span id="valorDesconto">0.00</span></span>
+                    </div>
+                    <div class="flex justify-between border-t border-slate-700 pt-3">
+                        <span class="text-slate-400 font-medium">Total:</span>
                         <span class="text-emerald-400 font-bold text-lg">R$ <span id="total">0.00</span></span>
                     </div>
                 </div>
@@ -130,16 +157,35 @@ const servicosData = {{ servicos_json|tojson }};
 const clientes = {{ clientes_json|tojson }};
 
 function atualizarTotais() {
-    let total = 0;
+    let subtotal = 0;
     document.querySelectorAll('#itensBody .item-row').forEach(row => {
         const qtd = parseFloat(row.querySelector('.item-qtd')?.value) || 0;
         const preco = parseFloat(row.querySelector('.item-valor')?.value) || 0;
         const totalItem = qtd * preco;
         row.querySelector('.item-total').textContent = totalItem.toFixed(2);
-        total += totalItem;
+        subtotal += totalItem;
     });
+    const descontoValor = parseFloat(document.getElementById('descontoValor').value) || 0;
+    const total = Math.max(0, subtotal - descontoValor);
+    document.getElementById('subtotal').textContent = subtotal.toFixed(2);
+    document.getElementById('valorDesconto').textContent = descontoValor.toFixed(2);
     document.getElementById('total').textContent = total.toFixed(2);
+    document.getElementById('descontoHidden').value = descontoValor.toFixed(2);
     atualizarItensJson();
+}
+
+function recalcularDesconto() {
+    const subtotal = parseFloat(document.getElementById('subtotal').textContent) || 0;
+    const pctInput = document.getElementById('descontoPct');
+    const valorInput = document.getElementById('descontoValor');
+    const pct = parseFloat(pctInput.value) || 0;
+    const valor = parseFloat(valorInput.value) || 0;
+    if (document.activeElement === pctInput && pct > 0) {
+        valorInput.value = (subtotal * pct / 100).toFixed(2);
+    } else if (document.activeElement === valorInput && valor > 0 && subtotal > 0) {
+        pctInput.value = (valor / subtotal * 100).toFixed(1);
+    }
+    atualizarTotais();
 }
 
 function atualizarItensJson() {
@@ -208,7 +254,7 @@ document.getElementById('servicoSearch').addEventListener('input', function(e) {
                 'data-codigo_tributacao_municipal="' + (p.codigo_tributacao_municipal || '') + '" ' +
                 'data-nome="' + p.nome.replace(/'/g, '&#39;') + '">' +
                 '<div class="font-medium text-cyan-300">' + p.nome + '</div>' +
-                '<div class="text-xs text-slate-400">LC116: ' + (p.codigo_lc116 || '010101') + (p.codigo_tributacao_municipal ? ' | Trib: ' + p.codigo_tributacao_municipal : '') + '</div>' +
+                '<div class="text-xs text-slate-400">LC116: ' + (p.codigo_lc116 || '010101') + (p.codigo_tributacao_municipal ? ' | NBS: ' + p.codigo_tributacao_municipal : '') + '</div>' +
                 '<div class="text-sm text-emerald-400">R$ ' + p.preco.toFixed(2) + '</div>' +
                 '</div>';
         }).join('');
@@ -257,16 +303,23 @@ document.getElementById('formNfseAvulsa').addEventListener('submit', function(e)
         showToast('Selecione um cliente antes de salvar.', 'danger');
         return;
     }
+    const descontoValor = parseFloat(document.getElementById('descontoValor').value) || 0;
+    const totalBruto = parseFloat(document.getElementById('subtotal').textContent) || 0;
+    const fator = (totalBruto > 0 && descontoValor > 0) ? (1 - descontoValor / totalBruto) : 1;
     const itens = [];
     document.querySelectorAll('#itensBody .item-row').forEach(row => {
+        const qtd = parseFloat(row.querySelector('.item-qtd')?.value) || 1;
+        const valUnitOriginal = parseFloat(row.querySelector('.item-valor')?.value) || 0;
+        const valUnit = fator < 1 ? Math.round(valUnitOriginal * fator * 100) / 100 : valUnitOriginal;
+        const totalItem = Math.round(valUnit * qtd * 100) / 100;
         itens.push({
             produto_id: parseInt(row.querySelector('.item-produto-id')?.value) || null,
             descricao: row.querySelector('.item-descricao')?.textContent || '',
             codigo_lc116: row.querySelector('.item-codigo-lc116')?.textContent || '',
             codigo_tributacao_municipal: row.querySelector('.item-trib-mun')?.textContent || '',
-            quantidade: parseFloat(row.querySelector('.item-qtd')?.value) || 1,
-            valor_unitario: parseFloat(row.querySelector('.item-valor')?.value) || 0,
-            valor_total: parseFloat(row.querySelector('.item-total')?.textContent) || 0,
+            quantidade: qtd,
+            valor_unitario: valUnit,
+            valor_total: totalItem,
         });
     });
     if (itens.length === 0) {
@@ -285,6 +338,9 @@ document.addEventListener('click', function(e) {
         }
     });
 });
+
+document.getElementById('descontoPct').addEventListener('input', recalcularDesconto);
+document.getElementById('descontoValor').addEventListener('input', recalcularDesconto);
 
 document.addEventListener('DOMContentLoaded', function() {
     lucide.createIcons();

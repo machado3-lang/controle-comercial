@@ -51,8 +51,9 @@
                         <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="codigo_lc116" value="{{ produto.codigo_lc116 or '' }}" placeholder="Ex: 14.02">
                     </div>
                     <div class="col-span-12 md:col-span-4 campos-servico" style="display: none;">
-                        <label class="block text-xs font-medium text-emerald-400 mb-1">Tributação Municipal</label>
-                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="codigo_tributacao_municipal" value="{{ produto.codigo_tributacao_municipal or '' }}" placeholder="Ex: 01.01">
+                        <label class="block text-xs font-medium text-emerald-400 mb-1">Código NBS *</label>
+                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="codigo_tributacao_municipal" value="{{ produto.codigo_tributacao_municipal or '' }}" placeholder="Ex: 14.02.01.00">
+                        <p class="text-xs text-slate-500 mt-1">Nomenclatura Brasileira de Serviços (NBS) para NFS-e Federal</p>
                     </div>
                     <div class="col-span-12 md:col-span-8 relative"><label class="block text-xs font-medium text-cyan-400 mb-1">Fornecedor</label>
                         <input type="text" id="fornecedorSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off">
@@ -246,7 +247,7 @@ function toggleSections() {
     document.querySelectorAll('.campos-servico').forEach(function(c) {
         c.style.display = tipo === 'servico' ? 'block' : 'none';
         var input = c.querySelector('input');
-        if (input && input.name === 'codigo_lc116') input.required = tipo === 'servico';
+        if (input && (input.name === 'codigo_lc116' || input.name === 'codigo_tributacao_municipal')) input.required = tipo === 'servico';
         else if (input) input.required = false;
     });
 }

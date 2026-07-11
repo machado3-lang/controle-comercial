@@ -171,6 +171,21 @@ def montar_payload_nfe(
     total_nota = sum(i.get("valorTotal", 0) for i in payload["items"])
     payload["pagamentos"][0]["valor"] = total_nota
 
+    # Tributos aproximados IBPT (Lei 12.741/2012)
+    ali_fed = empresa.nfe_aliquota_federal or 0.0
+    ali_est = empresa.nfe_aliquota_estadual or 0.0
+    if ali_fed > 0 or ali_est > 0:
+        v_fed = total_nota * ali_fed / 100
+        v_est = total_nota * ali_est / 100
+        v_tot = v_fed + v_est
+        p_tot = ali_fed + ali_est
+        payload["infCpl"] = (
+            f"Total aproximado de tributos: R$ {v_tot:.2f} ({p_tot:.2f}%) "
+            f"Federais R$ {v_fed:.2f} ({ali_fed:.2f}%) "
+            f"Estaduais R$ {v_est:.2f} ({ali_est:.2f}%) . "
+            f"Fonte IBPT."
+        )
+
     return payload
 
 

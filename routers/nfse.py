@@ -116,6 +116,8 @@ def emitir_avulsa_salvar(
     municipio_nome: str = Form(""),
     itens_json: str = Form(...),
     gerar_cobranca: bool = Form(True),
+    desconto: float = Form(0.0),
+    observacoes: str = Form(""),
 ):
     empresa = db.query(Empresa).first()
     if not empresa:
@@ -139,6 +141,15 @@ def emitir_avulsa_salvar(
             "error": f"Itens com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura de Dourados-MS não aceita múltiplos códigos na mesma NFS-e."
         }, status_code=400)
 
+    # Aplica desconto proporcional aos itens
+    if desconto > 0:
+        total_bruto = sum(float(i.get("valor_total", 0)) for i in itens_data)
+        if total_bruto > 0:
+            fator = 1 - (desconto / total_bruto)
+            for item in itens_data:
+                item["valor_unitario"] = round(float(item.get("valor_unitario", 0)) * fator, 2)
+                item["valor_total"] = round(item["valor_unitario"] * float(item.get("quantidade", 1)), 2)
+
     valor_total = sum(float(i.get("valor_total", 0)) for i in itens_data)
     numero = str(_proximo_numero(empresa, db))
 
@@ -154,6 +165,10 @@ def emitir_avulsa_salvar(
         municipio_nome=municipio_nome or None,
         iss_retido=getattr(cliente, 'iss_retido', False) or False,
         aliquota_iss=empresa.aliquota_iss or 2.0,
+        aliquota_federal=empresa.aliquota_federal or 0.0,
+        aliquota_estadual=empresa.aliquota_estadual or 0.0,
+        aliquota_municipal=empresa.aliquota_municipal or 0.0,
+        observacoes=observacoes or "",
     )
     db.add(nfse)
     db.flush()
@@ -248,6 +263,9 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db))
             data_emissao=resultado.get('data_emissao'),
             iss_retido=iss_retido,
             aliquota_iss=empresa.aliquota_iss or 2.0,
+            aliquota_federal=empresa.aliquota_federal or 0.0,
+            aliquota_estadual=empresa.aliquota_estadual or 0.0,
+            aliquota_municipal=empresa.aliquota_municipal or 0.0,
         )
         db.add(nfse)
         db.flush()
@@ -381,6 +399,9 @@ def emitir_os_nfse_submit(
             data_emissao=now,
             iss_retido=iss_retido,
             aliquota_iss=empresa.aliquota_iss or 2.0,
+            aliquota_federal=empresa.aliquota_federal or 0.0,
+            aliquota_estadual=empresa.aliquota_estadual or 0.0,
+            aliquota_municipal=empresa.aliquota_municipal or 0.0,
         )
         db.add(nfse)
         db.flush()
@@ -452,6 +473,8 @@ def editar_nfse_salvar(
     municipio_codigo: str = Form(""),
     municipio_nome: str = Form(""),
     itens_json: str = Form(...),
+    desconto: float = Form(0.0),
+    observacoes: str = Form(""),
 ):
     nfse = db.query(NFSe).options(
         selectinload(NFSe.itens),
@@ -481,6 +504,15 @@ def editar_nfse_salvar(
         request.session["error"] = f"Itens com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}"
         return RedirectResponse(url=f"/nfse/{nfse_id}/editar", status_code=303)
 
+    # Aplica desconto proporcional aos itens
+    if desconto > 0:
+        total_bruto = sum(float(i.get("valor_total", 0)) for i in itens_data)
+        if total_bruto > 0:
+            fator = 1 - (desconto / total_bruto)
+            for item in itens_data:
+                item["valor_unitario"] = round(float(item.get("valor_unitario", 0)) * fator, 2)
+                item["valor_total"] = round(item["valor_unitario"] * float(item.get("quantidade", 1)), 2)
+
     valor_total = sum(float(i.get("valor_total", 0)) for i in itens_data)
 
     nfse.cliente_id = cliente.id
@@ -490,6 +522,7 @@ def editar_nfse_salvar(
     nfse.municipio_codigo = municipio_codigo or None
     nfse.municipio_nome = municipio_nome or None
     nfse.iss_retido = getattr(cliente, 'iss_retido', False) or False
+    nfse.observacoes = observacoes or ""
     if data_competencia:
         nfse.data_emissao = datetime.strptime(data_competencia, '%Y-%m-%d')
 

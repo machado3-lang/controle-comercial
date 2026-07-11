@@ -62,6 +62,19 @@
                 <div class="text-xs text-slate-400 mt-1">ISS Retido: R$ {{ "%.2f"|format((nfse.valor_total or 0) * (nfse.aliquota_iss or 2.0) / 100) }}</div>
                 <div class="text-xs text-amber-400">Valor Líquido: R$ {{ "%.2f"|format((nfse.valor_total or 0) - (nfse.valor_total or 0) * (nfse.aliquota_iss or 2.0) / 100) }}</div>
                 {% endif %}
+                {% set ali_fed = nfse.aliquota_federal or 0 %}
+                {% set ali_est = nfse.aliquota_estadual or 0 %}
+                {% set ali_mun = nfse.aliquota_municipal or 0 %}
+                {% if ali_fed > 0 or ali_est > 0 or ali_mun > 0 %}
+                {% set v_tot = nfse.valor_total or 0 %}
+                <div class="mt-3 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
+                    <div class="text-xs font-medium text-cyan-400 mb-1"><i data-lucide="info" class="w-3 h-3 inline me-1"></i> Tributos Aproximados (Lei 12.741/2012 - IBPT)</div>
+                    <div class="text-xs text-slate-300">Federal: R$ {{ "%.2f"|format(v_tot * ali_fed / 100) }} ({{ "%.2f"|format(ali_fed) }}%)</div>
+                    <div class="text-xs text-slate-300">Estadual: R$ {{ "%.2f"|format(v_tot * ali_est / 100) }} ({{ "%.2f"|format(ali_est) }}%)</div>
+                    <div class="text-xs text-slate-300">Municipal: R$ {{ "%.2f"|format(v_tot * ali_mun / 100) }} ({{ "%.2f"|format(ali_mun) }}%)</div>
+                    <div class="text-xs text-slate-400 mt-1 pt-1 border-t border-slate-700/50">Total: R$ {{ "%.2f"|format(v_tot * (ali_fed + ali_est + ali_mun) / 100) }} ({{ "%.2f"|format(ali_fed + ali_est + ali_mun) }}%)</div>
+                </div>
+                {% endif %}
             </div>
             <div><strong class="text-amber-300">Data Emissão:</strong> <span class="text-slate-100">{{ nfse.data_emissao.strftime('%d/%m/%Y %H:%M') if nfse.data_emissao else '-' }}</span></div>
             <div>
@@ -125,6 +138,13 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+        {% endif %}
+
+        {% if nfse.observacoes %}
+        <div class="border-t border-slate-800/60 pt-4 mb-4">
+            <h5 class="text-amber-400 mb-2"><i data-lucide="message-square" class="w-4 h-4 inline me-1"></i> Observações</h5>
+            <p class="text-sm text-slate-200 whitespace-pre-wrap">{{ nfse.observacoes }}</p>
         </div>
         {% endif %}
 

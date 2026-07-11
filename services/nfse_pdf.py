@@ -170,12 +170,40 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
         pdf.set_draw_color(230, 230, 230)
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
 
+    # Tributos (Lei 12.741/2012)
+    ali_fed = getattr(nfse, 'aliquota_federal', None) or 0.0
+    ali_est = getattr(nfse, 'aliquota_estadual', None) or 0.0
+    ali_mun = getattr(nfse, 'aliquota_municipal', None) or 0.0
+    if ali_fed > 0 or ali_est > 0 or ali_mun > 0:
+        pdf.ln(3)
+        pdf.set_font("Helvetica", "", 8)
+        pdf.set_text_color(100, 100, 100)
+        v_tot = nfse.valor_total or 0
+        v_fed = v_tot * ali_fed / 100
+        v_est = v_tot * ali_est / 100
+        v_mun = v_tot * ali_mun / 100
+        pdf.set_x(12)
+        pdf.cell(0, 4, f"Tributos aprox. (Lei 12.741/2012 - Fonte IBPT):", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_x(12)
+        pdf.cell(0, 4, f"Federal: R$ {v_fed:.2f} ({ali_fed:.2f}%) | Estadual: R$ {v_est:.2f} ({ali_est:.2f}%) | Municipal: R$ {v_mun:.2f} ({ali_mun:.2f}%)", new_x="LMARGIN", new_y="NEXT")
+        pdf.ln(2)
+
     # Total
     pdf.set_font("Helvetica", "B", 10)
     pdf.set_text_color(14, 165, 233)
     pdf.set_x(145)
     pdf.cell(25, 8, "Valor Total:", align="R")
     pdf.cell(30, 8, f"R$ {nfse.valor_total or 0:.2f}", align="R")
+
+    if getattr(nfse, 'iss_retido', False):
+        ali_iss = getattr(nfse, 'aliquota_iss', 0) or 0
+        vl_liquido = (nfse.valor_total or 0) - (nfse.valor_total or 0) * ali_iss / 100
+        pdf.ln(6)
+        pdf.set_font("Helvetica", "B", 10)
+        pdf.set_text_color(0, 150, 50)
+        pdf.set_x(145)
+        pdf.cell(25, 8, "Valor Líquido:", align="R")
+        pdf.cell(30, 8, f"R$ {vl_liquido:.2f}", align="R")
 
     # Rodapé
     pdf.set_y(270)

@@ -620,7 +620,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
 
     cod_serv = "010101"
     desc_serv = "Servicos"
-    cod_trib = "000001"
+    cod_nbs = ""
     discriminacao = ""
 
     for i, item in enumerate(itens_servico, 1):
@@ -632,7 +632,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
                 cod_serv = (_limpar_codigo(prod.codigo_lc116)).ljust(6, '0')
             desc_serv = desc
             if prod and prod.codigo_tributacao_municipal:
-                cod_trib = (_limpar_codigo(prod.codigo_tributacao_municipal)).zfill(6)
+                cod_nbs = _limpar_codigo(prod.codigo_tributacao_municipal)
         if discriminacao:
             discriminacao += " | "
         discriminacao += f"{i}. {desc} (qtd: {qtd})"
@@ -642,7 +642,27 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
 
     aliquota = empresa.aliquota_iss or 2.0
     iss_retido = getattr(pedido.cliente, 'iss_retido', False) or False
-    tp_ret = 1
+    tp_ret = 2 if iss_retido else 1
+
+    ali_fed = empresa.aliquota_federal or 0.0
+    ali_est = empresa.aliquota_estadual or 0.0
+    ali_mun = empresa.aliquota_municipal or 0.0
+    p_tot_trib = ali_fed + ali_est + ali_mun
+
+    desc_serv = discriminacao
+
+    if ali_fed > 0 or ali_est > 0 or ali_mun > 0:
+        tot_trib = f"""         <totTrib>
+               <pTotTrib>
+                  <pTotTribFed>{ali_fed:.2f}</pTotTribFed>
+                  <pTotTribEst>{ali_est:.2f}</pTotTribEst>
+                  <pTotTribMun>{ali_mun:.2f}</pTotTribMun>
+               </pTotTrib>
+            </totTrib>"""
+    else:
+        tot_trib = """         <totTrib>
+               <indTotTrib>0</indTotTrib>
+            </totTrib>"""
 
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
@@ -677,7 +697,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
          <cServ>
             <cTribNac>{cod_serv}</cTribNac>
             <xDescServ>{desc_serv}</xDescServ>
-            <cNBS>101011200</cNBS>
+            <cNBS>{cod_nbs or '010101'}</cNBS>
          </cServ>
       </serv>
       <valores>
@@ -690,9 +710,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
                <pAliq>{aliquota:.2f}</pAliq>
                <tpRetISSQN>{tp_ret}</tpRetISSQN>
             </tribMun>
-            <totTrib>
-               <indTotTrib>0</indTotTrib>
-            </totTrib>
+            {tot_trib}
          </trib>
       </valores>
    </infDPS>
@@ -749,7 +767,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str
 
     cod_serv = "010101"
     desc_serv = "Servicos"
-    cod_trib = "000001"
+    cod_nbs = ""
     discriminacao = ""
 
     for i, item in enumerate(itens, 1):
@@ -758,7 +776,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str
         if i == 1:
             cod_serv = (_limpar_codigo(item.codigo_servico or '')).ljust(6, '0') or cod_serv
             desc_serv = desc
-            cod_trib = (_limpar_codigo(item.tributacao_municipal or '')).zfill(6) or cod_trib
+            cod_nbs = _limpar_codigo(item.tributacao_municipal or '') or cod_nbs
         if discriminacao:
             discriminacao += " | "
         discriminacao += f"{i}. {desc} (qtd: {qtd})"
@@ -768,7 +786,30 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str
 
     aliquota = empresa.aliquota_iss or 2.0
     iss_retido = getattr(nfse, 'iss_retido', False) or False
-    tp_ret = 1
+    tp_ret = 2 if iss_retido else 1
+
+    ali_fed = nfse.aliquota_federal if nfse.aliquota_federal is not None else (empresa.aliquota_federal or 0.0)
+    ali_est = nfse.aliquota_estadual if nfse.aliquota_estadual is not None else (empresa.aliquota_estadual or 0.0)
+    ali_mun = nfse.aliquota_municipal if nfse.aliquota_municipal is not None else (empresa.aliquota_municipal or 0.0)
+    p_tot_trib = ali_fed + ali_est + ali_mun
+
+    observacoes = getattr(nfse, 'observacoes', '') or ''
+    desc_serv = discriminacao
+    if observacoes:
+        desc_serv += f" | {observacoes}"
+
+    if ali_fed > 0 or ali_est > 0 or ali_mun > 0:
+        tot_trib = f"""         <totTrib>
+               <pTotTrib>
+                  <pTotTribFed>{ali_fed:.2f}</pTotTribFed>
+                  <pTotTribEst>{ali_est:.2f}</pTotTribEst>
+                  <pTotTribMun>{ali_mun:.2f}</pTotTribMun>
+               </pTotTrib>
+            </totTrib>"""
+    else:
+        tot_trib = """         <totTrib>
+               <indTotTrib>0</indTotTrib>
+            </totTrib>"""
 
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
@@ -803,22 +844,20 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str
          <cServ>
             <cTribNac>{cod_serv}</cTribNac>
             <xDescServ>{desc_serv}</xDescServ>
-            <cNBS>101011200</cNBS>
+            <cNBS>{cod_nbs or '010101'}</cNBS>
          </cServ>
       </serv>
       <valores>
          <vServPrest>
             <vServ>{total_vlr:.2f}</vServ>
-                   </vServPrest>
+                    </vServPrest>
          <trib>
             <tribMun>
                <tribISSQN>1</tribISSQN>
                <pAliq>{aliquota:.2f}</pAliq>
                <tpRetISSQN>{tp_ret}</tpRetISSQN>
             </tribMun>
-            <totTrib>
-               <indTotTrib>0</indTotTrib>
-            </totTrib>
+            {tot_trib}
          </trib>
       </valores>
    </infDPS>

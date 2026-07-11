@@ -30,6 +30,8 @@ class NFe(Base):
     xml_path = Column(String(500), nullable=True)
     pdf_path = Column(String(500), nullable=True)
     mensagem_retorno = Column(Text, nullable=True)
+    aliquota_federal = Column(Float, default=0.0)
+    aliquota_estadual = Column(Float, default=0.0)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
@@ -79,6 +81,10 @@ class NFSe(Base):
     protocolo = Column(String(50), nullable=True)
     iss_retido = Column(Boolean, default=False)
     aliquota_iss = Column(Float, default=2.0)
+    aliquota_federal = Column(Float, default=0.0)
+    aliquota_estadual = Column(Float, default=0.0)
+    aliquota_municipal = Column(Float, default=0.0)
+    observacoes = Column(Text, default="")
     
     pedido = relationship("PedidoVenda", back_populates="nfse")
     cliente = relationship("Cliente")

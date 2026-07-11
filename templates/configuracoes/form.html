@@ -215,6 +215,16 @@
                         <input type="number" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="ultimo_numero_nfe" value="{{ empresa.ultimo_numero_nfe or 0 }}" min="0">
                         <p class="text-xs text-slate-500 mt-1">Incrementado automaticamente.</p>
                     </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Alíquota Federal (%)</label>
+                        <input type="number" step="0.01" min="0" max="100" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="nfe_aliquota_federal" value="{{ empresa.nfe_aliquota_federal or '0.00' }}">
+                        <p class="text-xs text-slate-500 mt-1">Alíquota aproximada de tributos federais (PIS, COFINS, IRPJ, CSLL) - Lei 12.741/2012 - Fonte IBPT</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Alíquota Estadual (%)</label>
+                        <input type="number" step="0.01" min="0" max="100" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="nfe_aliquota_estadual" value="{{ empresa.nfe_aliquota_estadual or '0.00' }}">
+                        <p class="text-xs text-slate-500 mt-1">Alíquota aproximada de tributos estaduais (ICMS) - Lei 12.741/2012 - Fonte IBPT</p>
+                    </div>
                 </div>
             </div>
         </div>
@@ -264,6 +274,21 @@
                         <label class="block text-xs font-medium text-cyan-400 mb-1">Alíquota ISS (%)</label>
                         <input type="number" step="0.01" min="0" max="100" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="aliquota_iss" value="{{ empresa.aliquota_iss or '2.00' }}">
                         <p class="text-xs text-slate-500 mt-1">Alíquota do ISS para cálculo do imposto na NFS-e. Ex: 2.00, 3.00, 5.00</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Alíquota Federal (%)</label>
+                        <input type="number" step="0.01" min="0" max="100" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="aliquota_federal" value="{{ empresa.aliquota_federal or '0.00' }}">
+                        <p class="text-xs text-slate-500 mt-1">Alíquota aproximada de tributos federais (PIS, COFINS, CSLL, IRPJ) - Lei 12.741/2012</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Alíquota Estadual (%)</label>
+                        <input type="number" step="0.01" min="0" max="100" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="aliquota_estadual" value="{{ empresa.aliquota_estadual or '0.00' }}">
+                        <p class="text-xs text-slate-500 mt-1">Alíquota aproximada de tributos estaduais (ICMS) - Lei 12.741/2012</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Alíquota Municipal (%)</label>
+                        <input type="number" step="0.01" min="0" max="100" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="aliquota_municipal" value="{{ empresa.aliquota_municipal or '0.00' }}">
+                        <p class="text-xs text-slate-500 mt-1">Alíquota aproximada de tributos municipais (ISS) - Lei 12.741/2012</p>
                     </div>
                 </div>
             </div>

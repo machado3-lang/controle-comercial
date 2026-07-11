@@ -309,7 +309,7 @@ class Produto(Base):
     composicoes = relationship("ProdutoComposicao", foreign_keys="[ProdutoComposicao.produto_pai_id]", back_populates="produto_pai", cascade="all, delete-orphan")
     tipo = Column(String(20), default="produto")  # "produto", "servico" ou "kit"
     codigo_lc116 = Column(String(10), nullable=True)
-    codigo_tributacao_municipal = Column(String(10), nullable=True)
+    codigo_tributacao_municipal = Column(String(20), nullable=True)
 
     @property
     def preco_padrao(self):
@@ -457,6 +457,11 @@ class Empresa(Base):
     categoria_servico_padrao_id = Column(Integer, ForeignKey("categorias_produto.id"), nullable=True)
     notaas_api_key = Column(Text, nullable=True)
     aliquota_iss = Column(Float, nullable=False, default=2.0)
+    aliquota_federal = Column(Float, nullable=False, default=0.0)
+    aliquota_estadual = Column(Float, nullable=False, default=0.0)
+    aliquota_municipal = Column(Float, nullable=False, default=0.0)
+    nfe_aliquota_federal = Column(Float, nullable=False, default=0.0)
+    nfe_aliquota_estadual = Column(Float, nullable=False, default=0.0)
     notaas_ambiente = Column(String(1), nullable=False, default="2")
     serie_nfe = Column(Integer, nullable=False, default=1)
     ultimo_numero_nfe = Column(Integer, nullable=False, default=0)

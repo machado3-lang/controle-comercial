@@ -299,6 +299,9 @@ def gerar_nfse_assinatura(request: Request, assinatura_id: int, db: Session = De
             data_emissao=datetime.now(),
             iss_retido=iss_retido,
             aliquota_iss=empresa.aliquota_iss or 2.0,
+            aliquota_federal=empresa.aliquota_federal or 0.0,
+            aliquota_estadual=empresa.aliquota_estadual or 0.0,
+            aliquota_municipal=empresa.aliquota_municipal or 0.0,
         )
         db.add(nfse)
         db.flush()
