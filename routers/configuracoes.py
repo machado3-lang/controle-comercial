@@ -86,6 +86,7 @@ async def salvar_configuracoes(
     aliquota_municipal: float = Form(0.0),
     nfe_aliquota_federal: float = Form(0.0),
     nfe_aliquota_estadual: float = Form(0.0),
+    ultimo_numero_nfse: int = Form(0),
 ):
     empresa = db.query(Empresa).first()
     if empresa:
@@ -126,6 +127,7 @@ async def salvar_configuracoes(
         empresa.aliquota_municipal = aliquota_municipal
         empresa.nfe_aliquota_federal = nfe_aliquota_federal
         empresa.nfe_aliquota_estadual = nfe_aliquota_estadual
+        empresa.ultimo_numero_nfse = ultimo_numero_nfse
     else:
         empresa = Empresa(
             razao_social=razao_social, nome_fantasia=nome_fantasia,
@@ -152,6 +154,7 @@ async def salvar_configuracoes(
             ultimo_numero_nfe=ultimo_numero_nfe,
             nfe_aliquota_federal=nfe_aliquota_federal,
             nfe_aliquota_estadual=nfe_aliquota_estadual,
+            ultimo_numero_nfse=ultimo_numero_nfse,
         )
         db.add(empresa)
 

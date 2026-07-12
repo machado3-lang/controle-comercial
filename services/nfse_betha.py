@@ -32,6 +32,7 @@ BETHA_RECOVER_PDF_URL = os.getenv('BETHA_RECOVER_PDF_URL', 'https://e-gov.betha.
 # API do Ambiente de Dados Nacional (ADN) / SEFIN
 ADN_NFSE_URL = os.getenv('ADN_NFSE_URL', 'https://sefin.nfse.gov.br/SefinNacional')
 ADN_DANFSE_URL = os.getenv('ADN_DANFSE_URL', 'https://adn.nfse.gov.br/danfse')
+ADN_DFE_URL = os.getenv('ADN_DFE_URL', 'https://adn.nfse.gov.br/contribuintes/dfe')
 
 class BethaNfseService:
     def __init__(self):
@@ -247,6 +248,145 @@ class BethaNfseService:
                 'https://nota-eletronica.betha.cloud/fly/notas/danfse/{codigo}')
             return url_pattern.replace('{codigo}', codigo_verificacao).replace('{numero}', numero)
         return None
+
+    def _get_adn_session(self) -> Session:
+        """Session apenas com certificado (sem basic auth) para ADN"""
+        session = Session()
+        session.verify = False
+        if os.path.exists(self.cert_path):
+            pem_path = self._get_pem_combined()
+            session.cert = pem_path
+        return session
+
+    def listar_nfse_adn(self, data_inicio: str = None, data_fim: str = None,
+                        max_paginas: int = 50) -> list[dict]:
+        """Lista NFS-e do ADN via API de distribuição (DF-e) por período.
+        Endpoint: GET /contribuintes/dfe/{ultNSU}
+
+        Retorna lista de dicts com chaveAcesso, dhEmi, valor, tomador, xml, etc.
+        """
+        import base64, gzip, re, time
+        session = self._get_adn_session()
+        resultados = []
+        ultNSU = 0
+        pagina = 0
+        logger.info(f"Listando NFS-e do ADN de {data_inicio} a {data_fim}...")
+
+        while pagina < max_paginas:
+            try:
+                url = f"{ADN_DFE_URL}/{ultNSU}"
+                logger.info(f"ADN DFE req (pag {pagina + 1}): NSU={ultNSU}")
+                time.sleep(1)  # rate limit
+                r = session.get(url, timeout=60)
+                if r.status_code == 429:
+                    logger.warning("ADN 429 rate limit, aguardando 5s...")
+                    time.sleep(5)
+                    r = session.get(url, timeout=60)
+                if r.status_code == 404:
+                    logger.info("ADN DFE 404 — fim da distribuição")
+                    break
+                if r.status_code != 200:
+                    logger.warning(f"ADN DFE HTTP {r.status_code}: {r.text[:300]}")
+                    break
+
+                data = r.json()
+                status = data.get('StatusProcessamento', '')
+                if status != 'DOCUMENTOS_LOCALIZADOS':
+                    logger.info(f"ADN status: {status}")
+                    break
+
+                lote = data.get('LoteDFe') or []
+                logger.info(f"ADN página {pagina + 1}: {len(lote)} documentos")
+                if not lote:
+                    break
+
+                nsu_max = max((int(df.get('NSU', 0)) for df in lote if df.get('NSU')), default=ultNSU)
+
+                for df in lote:
+                    chave = df.get('ChaveAcesso', '')
+                    if not chave:
+                        continue
+                    nsu = df.get('NSU', 0)
+
+                    # Extrai XML do conteúdo (base64 + gzip)
+                    xml_nfse = None
+                    xml_b64 = df.get('ArquivoXml')
+                    if xml_b64:
+                        try:
+                            xml_nfse = gzip.decompress(base64.b64decode(xml_b64)).decode('utf-8')
+                        except Exception:
+                            try:
+                                xml_nfse = base64.b64decode(xml_b64).decode('utf-8')
+                            except Exception:
+                                pass
+
+                    # Extrai informações do XML
+                    dh_emi = df.get('DataHoraGeracao', '')
+                    valor = None
+                    tomador_nome = None
+                    tomador_cnpj = None
+                    numero_nfse = None
+                    c_stat = None
+                    if xml_nfse:
+                        m = re.search(r'<[^:>]*:?nNFSe[^>]*>(\d+)</', xml_nfse)
+                        if m: numero_nfse = m.group(1)
+                        m = re.search(r'<[^:>]*:?dhEmi[^>]*>([^<]+)</', xml_nfse)
+                        if m: dh_emi = m.group(1)
+                        m = re.search(r'<[^:>]*:?vBC[^>]*>([\d.]+)</', xml_nfse)
+                        if m: valor = float(m.group(1))
+                        # Tomador: <toma><CNPJ>...</CNPJ><xNome>...</xNome></toma>
+                        toma_match = re.search(r'<toma>(.*?)</toma>', xml_nfse, re.DOTALL)
+                        if toma_match:
+                            toma_bloco = toma_match.group(1)
+                            m1 = re.search(r'<xNome>(.*?)</', toma_bloco)
+                            if m1: tomador_nome = m1.group(1)
+                            m2 = re.search(r'<CNPJ>(\d+)</', toma_bloco)
+                            if m2: tomador_cnpj = m2.group(1)
+                            if not tomador_cnpj:
+                                m2 = re.search(r'<CPF>(\d+)</', toma_bloco)
+                                if m2: tomador_cnpj = m2.group(1)
+                        # Prestador (emit) - fallback se tomador não encontrado
+                        if not tomador_nome:
+                            emit_match = re.search(r'<emit>(.*?)</emit>', xml_nfse, re.DOTALL)
+                            if emit_match:
+                                m1 = re.search(r'<xNome>(.*?)</', emit_match.group(1))
+                                if m1: tomador_nome = f"PRESTADOR: {m1.group(1)}"
+                        m = re.search(r'<[^:>]*:?cStat[^>]*>(\d+)</', xml_nfse)
+                        if m: c_stat = m.group(1)
+
+                    # Filtro por data
+                    if data_inicio or data_fim:
+                        data_doc = dh_emi[:10] if dh_emi else ''
+                        if data_inicio and data_doc < data_inicio:
+                            continue
+                        if data_fim and data_doc > data_fim:
+                            continue
+
+                    resultados.append({
+                        'chaveAcesso': chave,
+                        'numero': numero_nfse,
+                        'dhEmi': dh_emi,
+                        'valor': valor,
+                        'tomador_nome': tomador_nome,
+                        'tomador_cnpj': tomador_cnpj,
+                        'cStat': c_stat,
+                        'NSU': nsu,
+                        'xml': xml_nfse,
+                    })
+
+                if nsu_max == ultNSU:
+                    break
+                ultNSU = nsu_max
+                pagina += 1
+
+            except Exception as e:
+                logger.error(f"Erro ADN DFE: {e}")
+                import traceback
+                logger.error(traceback.format_exc())
+                break
+
+        logger.info(f"ADN retornou {len(resultados)} NFS-e no período")
+        return resultados
 
     def baixar_danfse_adn(self, chave_acesso: str) -> bytes | None:
         """Tenta baixar o DANFSe (PDF) do ADN: GET https://adn.nfse.gov.br/danfse/{chaveAcesso}"""
