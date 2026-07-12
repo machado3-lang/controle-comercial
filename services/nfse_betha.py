@@ -35,23 +35,29 @@ ADN_DANFSE_URL = os.getenv('ADN_DANFSE_URL', 'https://adn.nfse.gov.br/danfse')
 ADN_DFE_URL = os.getenv('ADN_DFE_URL', 'https://adn.nfse.gov.br/contribuintes/dfe')
 
 class BethaNfseService:
-    def __init__(self):
-        import tempfile
+    def __init__(self, cert_path: str = None, cert_password: str = None, empresa=None):
         self.usuario = os.getenv('BETHA_USUARIO')
         self.senha = os.getenv('BETHA_SENHA')
-        cert_b64 = os.getenv('CERT_B64')
-        if cert_b64:
-            import base64
-            pfx = base64.b64decode(cert_b64)
+        self.cert_path = cert_path or os.getenv('CERT_PATH', './certs/certificado.pfx')
+        self.cert_password = cert_password or os.getenv('CERT_PASSWORD')
+        if empresa:
+            self.load_cert_from_empresa(empresa)
+        if not self.usuario or not self.senha:
+            raise NFSeBethaError("Credenciais Betha não configuradas no .env")
+
+    def load_cert_from_empresa(self, empresa):
+        """Carrega certificado A1 a partir do registro Empresa (do banco de dados)"""
+        import tempfile, base64
+        if empresa.cert_base64:
+            pfx = base64.b64decode(empresa.cert_base64)
             tmp = os.path.join(tempfile.gettempdir(), 'certificado.pfx')
             with open(tmp, 'wb') as f:
                 f.write(pfx)
             self.cert_path = tmp
-        else:
-            self.cert_path = os.getenv('CERT_PATH', './certs/certificado.pfx')
-        self.cert_password = os.getenv('CERT_PASSWORD')
-        if not self.usuario or not self.senha:
-            raise NFSeBethaError("Credenciais Betha não configuradas no .env")
+            self.cert_password = empresa.cert_password or ''
+        elif empresa.cert_path:
+            self.cert_path = empresa.cert_path
+            self.cert_password = empresa.cert_password or ''
 
     def _get_pem_combined(self) -> str:
         import os

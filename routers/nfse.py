@@ -1031,7 +1031,7 @@ def listar_nfse_adn(
         return RedirectResponse(url="/nfse", status_code=303)
 
     try:
-        service = BethaNfseService()
+        service = BethaNfseService(empresa=empresa)
         notas = service.listar_nfse_adn(data_inicio, data_fim)
         return request.app.state.templates.TemplateResponse(
             "nfse/lista.html",
@@ -1050,11 +1050,12 @@ def listar_nfse_adn(
 
 
 @router.get("/adn-danfse/{chave_acesso}")
-def adn_danfse(request: Request, chave_acesso: str):
+def adn_danfse(request: Request, chave_acesso: str, db: Session = Depends(get_db)):
     """Proxy para baixar DANFSe do ADN pelo servidor (com certificado)"""
     from fastapi.responses import Response
     try:
-        service = BethaNfseService()
+        empresa = db.query(Empresa).first()
+        service = BethaNfseService(empresa=empresa)
         pdf = service.baixar_danfse_adn(chave_acesso)
         if pdf:
             return Response(content=pdf, media_type="application/pdf",
@@ -1065,13 +1066,14 @@ def adn_danfse(request: Request, chave_acesso: str):
 
 
 @router.get("/adn-xml/{chave_acesso}")
-def adn_xml(request: Request, chave_acesso: str):
+def adn_xml(request: Request, chave_acesso: str, db: Session = Depends(get_db)):
     """Proxy para baixar XML do ADN pelo servidor (com certificado)"""
     from fastapi.responses import Response
     from services.nfse_betha import ADN_NFSE_URL
     import httpx
     try:
-        service = BethaNfseService()
+        empresa = db.query(Empresa).first()
+        service = BethaNfseService(empresa=empresa)
         session = service._get_adn_session()
         r = session.get(f"{ADN_NFSE_URL}/nfse/{chave_acesso}", timeout=30)
         if r.status_code == 200:

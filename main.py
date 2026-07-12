@@ -197,6 +197,15 @@ def run_migrations():
         if "nfe_aliquota_estadual" not in existing_emp:
             conn.execute(text("ALTER TABLE empresa ADD COLUMN nfe_aliquota_estadual FLOAT DEFAULT 0.0"))
             conn.commit()
+        if "cert_path" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN cert_path VARCHAR(500)"))
+            conn.commit()
+        if "cert_password" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN cert_password VARCHAR(100)"))
+            conn.commit()
+        if "cert_base64" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN cert_base64 TEXT"))
+            conn.commit()
         cols_nfe = inspector.get_columns("nfe")
         existing_nfe = {c['name'] for c in cols_nfe}
         if "cliente_id" not in existing_nfe:
@@ -387,6 +396,9 @@ def run_migrations():
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='nfe' AND column_name='aliquota_estadual') THEN ALTER TABLE nfe ADD COLUMN aliquota_estadual FLOAT DEFAULT 0.0; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='nfe_aliquota_federal') THEN ALTER TABLE empresa ADD COLUMN nfe_aliquota_federal FLOAT DEFAULT 0.0; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='nfe_aliquota_estadual') THEN ALTER TABLE empresa ADD COLUMN nfe_aliquota_estadual FLOAT DEFAULT 0.0; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='cert_path') THEN ALTER TABLE empresa ADD COLUMN cert_path VARCHAR(500); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='cert_password') THEN ALTER TABLE empresa ADD COLUMN cert_password VARCHAR(100); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='cert_base64') THEN ALTER TABLE empresa ADD COLUMN cert_base64 TEXT; END IF;
                         IF (SELECT character_maximum_length FROM information_schema.columns WHERE table_name='produtos' AND column_name='codigo_tributacao_municipal') < 20 THEN ALTER TABLE produtos ALTER COLUMN codigo_tributacao_municipal TYPE VARCHAR(20); END IF;
                     END $$;
                 """))

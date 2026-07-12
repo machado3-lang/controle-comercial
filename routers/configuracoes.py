@@ -75,6 +75,8 @@ async def salvar_configuracoes(
     sicoob_cert_password: str = Form(""),
     sicoob_cert_file: UploadFile = File(None),
     sicoob_key_file: UploadFile = File(None),
+    cert_file: UploadFile = File(None),
+    cert_password_form: str = Form(""),
     logo: UploadFile = File(None),
     notaas_api_key: str = Form(""),
     notaas_ambiente: str = Form("2"),
@@ -188,6 +190,14 @@ async def salvar_configuracoes(
             with open(filepath, "wb") as f:
                 f.write(content)
             empresa.logo = f"static/uploads/{filename}"
+
+    if cert_file and cert_file.filename:
+        import base64
+        content = await cert_file.read()
+        empresa.cert_base64 = base64.b64encode(content).decode()
+        empresa.cert_password = cert_password_form
+    elif cert_password_form:
+        empresa.cert_password = cert_password_form
 
     empresa.sicoob_token = None
     empresa.updated_at = datetime.now()
