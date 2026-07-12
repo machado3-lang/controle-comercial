@@ -311,6 +311,13 @@
 </div>
 
 <script>
+document.querySelector('form[action="/nfse/adn-listar"]')?.addEventListener('submit', function() {
+    const btn = this.querySelector('button[type="submit"]');
+    if (btn) {
+        btn.disabled = true;
+        btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1"></span> Aguarde...';
+    }
+});
 function confirmTransmitirLista(nfseId, numero) {
     document.getElementById('transmitirNumeroLista').textContent = numero;
     document.getElementById('formTransmitirLista').action = '/nfse/' + nfseId + '/transmitir';
