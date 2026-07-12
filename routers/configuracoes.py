@@ -193,9 +193,18 @@ async def salvar_configuracoes(
 
     if cert_file and cert_file.filename:
         import base64
+        from cryptography.hazmat.primitives.serialization import pkcs12
+        from datetime import date
         content = await cert_file.read()
         empresa.cert_base64 = base64.b64encode(content).decode()
         empresa.cert_password = cert_password_form
+        try:
+            _, cert, _ = pkcs12.load_key_and_certificates(
+                content, password=cert_password_form.encode() if cert_password_form else None
+            )
+            empresa.cert_validade = cert.not_valid_date_after.date() if hasattr(cert.not_valid_date_after, 'date') else cert.not_valid_date_after
+        except Exception:
+            empresa.cert_validade = None
     elif cert_password_form:
         empresa.cert_password = cert_password_form
 

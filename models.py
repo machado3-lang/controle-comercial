@@ -469,6 +469,7 @@ class Empresa(Base):
     cert_path = Column(String(500), nullable=True)
     cert_password = Column(String(100), nullable=True)
     cert_base64 = Column(Text, nullable=True)  # Certificado A1 armazenado como base64
+    cert_validade = Column(Date, nullable=True)  # Data de validade do certificado
     cfop_padrao = Column(String(4), nullable=False, default="5102")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
