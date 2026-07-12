@@ -1,5 +1,6 @@
 import os
 import json
+import re
 from datetime import datetime, date
 from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException
 from fastapi.responses import RedirectResponse, Response, JSONResponse
@@ -674,6 +675,69 @@ def _validar_rascunho(nfe, cliente, empresa) -> list:
     return erros
 
 
+@router.get("/distribuicao")
+def nfe_distribuicao(
+    request: Request, db: Session = Depends(get_db),
+    data_inicio: str = Query(""), data_fim: str = Query(""),
+    tipo: str = Query(""),
+):
+    """Lista NFe (emitidas e recebidas) via SEFAZ (Distribuição DF-e)"""
+    from services.nfe_distribuicao import NFeDistribuicaoService
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.cnpj:
+        request.session["error"] = "Empresa sem CNPJ configurado"
+        return RedirectResponse(url="/nfe", status_code=303)
+
+    try:
+        service = NFeDistribuicaoService(empresa)
+        notas = service.listar_nfe(empresa.cnpj)
+        cnpj_clean = re.sub(r'\D', '', empresa.cnpj)
+        for n in notas:
+            emit_clean = re.sub(r'\D', '', n.get('emitente_cnpj') or '')
+            dest_clean = re.sub(r'\D', '', n.get('destinatario_cnpj') or '')
+            if emit_clean == cnpj_clean:
+                n['tipo'] = 'emitida'
+            elif dest_clean == cnpj_clean:
+                n['tipo'] = 'recebida'
+            else:
+                n['tipo'] = 'outra'
+        if data_inicio:
+            notas = [n for n in notas if (n.get('dhEmi') or '')[:10] >= data_inicio]
+        if data_fim:
+            notas = [n for n in notas if (n.get('dhEmi') or '')[:10] <= data_fim]
+        if tipo:
+            notas = [n for n in notas if n.get('tipo') == tipo]
+        emitidas = [n for n in notas if n.get('tipo') == 'emitida']
+        recebidas = [n for n in notas if n.get('tipo') == 'recebida']
+        return request.app.state.templates.TemplateResponse(
+            "nfe/lista.html",
+            {"request": request, "notas": [], "busca": "", "status": "",
+             "messages": [{"tipo": "success", "texto": f"SEFAZ: {len(notas)} NFe encontradas ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"}],
+             "empresa": empresa, "STATUS_LABELS": STATUS_LABELS,
+             "dist_notas": notas, "dist_emitidas": emitidas, "dist_recebidas": recebidas}
+        )
+    except Exception as e:
+        request.session["error"] = f"Erro SEFAZ: {str(e)}"
+        return RedirectResponse(url="/nfe", status_code=303)
+
+
+@router.get("/dist-xml/{chave_acesso}")
+def nfe_dist_xml(request: Request, chave_acesso: str, db: Session = Depends(get_db)):
+    from services.nfe_distribuicao import NFeDistribuicaoService
+    from fastapi.responses import Response
+    empresa = db.query(Empresa).first()
+    try:
+        service = NFeDistribuicaoService(empresa)
+        notas = service.listar_nfe(empresa.cnpj)
+        for n in notas:
+            if n.get('chaveAcesso') == chave_acesso and n.get('xml'):
+                return Response(content=n['xml'], media_type="application/xml",
+                                headers={"Content-Disposition": f"attachment; filename=nfe_{chave_acesso}.xml"})
+        return Response(status_code=404, content="XML não encontrado")
+    except Exception as e:
+        return Response(status_code=500, content=str(e))
+
+
 @router.get("/{nfe_id}/previa")
 def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
@@ -1233,3 +1297,5 @@ async def webhook_nfe(request: Request, db: Session = Depends(get_db)):
         return JSONResponse({"status": "updated", "invoice_id": invoice_id})
     except Exception as e:
         return JSONResponse({"status": "error", "message": str(e)}, status_code=500)
+
+
