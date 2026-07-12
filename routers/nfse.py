@@ -1023,6 +1023,7 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
 def listar_nfse_adn(
     request: Request, db: Session = Depends(get_db),
     data_inicio: str = Query(""), data_fim: str = Query(""),
+    tipo: str = Query(""),
 ):
     """Lista NFS-e do ADN (Ambiente de Dados Nacional) por período"""
     empresa = db.query(Empresa).first()
@@ -1032,14 +1033,25 @@ def listar_nfse_adn(
 
     try:
         service = BethaNfseService(empresa=empresa)
-        notas = service.listar_nfse_adn(data_inicio, data_fim)
+        notas = service.listar_nfse_adn(data_inicio, data_fim, empresa_cnpj=empresa.cnpj)
+        if tipo:
+            notas = [n for n in notas if n.get('tipo') == tipo]
+        emitidas = [n for n in notas if n.get('tipo') == 'emitida']
+        recebidas = [n for n in notas if n.get('tipo') == 'recebida']
+        msg = f"ADN: {len(notas)} NFS-e encontradas"
+        if not tipo:
+            msg += f" ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"
+        elif tipo == 'emitida':
+            msg = f"ADN: {len(notas)} NFS-e emitidas encontradas"
+        elif tipo == 'recebida':
+            msg = f"ADN: {len(notas)} NFS-e recebidas encontradas"
         return request.app.state.templates.TemplateResponse(
             "nfse/lista.html",
             {"request": request, "nfse": [], "status": "", "busca": "",
-             "messages": [{"tipo": "success", "texto": f"ADN: {len(notas)} NFS-e encontradas no período"}],
+             "messages": [{"tipo": "success", "texto": msg}],
              "empresa": empresa, "STATUS_LABELS": STATUS_LABELS,
              "nfse_ids_sem_cobranca": set(),
-             "adn_notas": notas}
+             "adn_notas": notas, "adn_emitidas": emitidas, "adn_recebidas": recebidas}
         )
     except NFSeBethaError as e:
         request.session["error"] = f"Erro ADN: {str(e)}"

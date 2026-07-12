@@ -275,7 +275,7 @@ class BethaNfseService:
         return session
 
     def listar_nfse_adn(self, data_inicio: str = None, data_fim: str = None,
-                        max_paginas: int = 50) -> list[dict]:
+                        max_paginas: int = 50, empresa_cnpj: str = None) -> list[dict]:
         """Lista NFS-e do ADN via API de distribuição (DF-e) por período.
         Endpoint: GET /contribuintes/dfe/{ultNSU}
 
@@ -341,6 +341,8 @@ class BethaNfseService:
                     valor = None
                     tomador_nome = None
                     tomador_cnpj = None
+                    emitente_nome = None
+                    emitente_cnpj = None
                     numero_nfse = None
                     c_stat = None
                     if xml_nfse:
@@ -361,12 +363,17 @@ class BethaNfseService:
                             if not tomador_cnpj:
                                 m2 = re.search(r'<CPF>(\d+)</', toma_bloco)
                                 if m2: tomador_cnpj = m2.group(1)
-                        # Prestador (emit) - fallback se tomador não encontrado
-                        if not tomador_nome:
-                            emit_match = re.search(r'<emit>(.*?)</emit>', xml_nfse, re.DOTALL)
-                            if emit_match:
-                                m1 = re.search(r'<xNome>(.*?)</', emit_match.group(1))
-                                if m1: tomador_nome = f"PRESTADOR: {m1.group(1)}"
+                        # Emitente (prestador): <emit><CNPJ>...</CNPJ><xNome>...</xNome></emit>
+                        emit_match = re.search(r'<emit>(.*?)</emit>', xml_nfse, re.DOTALL)
+                        if emit_match:
+                            emit_bloco = emit_match.group(1)
+                            m1 = re.search(r'<xNome>(.*?)</', emit_bloco)
+                            if m1: emitente_nome = m1.group(1)
+                            m2 = re.search(r'<CNPJ>(\d+)</', emit_bloco)
+                            if m2: emitente_cnpj = m2.group(1)
+                            if not emitente_cnpj:
+                                m2 = re.search(r'<CPF>(\d+)</', emit_bloco)
+                                if m2: emitente_cnpj = m2.group(1)
                         m = re.search(r'<[^:>]*:?cStat[^>]*>(\d+)</', xml_nfse)
                         if m: c_stat = m.group(1)
 
@@ -378,6 +385,17 @@ class BethaNfseService:
                         if data_fim and data_doc > data_fim:
                             continue
 
+                    # Classifica: emitida (nosso CNPJ é o emitente) ou recebida (nosso CNPJ é o tomador)
+                    cnpj_clean = re.sub(r'\D', '', empresa_cnpj or '')
+                    emit_clean = re.sub(r'\D', '', emitente_cnpj or '')
+                    toma_clean = re.sub(r'\D', '', tomador_cnpj or '')
+                    if emit_clean == cnpj_clean:
+                        tipo = 'emitida'
+                    elif toma_clean == cnpj_clean:
+                        tipo = 'recebida'
+                    else:
+                        tipo = 'outra'
+
                     resultados.append({
                         'chaveAcesso': chave,
                         'numero': numero_nfse,
@@ -385,9 +403,12 @@ class BethaNfseService:
                         'valor': valor,
                         'tomador_nome': tomador_nome,
                         'tomador_cnpj': tomador_cnpj,
+                        'emitente_nome': emitente_nome,
+                        'emitente_cnpj': emitente_cnpj,
                         'cStat': c_stat,
                         'NSU': nsu,
                         'xml': xml_nfse,
+                        'tipo': tipo,
                     })
 
                 if nsu_max == ultNSU:

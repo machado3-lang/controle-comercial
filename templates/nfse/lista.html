@@ -24,9 +24,14 @@
 <form action="/nfse/adn-listar" method="get" class="flex items-center flex-wrap gap-2 mb-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
     <i data-lucide="cloud" class="w-4 h-4 text-indigo-400"></i>
     <span class="text-xs font-medium text-indigo-400 mr-1">ADN:</span>
-    <input type="date" name="data_inicio" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100">
+    <input type="date" name="data_inicio" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100" value="{{ request.query_params.get('data_inicio', '') }}">
     <span class="text-xs text-slate-500">até</span>
-    <input type="date" name="data_fim" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100">
+    <input type="date" name="data_fim" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100" value="{{ request.query_params.get('data_fim', '') }}">
+    <select name="tipo" class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100">
+        <option value="">Todas</option>
+        <option value="emitida" {{ 'selected' if request.query_params.get('tipo') == 'emitida' }}>Emitidas</option>
+        <option value="recebida" {{ 'selected' if request.query_params.get('tipo') == 'recebida' }}>Recebidas</option>
+    </select>
     <button class="flex items-center h-8 px-3 text-xs bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg font-medium transition-all shadow-lg shadow-indigo-500/10">
         <i data-lucide="search" class="w-3.5 h-3.5 me-1"></i> Buscar no ADN
     </button>
@@ -161,27 +166,33 @@
     </div>
 </div>
 
-{% if adn_notas is defined and adn_notas %}
+{% macro adn_table(notas, titulo, cor, icon) %}
+{% if notas %}
 <div class="mt-4">
-    <h5 class="text-indigo-400 font-semibold mb-3"><i data-lucide="cloud" class="w-5 h-5 inline me-1"></i> Resultados ADN ({{ adn_notas|length }} NFS-e)</h5>
+    <h5 class="{{ cor }} font-semibold mb-3"><i data-lucide="{{ icon }}" class="w-5 h-5 inline me-1"></i> {{ titulo }} ({{ notas|length }})</h5>
     <div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl shadow-xl overflow-hidden">
         <table class="w-full divide-y divide-slate-800/60">
             <thead class="bg-slate-950/50">
                 <tr>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">Chave Acesso</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold uppercase" style="color: {{ cor }}">Contraparte</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">Nº</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">Tomador</th>
                     <th class="px-4 py-3 text-right text-xs font-semibold text-indigo-400 uppercase">Valor</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">Emissão</th>
                     <th class="px-4 py-3 text-center text-xs font-semibold text-indigo-400 uppercase">Ações</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-800/60">
-                {% for n in adn_notas %}
+                {% for n in notas %}
                 <tr class="hover:bg-slate-800/40 transition">
-                    <td class="px-4 py-3 text-xs text-slate-300 font-mono">{{ n.chaveAcesso[:15] if n.chaveAcesso else '-' }}...</td>
+                    <td class="px-4 py-3 text-sm max-w-[250px] truncate" title="{{ n.emitente_nome or n.tomador_nome or '-' }}">
+                        {% if n.tipo == 'emitida' %}
+                        <span class="text-cyan-300">{{ n.tomador_nome or '-' }}</span>
+                        {% else %}
+                        <span class="text-amber-300">{{ n.emitente_nome or '-' }}</span>
+                        {% endif %}
+                        <span class="text-xs text-slate-500 block">{{ n.tomador_cnpj or n.emitente_cnpj or '' }}</span>
+                    </td>
                     <td class="px-4 py-3 text-sm text-slate-100">{{ n.numero or '-' }}</td>
-                    <td class="px-4 py-3 text-sm text-cyan-300 max-w-[200px] truncate">{{ n.tomador_nome or '-' }}</td>
                     <td class="px-4 py-3 text-sm text-emerald-400 text-right">R$ {{ '%.2f'|format(n.valor or 0) }}</td>
                     <td class="px-4 py-3 text-sm text-slate-300">{{ n.dhEmi[:10] if n.dhEmi else '-' }}</td>
                     <td class="px-4 py-3 text-center">
@@ -203,6 +214,10 @@
     </div>
 </div>
 {% endif %}
+{% endmacro %}
+
+{{ adn_table(adn_emitidas, 'NFS-e Emitidas', 'text-cyan-400', 'upload') }}
+{{ adn_table(adn_recebidas, 'NFS-e Recebidas', 'text-amber-400', 'download') }}
 
 <div class="modal fade" id="modalConfirmTransmitir">
     <div class="modal-dialog">
