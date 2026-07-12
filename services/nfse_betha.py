@@ -36,9 +36,19 @@ ADN_DFE_URL = os.getenv('ADN_DFE_URL', 'https://adn.nfse.gov.br/contribuintes/df
 
 class BethaNfseService:
     def __init__(self):
+        import tempfile
         self.usuario = os.getenv('BETHA_USUARIO')
         self.senha = os.getenv('BETHA_SENHA')
-        self.cert_path = os.getenv('CERT_PATH', './certs/certificado.pfx')
+        cert_b64 = os.getenv('CERT_B64')
+        if cert_b64:
+            import base64
+            pfx = base64.b64decode(cert_b64)
+            tmp = os.path.join(tempfile.gettempdir(), 'certificado.pfx')
+            with open(tmp, 'wb') as f:
+                f.write(pfx)
+            self.cert_path = tmp
+        else:
+            self.cert_path = os.getenv('CERT_PATH', './certs/certificado.pfx')
         self.cert_password = os.getenv('CERT_PASSWORD')
         if not self.usuario or not self.senha:
             raise NFSeBethaError("Credenciais Betha não configuradas no .env")
