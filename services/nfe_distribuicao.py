@@ -1,12 +1,12 @@
-import os, re, base64, gzip, logging
+import os, re, base64, gzip, logging, time
 from typing import Optional
 from requests import Session
 from models import Empresa
 
 logger = logging.getLogger(__name__)
 
-NFE_DIST_URL = os.getenv('NFE_DIST_URL',
-    'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx')
+NFE_DIST_URL_PROD = 'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx'
+NFE_DIST_URL_HOMOL = 'https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx'
 
 
 class NFeDistribuicaoError(Exception):
@@ -18,8 +18,13 @@ class NFeDistribuicaoService:
         self.empresa = empresa
         self.cert_path = None
         self.cert_password = None
+        self.tpAmb = 1
+        self.url = NFE_DIST_URL_PROD
         if empresa:
             self._load_cert(empresa)
+            self.tpAmb = int(empresa.notaas_ambiente) if empresa.notaas_ambiente else 1
+            if self.tpAmb == 2:
+                self.url = NFE_DIST_URL_HOMOL
 
     def _load_cert(self, empresa: Empresa):
         import tempfile
@@ -71,7 +76,7 @@ class NFeDistribuicaoService:
       <nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">
          <nfeDadosMsg>
             <distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.00">
-               <tpAmb>1</tpAmb>
+               <tpAmb>{self.tpAmb}</tpAmb>
                <cUFAutor>50</cUFAutor>
                <CNPJ>{cnpj}</CNPJ>
                <distNSU>
@@ -118,7 +123,7 @@ class NFeDistribuicaoService:
                 envelope = self._build_soap_envelope(cnpj_clean, ultNSU)
                 headers = {'Content-Type': 'text/xml;charset=UTF-8',
                            'SOAPAction': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse'}
-                r = session.post(NFE_DIST_URL, data=envelope.encode('utf-8'), headers=headers, timeout=60)
+                r = session.post(self.url, data=envelope.encode('utf-8'), headers=headers, timeout=60)
                 if r.status_code != 200:
                     logger.warning(f"SEFAZ NFe HTTP {r.status_code}: {r.text[:300]}")
                     break
@@ -156,6 +161,7 @@ class NFeDistribuicaoService:
                     break
                 ultNSU = novo_ultNSU
                 pagina += 1
+                time.sleep(3)
 
             except Exception as e:
                 logger.error(f"Erro SEFAZ NFe: {e}")
