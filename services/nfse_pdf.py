@@ -224,7 +224,7 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
 
 
 def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
-    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
@@ -234,8 +234,8 @@ def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
     titulo = "Contas a Receber" if tipo == "receber" else "Contas a Pagar"
     pdf.cell(0, 7, titulo, align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
-    pdf.set_font("Helvetica", "B", 7)
-    col_w = [65, 22, 20, 18, 65]
+    pdf.set_font("Helvetica", "B", 8)
+    col_w = [52, 22, 20, 16, 52]
     parte_label = "Cliente" if tipo == "receber" else "Fornecedor"
     headers = ["Descricao", "Valor", "Vencimento", "Status", parte_label]
     for i, h in enumerate(headers):
@@ -246,18 +246,30 @@ def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
     for c in contas:
         parte = (c.cliente.nome if tipo == "receber" and c.cliente else
                  c.fornecedor.nome if c.fornecedor else '-')
-        linha = [
-            c.descricao[:45],
-            f"R$ {c.valor:.2f}",
-            c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '',
-            c.status.value if hasattr(c.status, 'value') else str(c.status),
-            parte[:45],
-        ]
+        textos = [c.descricao, f"R$ {c.valor:.2f}",
+                  c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '',
+                  c.status.value if hasattr(c.status, 'value') else str(c.status), parte]
         total += c.valor
-        row_h = 5
-        for i, t in enumerate(linha):
-            pdf.cell(col_w[i], row_h, t, border=1)
-        pdf.ln()
+        # Calcula altura necessaria para cada celula com multi_cell
+        x_start = pdf.get_x()
+        y_start = pdf.get_y()
+        alturas = []
+        for i, t in enumerate(textos):
+            # Altura estimada: numero de linhas * 4mm
+            qtd_linhas = max(1, len(t) * pdf.get_string_width(t) / (col_w[i] - 2)) if i in (0, 4) else 1
+            alturas.append(qtd_linhas * 4)
+        row_h = max(alturas)
+        # Verifica quebra de pagina
+        if y_start + row_h > pdf.h - pdf.b_margin:
+            pdf.add_page()
+            y_start = pdf.get_y()
+        for i, t in enumerate(textos):
+            pdf.set_xy(x_start + sum(col_w[:i]), y_start)
+            if i in (0, 4):
+                pdf.multi_cell(col_w[i], 4, t, border=1)
+            else:
+                pdf.cell(col_w[i], row_h, t, border=1)
+        pdf.set_y(max(pdf.get_y(), y_start + row_h))
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 9)
     pdf.cell(0, 6, f"Total: R$ {total:.2f}", align="R", new_x="LMARGIN", new_y="NEXT")

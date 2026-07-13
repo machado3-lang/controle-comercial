@@ -21,18 +21,41 @@ def get_messages(request: Request) -> list:
 
 
 @router.get("/pagar")
-def contas_pagar(request: Request, db: Session = Depends(get_db)):
+def contas_pagar(
+    request: Request, db: Session = Depends(get_db),
+    busca: str = Query(""), status_filtro: str = Query(""),
+    data_inicio: str = Query(""), data_fim: str = Query(""),
+):
     from sqlalchemy import func
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
     fornecedores_json = [{"id": f.id, "nome": f.nome} for f in fornecedores]
-    contas = db.query(ContaPagar).options(joinedload(ContaPagar.fornecedor)).filter(
+    query = db.query(ContaPagar).options(joinedload(ContaPagar.fornecedor))
+    if status_filtro == "pendente":
+        query = query.filter(ContaPagar.status == StatusConta.PENDENTE)
+    elif status_filtro == "pago":
+        query = query.filter(ContaPagar.status == StatusConta.PAGO)
+    elif status_filtro == "vencido":
+        query = query.filter(ContaPagar.status == StatusConta.VENCIDO)
+    elif status_filtro == "cancelado":
+        query = query.filter(ContaPagar.status == StatusConta.CANCELADO)
+    else:
+        query = query.filter(ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]))
+    if busca:
+        query = query.filter(ContaPagar.descricao.ilike(f"%{busca}%"))
+    if data_inicio:
+        query = query.filter(ContaPagar.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
+    if data_fim:
+        query = query.filter(ContaPagar.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
+    contas = query.order_by(ContaPagar.data_vencimento).all()
+    total_pendente_valor = db.query(func.coalesce(func.sum(ContaPagar.valor), 0)).filter(
         ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
-    ).order_by(ContaPagar.data_vencimento).all()
-    total_pendente = func.coalesce(func.sum(ContaPagar.valor), 0).label("total")
-    total_pendente_valor = db.query(total_pendente).scalar()
+    ).scalar()
     return request.app.state.templates.TemplateResponse(
         "contas/pagar.html",
-        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "fornecedores_json": fornecedores_json, "messages": get_messages(request)}
+        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0,
+         "fornecedores_json": fornecedores_json, "messages": get_messages(request),
+         "busca": busca, "status_filtro": status_filtro,
+         "data_inicio": data_inicio, "data_fim": data_fim}
     )
 
 
@@ -125,18 +148,41 @@ def excluir_conta_pagar(request: Request, conta_id: int, db: Session = Depends(g
 
 
 @router.get("/receber")
-def contas_receber(request: Request, db: Session = Depends(get_db)):
+def contas_receber(
+    request: Request, db: Session = Depends(get_db),
+    busca: str = Query(""), status_filtro: str = Query(""),
+    data_inicio: str = Query(""), data_fim: str = Query(""),
+):
     from sqlalchemy import func
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
-    contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
+    query = db.query(ContaReceber).options(joinedload(ContaReceber.cliente))
+    if status_filtro == "pendente":
+        query = query.filter(ContaReceber.status == StatusConta.PENDENTE)
+    elif status_filtro == "pago":
+        query = query.filter(ContaReceber.status == StatusConta.PAGO)
+    elif status_filtro == "vencido":
+        query = query.filter(ContaReceber.status == StatusConta.VENCIDO)
+    elif status_filtro == "cancelado":
+        query = query.filter(ContaReceber.status == StatusConta.CANCELADO)
+    else:
+        query = query.filter(ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]))
+    if busca:
+        query = query.filter(ContaReceber.descricao.ilike(f"%{busca}%"))
+    if data_inicio:
+        query = query.filter(ContaReceber.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
+    if data_fim:
+        query = query.filter(ContaReceber.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
+    contas = query.order_by(ContaReceber.data_vencimento).all()
+    total_pendente_valor = db.query(func.coalesce(func.sum(ContaReceber.valor), 0)).filter(
         ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
-    ).order_by(ContaReceber.data_vencimento).all()
-    total_pendente = func.coalesce(func.sum(ContaReceber.valor), 0).label("total")
-    total_pendente_valor = db.query(total_pendente).scalar()
+    ).scalar()
     return request.app.state.templates.TemplateResponse(
         "contas/receber.html",
-        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0, "clientes_json": clientes_json, "fornecedores_json": [], "messages": get_messages(request)}
+        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0,
+         "clientes_json": clientes_json, "fornecedores_json": [], "messages": get_messages(request),
+         "busca": busca, "status_filtro": status_filtro,
+         "data_inicio": data_inicio, "data_fim": data_fim}
     )
 
 
