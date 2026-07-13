@@ -225,7 +225,7 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
 
 def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
     pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_auto_page_break(auto=True, margin=10)
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
     empresa_nome = (empresa.razao_social or empresa.nome_fantasia or "Empresa") if empresa else "Empresa"
@@ -235,7 +235,7 @@ def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
     pdf.cell(0, 7, titulo, align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 8)
-    col_w = [52, 22, 20, 16, 52]
+    col_w = [62, 26, 22, 18, 62]
     parte_label = "Cliente" if tipo == "receber" else "Fornecedor"
     headers = ["Descricao", "Valor", "Vencimento", "Status", parte_label]
     for i, h in enumerate(headers):
