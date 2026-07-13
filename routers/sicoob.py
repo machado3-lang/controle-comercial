@@ -646,7 +646,10 @@ def _buscar_boletos_por_pagador(
                 data = resp.json()
                 if isinstance(data, list):
                     return data, None
-                return data.get("resultado", {}).get("boletos", []), None
+                resultado = data.get("resultado", [])
+                if isinstance(resultado, list):
+                    return resultado, None
+                return resultado.get("boletos", []), None
             # 204/400/404 sem boletos não é erro — retorna lista vazia
             if resp.status_code in (204, 400, 404):
                 return [], None
@@ -738,7 +741,14 @@ async def importar_boleto(request: Request, nosso_numero: str, db: Session = Dep
             if resp.status_code != 200:
                 return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
             data = resp.json()
-            boletos = data.get("resultado", {}).get("boletos", [])
+            if isinstance(data, list):
+                boletos = data
+            else:
+                resultado = data.get("resultado", [])
+                if isinstance(resultado, list):
+                    boletos = resultado
+                else:
+                    boletos = resultado.get("boletos", [])
             if not boletos:
                 return {"success": False, "error": "Boleto não encontrado no Sicoob"}
             b = boletos[0]
