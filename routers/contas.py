@@ -63,9 +63,7 @@ def contas_pagar(
     if data_fim:
         query = query.filter(ContaPagar.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
     contas = query.order_by(ContaPagar.data_vencimento).all()
-    total_pendente_valor = db.query(func.coalesce(func.sum(ContaPagar.valor), 0)).filter(
-        ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
-    ).scalar()
+    total_pendente_valor = sum(c.valor for c in contas if c.status in [StatusConta.PENDENTE, StatusConta.VENCIDO])
     tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
     planos_contas_receita = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     planos_contas_despesa = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
@@ -242,9 +240,7 @@ def contas_receber(
     if data_fim:
         query = query.filter(ContaReceber.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
     contas = query.order_by(ContaReceber.data_vencimento).all()
-    total_pendente_valor = db.query(func.coalesce(func.sum(ContaReceber.valor), 0)).filter(
-        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
-    ).scalar()
+    total_pendente_valor = sum(c.valor for c in contas if c.status in [StatusConta.PENDENTE, StatusConta.VENCIDO])
     tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
     planos_contas_receita = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     planos_contas_despesa = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
