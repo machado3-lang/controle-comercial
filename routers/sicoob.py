@@ -609,17 +609,15 @@ def testar_token(request: Request, db: Session = Depends(get_db)):
     if token:
         return {"success": True, "token": "****" + token[-10:], "message": "Token obtido com sucesso"}
     return {"success": False, "error": "Falha ao obter token - verifique certificado"}
-@router.get("/api/listar-boletos-sicoob", response_class=JSONResponse)
-def listar_boletos_sicoob(
-    request: Request, db: Session = Depends(get_db),
+def _buscar_boletos_por_pagador(
+    db: Session, cpf_cnpj: str,
     data_inicio: str = None, data_fim: str = None,
-    situacao: str = None, pagina: int = 1, itens: int = 50
-):
-    if not request.session.get("user_id"):
-        return {"success": False, "error": "Não autenticado"}
+    codigo_situacao: int = None
+) -> tuple[list[dict] | None, str | None]:
+    """Busca boletos de um pagador na API Sicoob."""
     token, error = get_token_or_error(db, "boletos_consulta")
     if error:
-        return {"success": False, "error": error}
+        return None, error
     emp = get_empresa(db)
     cert_config = get_cert_config(db)
     client_args = {"timeout": 30}
@@ -628,58 +626,105 @@ def listar_boletos_sicoob(
 
     params = {
         "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
-        "codigoModalidade": 1,
-        "pagina": pagina,
-        "itens": itens,
     }
     if data_inicio:
         params["dataInicio"] = data_inicio
     if data_fim:
         params["dataFim"] = data_fim
-    if situacao:
-        params["situacao"] = situacao
+    if codigo_situacao is not None:
+        params["codigoSituacao"] = codigo_situacao
 
+    cpf_clean = ''.join(filter(str.isdigit, cpf_cnpj))
     try:
         with httpx.Client(**client_args) as client:
             resp = client.get(
-                f"{SICOOO_API}/boletos",
+                f"{SICOOO_API}/pagadores/{cpf_clean}/boletos",
                 params=params,
                 headers={"Authorization": f"Bearer {token}"},
             )
             if resp.status_code == 200:
                 data = resp.json()
-                boletos_raw = data.get("resultado", {}).get("boletos", [])
-
-                # Separar boletos que já existem no nosso sistema vs novos
-                nossos_numeros = set()
-                for c in db.query(ContaReceber.api_nosso_numero, ContaReceber.nosso_numero).filter(
-                    ContaReceber.boleto_emitido == True
-                ).all():
-                    if c.api_nosso_numero:
-                        nossos_numeros.add(c.api_nosso_numero)
-                    if c.nosso_numero:
-                        nossos_numeros.add(c.nosso_numero)
-
-                boletos = []
-                for b in boletos_raw:
-                    nn = str(b.get("nossoNumero", ""))
-                    ja_importado = nn in nossos_numeros
-                    boletos.append({
-                        "nossoNumero": nn,
-                        "seuNumero": str(b.get("seuNumero", "")),
-                        "valor": float(b.get("valor", 0)),
-                        "dataVencimento": b.get("dataVencimento", ""),
-                        "dataEmissao": b.get("dataEmissao", ""),
-                        "cliente": b.get("pagador", {}).get("nome", ""),
-                        "cpfCnpj": b.get("pagador", {}).get("numeroCpfCnpj", ""),
-                        "situacao": str(b.get("situacao", "")),
-                        "linhaDigitavel": b.get("linhaDigitavel", ""),
-                        "nossoSistema": ja_importado,
-                    })
-                return {"success": True, "boletos": boletos, "total": data.get("resultado", {}).get("quantidade", len(boletos))}
-            return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+                return data.get("resultado", {}).get("boletos", []), None
+            # 404/400 sem boletos não é erro — só retorna lista vazia
+            if resp.status_code in (400, 404):
+                return [], None
+            return None, f"HTTP {resp.status_code}: {resp.text}"
     except Exception as e:
-        return {"success": False, "error": str(e)}
+        return None, str(e)
+
+
+@router.get("/api/listar-boletos-sicoob", response_class=JSONResponse)
+def listar_boletos_sicoob(
+    request: Request, db: Session = Depends(get_db),
+    cpf_cnpj: str = None,
+    data_inicio: str = None, data_fim: str = None,
+    codigo_situacao: int = None,
+    clientes_todos: bool = False,
+):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
+
+    # Separar boletos que já existem no nosso sistema
+    nossos_numeros = set()
+    for c in db.query(ContaReceber.api_nosso_numero, ContaReceber.nosso_numero).filter(
+        ContaReceber.boleto_emitido == True
+    ).all():
+        if c.api_nosso_numero:
+            nossos_numeros.add(c.api_nosso_numero)
+        if c.nosso_numero:
+            nossos_numeros.add(c.nosso_numero)
+
+    todos_boletos = []
+    erros = []
+
+    if cpf_cnpj:
+        # Buscar por CPF/CNPJ específico
+        boletos, erro = _buscar_boletos_por_pagador(db, cpf_cnpj, data_inicio, data_fim, codigo_situacao)
+        if erro:
+            return {"success": False, "error": erro}
+        todos_boletos.extend(boletos or [])
+    elif clientes_todos:
+        # Buscar por todos os clientes da base que têm CPF/CNPJ
+        from models import Cliente
+        clientes = db.query(Cliente).filter(
+            Cliente.cpf_cnpj != None, Cliente.cpf_cnpj != ''
+        ).all()
+        for cli in clientes:
+            boletos, erro = _buscar_boletos_por_pagador(db, cli.cpf_cnpj, data_inicio, data_fim, codigo_situacao)
+            if boletos:
+                todos_boletos.extend(boletos)
+            if erro:
+                erros.append(f"{cli.nome or cli.cpf_cnpj}: {erro}")
+    else:
+        return {"success": False, "error": "Informe um CPF/CNPJ ou marque 'Todos os clientes'"}
+
+    # Remover duplicatas (mesmo nossoNumero)
+    vistos = set()
+    boletos_unicos = []
+    for b in todos_boletos:
+        nn = str(b.get("nossoNumero", ""))
+        if nn and nn not in vistos:
+            vistos.add(nn)
+            ja_importado = nn in nossos_numeros
+            boletos_unicos.append({
+                "nossoNumero": nn,
+                "seuNumero": str(b.get("seuNumero", "")),
+                "valor": float(b.get("valor", 0)),
+                "dataVencimento": b.get("dataVencimento", ""),
+                "dataEmissao": b.get("dataEmissao", ""),
+                "cliente": b.get("pagador", {}).get("nome", ""),
+                "cpfCnpj": b.get("pagador", {}).get("numeroCpfCnpj", ""),
+                "situacao": str(b.get("situacao", "")),
+                "linhaDigitavel": b.get("linhaDigitavel", ""),
+                "nossoSistema": ja_importado,
+            })
+
+    return {
+        "success": True,
+        "boletos": boletos_unicos,
+        "total": len(boletos_unicos),
+        "erros": erros if erros else None,
+    }
 
 
 @router.post("/importar-boleto/{nosso_numero}", response_class=JSONResponse)

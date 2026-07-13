@@ -55,6 +55,10 @@
     </div>
     <div class="p-4 border-b border-slate-800/60 flex flex-wrap items-center gap-3">
         <div>
+            <label class="text-xs text-slate-400 block mb-1">CPF/CNPJ (ou deixe vazio para todos)</label>
+            <input type="text" id="sicoob-cpf-cnpj" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-sm text-slate-100" placeholder="000.000.000-00 ou 00.000.000/0000-00">
+        </div>
+        <div>
             <label class="text-xs text-slate-400 block mb-1">Data Início</label>
             <input type="date" id="sicoob-data-inicio" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-sm text-slate-100" value="">
         </div>
@@ -66,11 +70,16 @@
             <label class="text-xs text-slate-400 block mb-1">Situação</label>
             <select id="sicoob-situacao" class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-sm text-slate-100">
                 <option value="">Todas</option>
-                <option value="EMABERTO">Em Aberto</option>
-                <option value="LIQUIDADO">Liquidado</option>
-                <option value="BAIXADO">Baixado</option>
-                <option value="VENCIDO">Vencido</option>
+                <option value="1">Em Aberto</option>
+                <option value="3">Liquidado</option>
+                <option value="2">Baixado</option>
             </select>
+        </div>
+        <div class="flex items-end gap-2">
+            <label class="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
+                <input type="checkbox" id="sicoob-todos-clientes" checked>
+                Todos os clientes
+            </label>
         </div>
     </div>
     <div class="overflow-x-auto">
@@ -375,9 +384,15 @@ function excluirBoleto(nossoNumero) {
 function buscarBoletosSicoob() {
     const dataInicio = document.getElementById('sicoob-data-inicio').value;
     const dataFim = document.getElementById('sicoob-data-fim').value;
-    const situacao = document.getElementById('sicoob-situacao').value;
+    const codigoSituacao = document.getElementById('sicoob-situacao').value;
+    const cpfCnpj = document.getElementById('sicoob-cpf-cnpj').value.trim();
+    const todosClientes = document.getElementById('sicoob-todos-clientes').checked;
     if (!dataInicio || !dataFim) {
         showToast("Defina data início e fim", "warning");
+        return;
+    }
+    if (!cpfCnpj && !todosClientes) {
+        showToast("Informe um CPF/CNPJ ou marque 'Todos os clientes'", "warning");
         return;
     }
     const btn = event.target;
@@ -385,8 +400,10 @@ function buscarBoletosSicoob() {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
     btn.disabled = true;
 
-    let url = '/sicoob/api/listar-boletos-sicoob?data_inicio=' + dataInicio + '&data_fim=' + dataFim + '&itens=200';
-    if (situacao) url += '&situacao=' + situacao;
+    let url = '/sicoob/api/listar-boletos-sicoob?data_inicio=' + dataInicio + '&data_fim=' + dataFim;
+    if (codigoSituacao) url += '&codigo_situacao=' + codigoSituacao;
+    if (cpfCnpj) url += '&cpf_cnpj=' + encodeURIComponent(cpfCnpj);
+    if (!cpfCnpj && todosClientes) url += '&clientes_todos=true';
 
     fetch(url)
         .then(r => r.json())
@@ -399,12 +416,23 @@ function buscarBoletosSicoob() {
             }
             boletosSicoobCache = data.boletos || [];
             renderizarBoletosSicoob();
+            if (data.erros && data.erros.length) {
+                showToast(data.erros.length + ' cliente(s) com erro de consulta', 'warning');
+            }
         })
         .catch(e => {
             btn.innerHTML = originalHtml;
             btn.disabled = false;
             showToast("Erro: " + (e.message || e), "danger");
         });
+}
+
+function getSituacaoDisplay(situacao) {
+    const s = (situacao || '').toString();
+    if (s === '1' || s === 'ENTRADA_NORMAL' || s === 'EMABERTO') return {label: 'EM ABERTO', color: 'blue'};
+    if (s === '2' || s === 'BAIXADO') return {label: 'BAIXADO', color: 'rose'};
+    if (s === '3' || s === 'LIQUIDADO' || s === 'PAGO') return {label: 'LIQUIDADO', color: 'emerald'};
+    return {label: s || 'DESCONHECIDO', color: 'slate'};
 }
 
 function renderizarBoletosSicoob() {
@@ -416,8 +444,7 @@ function renderizarBoletosSicoob() {
         return;
     }
     tbody.innerHTML = boletosSicoobCache.map((b, i) => {
-        const situacaoLower = (b.situacao || '').toLowerCase();
-        const bgColor = situacaoLower === 'liquidado' ? 'emerald' : situacaoLower === 'baixado' ? 'rose' : situacaoLower === 'vencido' ? 'amber' : 'blue';
+        const sit = getSituacaoDisplay(b.situacao);
         const sel = b.nossoSistema ? 'checked disabled' : '';
         return `
             <tr class="${b.nossoSistema ? 'opacity-50' : ''}">
@@ -429,7 +456,7 @@ function renderizarBoletosSicoob() {
                 <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ ${(b.valor || 0).toFixed(2)}</td>
                 <td class="px-4 py-3 text-sm text-cyan-300">${b.dataVencimento || '-'}</td>
                 <td class="px-4 py-3 text-sm text-cyan-300">${b.nossoNumero || '-'}</td>
-                <td class="px-4 py-3 text-center"><span class="px-2 py-1 text-xs font-medium bg-${bgColor}-950/50 text-${bgColor}-400 border border-${bgColor}-800/50 rounded-full">${(b.situacao || 'DESCONHECIDO').toUpperCase()}</span></td>
+                <td class="px-4 py-3 text-center"><span class="px-2 py-1 text-xs font-medium bg-${sit.color}-950/50 text-${sit.color}-400 border border-${sit.color}-800/50 rounded-full">${sit.label}</span></td>
                 <td class="px-4 py-3 text-center">
                     ${b.nossoSistema
                         ? '<span class="text-xs text-emerald-400"><i data-lucide="check" class="w-3 h-3 inline"></i> Importado</span>'
@@ -440,7 +467,7 @@ function renderizarBoletosSicoob() {
                     <div class="flex items-center justify-center gap-1">
                         <button class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" onclick="baixarPdf('${b.nossoNumero}')" title="PDF"><i data-lucide="download" class="w-3 h-3"></i></button>
                         ${!b.nossoSistema ? `<button class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" onclick="importarBoleto('${b.nossoNumero}')" title="Importar"><i data-lucide="download" class="w-3 h-3"></i></button>` : ''}
-                        ${!b.nossoSistema && (situacaoLower === 'emaberto' || situacaoLower === 'vencido')
+                        ${!b.nossoSistema && (sit.label === 'EM ABERTO')
                             ? `<button class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="baixarBoletoSicoob('${b.nossoNumero}')" title="Baixar"><i data-lucide="trash-2" class="w-3 h-3"></i></button>`
                             : ''
                         }
