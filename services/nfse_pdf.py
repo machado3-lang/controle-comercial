@@ -224,40 +224,42 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
 
 
 def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf = FPDF(orientation="L", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    pdf.set_font("Helvetica", "B", 16)
-    empresa_nome = (empresa.razao_social or empresa.nome_fantasia or "Empresa") if empresa else "Empresa"
-    pdf.cell(0, 10, empresa_nome, align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.set_font("Helvetica", "B", 14)
+    empresa_nome = (empresa.razao_social or empresa.nome_fantasia or "Empresa") if empresa else "Empresa"
+    pdf.cell(0, 8, empresa_nome, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 12)
     titulo = "Contas a Receber" if tipo == "receber" else "Contas a Pagar"
-    pdf.cell(0, 8, titulo, align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.ln(4)
-    pdf.set_font("Helvetica", "B", 9)
-    col_w = [70, 28, 24, 24, 44]
-    headers = ["Descricao", "Valor", "Vencimento", "Status", "Cliente/Fornecedor"]
+    pdf.cell(0, 7, titulo, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 7)
+    col_w = [65, 22, 20, 18, 65]
+    parte_label = "Cliente" if tipo == "receber" else "Fornecedor"
+    headers = ["Descricao", "Valor", "Vencimento", "Status", parte_label]
     for i, h in enumerate(headers):
-        pdf.cell(col_w[i], 7, h, border=1, align="C")
+        pdf.cell(col_w[i], 6, h, border=1, align="C")
     pdf.ln()
-    pdf.set_font("Helvetica", "", 8)
+    pdf.set_font("Helvetica", "", 7)
     total = 0
     for c in contas:
         parte = (c.cliente.nome if tipo == "receber" and c.cliente else
                  c.fornecedor.nome if c.fornecedor else '-')
         linha = [
-            c.descricao[:60],
+            c.descricao[:45],
             f"R$ {c.valor:.2f}",
             c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '',
             c.status.value if hasattr(c.status, 'value') else str(c.status),
-            parte[:40],
+            parte[:45],
         ]
         total += c.valor
+        row_h = 5
         for i, t in enumerate(linha):
-            pdf.cell(col_w[i], 5, t, border=1)
+            pdf.cell(col_w[i], row_h, t, border=1)
         pdf.ln()
-    pdf.ln(4)
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(0, 7, f"Total: R$ {total:.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 5, f"Emitido em {datetime.now().strftime('%d/%m/%Y as %H:%M')}", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+    pdf.set_font("Helvetica", "B", 9)
+    pdf.cell(0, 6, f"Total: R$ {total:.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 4, f"Emitido em {datetime.now().strftime('%d/%m/%Y as %H:%M')}", align="C", new_x="LMARGIN", new_y="NEXT")
     return bytes(pdf.output())
