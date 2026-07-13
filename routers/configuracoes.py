@@ -1,5 +1,6 @@
 import os
 import json
+import base64
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File
 from fastapi.responses import RedirectResponse, Response, JSONResponse
 from sqlalchemy.orm import Session
@@ -169,6 +170,7 @@ async def salvar_configuracoes(
         with open(filepath, "wb") as f:
             f.write(content)
         empresa.sicoob_cert_path = filepath
+        empresa.sicoob_cert_base64 = base64.b64encode(content).decode('utf-8')
         if sicoob_cert_password:
             empresa.sicoob_cert_password = sicoob_cert_password
 
@@ -180,6 +182,7 @@ async def salvar_configuracoes(
         with open(filepath, "wb") as f:
             f.write(content)
         empresa.sicoob_cert_key_path = filepath
+        empresa.sicoob_cert_key_base64 = base64.b64encode(content).decode('utf-8')
 
     if logo and logo.filename:
         ext = os.path.splitext(logo.filename)[1].lower()
@@ -192,7 +195,6 @@ async def salvar_configuracoes(
             empresa.logo = f"static/uploads/{filename}"
 
     if cert_file and cert_file.filename:
-        import base64
         from cryptography.hazmat.primitives.serialization import pkcs12
         from datetime import date
         content = await cert_file.read()
