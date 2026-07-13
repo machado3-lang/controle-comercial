@@ -9,31 +9,45 @@ Sistema web completo para gestão comercial com integração Bling ERP v3.
 | Backend | Python 3.14 + FastAPI |
 | Frontend | Jinja2 Templates + Bootstrap 5 Dark |
 | Banco | SQLite via SQLAlchemy 2.0 (develop) / PostgreSQL (production) |
-| Autenticação | Bling OAuth 2.0 |
-| HTTP | httpx |
+| Autenticação | Sessão (senha admin) |
+| PDF | fpdf2 |
+| HTTP | httpx, requests |
+| NFe | API NotaAs + SEFAZ (certificado A1) |
+| NFSe | API Betha + ADN (certificado A1) |
 
 ## Estrutura do Projeto
 
 ```
 C:\Controle de Serviços\
-├── main.py                    # Inicialização, rotas, dashboard
+├── main.py                    # Inicialização, rotas, dashboard, migrações
 ├── database.py                # SQLAlchemy engine + session
 ├── models.py                  # Todas as tabelas do banco
+├── models_nfe.py              # Modelos NFe, NFSe, NFeItem, NFSeItem
 ├── requirements.txt           # Dependências Python
 ├── controle.db                # Banco SQLite (gerado automaticamente)
 ├── routers/
 │   ├── clientes.py            # CRUD Clientes
 │   ├── fornecedores.py        # CRUD Fornecedores
-│   ├── contas.py              # Contas a Pagar/Receber
+│   ├── contas.py              # Contas a Pagar/Receber (com filtros, PDF, Excel)
 │   ├── assinaturas.py         # Assinaturas com histórico
 │   ├── ordens_servico.py      # Ordens de Serviço
 │   ├── configuracoes.py       # Configurações da empresa
 │   ├── bling.py               # Integração Bling ERP v3
 │   ├── produtos.py            # CRUD Itens (produtos/serviços/kits)
 │   ├── pedidos.py             # Pedidos de Venda
+│   ├── nfe.py                 # NFe (emissão NotaAs, distribuição SEFAZ, importação)
+│   ├── nfse.py                # NFSe (emissão Betha, ADN consulta)
 │   └── sicoob.py              # Integração Sicoob API Cobrança
+├── services/
+│   ├── nfe_distribuicao.py    # Consulta SEFAZ (distDFeInt, consChNFe)
+│   ├── nfe_notaas.py          # Emissão NFe via API NotaAs
+│   ├── nfe_danfe.py           # Geração DANFE PDF local
+│   ├── nfse_betha.py          # Emissão NFSe + ADN (Ambiente de Dados Nacional)
+│   ├── nfse_pdf.py            # Geração PDF NFSe + relatório contas
+│   ├── nfse_service.py        # Lógica NFSe
+│   └── backup.py              # Backup/restore
 ├── templates/
-│   ├── base.html              # Layout base (navbar, flash messages)
+│   ├── base.html              # Layout base (navbar, flash messages, modal exclusão)
 │   ├── index.html             # Dashboard
 │   ├── clientes/              # CRUD Clientes
 │   ├── fornecedores/          # CRUD Fornecedores
@@ -43,11 +57,15 @@ C:\Controle de Serviços\
 │   ├── configuracoes/         # Configurações
 │   ├── bling/                 # Integração Bling
 │   ├── produtos/              # CRUD Itens
-│   └── pedidos/               # Pedidos de Venda
+│   ├── pedidos/               # Pedidos de Venda
+│   ├── nfe/                   # NFe (lista, emissão, detalhe, config)
+│   └── nfse/                  # NFSe (lista, emissão, detalhe)
 ├── static/
 │   ├── css/styles.css         # Estilos customizados
-│   ├── js/scripts.js          # Máscaras CPF/CNPJ/CEP
+│   ├── js/scripts.js          # Máscaras CPF/CNPJ/CEP, exclusão, estorno
 │   └── uploads/               # Upload de logo
+├── certs/                     # Certificados digitais A1
+├── Procfile                   # Deploy Railway (uvicorn)
 └── __pycache__/               # Cache Python
 ```
 
@@ -123,12 +141,14 @@ Registra alterações em `valor`, `valor_revenda`, `quantidade`. Exclusão prote
 
 ### Empresa (Configurações)
 
-Dados da empresa para impressão e integração Bling:
-- Dados cadastrais (razão social, CNPJ, IE, IM, endereço)
+Dados da empresa para impressão, NFe, NFSe e integrações:
+- Dados cadastrais (razão social, CNPJ, IE, IM, endereço, IBGE)
 - Logo (upload JPG/PNG)
-- `senha_admin` — protege exclusão de histórico
-- `bling_token`, `bling_client_id`, `bling_client_secret`, `bling_refresh_token`, `bling_token_expires_at`, `bling_webhook_secret`
-- `sicoob_client_id`, `sicoob_token`, `sicoob_conta_corrente`, `sicoob_beneficiario`, `sicoob_cert_path`, `sicoob_cert_key_path`, `sicoob_cert_password`
+- `senha_admin` — protege exclusão de histórico, assinaturas, contas
+- **Bling**: `bling_token`, `bling_client_id`, `bling_client_secret`, `bling_refresh_token`, `bling_token_expires_at`, `bling_webhook_secret`, `bling_api_key_v2`
+- **Sicoob**: `sicoob_client_id`, `sicoob_token`, `sicoob_conta_corrente`, `sicoob_beneficiario`, `sicoob_cert_path`, `sicoob_cert_key_path`, `sicoob_cert_password`, `sicoob_cert_base64`, `sicoob_cert_key_base64`
+- **NFe/NFSe**: `notaas_api_key`, `notaas_ambiente` (1=prod, 2=homolog), `serie_nfe`, `ultimo_numero_nfe`, `ultimo_numero_nfse`, `cfop_padrao`, `nfe_aliquota_federal`, `nfe_aliquota_estadual`, `cert_path`, `cert_password`, `cert_base64`, `cert_validade`, `nfe_ultnsu`
+- **NFSe**: `aliquota_iss`, `aliquota_federal`, `aliquota_estadual`, `aliquota_municipal`
 
 ### ContaPagar / ContaReceber
 
@@ -222,14 +242,28 @@ Dados da empresa para impressão e integração Bling:
 - Mesma estrutura de Clientes
 
 ### Contas (`/contas/`)
-- `GET /pagar` — Listar contas a pagar
-- `POST /pagar/novo` — Criar
-- `GET /pagar/{id}/pagar` — Baixar pagamento
-- `GET /pagar/{id}/excluir` — Excluir
-- `GET /receber` — Listar contas a receber
-- `POST /receber/novo` — Criar
-- `POST /receber/{id}/receber` — Baixar recebimento (modal com edição de data)
-- `GET /receber/{id}/excluir` — Excluir
+- `GET /pagar` — Listar contas a pagar (filtros: busca, status, data)
+- `GET /pagar/pdf` — Exportar PDF das contas a pagar
+- `GET /pagar/nova` — Formulário nova conta
+- `POST /pagar/nova` — Criar
+- `GET /pagar/{id}/editar-form` — Formulário edição (modal)
+- `POST /pagar/{id}/editar` — Atualizar
+- `POST /pagar/{id}/excluir` — Excluir (requer senha admin, retorna JSON)
+- `POST /pagar/{id}/baixar` — Baixar pagamento
+- `POST /pagar/{id}/estornar` — Estornar baixa
+- `GET /pagar/{id}` — Detalhe
+- `GET /receber` — Listar contas a receber (filtros: busca, status, data)
+- `GET /receber/pdf` — Exportar PDF das contas a receber
+- `GET /receber/nova` — Formulário nova conta
+- `POST /receber/nova` — Criar
+- `GET /receber/{id}/editar-form` — Formulário edição (modal)
+- `POST /receber/{id}/editar` — Atualizar
+- `POST /receber/{id}/excluir` — Excluir (requer senha admin, retorna JSON)
+- `POST /receber/{id}/baixar` — Baixar recebimento
+- `POST /receber/{id}/estornar` — Estornar baixa
+- `GET /receber/{id}` — Detalhe
+- `GET /previsao-recebimentos` — Previsão de recebimentos (próximos 30 dias)
+- `GET /inadimplencia` — Contas vencidas (filtro por dias)
 
 ### Assinaturas (`/assinaturas/`)
 - `GET /` — Listar (com lucro total)
@@ -289,34 +323,54 @@ Dados da empresa para impressão e integração Bling:
 - Categorias: `/categorias`, `/categorias/nova`, `/categorias/editar/{id}`, `/categorias/excluir/{id}`
 - Marcas: `/marcas`, `/marcas/nova`, `/marcas/editar/{id}`, `/marcas/excluir/{id}`
 
-### Dashboard (`/`)
-- Indicadores: total clientes, fornecedores, contas pendentes, vencidas, assinaturas ativas, OS abertas, pedidos pendentes
-- Listas: últimas 5 OS, próximos vencimentos
-- Status Bling: badge verde (conectado) / laranja (pendentes)
+### Contas a Pagar/Receber
+- `GET /contas/pagar/pdf` — Exportar PDF (retrato, quebra automática de linha)
+- `GET /contas/receber/pdf` — Exportar PDF
+- Filtros: busca textual, status (pendente/pago/vencido/cancelado), período (data início/fim)
+- Baixa/estorno com modal
+- Exclusão protegida por senha admin (retorno JSON)
 
-## Integração Bling ERP v3
+### NFe (`/nfe/`)
+- **Emissão**: via API NotaAs (a partir de pedido, OS ou avulsa)
+- **Distribuição SEFAZ**: busca NFe por período (recebidas + emitidas via consChNFe)
+- **Importação**: por chave de acesso (44 dígitos) ou upload de XML
+- **Cache local**: consultas seguintes carregam do banco sem bater na SEFAZ
+- **DANFE**: PDF gerado localmente com brazilfiscalreport ou baixado do NotaAs
+- **Certificado A1**: upload pelo formulário de configuração, armazenado em base64
+- **Webhook**: NotaAs atualiza status automaticamente
 
-Consulte a documentação anterior (seção Integração Bling ERP v3).
+### NFSe (`/nfse/`)
+- **Emissão**: via API Betha (Dourados-MS)
+- **ADN (Ambiente de Dados Nacional)**: consulta NFS-es emitidas/recebidas por período
+- **PDF** e **XML** baixáveis via proxy do servidor (com certificado)
+- **Certificado A1**: compartilhado com o módulo NFe
+
+### Sicoob (`/sicoob/`)
+- **Boleto bancário**: emissão e consulta via API Sicoob
+- **Certificado**: upload A1 (PEM) pelo formulário de configuração
 
 ## Funcionalidades Implementadas
 
 - [x] CRUD Clientes (com máscaras CPF/CNPJ/CEP, PF/PJ, UF dropdown)
 - [x] CRUD Fornecedores (mesma estrutura)
 - [x] CRUD Itens (tipo: produto/servico/kit, variações/SKU, ficha técnica)
-- [x] Contas a Pagar / Receber (baixa com modal e edição de data)
+- [x] Contas a Pagar / Receber (baixa com modal, filtros, PDF)
 - [x] Assinaturas (com histórico, revenda, cálculo de lucro)
 - [x] Geração de cobrança a partir de assinatura
 - [x] Ordens de Serviço (com impressão térmica 80mm)
 - [x] Pedidos de Venda (com impressão A4/térmica)
 - [x] Modal de preview unificado para impressão
-- [x] Configurações da empresa (logo, senha admin)
+- [x] Configurações da empresa (logo, senha admin, certificados)
 - [x] Dashboard com indicadores e status Bling
 - [x] Integração Bling OAuth 2.0 (importação e exportação)
 - [x] Webhook para sincronia em tempo real
 - [x] Máscaras JS para CPF, CNPJ, CEP, telefone
 - [x] Formatação CPF/CNPJ na exibição (filtro Jinja)
 - [x] Impressão térmica 80mm e A4
-- [x] NFSe - Implementado (desativado - ver NFSe.md)
+- [x] NFe — Emissão NotaAs + Distribuição SEFAZ + Importação (chave/XML)
+- [x] NFSe — Emissão Betha + ADN (emitidas/recebidas)
+- [x] Sicoob — Boleto bancário (emissão e consulta)
+- [x] Backup/Restore — Exportação e importação do banco
 
 ## Próximos Passos / Melhorias
 
