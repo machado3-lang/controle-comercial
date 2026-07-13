@@ -203,9 +203,10 @@ def atualizar_cliente(
 def excluir_cliente(request: Request, cliente_id: int, db: Session = Depends(get_db), senha: str = Form("")):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
+        return JSONResponse({"success": False, "error": "Senha inválida"}, status_code=403)
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
     if cliente:
         db.delete(cliente)
         db.commit()
-    return RedirectResponse(url="/clientes", status_code=303)
+        return {"success": True, "redirect": "/clientes"}
+    return {"success": False, "error": "Cliente não encontrado"}

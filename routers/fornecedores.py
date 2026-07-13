@@ -187,9 +187,10 @@ def atualizar_fornecedor(
 def excluir_fornecedor(request: Request, fornecedor_id: int, db: Session = Depends(get_db), senha: str = Form("")):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
+        return JSONResponse({"success": False, "error": "Senha inválida"}, status_code=403)
     fornecedor = db.query(Fornecedor).filter(Fornecedor.id == fornecedor_id).first()
     if fornecedor:
         db.delete(fornecedor)
         db.commit()
-    return RedirectResponse(url="/fornecedores", status_code=303)
+        return {"success": True, "redirect": "/fornecedores"}
+    return {"success": False, "error": "Fornecedor não encontrado"}

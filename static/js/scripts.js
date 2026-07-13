@@ -143,10 +143,10 @@ function handleSubmitExclusao(form) {
     .then(({status, data}) => {
         if (status === 403) {
             showToast(data.erro || data.error || 'Senha inválida', 'danger');
-        } else if (data.ok) {
+        } else if (data.ok || data.success) {
             showToast('Registro excluído', 'success');
             bootstrap.Modal.getInstance(document.getElementById('modalConfirmarExclusao')).hide();
-            setTimeout(() => window.location.href = data.redirect || '/contas/receber', 500);
+            setTimeout(() => window.location.href = data.redirect || '/', 500);
             return;
         } else {
             showToast(data.erro || data.error || 'Erro na requisição', 'danger');
