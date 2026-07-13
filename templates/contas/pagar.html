@@ -110,6 +110,38 @@
                     <input type="date" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_vencimento" required>
                 </div>
                 <div class="mb-3">
+                    <label class="form-label text-cyan-300">Nº Documento</label>
+                    <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_documento">
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-cyan-300">Forma Pagamento</label>
+                    <select class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="forma_pagamento">
+                        <option value="">Selecione...</option>
+                        <option value="dinheiro">Dinheiro</option>
+                        <option value="pix">PIX</option>
+                        <option value="cartao_credito">Cartão de Crédito</option>
+                        <option value="cartao_debito">Cartão de Débito</option>
+                        <option value="boleto">Boleto</option>
+                        <option value="transferencia">Transferência</option>
+                        <option value="cheque">Cheque</option>
+                        <option value="outro">Outro</option>
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-cyan-300">Tipo Documento</label>
+                    <select class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tipo_documento_id">
+                        <option value="">Selecione...</option>
+                        {% for td in tipos_documento %}<option value="{{ td.id }}">{{ td.nome }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
+                    <label class="form-label text-cyan-300">Plano de Contas (Despesa)</label>
+                    <select class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="plano_conta_id">
+                        <option value="">Selecione...</option>
+                        {% for pc in planos_contas_despesa %}<option value="{{ pc.id }}">{{ pc.codigo }} - {{ pc.nome }}</option>{% endfor %}
+                    </select>
+                </div>
+                <div class="mb-3">
                     <label class="form-label text-cyan-300">Observação</label>
                     <textarea class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="2"></textarea>
                 </div>

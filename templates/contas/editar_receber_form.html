@@ -28,6 +28,34 @@
     <div><label class="block text-xs font-medium text-cyan-400 mb-1">Data Recebimento</label>
         <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_recebimento" value="{{ conta.data_recebimento if conta and conta.data_recebimento else '' }}">
     </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Nº Documento</label>
+        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_documento" value="{{ conta.numero_documento or '' }}">
+    </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Forma Pagamento</label>
+        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="forma_pagamento">
+            <option value="">Selecione...</option>
+            <option value="dinheiro" {% if conta.forma_pagamento == 'dinheiro' %}selected{% endif %}>Dinheiro</option>
+            <option value="pix" {% if conta.forma_pagamento == 'pix' %}selected{% endif %}>PIX</option>
+            <option value="cartao_credito" {% if conta.forma_pagamento == 'cartao_credito' %}selected{% endif %}>Cartão de Crédito</option>
+            <option value="cartao_debito" {% if conta.forma_pagamento == 'cartao_debito' %}selected{% endif %}>Cartão de Débito</option>
+            <option value="boleto" {% if conta.forma_pagamento == 'boleto' %}selected{% endif %}>Boleto</option>
+            <option value="transferencia" {% if conta.forma_pagamento == 'transferencia' %}selected{% endif %}>Transferência</option>
+            <option value="cheque" {% if conta.forma_pagamento == 'cheque' %}selected{% endif %}>Cheque</option>
+            <option value="outro" {% if conta.forma_pagamento == 'outro' %}selected{% endif %}>Outro</option>
+        </select>
+    </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Tipo Documento</label>
+        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tipo_documento_id">
+            <option value="">Selecione...</option>
+            {% for td in tipos_documento %}<option value="{{ td.id }}" {% if conta.tipo_documento_id == td.id %}selected{% endif %}>{{ td.nome }}</option>{% endfor %}
+        </select>
+    </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Plano de Contas (Receita)</label>
+        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="plano_conta_id">
+            <option value="">Selecione...</option>
+            {% for pc in planos_contas %}<option value="{{ pc.id }}" {% if conta.plano_conta_id == pc.id %}selected{% endif %}>{{ pc.codigo }} - {{ pc.nome }}</option>{% endfor %}
+        </select>
+    </div>
     <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
         <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="3">{{ conta.observacao if conta else '' }}</textarea>
     </div>

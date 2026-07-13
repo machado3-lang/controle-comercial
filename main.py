@@ -16,7 +16,7 @@ from sqlalchemy import func
 from datetime import date as date_func, datetime, timedelta
 
 from database import engine, Base, get_db
-from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario, MarcaProduto, NFeDistribuida
+from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario, MarcaProduto, NFeDistribuida, TipoDocumento, PlanoDeContas
 import models_nfe
 
 def get_current_user(request: Request, db: Session = Depends(get_db)):
@@ -322,6 +322,26 @@ def run_migrations():
         if "tributacao_municipal" not in existing_nfse_itens:
             conn.execute(text("ALTER TABLE nfse_itens ADD COLUMN tributacao_municipal VARCHAR(20)"))
             conn.commit()
+        # New columns for plano de contas and tipo documento
+        cols_cp = inspector.get_columns("contas_pagar")
+        existing_cp = {c['name'] for c in cols_cp}
+        if "numero_documento" not in existing_cp:
+            conn.execute(text("ALTER TABLE contas_pagar ADD COLUMN numero_documento VARCHAR(30)"))
+            conn.commit()
+        if "tipo_documento_id" not in existing_cp:
+            conn.execute(text("ALTER TABLE contas_pagar ADD COLUMN tipo_documento_id INTEGER"))
+            conn.commit()
+        if "plano_conta_id" not in existing_cp:
+            conn.execute(text("ALTER TABLE contas_pagar ADD COLUMN plano_conta_id INTEGER"))
+            conn.commit()
+        cols_cr = inspector.get_columns("contas_receber")
+        existing_cr = {c['name'] for c in cols_cr}
+        if "tipo_documento_id" not in existing_cr:
+            conn.execute(text("ALTER TABLE contas_receber ADD COLUMN tipo_documento_id INTEGER"))
+            conn.commit()
+        if "plano_conta_id" not in existing_cr:
+            conn.execute(text("ALTER TABLE contas_receber ADD COLUMN plano_conta_id INTEGER"))
+            conn.commit()
         conn.close()
     else:
         try:
@@ -414,6 +434,16 @@ def run_migrations():
                 conn.execute(text("CREATE TABLE IF NOT EXISTS marcas_produto (id SERIAL PRIMARY KEY, nome VARCHAR(100) NOT NULL UNIQUE, created_at TIMESTAMP DEFAULT NOW())"))
                 conn.execute(text("CREATE TABLE IF NOT EXISTS cfop_natureza (id SERIAL PRIMARY KEY, cfop VARCHAR(4) NOT NULL, natureza VARCHAR(200) NOT NULL, created_at TIMESTAMP DEFAULT NOW())"))
                 conn.execute(text("CREATE INDEX IF NOT EXISTS idx_cfop_natureza_cfop ON cfop_natureza(cfop)"))
+                # New columns for plano de contas and tipo documento
+                conn.execute(text("""
+                    DO $$ BEGIN
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contas_pagar' AND column_name='numero_documento') THEN ALTER TABLE contas_pagar ADD COLUMN numero_documento VARCHAR(30); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contas_pagar' AND column_name='tipo_documento_id') THEN ALTER TABLE contas_pagar ADD COLUMN tipo_documento_id INTEGER REFERENCES tipos_documento(id); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contas_pagar' AND column_name='plano_conta_id') THEN ALTER TABLE contas_pagar ADD COLUMN plano_conta_id INTEGER REFERENCES plano_contas(id); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contas_receber' AND column_name='tipo_documento_id') THEN ALTER TABLE contas_receber ADD COLUMN tipo_documento_id INTEGER REFERENCES tipos_documento(id); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contas_receber' AND column_name='plano_conta_id') THEN ALTER TABLE contas_receber ADD COLUMN plano_conta_id INTEGER REFERENCES plano_contas(id); END IF;
+                    END $$;
+                """))
                 # Fix sequences after restore from backup
                 if "postgresql" in str(engine.url):
                     seq_tables = [
@@ -434,6 +464,42 @@ def run_migrations():
 
 run_migrations()
 Base.metadata.create_all(bind=engine)
+
+# Seed default data
+def seed_default_data():
+    from sqlalchemy.orm import Session
+    from database import SessionLocal
+    db = SessionLocal()
+    try:
+        if db.query(TipoDocumento).count() == 0:
+            for nome in ["NF-e", "NFSe", "Boleto", "Recibo", "Duplicata", "Contrato", "Nota de Débito", "Outros"]:
+                db.add(TipoDocumento(nome=nome))
+            db.commit()
+        if db.query(PlanoDeContas).count() == 0:
+            receita_root = PlanoDeContas(codigo="3", nome="RECEITAS", tipo="receita", nivel=1)
+            despesa_root = PlanoDeContas(codigo="4", nome="DESPESAS", tipo="despesa", nivel=1)
+            db.add_all([receita_root, despesa_root])
+            db.flush()
+            db.add_all([
+                PlanoDeContas(codigo="3.1", nome="Venda de Produtos", tipo="receita", nivel=2, parent_id=receita_root.id),
+                PlanoDeContas(codigo="3.2", nome="Prestação de Serviços", tipo="receita", nivel=2, parent_id=receita_root.id),
+                PlanoDeContas(codigo="3.3", nome="Receitas Financeiras", tipo="receita", nivel=2, parent_id=receita_root.id),
+                PlanoDeContas(codigo="3.4", nome="Outras Receitas", tipo="receita", nivel=2, parent_id=receita_root.id),
+                PlanoDeContas(codigo="4.1", nome="Custos Operacionais", tipo="despesa", nivel=2, parent_id=despesa_root.id),
+                PlanoDeContas(codigo="4.2", nome="Despesas Administrativas", tipo="despesa", nivel=2, parent_id=despesa_root.id),
+                PlanoDeContas(codigo="4.3", nome="Despesas com Pessoal", tipo="despesa", nivel=2, parent_id=despesa_root.id),
+                PlanoDeContas(codigo="4.4", nome="Despesas Financeiras", tipo="despesa", nivel=2, parent_id=despesa_root.id),
+                PlanoDeContas(codigo="4.5", nome="Impostos e Taxas", tipo="despesa", nivel=2, parent_id=despesa_root.id),
+                PlanoDeContas(codigo="4.6", nome="Outras Despesas", tipo="despesa", nivel=2, parent_id=despesa_root.id),
+            ])
+            db.commit()
+    except Exception as e:
+        db.rollback()
+        print(f"Seed data error: {e}")
+    finally:
+        db.close()
+
+seed_default_data()
 
 templates = Jinja2Templates(directory="templates")
 
@@ -461,7 +527,7 @@ app.mount("/static", StaticFiles(directory="static"), name="static")
 
 app.add_middleware(SessionMiddleware, secret_key=os.environ.get("SECRET_KEY", "controle-comercial-secret-key-2024"))
 
-from routers import clientes, fornecedores, nfse, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth, servicos, nfe
+from routers import clientes, fornecedores, nfse, contas, assinaturas, ordens_servico, configuracoes, bling, sicoob, produtos, pedidos, auth, servicos, nfe, tipos_documento, planocontas
 app.include_router(auth.router)
 app.include_router(clientes.router)
 app.include_router(fornecedores.router)
@@ -476,6 +542,8 @@ app.include_router(produtos.router)
 app.include_router(pedidos.router)
 app.include_router(servicos.router)
 app.include_router(nfe.router)
+app.include_router(tipos_documento.router)
+app.include_router(planocontas.router)
 
 
 @app.get("/")

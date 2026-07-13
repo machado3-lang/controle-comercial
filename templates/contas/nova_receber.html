@@ -17,6 +17,34 @@
     <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Descrição *</label>
         <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" required>
     </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Nº Documento</label>
+        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_documento">
+    </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Forma Pagamento</label>
+        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="forma_pagamento">
+            <option value="">Selecione...</option>
+            <option value="dinheiro">Dinheiro</option>
+            <option value="pix">PIX</option>
+            <option value="cartao_credito">Cartão de Crédito</option>
+            <option value="cartao_debito">Cartão de Débito</option>
+            <option value="boleto">Boleto</option>
+            <option value="transferencia">Transferência</option>
+            <option value="cheque">Cheque</option>
+            <option value="outro">Outro</option>
+        </select>
+    </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Tipo Documento</label>
+        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tipo_documento_id">
+            <option value="">Selecione...</option>
+            {% for td in tipos_documento %}<option value="{{ td.id }}">{{ td.nome }}</option>{% endfor %}
+        </select>
+    </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Plano de Contas (Receita)</label>
+        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="plano_conta_id">
+            <option value="">Selecione...</option>
+            {% for pc in planos_contas %}<option value="{{ pc.id }}">{{ pc.codigo }} - {{ pc.nome }}</option>{% endfor %}
+        </select>
+    </div>
     <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
         <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="2"></textarea>
     </div>

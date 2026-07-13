@@ -17,6 +17,10 @@
                     <div><span class="text-cyan-400">Vencimento:</span> {{ conta.data_vencimento.strftime('%d/%m/%Y') }}</div>
                     <div><span class="text-emerald-400">Pagamento:</span> {{ conta.data_pagamento.strftime('%d/%m/%Y') if conta.data_pagamento else "-" }}</div>
                     <div><span class="text-rose-400">Status:</span> {{ conta.status.value }}</div>
+                    <div><span class="text-slate-400">Nº Documento:</span> {{ conta.numero_documento or "-" }}</div>
+                    <div><span class="text-slate-400">Forma Pagamento:</span> {{ conta.forma_pagamento or "-" }}</div>
+                    <div><span class="text-slate-400">Tipo Documento:</span> {{ conta.tipo_documento.nome if conta.tipo_documento else "-" }}</div>
+                    <div><span class="text-slate-400">Plano de Contas:</span> {{ conta.plano_conta.codigo + " - " + conta.plano_conta.nome if conta.plano_conta else "-" }}</div>
                     <div><span class="text-slate-400">Observação:</span> {{ conta.observacao or "-" }}</div>
                 </div>
             </div>

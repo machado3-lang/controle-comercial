@@ -6,7 +6,7 @@ from datetime import datetime, date, timedelta
 from typing import Optional
 
 from database import get_db
-from models import ContaPagar, ContaReceber, Fornecedor, Cliente, StatusConta, Empresa
+from models import ContaPagar, ContaReceber, Fornecedor, Cliente, StatusConta, Empresa, TipoDocumento, PlanoDeContas
 
 router = APIRouter(prefix="/contas", tags=["Contas"])
 
@@ -29,7 +29,11 @@ def contas_pagar(
     from sqlalchemy import func
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
     fornecedores_json = [{"id": f.id, "nome": f.nome} for f in fornecedores]
-    query = db.query(ContaPagar).options(joinedload(ContaPagar.fornecedor))
+    query = db.query(ContaPagar).options(
+        joinedload(ContaPagar.fornecedor),
+        joinedload(ContaPagar.tipo_documento),
+        joinedload(ContaPagar.plano_conta)
+    )
     if status_filtro == "pendente":
         query = query.filter(ContaPagar.status == StatusConta.PENDENTE)
     elif status_filtro == "pago":
@@ -50,12 +54,17 @@ def contas_pagar(
     total_pendente_valor = db.query(func.coalesce(func.sum(ContaPagar.valor), 0)).filter(
         ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
     ).scalar()
+    tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
+    planos_contas_receita = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
+    planos_contas_despesa = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     return request.app.state.templates.TemplateResponse(
         "contas/pagar.html",
         {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0,
-         "fornecedores_json": fornecedores_json, "messages": get_messages(request),
+         "fornecedores": fornecedores, "fornecedores_json": fornecedores_json, "messages": get_messages(request),
          "busca": busca, "status_filtro": status_filtro,
-         "data_inicio": data_inicio, "data_fim": data_fim}
+         "data_inicio": data_inicio, "data_fim": data_fim,
+         "tipos_documento": tipos_documento, "planos_contas_receita": planos_contas_receita,
+         "planos_contas_despesa": planos_contas_despesa}
     )
 
 
@@ -63,9 +72,12 @@ def contas_pagar(
 def nova_conta_pagar(request: Request, db: Session = Depends(get_db)):
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
+    tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
+    planos_contas = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     return request.app.state.templates.TemplateResponse(
         "contas/nova_pagar.html",
-        {"request": request, "fornecedores_json": fornecedores_json}
+        {"request": request, "fornecedores": fornecedores, "fornecedores_json": fornecedores_json,
+         "tipos_documento": tipos_documento, "planos_contas": planos_contas}
     )
 
 
@@ -77,7 +89,11 @@ def criar_conta_pagar(
     valor: float = Form(...),
     data_vencimento: date = Form(...),
     fornecedor_id: Optional[int] = Form(None),
-    observacoes: Optional[str] = Form(None)
+    observacao: Optional[str] = Form(None),
+    numero_documento: Optional[str] = Form(None),
+    tipo_documento_id: Optional[int] = Form(None),
+    plano_conta_id: Optional[int] = Form(None),
+    forma_pagamento: Optional[str] = Form(None)
 ):
     from sqlalchemy import func
     conta = ContaPagar(
@@ -85,7 +101,11 @@ def criar_conta_pagar(
         valor=valor,
         data_vencimento=data_vencimento,
         fornecedor_id=fornecedor_id,
-        observacoes=observacoes,
+        observacao=observacao,
+        numero_documento=numero_documento,
+        tipo_documento_id=tipo_documento_id if tipo_documento_id else None,
+        plano_conta_id=plano_conta_id if plano_conta_id else None,
+        forma_pagamento=forma_pagamento,
         status=StatusConta.PENDENTE
     )
     db.add(conta)
@@ -96,14 +116,20 @@ def criar_conta_pagar(
 
 @router.get("/pagar/{conta_id}/editar-form")
 def editar_conta_pagar_form(request: Request, conta_id: int, db: Session = Depends(get_db)):
-    conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
+    conta = db.query(ContaPagar).options(
+        joinedload(ContaPagar.tipo_documento),
+        joinedload(ContaPagar.plano_conta)
+    ).filter(ContaPagar.id == conta_id).first()
     if not conta:
         return ""
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
+    tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
+    planos_contas_despesa = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     return request.app.state.templates.TemplateResponse(
         "contas/editar_pagar_form.html",
-        {"request": request, "conta": conta, "fornecedores": fornecedores, "fornecedores_json": fornecedores_json}
+        {"request": request, "conta": conta, "fornecedores": fornecedores, "fornecedores_json": fornecedores_json,
+         "tipos_documento": tipos_documento, "planos_contas": planos_contas_despesa}
     )
 
 
@@ -116,8 +142,12 @@ def atualizar_conta_pagar(
     valor: float = Form(...),
     data_vencimento: date = Form(...),
     fornecedor_id: Optional[int] = Form(None),
-    observacoes: Optional[str] = Form(None),
-    status: StatusConta = Form(...)
+    observacao: Optional[str] = Form(None),
+    status: StatusConta = Form(...),
+    numero_documento: Optional[str] = Form(None),
+    tipo_documento_id: Optional[int] = Form(None),
+    plano_conta_id: Optional[int] = Form(None),
+    forma_pagamento: Optional[str] = Form(None)
 ):
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta:
@@ -127,8 +157,12 @@ def atualizar_conta_pagar(
     conta.valor = valor
     conta.data_vencimento = data_vencimento
     conta.fornecedor_id = fornecedor_id
-    conta.observacoes = observacoes
+    conta.observacao = observacao
     conta.status = status
+    conta.numero_documento = numero_documento
+    conta.tipo_documento_id = tipo_documento_id if tipo_documento_id else None
+    conta.plano_conta_id = plano_conta_id if plano_conta_id else None
+    conta.forma_pagamento = forma_pagamento
     db.commit()
     request.session["message"] = "Conta a pagar atualizada com sucesso!"
     return RedirectResponse(url="/contas/pagar", status_code=303)
@@ -156,7 +190,11 @@ def contas_receber(
     from sqlalchemy import func
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
-    query = db.query(ContaReceber).options(joinedload(ContaReceber.cliente))
+    query = db.query(ContaReceber).options(
+        joinedload(ContaReceber.cliente),
+        joinedload(ContaReceber.tipo_documento),
+        joinedload(ContaReceber.plano_conta)
+    )
     if status_filtro == "pendente":
         query = query.filter(ContaReceber.status == StatusConta.PENDENTE)
     elif status_filtro == "pago":
@@ -177,12 +215,17 @@ def contas_receber(
     total_pendente_valor = db.query(func.coalesce(func.sum(ContaReceber.valor), 0)).filter(
         ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
     ).scalar()
+    tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
+    planos_contas_receita = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
+    planos_contas_despesa = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     return request.app.state.templates.TemplateResponse(
         "contas/receber.html",
         {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0,
-         "clientes_json": clientes_json, "fornecedores_json": [], "messages": get_messages(request),
+         "clientes": clientes, "clientes_json": clientes_json, "fornecedores_json": [], "messages": get_messages(request),
          "busca": busca, "status_filtro": status_filtro,
-         "data_inicio": data_inicio, "data_fim": data_fim}
+         "data_inicio": data_inicio, "data_fim": data_fim,
+         "tipos_documento": tipos_documento, "planos_contas_receita": planos_contas_receita,
+         "planos_contas_despesa": planos_contas_despesa}
     )
 
 
@@ -190,9 +233,12 @@ def contas_receber(
 def nova_conta_receber(request: Request, db: Session = Depends(get_db)):
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
+    tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
+    planos_contas = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     return request.app.state.templates.TemplateResponse(
         "contas/nova_receber.html",
-        {"request": request, "clientes_json": clientes_json}
+        {"request": request, "clientes": clientes, "clientes_json": clientes_json,
+         "tipos_documento": tipos_documento, "planos_contas": planos_contas}
     )
 
 
@@ -204,7 +250,11 @@ def criar_conta_receber(
     valor: float = Form(...),
     data_vencimento: date = Form(...),
     cliente_id: Optional[int] = Form(None),
-    observacoes: Optional[str] = Form(None)
+    observacao: Optional[str] = Form(None),
+    numero_documento: Optional[str] = Form(None),
+    tipo_documento_id: Optional[int] = Form(None),
+    plano_conta_id: Optional[int] = Form(None),
+    forma_pagamento: Optional[str] = Form(None)
 ):
     from sqlalchemy import func
     conta = ContaReceber(
@@ -212,7 +262,11 @@ def criar_conta_receber(
         valor=valor,
         data_vencimento=data_vencimento,
         cliente_id=cliente_id,
-        observacoes=observacoes,
+        observacao=observacao,
+        numero_documento=numero_documento,
+        tipo_documento_id=tipo_documento_id if tipo_documento_id else None,
+        plano_conta_id=plano_conta_id if plano_conta_id else None,
+        forma_pagamento=forma_pagamento,
         status=StatusConta.PENDENTE
     )
     db.add(conta)
@@ -223,14 +277,20 @@ def criar_conta_receber(
 
 @router.get("/receber/{conta_id}/editar-form")
 def editar_conta_receber_form(request: Request, conta_id: int, db: Session = Depends(get_db)):
-    conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
+    conta = db.query(ContaReceber).options(
+        joinedload(ContaReceber.tipo_documento),
+        joinedload(ContaReceber.plano_conta)
+    ).filter(ContaReceber.id == conta_id).first()
     if not conta:
         return ""
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
+    tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
+    planos_contas_receita = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     return request.app.state.templates.TemplateResponse(
         "contas/editar_receber_form.html",
-        {"request": request, "conta": conta, "clientes": clientes, "clientes_json": clientes_json}
+        {"request": request, "conta": conta, "clientes": clientes, "clientes_json": clientes_json,
+         "tipos_documento": tipos_documento, "planos_contas": planos_contas_receita}
     )
 
 
@@ -243,8 +303,12 @@ def atualizar_conta_receber(
     valor: float = Form(...),
     data_vencimento: date = Form(...),
     cliente_id: Optional[int] = Form(None),
-    observacoes: Optional[str] = Form(None),
-    status: StatusConta = Form(...)
+    observacao: Optional[str] = Form(None),
+    status: StatusConta = Form(...),
+    numero_documento: Optional[str] = Form(None),
+    tipo_documento_id: Optional[int] = Form(None),
+    plano_conta_id: Optional[int] = Form(None),
+    forma_pagamento: Optional[str] = Form(None)
 ):
     conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
     if not conta:
@@ -254,8 +318,12 @@ def atualizar_conta_receber(
     conta.valor = valor
     conta.data_vencimento = data_vencimento
     conta.cliente_id = cliente_id
-    conta.observacoes = observacoes
+    conta.observacao = observacao
     conta.status = status
+    conta.numero_documento = numero_documento
+    conta.tipo_documento_id = tipo_documento_id if tipo_documento_id else None
+    conta.plano_conta_id = plano_conta_id if plano_conta_id else None
+    conta.forma_pagamento = forma_pagamento
     db.commit()
     request.session["message"] = "Conta a receber atualizada com sucesso!"
     return RedirectResponse(url="/contas/receber", status_code=303)
@@ -342,7 +410,11 @@ def contas_pagar_pdf(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/pagar/{conta_id}")
 def ver_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
-    conta = db.query(ContaPagar).options(joinedload(ContaPagar.fornecedor)).filter(ContaPagar.id == conta_id).first()
+    conta = db.query(ContaPagar).options(
+        joinedload(ContaPagar.fornecedor),
+        joinedload(ContaPagar.tipo_documento),
+        joinedload(ContaPagar.plano_conta)
+    ).filter(ContaPagar.id == conta_id).first()
     if not conta:
         request.session["error"] = "Conta não encontrada"
         return RedirectResponse(url="/contas/pagar", status_code=303)
@@ -368,7 +440,11 @@ def contas_receber_pdf(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/receber/{conta_id}")
 def ver_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db)):
-    conta = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(ContaReceber.id == conta_id).first()
+    conta = db.query(ContaReceber).options(
+        joinedload(ContaReceber.cliente),
+        joinedload(ContaReceber.tipo_documento),
+        joinedload(ContaReceber.plano_conta)
+    ).filter(ContaReceber.id == conta_id).first()
     if not conta:
         request.session["error"] = "Conta não encontrada"
         return RedirectResponse(url="/contas/receber", status_code=303)
@@ -410,4 +486,52 @@ def inadimplencia(request: Request, db: Session = Depends(get_db), dias: int = 0
     return request.app.state.templates.TemplateResponse(
         "contas/inadimplencia.html",
         {"request": request, "contas": contas, "total_inadimplente": total_inadimplente, "hoje": hoje, "dias": dias}
+    )
+
+
+@router.get("/dre")
+def dre(
+    request: Request, db: Session = Depends(get_db),
+    data_inicio: str = Query(""), data_fim: str = Query("")
+):
+    from sqlalchemy import and_
+    hoje = date.today()
+    if not data_inicio:
+        data_inicio = date(hoje.year, hoje.month, 1).isoformat()
+    if not data_fim:
+        data_fim = hoje.isoformat()
+    di = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+    df = datetime.strptime(data_fim, "%Y-%m-%d").date()
+
+    receitas = db.query(
+        PlanoDeContas, sql_func.coalesce(sql_func.sum(ContaReceber.valor), 0)
+    ).outerjoin(ContaReceber, and_(
+        ContaReceber.plano_conta_id == PlanoDeContas.id,
+        ContaReceber.status == StatusConta.PAGO,
+        ContaReceber.data_recebimento >= di,
+        ContaReceber.data_recebimento <= df
+    )).filter(
+        PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True
+    ).group_by(PlanoDeContas.id, PlanoDeContas.codigo, PlanoDeContas.nome, PlanoDeContas.nivel, PlanoDeContas.parent_id).order_by(PlanoDeContas.codigo).all()
+
+    despesas = db.query(
+        PlanoDeContas, sql_func.coalesce(sql_func.sum(ContaPagar.valor), 0)
+    ).outerjoin(ContaPagar, and_(
+        ContaPagar.plano_conta_id == PlanoDeContas.id,
+        ContaPagar.status == StatusConta.PAGO,
+        ContaPagar.data_pagamento >= di,
+        ContaPagar.data_pagamento <= df
+    )).filter(
+        PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True
+    ).group_by(PlanoDeContas.id, PlanoDeContas.codigo, PlanoDeContas.nome, PlanoDeContas.nivel, PlanoDeContas.parent_id).order_by(PlanoDeContas.codigo).all()
+
+    total_receitas = sum(r[1] for r in receitas)
+    total_despesas = sum(d[1] for d in despesas)
+    saldo = total_receitas - total_despesas
+
+    return request.app.state.templates.TemplateResponse(
+        "contas/dre.html",
+        {"request": request, "receitas": receitas, "despesas": despesas,
+         "total_receitas": total_receitas, "total_despesas": total_despesas,
+         "saldo": saldo, "data_inicio": data_inicio, "data_fim": data_fim}
     )

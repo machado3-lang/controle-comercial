@@ -158,10 +158,15 @@ class ContaPagar(Base):
     status = Column(Enum(StatusConta), default=StatusConta.PENDENTE)
     forma_pagamento = Column(String(100), nullable=True)
     observacao = Column(Text, nullable=True)
+    numero_documento = Column(String(30), nullable=True)
+    tipo_documento_id = Column(Integer, ForeignKey("tipos_documento.id"), nullable=True)
+    plano_conta_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     fornecedor = relationship("Fornecedor", back_populates="contas_pagar")
+    tipo_documento = relationship("TipoDocumento")
+    plano_conta = relationship("PlanoDeContas")
 
 
 class ContaReceber(Base):
@@ -184,10 +189,14 @@ class ContaReceber(Base):
     api_nosso_numero = Column(String(30), nullable=True)
     data_emissao = Column(Date, nullable=True)
     motivo_baixa = Column(String(100), nullable=True)
+    tipo_documento_id = Column(Integer, ForeignKey("tipos_documento.id"), nullable=True)
+    plano_conta_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     cliente = relationship("Cliente", back_populates="contas_receber")
+    tipo_documento = relationship("TipoDocumento")
+    plano_conta = relationship("PlanoDeContas")
 
 
 class Assinatura(Base):
@@ -495,6 +504,29 @@ class Empresa(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     categoria_servico_padrao = relationship("CategoriaProduto")
+
+
+class TipoDocumento(Base):
+    __tablename__ = "tipos_documento"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(100), nullable=False, unique=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
+class PlanoDeContas(Base):
+    __tablename__ = "plano_contas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    codigo = Column(String(20), nullable=False)
+    nome = Column(String(200), nullable=False)
+    tipo = Column(String(10), nullable=False)  # "receita" ou "despesa"
+    parent_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True)
+    nivel = Column(Integer, default=1)
+    ativo = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    children = relationship("PlanoDeContas", backref="parent", remote_side=[id])
 
 
 class CfopNatureza(Base):
