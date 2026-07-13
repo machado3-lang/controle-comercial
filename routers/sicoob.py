@@ -659,16 +659,12 @@ def listar_boletos_sicoob(
     cpf_cnpj: str = None,
     data_inicio: str = None, data_fim: str = None,
     codigo_situacao: int = None,
-    clientes_todos: bool = False,
 ):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
+    if not cpf_cnpj:
+        return {"success": False, "error": "Informe o CPF/CNPJ do pagador"}
 
-    # Normalizar o parâmetro bool (FastAPI pode receber como string)
-    if isinstance(clientes_todos, str):
-        clientes_todos = clientes_todos.lower() in ("true", "1", "yes")
-
-    # Separar boletos que já existem no nosso sistema
     nossos_numeros = set()
     for c in db.query(ContaReceber.api_nosso_numero, ContaReceber.nosso_numero).filter(
         ContaReceber.boleto_emitido == True
@@ -678,35 +674,16 @@ def listar_boletos_sicoob(
         if c.nosso_numero:
             nossos_numeros.add(c.nosso_numero)
 
-    todos_boletos = []
-    erros = []
-
-    if cpf_cnpj:
-        boletos, erro = _buscar_boletos_por_pagador(db, cpf_cnpj, data_inicio, data_fim, codigo_situacao)
-        if erro:
-            return {"success": False, "error": erro}
-        todos_boletos.extend(boletos or [])
-    elif clientes_todos:
-        from models import Cliente
-        clientes = db.query(Cliente).filter(
-            Cliente.cpf_cnpj != None, Cliente.cpf_cnpj != ''
-        ).all()
-        for cli in clientes:
-            boletos, erro = _buscar_boletos_por_pagador(db, cli.cpf_cnpj, data_inicio, data_fim, codigo_situacao)
-            if boletos:
-                todos_boletos.extend(boletos)
-            if erro:
-                erros.append(f"{cli.nome or cli.cpf_cnpj}: {erro}")
-    else:
-        return {"success": False, "error": "Informe um CPF/CNPJ ou marque 'Todos os clientes'"}
+    boletos, erro = _buscar_boletos_por_pagador(db, cpf_cnpj, data_inicio, data_fim, codigo_situacao)
+    if erro:
+        return {"success": False, "error": erro}
 
     vistos = set()
     boletos_unicos = []
-    for b in todos_boletos:
+    for b in (boletos or []):
         nn = str(b.get("nossoNumero", ""))
         if nn and nn not in vistos:
             vistos.add(nn)
-            ja_importado = nn in nossos_numeros
             boletos_unicos.append({
                 "nossoNumero": nn,
                 "seuNumero": str(b.get("seuNumero", "")),
@@ -717,15 +694,10 @@ def listar_boletos_sicoob(
                 "cpfCnpj": b.get("pagador", {}).get("numeroCpfCnpj", ""),
                 "situacao": str(b.get("situacao", "")),
                 "linhaDigitavel": b.get("linhaDigitavel", ""),
-                "nossoSistema": ja_importado,
+                "nossoSistema": nn in nossos_numeros,
             })
 
-    return {
-        "success": True,
-        "boletos": boletos_unicos,
-        "total": len(boletos_unicos),
-        "erros": erros if erros else None,
-    }
+    return {"success": True, "boletos": boletos_unicos, "total": len(boletos_unicos)}
 
 
 @router.post("/importar-boleto/{nosso_numero}", response_class=JSONResponse)

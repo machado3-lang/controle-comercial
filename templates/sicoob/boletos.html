@@ -55,7 +55,7 @@
     </div>
     <div class="p-4 border-b border-slate-800/60 flex flex-wrap items-center gap-3">
         <div>
-            <label class="text-xs text-slate-400 block mb-1">CPF/CNPJ (ou deixe vazio para todos)</label>
+            <label class="text-xs text-slate-400 block mb-1">CPF/CNPJ do pagador</label>
             <input type="text" id="sicoob-cpf-cnpj" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-sm text-slate-100" placeholder="000.000.000-00 ou 00.000.000/0000-00">
         </div>
         <div>
@@ -74,12 +74,6 @@
                 <option value="3">Liquidado</option>
                 <option value="2">Baixado</option>
             </select>
-        </div>
-        <div class="flex items-end gap-2">
-            <label class="flex items-center gap-2 text-xs text-slate-400 cursor-pointer">
-                <input type="checkbox" id="sicoob-todos-clientes" checked>
-                Todos os clientes
-            </label>
         </div>
     </div>
     <div class="overflow-x-auto">
@@ -386,13 +380,12 @@ function buscarBoletosSicoob() {
     const dataFim = document.getElementById('sicoob-data-fim').value;
     const codigoSituacao = document.getElementById('sicoob-situacao').value;
     const cpfCnpj = document.getElementById('sicoob-cpf-cnpj').value.trim();
-    const todosClientes = document.getElementById('sicoob-todos-clientes').checked;
     if (!dataInicio || !dataFim) {
         showToast("Defina data início e fim", "warning");
         return;
     }
-    if (!cpfCnpj && !todosClientes) {
-        showToast("Informe um CPF/CNPJ ou marque 'Todos os clientes'", "warning");
+    if (!cpfCnpj) {
+        showToast("Informe o CPF/CNPJ do pagador", "warning");
         return;
     }
     const btn = event.target;
@@ -402,8 +395,7 @@ function buscarBoletosSicoob() {
 
     let url = '/sicoob/api/listar-boletos-sicoob?data_inicio=' + dataInicio + '&data_fim=' + dataFim;
     if (codigoSituacao) url += '&codigo_situacao=' + codigoSituacao;
-    if (cpfCnpj) url += '&cpf_cnpj=' + encodeURIComponent(cpfCnpj);
-    if (!cpfCnpj && todosClientes) url += '&clientes_todos=true';
+    url += '&cpf_cnpj=' + encodeURIComponent(cpfCnpj);
 
     fetch(url)
         .then(r => r.json())
