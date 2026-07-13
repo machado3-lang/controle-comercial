@@ -51,7 +51,13 @@ def contas_pagar(
     else:
         query = query.filter(ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]))
     if busca:
-        query = query.filter(ContaPagar.descricao.ilike(f"%{busca}%"))
+        from sqlalchemy import or_
+        query = query.filter(
+            or_(
+                ContaPagar.descricao.ilike(f"%{busca}%"),
+                ContaPagar.fornecedor.has(Fornecedor.nome.ilike(f"%{busca}%"))
+            )
+        )
     if data_inicio:
         query = query.filter(ContaPagar.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
     if data_fim:
@@ -224,7 +230,13 @@ def contas_receber(
     else:
         query = query.filter(ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]))
     if busca:
-        query = query.filter(ContaReceber.descricao.ilike(f"%{busca}%"))
+        from sqlalchemy import or_
+        query = query.filter(
+            or_(
+                ContaReceber.descricao.ilike(f"%{busca}%"),
+                ContaReceber.cliente.has(Cliente.nome.ilike(f"%{busca}%"))
+            )
+        )
     if data_inicio:
         query = query.filter(ContaReceber.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
     if data_fim:
