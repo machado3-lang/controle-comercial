@@ -221,3 +221,49 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
     pdf_path = os.path.join(UPLOAD_DIR, pdf_filename)
     pdf.output(pdf_path)
     return f"/static/uploads/nfse/{pdf_filename}"
+
+
+def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
+    from io import BytesIO
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=20)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 16)
+    empresa_nome = (empresa.razao_social or empresa.nome_fantasia or "Empresa") if empresa else "Empresa"
+    pdf.cell(0, 10, empresa_nome, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 14)
+    titulo = "Contas a Receber" if tipo == "receber" else "Contas a Pagar"
+    pdf.cell(0, 8, titulo, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 9)
+    col_w = [70, 30, 25, 25, 40]
+    headers = ["Descricao", "Valor", "Vencimento", "Status", "Cliente/Fornecedor"]
+    for i, h in enumerate(headers):
+        pdf.cell(col_w[i], 7, h, border=1, align="C")
+    pdf.ln()
+    pdf.set_font("Helvetica", "", 8)
+    total = 0
+    for c in contas:
+        parte = c.cliente.nome if tipo == "receber" and hasattr(c, 'cliente') and c.cliente else (
+            c.fornecedor.nome if hasattr(c, 'fornecedor') and c.fornecedor else '-')
+        linha = [
+            c.descricao[:60],
+            f"R$ {c.valor:.2f}",
+            c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '',
+            c.status.value if hasattr(c.status, 'value') else str(c.status),
+            parte[:40],
+        ]
+        total += c.valor
+        x_start = pdf.get_x()
+        y_start = pdf.get_y()
+        max_h = 6
+        for i, t in enumerate(linha):
+            pdf.set_xy(x_start + sum(col_w[:i]), y_start)
+            pdf.multi_cell(col_w[i], 5, t, border=1)
+            max_h = max(max_h, pdf.get_y() - y_start)
+        pdf.set_y(y_start + max_h)
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 7, f"Total: R$ {total:.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.cell(0, 5, f"Emitido em {datetime.now().strftime('%d/%m/%Y as %H:%M')}", align="C", new_x="LMARGIN", new_y="NEXT")
+    return pdf.output()

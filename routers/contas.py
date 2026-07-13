@@ -281,6 +281,19 @@ def estornar_conta_receber(request: Request, conta_id: int, db: Session = Depend
     return RedirectResponse(url="/contas/receber", status_code=303)
 
 
+@router.get("/pagar/pdf")
+def contas_pagar_pdf(request: Request, db: Session = Depends(get_db)):
+    from services.nfse_pdf import gerar_pdf_contas
+    empresa = db.query(Empresa).first()
+    contas = db.query(ContaPagar).options(joinedload(ContaPagar.fornecedor)).filter(
+        ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
+    ).order_by(ContaPagar.data_vencimento).all()
+    pdf_bytes = gerar_pdf_contas(contas, empresa, tipo="pagar")
+    from fastapi.responses import Response
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": "inline; filename=contas_pagar.pdf"})
+
+
 @router.get("/pagar/{conta_id}")
 def ver_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
     conta = db.query(ContaPagar).options(joinedload(ContaPagar.fornecedor)).filter(ContaPagar.id == conta_id).first()
@@ -292,6 +305,19 @@ def ver_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_d
         "contas/ver_pagar.html",
         {"request": request, "conta": conta, "empresa": empresa}
     )
+
+
+@router.get("/receber/pdf")
+def contas_receber_pdf(request: Request, db: Session = Depends(get_db)):
+    from services.nfse_pdf import gerar_pdf_contas
+    empresa = db.query(Empresa).first()
+    contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
+        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
+    ).order_by(ContaReceber.data_vencimento).all()
+    pdf_bytes = gerar_pdf_contas(contas, empresa, tipo="receber")
+    from fastapi.responses import Response
+    return Response(content=pdf_bytes, media_type="application/pdf",
+                    headers={"Content-Disposition": "inline; filename=contas_receber.pdf"})
 
 
 @router.get("/receber/{conta_id}")
