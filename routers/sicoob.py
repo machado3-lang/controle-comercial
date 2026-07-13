@@ -664,6 +664,10 @@ def listar_boletos_sicoob(
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
 
+    # Normalizar o parâmetro bool (FastAPI pode receber como string)
+    if isinstance(clientes_todos, str):
+        clientes_todos = clientes_todos.lower() in ("true", "1", "yes")
+
     # Separar boletos que já existem no nosso sistema
     nossos_numeros = set()
     for c in db.query(ContaReceber.api_nosso_numero, ContaReceber.nosso_numero).filter(
@@ -678,13 +682,11 @@ def listar_boletos_sicoob(
     erros = []
 
     if cpf_cnpj:
-        # Buscar por CPF/CNPJ específico
         boletos, erro = _buscar_boletos_por_pagador(db, cpf_cnpj, data_inicio, data_fim, codigo_situacao)
         if erro:
             return {"success": False, "error": erro}
         todos_boletos.extend(boletos or [])
     elif clientes_todos:
-        # Buscar por todos os clientes da base que têm CPF/CNPJ
         from models import Cliente
         clientes = db.query(Cliente).filter(
             Cliente.cpf_cnpj != None, Cliente.cpf_cnpj != ''
@@ -698,7 +700,6 @@ def listar_boletos_sicoob(
     else:
         return {"success": False, "error": "Informe um CPF/CNPJ ou marque 'Todos os clientes'"}
 
-    # Remover duplicatas (mesmo nossoNumero)
     vistos = set()
     boletos_unicos = []
     for b in todos_boletos:
