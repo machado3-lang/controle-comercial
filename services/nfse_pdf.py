@@ -242,6 +242,7 @@ def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
         pdf.cell(col_w[i], 6, h, border=1, align="C")
     pdf.ln()
     pdf.set_font("Helvetica", "", 7)
+    linha_alt = 5
     total = 0
     for c in contas:
         parte = (c.cliente.nome if tipo == "receber" and c.cliente else
@@ -250,26 +251,13 @@ def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
                   c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '',
                   c.status.value if hasattr(c.status, 'value') else str(c.status), parte]
         total += c.valor
-        # Calcula altura necessaria para cada celula com multi_cell
-        x_start = pdf.get_x()
-        y_start = pdf.get_y()
-        alturas = []
-        for i, t in enumerate(textos):
-            # Altura estimada: numero de linhas * 4mm
-            qtd_linhas = max(1, len(t) * pdf.get_string_width(t) / (col_w[i] - 2)) if i in (0, 4) else 1
-            alturas.append(qtd_linhas * 4)
-        row_h = max(alturas)
-        # Verifica quebra de pagina
-        if y_start + row_h > pdf.h - pdf.b_margin:
+        if pdf.get_y() + linha_alt > pdf.h - pdf.b_margin:
             pdf.add_page()
-            y_start = pdf.get_y()
+        x0 = pdf.get_x()
+        y0 = pdf.get_y()
         for i, t in enumerate(textos):
-            pdf.set_xy(x_start + sum(col_w[:i]), y_start)
-            if i in (0, 4):
-                pdf.multi_cell(col_w[i], 4, t, border=1)
-            else:
-                pdf.cell(col_w[i], row_h, t, border=1)
-        pdf.set_y(max(pdf.get_y(), y_start + row_h))
+            pdf.set_xy(x0 + sum(col_w[:i]), y0)
+            pdf.cell(col_w[i], linha_alt, t, border=1, align="L" if i in (0, 4) else "C")
     pdf.ln(3)
     pdf.set_font("Helvetica", "B", 9)
     pdf.cell(0, 6, f"Total: R$ {total:.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
