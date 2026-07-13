@@ -224,7 +224,6 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
 
 
 def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
-    from io import BytesIO
     pdf = FPDF(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=20)
     pdf.add_page()
@@ -236,7 +235,7 @@ def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
     pdf.cell(0, 8, titulo, align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(4)
     pdf.set_font("Helvetica", "B", 9)
-    col_w = [70, 30, 25, 25, 40]
+    col_w = [70, 28, 24, 24, 44]
     headers = ["Descricao", "Valor", "Vencimento", "Status", "Cliente/Fornecedor"]
     for i, h in enumerate(headers):
         pdf.cell(col_w[i], 7, h, border=1, align="C")
@@ -244,8 +243,8 @@ def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
     pdf.set_font("Helvetica", "", 8)
     total = 0
     for c in contas:
-        parte = c.cliente.nome if tipo == "receber" and hasattr(c, 'cliente') and c.cliente else (
-            c.fornecedor.nome if hasattr(c, 'fornecedor') and c.fornecedor else '-')
+        parte = (c.cliente.nome if tipo == "receber" and c.cliente else
+                 c.fornecedor.nome if c.fornecedor else '-')
         linha = [
             c.descricao[:60],
             f"R$ {c.valor:.2f}",
@@ -254,16 +253,11 @@ def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
             parte[:40],
         ]
         total += c.valor
-        x_start = pdf.get_x()
-        y_start = pdf.get_y()
-        max_h = 6
         for i, t in enumerate(linha):
-            pdf.set_xy(x_start + sum(col_w[:i]), y_start)
-            pdf.multi_cell(col_w[i], 5, t, border=1)
-            max_h = max(max_h, pdf.get_y() - y_start)
-        pdf.set_y(y_start + max_h)
+            pdf.cell(col_w[i], 5, t, border=1)
+        pdf.ln()
     pdf.ln(4)
     pdf.set_font("Helvetica", "B", 10)
     pdf.cell(0, 7, f"Total: R$ {total:.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 5, f"Emitido em {datetime.now().strftime('%d/%m/%Y as %H:%M')}", align="C", new_x="LMARGIN", new_y="NEXT")
-    return pdf.output()
+    return bytes(pdf.output())
