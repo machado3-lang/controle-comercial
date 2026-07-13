@@ -180,13 +180,49 @@ function exportarPdf() {
     window.open('/contas/pagar/pdf?' + params.toString(), '_blank');
 }
 
+function initFornecedorSearchPagar() {
+    const search = document.getElementById('fornecedorSearchEditar');
+    const dropdown = document.getElementById('fornecedorDropdownEditar');
+    if (!search || search.hasAttribute('data-init')) return;
+    search.setAttribute('data-init', 'true');
+    const atual = document.querySelector('#fornecedorIdEditar option[selected]')?.textContent || '';
+    if (atual) search.value = atual;
+
+    search.addEventListener('input', function(e) {
+        const term = e.target.value;
+        if (term.length >= 2) {
+            fetch(`/fornecedores/buscar?q=${encodeURIComponent(term)}`).then(r => r.json()).then(d => {
+                if (d.fornecedores && d.fornecedores.length > 0) {
+                    dropdown.innerHTML = d.fornecedores.map(f => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${f.id}">${f.nome}${f.fantasia && f.fantasia !== f.nome ? ' - ' + f.fantasia : ''}${f.cpf_cnpj ? ' (<span class="text-cyan-400">' + f.cpf_cnpj + '</span>)' : ''}</div>`).join('');
+                    dropdown.classList.remove('hidden');
+                } else {
+                    dropdown.classList.add('hidden');
+                }
+            });
+        } else {
+            dropdown.classList.add('hidden');
+        }
+    });
+
+    if (dropdown) {
+        dropdown.addEventListener('click', function(e) {
+            const item = e.target.closest('[data-id]');
+            if (item) {
+                search.value = item.textContent.trim().split(' (')[0];
+                document.getElementById('fornecedorIdEditar').value = item.dataset.id;
+                this.classList.add('hidden');
+            }
+        });
+    }
+}
+
 function abrirEditarPagar(id) {
     fetch('/contas/pagar/' + id + '/editar-form')
         .then(r => r.text())
         .then(html => {
             document.getElementById('editarContaBody').innerHTML = html;
             document.getElementById('formEditarConta').action = '/contas/pagar/' + id + '/editar';
-            if (window.initEditarFornecedor) window.initEditarFornecedor();
+            initFornecedorSearchPagar();
             lucide.createIcons();
             new bootstrap.Modal(document.getElementById('modalEditarConta')).show();
         });

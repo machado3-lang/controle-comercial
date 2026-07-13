@@ -226,13 +226,49 @@ function abrirEmitir(id, valor) {
     modal.show();
 }
 
+function initClienteSearchReceber() {
+    const clienteSearch = document.getElementById('clienteSearchEditar');
+    const clienteDropdown = document.getElementById('clienteDropdownEditar');
+    if (!clienteSearch || clienteSearch.hasAttribute('data-init')) return;
+    clienteSearch.setAttribute('data-init', 'true');
+    const clienteAtual = document.querySelector('#clienteIdEditar option[selected]')?.textContent || '';
+    if (clienteAtual) clienteSearch.value = clienteAtual;
+
+    clienteSearch.addEventListener('input', function(e) {
+        const term = e.target.value;
+        if (term.length >= 2) {
+            fetch(`/clientes/buscar?q=${encodeURIComponent(term)}`).then(r => r.json()).then(d => {
+                if (d.clientes && d.clientes.length > 0) {
+                    clienteDropdown.innerHTML = d.clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}">${c.nome}${c.fantasia ? ' - ' + c.fantasia : ''}${c.cpf_cnpj ? ' (<span class="text-cyan-400">' + c.cpf_cnpj + '</span>)' : ''}</div>`).join('');
+                    clienteDropdown.classList.remove('hidden');
+                } else {
+                    clienteDropdown.classList.add('hidden');
+                }
+            });
+        } else {
+            clienteDropdown.classList.add('hidden');
+        }
+    });
+
+    if (clienteDropdown) {
+        clienteDropdown.addEventListener('click', function(e) {
+            const item = e.target.closest('[data-id]');
+            if (item) {
+                clienteSearch.value = item.textContent.trim().split(' (')[0];
+                document.getElementById('clienteIdEditar').value = item.dataset.id;
+                this.classList.add('hidden');
+            }
+        });
+    }
+}
+
 function abrirEditarReceber(id) {
     fetch('/contas/receber/' + id + '/editar-form')
         .then(r => r.text())
         .then(html => {
             document.getElementById('editarContaBody').innerHTML = html;
             document.getElementById('formEditarConta').action = '/contas/receber/' + id + '/editar';
-            if (window.initEditarCliente) window.initEditarCliente();
+            initClienteSearchReceber();
             lucide.createIcons();
             new bootstrap.Modal(document.getElementById('modalEditarConta')).show();
         });
