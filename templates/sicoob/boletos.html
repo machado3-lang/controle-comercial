@@ -484,22 +484,30 @@ function atualizarBtnImportar() {
     btn.textContent = 'Importar Selecionados (' + selecionados + ')';
 }
 
+function postImportarBoleto(boletoData) {
+    return fetch('/sicoob/importar-boleto', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(boletoData)
+    }).then(r => r.json());
+}
+
 function importarBoleto(nossoNumero) {
+    const boleto = boletosSicoobCache.find(b => b.nossoNumero === nossoNumero);
+    if (!boleto) { showToast("Boleto não encontrado em cache", "danger"); return; }
+
     const btn = event.target;
     const originalHtml = btn.innerHTML;
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
     btn.disabled = true;
 
-    fetch('/sicoob/importar-boleto/' + nossoNumero, { method: 'POST' })
-        .then(r => r.json())
+    postImportarBoleto(boleto)
         .then(data => {
             btn.innerHTML = originalHtml;
             btn.disabled = false;
             if (data.success) {
                 showToast("Boleto importado: Conta #" + data.conta_id, "success");
-                // Atualizar cache e re-renderizar
-                const idx = boletosSicoobCache.findIndex(b => b.nossoNumero === nossoNumero);
-                if (idx >= 0) boletosSicoobCache[idx].nossoSistema = true;
+                boleto.nossoSistema = true;
                 renderizarBoletosSicoob();
             } else {
                 showToast("Erro: " + data.error, "danger");
@@ -513,7 +521,10 @@ function importarBoleto(nossoNumero) {
 }
 
 function importarTodosSelecionados() {
-    const selecionados = Array.from(document.querySelectorAll('.sel-boleto-sicoob:checked:not(:disabled)')).map(cb => cb.value);
+    const cbs = document.querySelectorAll('.sel-boleto-sicoob:checked:not(:disabled)');
+    const selecionados = Array.from(cbs).map(cb => {
+        return boletosSicoobCache.find(b => b.nossoNumero === cb.value);
+    }).filter(Boolean);
     if (!selecionados.length) return;
 
     const btn = document.getElementById('btn-importar-todos');
@@ -524,21 +535,19 @@ function importarTodosSelecionados() {
     const resultados = [];
     let concluidos = 0;
 
-    selecionados.forEach((nn, i) => {
+    selecionados.forEach((boleto, i) => {
         setTimeout(() => {
-            fetch('/sicoob/importar-boleto/' + nn, { method: 'POST' })
-                .then(r => r.json())
+            postImportarBoleto(boleto)
                 .then(data => {
                     if (data.success) {
-                        resultados.push({nossoNumero: nn, success: true, contaId: data.conta_id});
-                        const idx = boletosSicoobCache.findIndex(b => b.nossoNumero === nn);
-                        if (idx >= 0) boletosSicoobCache[idx].nossoSistema = true;
+                        resultados.push({nossoNumero: boleto.nossoNumero, success: true, contaId: data.conta_id});
+                        boleto.nossoSistema = true;
                     } else {
-                        resultados.push({nossoNumero: nn, success: false, error: data.error});
+                        resultados.push({nossoNumero: boleto.nossoNumero, success: false, error: data.error});
                     }
                 })
                 .catch(e => {
-                    resultados.push({nossoNumero: nn, success: false, error: e.message});
+                    resultados.push({nossoNumero: boleto.nossoNumero, success: false, error: e.message});
                 })
                 .finally(() => {
                     concluidos++;
@@ -553,7 +562,7 @@ function importarTodosSelecionados() {
                         showToast(msg, erros.length ? 'warning' : 'success');
                     }
                 });
-        }, i * 500); // delay para não sobrecarregar
+        }, i * 500);
     });
 }
 

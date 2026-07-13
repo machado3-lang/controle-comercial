@@ -705,61 +705,32 @@ def listar_boletos_sicoob(
     return {"success": True, "boletos": boletos_unicos, "total": len(boletos_unicos)}
 
 
-@router.post("/importar-boleto/{nosso_numero}", response_class=JSONResponse)
-async def importar_boleto(request: Request, nosso_numero: str, db: Session = Depends(get_db)):
+@router.post("/importar-boleto", response_class=JSONResponse)
+async def importar_boleto(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
 
-    # Verificar se já existe
+    body = await request.json()
+    nosso_numero = str(body.get("nossoNumero", ""))
+    cliente_nome = body.get("cliente", "")
+    cpf_cnpj_raw = body.get("cpfCnpj", "")
+    valor = float(body.get("valor", 0))
+    data_vencimento_str = body.get("dataVencimento", "")
+    data_emissao_str = body.get("dataEmissao", "")
+    linha_digitavel = body.get("linhaDigitavel", "")
+    seu_numero = str(body.get("seuNumero", ""))
+    situacao = str(body.get("situacao", ""))
+
+    if not nosso_numero:
+        return {"success": False, "error": "nossoNumero é obrigatório"}
+
     existente = db.query(ContaReceber).filter(
         (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
     ).first()
     if existente:
         return {"success": False, "error": "Boleto já importado no sistema"}
 
-    # Buscar dados do boleto na API Sicoob
-    token, error = get_token_or_error(db, "boletos_consulta")
-    if error:
-        return {"success": False, "error": error}
-    emp = get_empresa(db)
-    cert_config = get_cert_config(db)
-    client_args = {"timeout": 30}
-    if cert_config and "cert" in cert_config:
-        client_args["cert"] = cert_config["cert"]
-
     try:
-        # nossoNumero na API Sicoob é integer — converter
-        try:
-            nosso_numero_int = int(nosso_numero)
-        except (ValueError, TypeError):
-            nosso_numero_int = nosso_numero
-        with httpx.Client(**client_args) as client:
-            resp = client.get(
-                f"{SICOOO_API}/boletos",
-                params={
-                    "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
-                    "codigoModalidade": 1,
-                    "nossoNumero": nosso_numero_int,
-                },
-                headers={"Authorization": f"Bearer {token}"},
-            )
-            if resp.status_code != 200:
-                return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
-            data = resp.json()
-            if isinstance(data, list):
-                boletos = data
-            else:
-                resultado = data.get("resultado", [])
-                if isinstance(resultado, list):
-                    boletos = resultado
-                else:
-                    boletos = resultado.get("boletos", [])
-            if not boletos:
-                return {"success": False, "error": f"Boleto {nosso_numero} não encontrado no Sicoob"}
-            b = boletos[0]
-
-        # Encontrar ou criar cliente
-        cpf_cnpj_raw = b.get("pagador", {}).get("numeroCpfCnpj", "")
         cpf_cnpj_limp = ''.join(filter(str.isdigit, cpf_cnpj_raw))
         cliente = None
         if cpf_cnpj_limp:
@@ -768,34 +739,17 @@ async def importar_boleto(request: Request, nosso_numero: str, db: Session = Dep
                 func.replace(func.replace(func.replace(Cliente.cpf_cnpj, '.', ''), '/', ''), '-', '') == cpf_cnpj_limp
             ).first()
 
-        if not cliente:
-            # Criar cliente rápido
-            nome_pagador = b.get("pagador", {}).get("nome", "Cliente Sicoob")
-            endereco = b.get("pagador", {}).get("endereco", "")
-            bairro = b.get("pagador", {}).get("bairro", "")
-            cidade = b.get("pagador", {}).get("cidade", "")
-            uf = b.get("pagador", {}).get("uf", "")
-            cep = ''.join(filter(str.isdigit, b.get("pagador", {}).get("cep", "")))
-
+        if not cliente and cliente_nome:
             from models import Cliente
             cliente = Cliente(
-                nome=nome_pagador,
-                cpf_cnpj=cpf_cnpj_raw,
-                endereco=endereco,
-                bairro=bairro,
-                cidade=cidade,
-                estado=uf,
-                cep=cep,
+                nome=cliente_nome,
+                cpf_cnpj=cpf_cnpj_raw or None,
             )
             db.add(cliente)
             db.flush()
 
-        # Criar conta a receber
-        valor = float(b.get("valor", 0))
-        data_vencimento_str = b.get("dataVencimento", "")
-        data_emissao_str = b.get("dataEmissao", "")
-        descricao = f"Boleto Sicoob - {b.get('seuNumero', '') or b.get('nossoNumero', '')}"
-        linha_digitavel = b.get("linhaDigitavel", "")
+        if not cliente:
+            return {"success": False, "error": "Cliente não encontrado e nome não informado"}
 
         try:
             data_vencimento = datetime.strptime(data_vencimento_str, "%Y-%m-%d").date()
@@ -807,16 +761,24 @@ async def importar_boleto(request: Request, nosso_numero: str, db: Session = Dep
         except:
             data_emissao = date.today()
 
+        # Situação no Sicoob: 1=EmAberto, 3=Liquidado, 2=Baixado
+        if situacao in ("3", "LIQUIDADO", "PAGO"):
+            status = StatusConta.PAGO
+        elif situacao in ("2", "BAIXADO"):
+            status = StatusConta.CANCELADO
+        else:
+            status = StatusConta.PENDENTE
+
         conta = ContaReceber(
             cliente_id=cliente.id,
-            descricao=descricao,
+            descricao=f"Boleto Sicoob - {seu_numero or nosso_numero}",
             valor=valor,
             data_vencimento=data_vencimento,
             data_emissao=data_emissao,
-            status=StatusConta.PENDENTE,
+            status=status,
             boleto_emitido=True,
-            nosso_numero=str(b.get("seuNumero", "")),
-            api_nosso_numero= nosso_numero,
+            nosso_numero=seu_numero or nosso_numero,
+            api_nosso_numero=nosso_numero,
             boleto_url=linha_digitavel,
         )
         db.add(conta)
