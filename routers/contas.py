@@ -26,7 +26,13 @@ def contas_pagar(
     busca: str = Query(""), status_filtro: str = Query(""),
     data_inicio: str = Query(""), data_fim: str = Query(""),
 ):
-    from sqlalchemy import func
+    from sqlalchemy import func, update
+    hoje = date.today()
+    db.query(ContaPagar).filter(
+        ContaPagar.data_vencimento < hoje,
+        ContaPagar.status == StatusConta.PENDENTE
+    ).update({ContaPagar.status: StatusConta.VENCIDO}, synchronize_session=False)
+    db.commit()
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
     fornecedores_json = [{"id": f.id, "nome": f.nome} for f in fornecedores]
     query = db.query(ContaPagar).options(
@@ -91,11 +97,14 @@ def criar_conta_pagar(
     fornecedor_id: Optional[int] = Form(None),
     observacao: Optional[str] = Form(None),
     numero_documento: Optional[str] = Form(None),
-    tipo_documento_id: Optional[int] = Form(None),
-    plano_conta_id: Optional[int] = Form(None),
+    tipo_documento_id: Optional[str] = Form(None),
+    plano_conta_id: Optional[str] = Form(None),
     forma_pagamento: Optional[str] = Form(None)
 ):
     from sqlalchemy import func
+    def to_int(v):
+        try: return int(v) if v and v.strip() else None
+        except: return None
     conta = ContaPagar(
         descricao=descricao,
         valor=valor,
@@ -103,8 +112,8 @@ def criar_conta_pagar(
         fornecedor_id=fornecedor_id,
         observacao=observacao,
         numero_documento=numero_documento,
-        tipo_documento_id=tipo_documento_id if tipo_documento_id else None,
-        plano_conta_id=plano_conta_id if plano_conta_id else None,
+        tipo_documento_id=to_int(tipo_documento_id),
+        plano_conta_id=to_int(plano_conta_id),
         forma_pagamento=forma_pagamento,
         status=StatusConta.PENDENTE
     )
@@ -145,10 +154,13 @@ def atualizar_conta_pagar(
     observacao: Optional[str] = Form(None),
     status: StatusConta = Form(...),
     numero_documento: Optional[str] = Form(None),
-    tipo_documento_id: Optional[int] = Form(None),
-    plano_conta_id: Optional[int] = Form(None),
+    tipo_documento_id: Optional[str] = Form(None),
+    plano_conta_id: Optional[str] = Form(None),
     forma_pagamento: Optional[str] = Form(None)
 ):
+    def to_int(v):
+        try: return int(v) if v and v.strip() else None
+        except: return None
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
     if not conta:
         request.session["error"] = "Conta não encontrada"
@@ -160,8 +172,8 @@ def atualizar_conta_pagar(
     conta.observacao = observacao
     conta.status = status
     conta.numero_documento = numero_documento
-    conta.tipo_documento_id = tipo_documento_id if tipo_documento_id else None
-    conta.plano_conta_id = plano_conta_id if plano_conta_id else None
+    conta.tipo_documento_id = to_int(tipo_documento_id)
+    conta.plano_conta_id = to_int(plano_conta_id)
     conta.forma_pagamento = forma_pagamento
     db.commit()
     request.session["message"] = "Conta a pagar atualizada com sucesso!"
@@ -188,6 +200,12 @@ def contas_receber(
     data_inicio: str = Query(""), data_fim: str = Query(""),
 ):
     from sqlalchemy import func
+    hoje = date.today()
+    db.query(ContaReceber).filter(
+        ContaReceber.data_vencimento < hoje,
+        ContaReceber.status == StatusConta.PENDENTE
+    ).update({ContaReceber.status: StatusConta.VENCIDO}, synchronize_session=False)
+    db.commit()
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
     query = db.query(ContaReceber).options(
@@ -252,11 +270,14 @@ def criar_conta_receber(
     cliente_id: Optional[int] = Form(None),
     observacao: Optional[str] = Form(None),
     numero_documento: Optional[str] = Form(None),
-    tipo_documento_id: Optional[int] = Form(None),
-    plano_conta_id: Optional[int] = Form(None),
+    tipo_documento_id: Optional[str] = Form(None),
+    plano_conta_id: Optional[str] = Form(None),
     forma_pagamento: Optional[str] = Form(None)
 ):
     from sqlalchemy import func
+    def to_int(v):
+        try: return int(v) if v and v.strip() else None
+        except: return None
     conta = ContaReceber(
         descricao=descricao,
         valor=valor,
@@ -264,8 +285,8 @@ def criar_conta_receber(
         cliente_id=cliente_id,
         observacao=observacao,
         numero_documento=numero_documento,
-        tipo_documento_id=tipo_documento_id if tipo_documento_id else None,
-        plano_conta_id=plano_conta_id if plano_conta_id else None,
+        tipo_documento_id=to_int(tipo_documento_id),
+        plano_conta_id=to_int(plano_conta_id),
         forma_pagamento=forma_pagamento,
         status=StatusConta.PENDENTE
     )
@@ -306,10 +327,13 @@ def atualizar_conta_receber(
     observacao: Optional[str] = Form(None),
     status: StatusConta = Form(...),
     numero_documento: Optional[str] = Form(None),
-    tipo_documento_id: Optional[int] = Form(None),
-    plano_conta_id: Optional[int] = Form(None),
+    tipo_documento_id: Optional[str] = Form(None),
+    plano_conta_id: Optional[str] = Form(None),
     forma_pagamento: Optional[str] = Form(None)
 ):
+    def to_int(v):
+        try: return int(v) if v and v.strip() else None
+        except: return None
     conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
     if not conta:
         request.session["error"] = "Conta não encontrada"
@@ -321,8 +345,8 @@ def atualizar_conta_receber(
     conta.observacao = observacao
     conta.status = status
     conta.numero_documento = numero_documento
-    conta.tipo_documento_id = tipo_documento_id if tipo_documento_id else None
-    conta.plano_conta_id = plano_conta_id if plano_conta_id else None
+    conta.tipo_documento_id = to_int(tipo_documento_id)
+    conta.plano_conta_id = to_int(plano_conta_id)
     conta.forma_pagamento = forma_pagamento
     db.commit()
     request.session["message"] = "Conta a receber atualizada com sucesso!"
