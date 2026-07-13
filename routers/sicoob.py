@@ -644,9 +644,11 @@ def _buscar_boletos_por_pagador(
             )
             if resp.status_code == 200:
                 data = resp.json()
+                if isinstance(data, list):
+                    return data, None
                 return data.get("resultado", {}).get("boletos", []), None
-            # 404/400 sem boletos não é erro — só retorna lista vazia
-            if resp.status_code in (400, 404):
+            # 204/400/404 sem boletos não é erro — retorna lista vazia
+            if resp.status_code in (204, 400, 404):
                 return [], None
             return None, f"HTTP {resp.status_code}: {resp.text}"
     except Exception as e:
