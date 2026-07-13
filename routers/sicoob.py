@@ -728,13 +728,18 @@ async def importar_boleto(request: Request, nosso_numero: str, db: Session = Dep
         client_args["cert"] = cert_config["cert"]
 
     try:
+        # nossoNumero na API Sicoob é integer — converter
+        try:
+            nosso_numero_int = int(nosso_numero)
+        except (ValueError, TypeError):
+            nosso_numero_int = nosso_numero
         with httpx.Client(**client_args) as client:
             resp = client.get(
                 f"{SICOOO_API}/boletos",
                 params={
                     "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
                     "codigoModalidade": 1,
-                    "nossoNumero": nosso_numero,
+                    "nossoNumero": nosso_numero_int,
                 },
                 headers={"Authorization": f"Bearer {token}"},
             )
@@ -750,7 +755,7 @@ async def importar_boleto(request: Request, nosso_numero: str, db: Session = Dep
                 else:
                     boletos = resultado.get("boletos", [])
             if not boletos:
-                return {"success": False, "error": "Boleto não encontrado no Sicoob"}
+                return {"success": False, "error": f"Boleto {nosso_numero} não encontrado no Sicoob"}
             b = boletos[0]
 
         # Encontrar ou criar cliente
