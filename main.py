@@ -462,8 +462,8 @@ def run_migrations():
         except Exception as e:
             print(f"Migration error: {e}")
 
-run_migrations()
 Base.metadata.create_all(bind=engine)
+run_migrations()
 
 # Seed default data
 def seed_default_data():
