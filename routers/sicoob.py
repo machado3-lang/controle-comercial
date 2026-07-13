@@ -6,6 +6,7 @@ import ssl
 from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File
 from fastapi.responses import RedirectResponse, JSONResponse, Response
+from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Empresa, ContaReceber, StatusConta
@@ -608,6 +609,190 @@ def testar_token(request: Request, db: Session = Depends(get_db)):
     if token:
         return {"success": True, "token": "****" + token[-10:], "message": "Token obtido com sucesso"}
     return {"success": False, "error": "Falha ao obter token - verifique certificado"}
+@router.get("/api/listar-boletos-sicoob", response_class=JSONResponse)
+def listar_boletos_sicoob(
+    request: Request, db: Session = Depends(get_db),
+    data_inicio: str = None, data_fim: str = None,
+    situacao: str = None, pagina: int = 1, itens: int = 50
+):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
+    token, error = get_token_or_error(db, "boletos_consulta")
+    if error:
+        return {"success": False, "error": error}
+    emp = get_empresa(db)
+    cert_config = get_cert_config(db)
+    client_args = {"timeout": 30}
+    if cert_config and "cert" in cert_config:
+        client_args["cert"] = cert_config["cert"]
+
+    params = {
+        "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
+        "codigoModalidade": 1,
+        "pagina": pagina,
+        "itens": itens,
+    }
+    if data_inicio:
+        params["dataInicio"] = data_inicio
+    if data_fim:
+        params["dataFim"] = data_fim
+    if situacao:
+        params["situacao"] = situacao
+
+    try:
+        with httpx.Client(**client_args) as client:
+            resp = client.get(
+                f"{SICOOO_API}/boletos",
+                params=params,
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                boletos_raw = data.get("resultado", {}).get("boletos", [])
+
+                # Separar boletos que já existem no nosso sistema vs novos
+                nossos_numeros = set()
+                for c in db.query(ContaReceber.api_nosso_numero, ContaReceber.nosso_numero).filter(
+                    ContaReceber.boleto_emitido == True
+                ).all():
+                    if c.api_nosso_numero:
+                        nossos_numeros.add(c.api_nosso_numero)
+                    if c.nosso_numero:
+                        nossos_numeros.add(c.nosso_numero)
+
+                boletos = []
+                for b in boletos_raw:
+                    nn = str(b.get("nossoNumero", ""))
+                    ja_importado = nn in nossos_numeros
+                    boletos.append({
+                        "nossoNumero": nn,
+                        "seuNumero": str(b.get("seuNumero", "")),
+                        "valor": float(b.get("valor", 0)),
+                        "dataVencimento": b.get("dataVencimento", ""),
+                        "dataEmissao": b.get("dataEmissao", ""),
+                        "cliente": b.get("pagador", {}).get("nome", ""),
+                        "cpfCnpj": b.get("pagador", {}).get("numeroCpfCnpj", ""),
+                        "situacao": str(b.get("situacao", "")),
+                        "linhaDigitavel": b.get("linhaDigitavel", ""),
+                        "nossoSistema": ja_importado,
+                    })
+                return {"success": True, "boletos": boletos, "total": data.get("resultado", {}).get("quantidade", len(boletos))}
+            return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
+@router.post("/importar-boleto/{nosso_numero}", response_class=JSONResponse)
+async def importar_boleto(request: Request, nosso_numero: str, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
+
+    # Verificar se já existe
+    existente = db.query(ContaReceber).filter(
+        (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
+    ).first()
+    if existente:
+        return {"success": False, "error": "Boleto já importado no sistema"}
+
+    # Buscar dados do boleto na API Sicoob
+    token, error = get_token_or_error(db, "boletos_consulta")
+    if error:
+        return {"success": False, "error": error}
+    emp = get_empresa(db)
+    cert_config = get_cert_config(db)
+    client_args = {"timeout": 30}
+    if cert_config and "cert" in cert_config:
+        client_args["cert"] = cert_config["cert"]
+
+    try:
+        with httpx.Client(**client_args) as client:
+            resp = client.get(
+                f"{SICOOO_API}/boletos",
+                params={
+                    "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
+                    "codigoModalidade": 1,
+                    "nossoNumero": nosso_numero,
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if resp.status_code != 200:
+                return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+            data = resp.json()
+            boletos = data.get("resultado", {}).get("boletos", [])
+            if not boletos:
+                return {"success": False, "error": "Boleto não encontrado no Sicoob"}
+            b = boletos[0]
+
+        # Encontrar ou criar cliente
+        cpf_cnpj_raw = b.get("pagador", {}).get("numeroCpfCnpj", "")
+        cpf_cnpj_limp = ''.join(filter(str.isdigit, cpf_cnpj_raw))
+        cliente = None
+        if cpf_cnpj_limp:
+            from models import Cliente
+            cliente = db.query(Cliente).filter(
+                func.replace(func.replace(func.replace(Cliente.cpf_cnpj, '.', ''), '/', ''), '-', '') == cpf_cnpj_limp
+            ).first()
+
+        if not cliente:
+            # Criar cliente rápido
+            nome_pagador = b.get("pagador", {}).get("nome", "Cliente Sicoob")
+            endereco = b.get("pagador", {}).get("endereco", "")
+            bairro = b.get("pagador", {}).get("bairro", "")
+            cidade = b.get("pagador", {}).get("cidade", "")
+            uf = b.get("pagador", {}).get("uf", "")
+            cep = ''.join(filter(str.isdigit, b.get("pagador", {}).get("cep", "")))
+
+            from models import Cliente
+            cliente = Cliente(
+                nome=nome_pagador,
+                cpf_cnpj=cpf_cnpj_raw,
+                endereco=endereco,
+                bairro=bairro,
+                cidade=cidade,
+                estado=uf,
+                cep=cep,
+            )
+            db.add(cliente)
+            db.flush()
+
+        # Criar conta a receber
+        valor = float(b.get("valor", 0))
+        data_vencimento_str = b.get("dataVencimento", "")
+        data_emissao_str = b.get("dataEmissao", "")
+        descricao = f"Boleto Sicoob - {b.get('seuNumero', '') or b.get('nossoNumero', '')}"
+        linha_digitavel = b.get("linhaDigitavel", "")
+
+        try:
+            data_vencimento = datetime.strptime(data_vencimento_str, "%Y-%m-%d").date()
+        except:
+            data_vencimento = date.today()
+
+        try:
+            data_emissao = datetime.strptime(data_emissao_str, "%Y-%m-%d").date()
+        except:
+            data_emissao = date.today()
+
+        conta = ContaReceber(
+            cliente_id=cliente.id,
+            descricao=descricao,
+            valor=valor,
+            data_vencimento=data_vencimento,
+            data_emissao=data_emissao,
+            status=StatusConta.PENDENTE,
+            boleto_emitido=True,
+            nosso_numero=str(b.get("seuNumero", "")),
+            api_nosso_numero= nosso_numero,
+            boleto_url=linha_digitavel,
+        )
+        db.add(conta)
+        db.commit()
+
+        return {"success": True, "message": f"Boleto {nosso_numero} importado como Conta #{conta.id}", "conta_id": conta.id}
+    except Exception as e:
+        db.rollback()
+        return {"success": False, "error": str(e)}
+
+
 @router.get("/api/inadimplencia", response_class=JSONResponse)
 def api_inadimplencia(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
