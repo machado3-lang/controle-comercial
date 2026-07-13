@@ -9,6 +9,25 @@ from database import Base, engine
 from models_nfe import NFSe, NFe  # noqa: F401
 
 
+class NFeDistribuida(Base):
+    """NFe obtidas via Distribuição DF-e (SEFAZ)"""
+    __tablename__ = "nfe_distribuidas"
+
+    id = Column(Integer, primary_key=True, index=True)
+    chave_acesso = Column(String(44), unique=True, nullable=False, index=True)
+    numero = Column(String(20), nullable=True)
+    dh_emi = Column(String(30), nullable=True)
+    valor = Column(Float, nullable=True)
+    emitente_nome = Column(String(300), nullable=True)
+    emitente_cnpj = Column(String(20), nullable=True)
+    destinatario_nome = Column(String(300), nullable=True)
+    destinatario_cnpj = Column(String(20), nullable=True)
+    nsu = Column(String(20), nullable=True)
+    schema_nfe = Column(String(50), nullable=True)
+    xml = Column(Text, nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+
 def get_safe_day(date_obj, target_day: int) -> date:
     year = date_obj.year
     month = date_obj.month
@@ -470,6 +489,7 @@ class Empresa(Base):
     cert_password = Column(String(100), nullable=True)
     cert_base64 = Column(Text, nullable=True)  # Certificado A1 armazenado como base64
     cert_validade = Column(Date, nullable=True)  # Data de validade do certificado
+    nfe_ultnsu = Column(String(20), nullable=True)  # Último NSU consultado na SEFAZ
     cfop_padrao = Column(String(4), nullable=False, default="5102")
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

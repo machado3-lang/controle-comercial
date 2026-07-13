@@ -1,7 +1,7 @@
 import os, re, base64, gzip, logging, time
 from typing import Optional
 from requests import Session
-from models import Empresa
+from models import Empresa, NFeDistribuida
 
 logger = logging.getLogger(__name__)
 
@@ -14,8 +14,9 @@ class NFeDistribuicaoError(Exception):
 
 
 class NFeDistribuicaoService:
-    def __init__(self, empresa: Empresa = None):
+    def __init__(self, empresa: Empresa = None, db=None):
         self.empresa = empresa
+        self.db = db
         self.cert_path = None
         self.cert_password = None
         self.tpAmb = 1
@@ -88,6 +89,92 @@ class NFeDistribuicaoService:
    </soap:Body>
 </soap:Envelope>'''
 
+    def _build_soap_envelope_chave(self, cnpj: str, chave_acesso: str) -> str:
+        return f'''<?xml version="1.0" encoding="UTF-8"?>
+<soap:Envelope xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/">
+   <soap:Header/>
+   <soap:Body>
+      <nfeDistDFeInteresse xmlns="http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe">
+         <nfeDadosMsg>
+            <distDFeInt xmlns="http://www.portalfiscal.inf.br/nfe" versao="1.01">
+               <tpAmb>{self.tpAmb}</tpAmb>
+               <cUFAutor>50</cUFAutor>
+               <CNPJ>{cnpj}</CNPJ>
+               <consChNFe>
+                  <chNFe>{chave_acesso}</chNFe>
+               </consChNFe>
+            </distDFeInt>
+         </nfeDadosMsg>
+      </nfeDistDFeInteresse>
+   </soap:Body>
+</soap:Envelope>'''
+
+    def consultar_por_chave(self, cnpj: str, chave_acesso: str) -> dict:
+        """Consulta uma NFe específica pela chave de acesso via SEFAZ (consChNFe)"""
+        session = self._get_session()
+        cnpj_clean = re.sub(r'\D', '', cnpj)
+        chave_clean = re.sub(r'\D', '', chave_acesso)
+        if len(chave_clean) != 44:
+            raise NFeDistribuicaoError("Chave de acesso deve ter 44 dígitos")
+
+        envelope = self._build_soap_envelope_chave(cnpj_clean, chave_clean)
+        headers = {'Content-Type': 'text/xml;charset=UTF-8',
+                   'SOAPAction': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse'}
+        r = session.post(self.url, data=envelope.encode('utf-8'), headers=headers, timeout=60)
+        if r.status_code != 200:
+            raise NFeDistribuicaoError(f"SEFAZ HTTP {r.status_code}: {r.text[:300]}")
+
+        xml_body = r.text
+        docs, _, cStat = self._parse_response(xml_body)
+        if not docs:
+            m = re.search(r'<xMotivo>([^<]+)</', xml_body)
+            motivo = m.group(1) if m else 'NFe não encontrada'
+            raise NFeDistribuicaoError(f"{motivo} (cStat={cStat})")
+
+        doc = docs[0]
+        if not doc['xml']:
+            raise NFeDistribuicaoError("XML da NFe não disponível na consulta")
+
+        chave, numero, dh_emi, valor, emitente_nome, emitente_cnpj, destinatario_nome, destinatario_cnpj = self._extract_nfe_info(doc['xml'])
+        resultado = {
+            'chaveAcesso': chave,
+            'numero': numero,
+            'dhEmi': dh_emi,
+            'valor': valor,
+            'emitente_nome': emitente_nome,
+            'emitente_cnpj': emitente_cnpj,
+            'destinatario_nome': destinatario_nome,
+            'destinatario_cnpj': destinatario_cnpj,
+            'NSU': doc['NSU'],
+            'schema': doc['schema'],
+            'xml': doc['xml'],
+        }
+        self._salvar_local(chave, numero, dh_emi, valor, emitente_nome, emitente_cnpj,
+                           destinatario_nome, destinatario_cnpj, doc['NSU'], doc['schema'], doc['xml'])
+        return resultado
+
+    def importar_xml(self, xml_str: str) -> dict:
+        """Importa uma NFe a partir de um XML já existente, extrai os dados e salva no banco local."""
+        chave, numero, dh_emi, valor, emitente_nome, emitente_cnpj, destinatario_nome, destinatario_cnpj = self._extract_nfe_info(xml_str)
+        if not chave:
+            raise NFeDistribuicaoError("Não foi possível extrair a chave de acesso do XML")
+        resultado = {
+            'chaveAcesso': chave,
+            'numero': numero,
+            'dhEmi': dh_emi,
+            'valor': valor,
+            'emitente_nome': emitente_nome,
+            'emitente_cnpj': emitente_cnpj,
+            'destinatario_nome': destinatario_nome,
+            'destinatario_cnpj': destinatario_cnpj,
+            'NSU': '',
+            'schema': 'NFe',
+            'xml': xml_str,
+        }
+        self._salvar_local(chave, numero, dh_emi, valor, emitente_nome, emitente_cnpj,
+                           destinatario_nome, destinatario_cnpj, '', 'NFe', xml_str)
+        return resultado
+
     def _parse_response(self, xml: str) -> tuple[list[dict], str, str]:
         docs = []
         ultNSU = "000000000000000"
@@ -113,10 +200,12 @@ class NFeDistribuicaoService:
     def listar_nfe(self, cnpj: str, max_paginas: int = 20) -> list[dict]:
         session = self._get_session()
         resultados = []
-        ultNSU = "000000000000000"
         pagina = 0
         cnpj_clean = re.sub(r'\D', '', cnpj)
-        logger.info(f"Listando NFe da SEFAZ para CNPJ {cnpj_clean}...")
+
+        # Usa ultNSU persistido ou começa do zero
+        ultNSU = self.empresa.nfe_ultnsu or "000000000000000"
+        logger.info(f"Listando NFe da SEFAZ para CNPJ {cnpj_clean} (ultNSU={ultNSU})...")
 
         while pagina < max_paginas:
             try:
@@ -125,7 +214,7 @@ class NFeDistribuicaoService:
                            'SOAPAction': 'http://www.portalfiscal.inf.br/nfe/wsdl/NFeDistribuicaoDFe/nfeDistDFeInteresse'}
                 r = session.post(self.url, data=envelope.encode('utf-8'), headers=headers, timeout=60)
                 if r.status_code != 200:
-                    logger.warning(f"SEFAZ NFe HTTP {r.status_code}: {r.text[:300]}")
+                    logger.warning(f"SEFAZ NFe HTTP {r.status_code}: {r.text[:500]}")
                     break
                 xml_body = r.text
                 docs, novo_ultNSU, cStat = self._parse_response(xml_body)
@@ -156,10 +245,17 @@ class NFeDistribuicaoService:
                         'schema': doc['schema'],
                         'xml': doc['xml'],
                     })
+                    # Salva no banco local
+                    self._salvar_local(chave, numero, dh_emi, valor, emitente_nome, emitente_cnpj,
+                                       destinatario_nome, destinatario_cnpj, doc['NSU'], doc['schema'], doc['xml'])
 
                 if novo_ultNSU == ultNSU:
                     break
                 ultNSU = novo_ultNSU
+                # Persiste ultNSU a cada página
+                if self.db and self.empresa:
+                    self.empresa.nfe_ultnsu = ultNSU
+                    self.db.commit()
                 pagina += 1
                 time.sleep(3)
 
@@ -169,8 +265,40 @@ class NFeDistribuicaoService:
                 logger.error(traceback.format_exc())
                 break
 
-        logger.info(f"SEFAZ retornou {len(resultados)} NFe")
+        # Persiste ultNSU final
+        if self.db and self.empresa and ultNSU != "000000000000000":
+            self.empresa.nfe_ultnsu = ultNSU
+            self.db.commit()
+
+        logger.info(f"SEFAZ retornou {len(resultados)} NFe (ultNSU={ultNSU})")
         return resultados
+
+    def _salvar_local(self, chave, numero, dh_emi, valor, emitente_nome, emitente_cnpj,
+                      destinatario_nome, destinatario_cnpj, nsu, schema, xml):
+        if not self.db or not chave:
+            return
+        try:
+            existente = self.db.query(NFeDistribuida).filter(NFeDistribuida.chave_acesso == chave).first()
+            if existente:
+                return
+            reg = NFeDistribuida(
+                chave_acesso=chave,
+                numero=numero,
+                dh_emi=dh_emi,
+                valor=valor,
+                emitente_nome=emitente_nome,
+                emitente_cnpj=emitente_cnpj,
+                destinatario_nome=destinatario_nome,
+                destinatario_cnpj=destinatario_cnpj,
+                nsu=nsu,
+                schema_nfe=schema,
+                xml=xml,
+            )
+            self.db.add(reg)
+            self.db.commit()
+        except Exception as e:
+            logger.warning(f"Erro ao salvar NFe local: {e}")
+            self.db.rollback()
 
     def _extract_nfe_info(self, xml: str) -> tuple:
         chave = None

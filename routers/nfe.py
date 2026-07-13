@@ -2,7 +2,7 @@ import os
 import json
 import re
 from datetime import datetime, date
-from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException
+from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse, Response, JSONResponse
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import desc
@@ -147,11 +147,54 @@ def listar_nfe(
             NFe.numero.cast(str).ilike(f"%{busca}%")
         )
     notas = query.order_by(desc(NFe.id)).all()
+    # Carrega NFe distribuídas do banco local
+    from models import NFeDistribuida
+    cnpj_clean = re.sub(r'\D', '', empresa.cnpj) if empresa and empresa.cnpj else ''
+    todas_dist = db.query(NFeDistribuida).order_by(NFeDistribuida.nsu.desc()).all()
+    dist_emitidas = []
+    dist_recebidas = []
+    vistos = set()
+    for n in todas_dist:
+        if n.chave_acesso in vistos: continue
+        vistos.add(n.chave_acesso)
+        emit_clean = re.sub(r'\D', '', n.emitente_cnpj or '')
+        dest_clean = re.sub(r'\D', '', n.destinatario_cnpj or '')
+        info = {
+            'chaveAcesso': n.chave_acesso, 'numero': n.numero,
+            'dhEmi': n.dh_emi, 'valor': n.valor,
+            'emitente_nome': n.emitente_nome, 'emitente_cnpj': n.emitente_cnpj,
+            'destinatario_nome': n.destinatario_nome, 'destinatario_cnpj': n.destinatario_cnpj,
+        }
+        if emit_clean == cnpj_clean:
+            info['tipo'] = 'emitida'
+            dist_emitidas.append(info)
+        elif dest_clean == cnpj_clean:
+            info['tipo'] = 'recebida'
+            dist_recebidas.append(info)
+
+    # Inclui NFes emitidas localmente como 'emitidas'
+    for n in db.query(NFe).options(joinedload(NFe.cliente)).filter(
+        NFe.status.in_(['issued', 'cancelled']),
+        NFe.chave_acesso.isnot(None),
+    ).all():
+        if n.chave_acesso in vistos:
+            continue
+        vistos.add(n.chave_acesso)
+        dh_emi = n.data_emissao.strftime('%Y-%m-%dT%H:%M:%S') if n.data_emissao else ''
+        dist_emitidas.append({
+            'chaveAcesso': n.chave_acesso, 'numero': str(n.numero),
+            'dhEmi': dh_emi, 'valor': n.valor_total,
+            'emitente_nome': empresa.razao_social, 'emitente_cnpj': empresa.cnpj,
+            'destinatario_nome': n.cliente.nome if n.cliente else '',
+            'destinatario_cnpj': n.cliente.cpf_cnpj if n.cliente else '',
+        })
     return request.app.state.templates.TemplateResponse(
         "nfe/lista.html",
         {"request": request, "notas": notas, "status": status, "busca": busca,
          "messages": _get_messages(request), "empresa": empresa,
-         "STATUS_LABELS": STATUS_LABELS}
+         "STATUS_LABELS": STATUS_LABELS,
+         "dist_notas": dist_emitidas + dist_recebidas,
+         "dist_emitidas": dist_emitidas, "dist_recebidas": dist_recebidas}
     )
 
 
@@ -679,7 +722,7 @@ def _validar_rascunho(nfe, cliente, empresa) -> list:
 def nfe_distribuicao(
     request: Request, db: Session = Depends(get_db),
     data_inicio: str = Query(""), data_fim: str = Query(""),
-    tipo: str = Query(""),
+    tipo: str = Query(""), reiniciar: bool = Query(False),
 ):
     """Lista NFe (emitidas e recebidas) via SEFAZ (Distribuição DF-e)"""
     from services.nfe_distribuicao import NFeDistribuicaoService
@@ -688,54 +731,143 @@ def nfe_distribuicao(
         request.session["error"] = "Empresa sem CNPJ configurado"
         return RedirectResponse(url="/nfe", status_code=303)
 
+    from models import NFeDistribuida
     try:
-        service = NFeDistribuicaoService(empresa)
+        if reiniciar:
+            empresa.nfe_ultnsu = None
+            db.commit()
+
+        service = NFeDistribuicaoService(empresa, db=db)
         notas = service.listar_nfe(empresa.cnpj)
         cnpj_clean = re.sub(r'\D', '', empresa.cnpj)
-        for n in notas:
-            emit_clean = re.sub(r'\D', '', n.get('emitente_cnpj') or '')
-            dest_clean = re.sub(r'\D', '', n.get('destinatario_cnpj') or '')
+
+        # Carrega do banco local (inclui o que acabou de buscar + arquivo)
+        todas = db.query(NFeDistribuida).order_by(NFeDistribuida.nsu.desc()).all()
+        notas_local = []
+        previstos = set()
+        for n in todas:
+            chave = n.chave_acesso
+            if chave in previstos:
+                continue
+            previstos.add(chave)
+            emit_clean = re.sub(r'\D', '', n.emitente_cnpj or '')
+            dest_clean = re.sub(r'\D', '', n.destinatario_cnpj or '')
             if emit_clean == cnpj_clean:
-                n['tipo'] = 'emitida'
+                tipo_n = 'emitida'
             elif dest_clean == cnpj_clean:
-                n['tipo'] = 'recebida'
+                tipo_n = 'recebida'
             else:
-                n['tipo'] = 'outra'
+                tipo_n = 'outra'
+            notas_local.append({
+                'chaveAcesso': chave,
+                'numero': n.numero,
+                'dhEmi': n.dh_emi,
+                'valor': n.valor,
+                'emitente_nome': n.emitente_nome,
+                'emitente_cnpj': n.emitente_cnpj,
+                'destinatario_nome': n.destinatario_nome,
+                'destinatario_cnpj': n.destinatario_cnpj,
+                'NSU': n.nsu,
+                'schema': n.schema_nfe,
+                'tipo': tipo_n,
+                'xml': n.xml,
+            })
+
+        # Inclui NFes emitidas localmente (tabela nfe) como 'emitidas'
+        from models import NFe as NFeLocal
+        for n in db.query(NFeLocal).options(joinedload(NFeLocal.cliente)).filter(
+            NFeLocal.status.in_(['issued', 'cancelled']),
+            NFeLocal.chave_acesso.isnot(None),
+        ).all():
+            if n.chave_acesso in previstos:
+                continue
+            previstos.add(n.chave_acesso)
+            dh_emi = n.data_emissao.strftime('%Y-%m-%dT%H:%M:%S') if n.data_emissao else ''
+            notas_local.append({
+                'chaveAcesso': n.chave_acesso,
+                'numero': str(n.numero),
+                'dhEmi': dh_emi,
+                'valor': n.valor_total,
+                'emitente_nome': empresa.razao_social,
+                'emitente_cnpj': empresa.cnpj,
+                'destinatario_nome': n.cliente.nome if n.cliente else '',
+                'destinatario_cnpj': n.cliente.cpf_cnpj if n.cliente else '',
+                'NSU': '',
+                'schema': '',
+                'tipo': 'emitida',
+                'xml': '',
+            })
+
         if data_inicio:
-            notas = [n for n in notas if (n.get('dhEmi') or '')[:10] >= data_inicio]
+            notas_local = [n for n in notas_local if (n.get('dhEmi') or '')[:10] >= data_inicio]
         if data_fim:
-            notas = [n for n in notas if (n.get('dhEmi') or '')[:10] <= data_fim]
+            notas_local = [n for n in notas_local if (n.get('dhEmi') or '')[:10] <= data_fim]
         if tipo:
-            notas = [n for n in notas if n.get('tipo') == tipo]
-        emitidas = [n for n in notas if n.get('tipo') == 'emitida']
-        recebidas = [n for n in notas if n.get('tipo') == 'recebida']
+            notas_local = [n for n in notas_local if n.get('tipo') == tipo]
+        emitidas = [n for n in notas_local if n.get('tipo') == 'emitida']
+        recebidas = [n for n in notas_local if n.get('tipo') == 'recebida']
         return request.app.state.templates.TemplateResponse(
             "nfe/lista.html",
             {"request": request, "notas": [], "busca": "", "status": "",
-             "messages": [{"tipo": "success", "texto": f"SEFAZ: {len(notas)} NFe encontradas ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"}],
+             "messages": [{"tipo": "success", "texto": f"Arquivo local: {len(notas_local)} NFe ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"}],
              "empresa": empresa, "STATUS_LABELS": STATUS_LABELS,
-             "dist_notas": notas, "dist_emitidas": emitidas, "dist_recebidas": recebidas}
+             "dist_notas": notas_local, "dist_emitidas": emitidas, "dist_recebidas": recebidas}
         )
     except Exception as e:
         request.session["error"] = f"Erro SEFAZ: {str(e)}"
         return RedirectResponse(url="/nfe", status_code=303)
 
 
+@router.post("/importar-chave")
+def importar_nfe_por_chave(
+    request: Request, db: Session = Depends(get_db),
+    chave_acesso: str = Form(...),
+):
+    """Importa uma NFe pela chave de acesso via SEFAZ (consChNFe)"""
+    from services.nfe_distribuicao import NFeDistribuicaoService
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.cnpj:
+        request.session["error"] = "Empresa sem CNPJ configurado"
+        return RedirectResponse(url="/nfe", status_code=303)
+    try:
+        service = NFeDistribuicaoService(empresa, db=db)
+        resultado = service.consultar_por_chave(empresa.cnpj, chave_acesso)
+        request.session["message"] = f"NFe {resultado.get('numero', '')} importada com sucesso!"
+    except Exception as e:
+        request.session["error"] = f"Erro ao importar: {str(e)}"
+    return RedirectResponse(url="/nfe", status_code=303)
+
+
+@router.post("/importar-xml")
+def importar_nfe_xml(
+    request: Request, db: Session = Depends(get_db),
+    xml_file: UploadFile = File(...),
+):
+    """Importa uma NFe a partir do upload de um arquivo XML"""
+    from services.nfe_distribuicao import NFeDistribuicaoService
+    empresa = db.query(Empresa).first()
+    if not empresa:
+        request.session["error"] = "Empresa não configurada"
+        return RedirectResponse(url="/nfe", status_code=303)
+    try:
+        xml_str = xml_file.file.read().decode('utf-8')
+        service = NFeDistribuicaoService(empresa, db=db)
+        resultado = service.importar_xml(xml_str)
+        request.session["message"] = f"NFe {resultado.get('numero', '')} importada do XML com sucesso!"
+    except Exception as e:
+        request.session["error"] = f"Erro ao importar XML: {str(e)}"
+    return RedirectResponse(url="/nfe", status_code=303)
+
+
 @router.get("/dist-xml/{chave_acesso}")
 def nfe_dist_xml(request: Request, chave_acesso: str, db: Session = Depends(get_db)):
-    from services.nfe_distribuicao import NFeDistribuicaoService
     from fastapi.responses import Response
-    empresa = db.query(Empresa).first()
-    try:
-        service = NFeDistribuicaoService(empresa)
-        notas = service.listar_nfe(empresa.cnpj)
-        for n in notas:
-            if n.get('chaveAcesso') == chave_acesso and n.get('xml'):
-                return Response(content=n['xml'], media_type="application/xml",
-                                headers={"Content-Disposition": f"attachment; filename=nfe_{chave_acesso}.xml"})
-        return Response(status_code=404, content="XML não encontrado")
-    except Exception as e:
-        return Response(status_code=500, content=str(e))
+    from models import NFeDistribuida
+    n = db.query(NFeDistribuida).filter(NFeDistribuida.chave_acesso == chave_acesso).first()
+    if n and n.xml:
+        return Response(content=n.xml, media_type="application/xml",
+                        headers={"Content-Disposition": f"attachment; filename=nfe_{chave_acesso}.xml"})
+    return Response(status_code=404, content="XML não encontrado")
 
 
 @router.get("/{nfe_id}/previa")

@@ -112,15 +112,16 @@ def atualizar_conta_pagar(
 
 
 @router.post("/pagar/{conta_id}/excluir")
-def excluir_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
+def excluir_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
+        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
     conta = db.query(ContaPagar).filter(ContaPagar.id == conta_id).first()
-    if conta:
-        db.delete(conta)
-        db.commit()
-        request.session["message"] = "Conta a pagar excluída com sucesso!"
-    else:
-        request.session["error"] = "Conta não encontrada"
-    return RedirectResponse(url="/contas/pagar", status_code=303)
+    if not conta:
+        return JSONResponse({"erro": "Conta não encontrada"}, status_code=404)
+    db.delete(conta)
+    db.commit()
+    return JSONResponse({"ok": True, "redirect": "/contas/pagar"})
 
 
 @router.get("/receber")
@@ -215,15 +216,16 @@ def atualizar_conta_receber(
 
 
 @router.post("/receber/{conta_id}/excluir")
-def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db)):
+def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
+        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
     conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
-    if conta:
-        db.delete(conta)
-        db.commit()
-        request.session["message"] = "Conta a receber excluída com sucesso!"
-    else:
-        request.session["error"] = "Conta não encontrada"
-    return RedirectResponse(url="/contas/receber", status_code=303)
+    if not conta:
+        return JSONResponse({"erro": "Conta não encontrada"}, status_code=404)
+    db.delete(conta)
+    db.commit()
+    return JSONResponse({"ok": True, "redirect": "/contas/receber"})
 
 
 @router.post("/pagar/{conta_id}/baixar")

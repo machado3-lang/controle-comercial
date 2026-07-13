@@ -16,7 +16,7 @@ from sqlalchemy import func
 from datetime import date as date_func, datetime, timedelta
 
 from database import engine, Base, get_db
-from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario, MarcaProduto
+from models import Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda, Usuario, MarcaProduto, NFeDistribuida
 import models_nfe
 
 def get_current_user(request: Request, db: Session = Depends(get_db)):
@@ -208,6 +208,9 @@ def run_migrations():
             conn.commit()
         if "cert_validade" not in existing_emp:
             conn.execute(text("ALTER TABLE empresa ADD COLUMN cert_validade DATE"))
+            conn.commit()
+        if "nfe_ultnsu" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN nfe_ultnsu VARCHAR(20)"))
             conn.commit()
         cols_nfe = inspector.get_columns("nfe")
         existing_nfe = {c['name'] for c in cols_nfe}
@@ -403,6 +406,7 @@ def run_migrations():
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='cert_password') THEN ALTER TABLE empresa ADD COLUMN cert_password VARCHAR(100); END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='cert_base64') THEN ALTER TABLE empresa ADD COLUMN cert_base64 TEXT; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='cert_validade') THEN ALTER TABLE empresa ADD COLUMN cert_validade DATE; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='nfe_ultnsu') THEN ALTER TABLE empresa ADD COLUMN nfe_ultnsu VARCHAR(20); END IF;
                         IF (SELECT character_maximum_length FROM information_schema.columns WHERE table_name='produtos' AND column_name='codigo_tributacao_municipal') < 20 THEN ALTER TABLE produtos ALTER COLUMN codigo_tributacao_municipal TYPE VARCHAR(20); END IF;
                     END $$;
                 """))

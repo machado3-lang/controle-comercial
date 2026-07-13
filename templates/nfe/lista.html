@@ -22,7 +22,7 @@
 </div>
 
 <!-- SEFAZ Distribution Form -->
-<form action="/nfe/distribuicao" method="get" class="flex items-center flex-wrap gap-2 mb-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
+<form action="/nfe/distribuicao" method="get" class="flex items-center flex-wrap gap-2 mb-2 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
     <i data-lucide="cloud" class="w-4 h-4 text-cyan-400"></i>
     <span class="text-xs font-medium text-cyan-400 mr-1">SEFAZ:</span>
     <input type="date" name="data_inicio" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100" value="{{ request.query_params.get('data_inicio', '') }}">
@@ -36,7 +36,29 @@
     <button type="submit" class="flex items-center h-8 px-3 text-xs bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg font-medium transition-all shadow-lg shadow-cyan-500/10">
         <i data-lucide="search" class="w-3.5 h-3.5 me-1"></i> Buscar na SEFAZ
     </button>
+    <a href="/nfe/distribuicao?reiniciar=true" class="flex items-center h-8 px-3 text-xs bg-slate-700/60 text-slate-300 border border-slate-600/50 rounded-lg hover:bg-slate-700 transition" title="Reimportar todas as NFe do zero">
+        <i data-lucide="refresh-ccw" class="w-3.5 h-3.5 me-1"></i> Reiniciar
+    </a>
 </form>
+
+<!-- Import by Access Key / XML Upload -->
+<div class="flex items-center flex-wrap gap-2 mb-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
+    <i data-lucide="upload" class="w-4 h-4 text-emerald-400"></i>
+    <span class="text-xs font-medium text-emerald-400 mr-1">Importar NFe:</span>
+    <form action="/nfe/importar-chave" method="post" class="flex items-center gap-2">
+        <input type="text" name="chave_acesso" placeholder="Chave de acesso (44 dígitos)" maxlength="44" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100 w-72" pattern="[0-9]{44}" title="Digite os 44 dígitos da chave de acesso">
+        <button type="submit" class="flex items-center h-8 px-3 text-xs bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-lg font-medium transition-all shadow-lg shadow-emerald-500/10">
+            <i data-lucide="key" class="w-3.5 h-3.5 me-1"></i> Por Chave
+        </button>
+    </form>
+    <span class="text-xs text-slate-500">|</span>
+    <form action="/nfe/importar-xml" method="post" enctype="multipart/form-data" class="flex items-center gap-2">
+        <input type="file" name="xml_file" accept=".xml" required class="h-8 text-xs w-48 text-slate-300 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600">
+        <button type="submit" class="flex items-center h-8 px-3 text-xs bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-lg font-medium transition-all shadow-lg shadow-amber-500/10">
+            <i data-lucide="file-up" class="w-3.5 h-3.5 me-1"></i> XML
+        </button>
+    </form>
+</div>
 
 {% macro dist_table(notas, titulo, cor, icon) %}
 {% if notas %}

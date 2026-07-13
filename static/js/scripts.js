@@ -132,6 +132,7 @@ function excluirDireto(url) {
 function handleSubmitExclusao(form) {
     const url = form.action;
     const senha = form.senha.value;
+    const btn = form.querySelector('button[type="submit"]');
     fetch(url, {
         method: 'POST',
         credentials: 'include',
@@ -145,12 +146,17 @@ function handleSubmitExclusao(form) {
         } else if (data.ok) {
             showToast('Registro excluído', 'success');
             bootstrap.Modal.getInstance(document.getElementById('modalConfirmarExclusao')).hide();
-            setTimeout(() => window.location.href = data.redirect || '/pedidos', 500);
+            setTimeout(() => window.location.href = data.redirect || '/contas/receber', 500);
+            return;
         } else {
             showToast(data.erro || data.error || 'Erro na requisição', 'danger');
         }
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Confirmar Exclusão'; if (window.lucide) lucide.createIcons(); }
     })
-    .catch(() => showToast('Erro na requisição', 'danger'));
+    .catch(() => {
+        showToast('Erro na requisição', 'danger');
+        if (btn) { btn.disabled = false; btn.innerHTML = '<i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Confirmar Exclusão'; if (window.lucide) lucide.createIcons(); }
+    });
     return false;
 }
 
