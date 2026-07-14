@@ -453,6 +453,9 @@ function buscarBoletosSicoob() {
                 return;
             }
             boletosSicoobCache = data.boletos || [];
+            if (data._debug && Object.keys(data._debug).length) {
+                console.log('DEBUG - primeiro boleto Sicoob:', data._debug);
+            }
             renderizarBoletosSicoob();
             if (data.erros && data.erros.length) {
                 showToast(data.erros.length + ' cliente(s) com erro de consulta', 'warning');
@@ -465,12 +468,11 @@ function buscarBoletosSicoob() {
         });
 }
 
-function getSituacaoDisplay(situacao, situacaoRaw) {
+function getSituacaoDisplay(situacao) {
     const s = ((situacao || '').toString()).toLowerCase();
     if (s === '3' || s.includes('liquidado') || s.includes('pago')) return {label: 'LIQUIDADO', color: 'emerald'};
     if (s === '2' || s.includes('baixado')) return {label: 'BAIXADO', color: 'rose'};
     if (s === '1' || s.includes('aberto') || s.includes('normal')) return {label: 'EM ABERTO', color: 'blue'};
-    if (situacaoRaw) return {label: 'RAW: ' + situacaoRaw, color: 'slate'};
     return {label: 'DESCONHECIDO', color: 'slate'};
 }
 
@@ -483,7 +485,7 @@ function renderizarBoletosSicoob() {
         return;
     }
     tbody.innerHTML = boletosSicoobCache.map((b, i) => {
-        const sit = getSituacaoDisplay(b.situacao, b.situacaoRaw);
+        const sit = getSituacaoDisplay(b.situacao);
         const sel = b.nossoSistema ? 'checked disabled' : '';
         return `
             <tr class="${b.nossoSistema ? 'opacity-50' : ''}">

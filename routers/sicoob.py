@@ -709,19 +709,26 @@ def listar_boletos_sicoob(
         return {"success": False, "error": erro}
 
     def extrair_situacao(boleto: dict) -> str:
-        raw = boleto.get("situacao")
-        if raw is None:
-            raw = boleto.get("codigoSituacao") or boleto.get("situacaoCodigo")
+        for campo in ("situacao", "codigoSituacao", "situacaoCodigo", "situacaoBoleto"):
+            raw = boleto.get(campo)
+            if raw is not None:
+                break
+        else:
+            raw = None
         if isinstance(raw, dict):
             return str(raw.get("codigo", raw.get("descricao", raw)))
         return str(raw or "")
 
+    debug_amostra = {}
     vistos = set()
     boletos_unicos = []
-    for b in (boletos or []):
+    for i, b in enumerate(boletos or []):
         nn = str(b.get("nossoNumero", ""))
         if nn and nn not in vistos:
             vistos.add(nn)
+            if i == 0:
+                import json
+                debug_amostra = {k: str(v) for k, v in b.items()}
             boletos_unicos.append({
                 "nossoNumero": nn,
                 "seuNumero": str(b.get("seuNumero", "")),
@@ -731,12 +738,11 @@ def listar_boletos_sicoob(
                 "cliente": b.get("pagador", {}).get("nome", ""),
                 "cpfCnpj": b.get("pagador", {}).get("numeroCpfCnpj", ""),
                 "situacao": extrair_situacao(b),
-                "situacaoRaw": str(b.get("situacao", "")),
                 "linhaDigitavel": b.get("linhaDigitavel", ""),
                 "nossoSistema": nn in nossos_numeros,
             })
 
-    return {"success": True, "boletos": boletos_unicos, "total": len(boletos_unicos)}
+    return {"success": True, "boletos": boletos_unicos, "total": len(boletos_unicos), "_debug": debug_amostra}
 
 
 @router.post("/importar-boleto", response_class=JSONResponse)
