@@ -13,7 +13,7 @@
         <div class="flex flex-wrap items-center gap-2">
             <div class="relative">
                 <input type="text" id="filtro-busca" class="w-48 px-3 py-2 pl-8 bg-slate-900/60 border border-slate-800/80 rounded-xl text-sm text-slate-100 focus:border-cyan-500/50" placeholder="Buscar cliente..." oninput="filtrarBusca()">
-                <i data-lucide="search" class="absolute left-2.5 top-2.5 w-4 h-4 text-slate-500"></i>
+                <svg class="absolute left-2.5 top-2.5 w-4 h-4 text-slate-500" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
             </div>
             <button class="flex items-center px-3 py-2 border border-slate-800/80 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition" onclick="carregarBoletos()"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i></button>
             <button class="flex items-center px-3 py-2 bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10" onclick="syncPagamentos()"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sync Pagamentos</button>
@@ -231,6 +231,7 @@ function getStatusCor(situacao) {
 }
 
 function carregarBoletos() { filtrar(filtroAtual); }
+document.addEventListener('DOMContentLoaded', () => { carregarBoletos(); lucide.createIcons(); });
 
 function filtrarBusca() {
     buscaAtual = document.getElementById('filtro-busca').value;
