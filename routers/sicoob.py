@@ -344,9 +344,6 @@ def obter_boleto(request: Request, conta_id: str, db: Session = Depends(get_db))
 def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 1, size: int = 10, situacao: str = None, busca: str = None):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
-    token, error = get_token_or_error(db, "boletos_consulta")
-    if error:
-        return {"success": False, "error": error}
 
     hoje = date.today()
     contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
