@@ -294,6 +294,7 @@ def gerar_nfse_assinatura(request: Request, assinatura_id: int, db: Session = De
         iss_retido = getattr(assinatura.cliente, 'iss_retido', False) or False
         nfse = NFSe(
             numero=numero_nfse,
+            cliente_id=assinatura.cliente_id,
             status="rascunho",
             valor_total=assinatura.valor,
             data_emissao=datetime.now(),
@@ -302,16 +303,19 @@ def gerar_nfse_assinatura(request: Request, assinatura_id: int, db: Session = De
             aliquota_federal=empresa.aliquota_federal or 0.0,
             aliquota_estadual=empresa.aliquota_estadual or 0.0,
             aliquota_municipal=empresa.aliquota_municipal or 0.0,
+            observacoes=assinatura.observacao or "",
         )
         db.add(nfse)
         db.flush()
 
         servico = assinatura.produto
 
+        nome_servico = servico.nome if servico else ""
+        descricao_completa = f"{nome_servico} - {assinatura.descricao}" if nome_servico else assinatura.descricao
         nfse_item = NFSeItem(
             nfse_id=nfse.id,
             produto_id=servico.id if servico else None,
-            descricao=assinatura.descricao,
+            descricao=descricao_completa,
             quantidade=assinatura.quantidade or 1,
             valor_unitario=assinatura.valor / (assinatura.quantidade or 1),
             valor_total=assinatura.valor,
