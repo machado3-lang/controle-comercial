@@ -16,6 +16,18 @@ router = APIRouter(prefix="/sicoob", tags=["Sicoob"])
 SICOOO_AUTH = "https://auth.sicoob.com.br/auth/realms/cooperado/protocol/openid-connect/token"
 SICOOO_API = "https://api.sicoob.com.br/cobranca-bancaria/v3"
 
+
+def extrair_situacao(boleto: dict) -> str:
+    for campo in ("situacao", "codigoSituacao", "situacaoCodigo", "situacaoBoleto"):
+        raw = boleto.get(campo)
+        if raw is not None:
+            break
+    else:
+        raw = None
+    if isinstance(raw, dict):
+        return str(raw.get("codigo", raw.get("descricao", raw)))
+    return str(raw or "")
+
 CERT_DIR = "certs"
 
 
@@ -572,31 +584,42 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
     ).all()
     
     atualizados = 0
+    erros = []
     for conta in contas:
-        with httpx.Client(**client_args) as client:
-            resp = client.get(
-                f"{SICOOO_API}/boletos",
-                params={
-                    "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
-                    "codigoModalidade": 1,
-                    "nossoNumero": conta.api_nosso_numero or conta.nosso_numero
-                },
-                headers={"Authorization": f"Bearer {token}"}
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                boletos = data.get("resultado", {}).get("boletos", [])
-                if boletos:
-                    situacao = boletos[0].get("situacao", "").upper()
-                    if "LIQUIDADO" in situacao or "PAGO" in situacao:
-                        conta.status = StatusConta.PAGO
-                        conta.data_recebimento = date.today()
-                        atualizados += 1
-                    elif "BAIXADO" in situacao:
-                        conta.status = StatusConta.CANCELADO
-                        atualizados += 1
+        nn = conta.api_nosso_numero or conta.nosso_numero
+        try:
+            with httpx.Client(**client_args) as client:
+                resp = client.get(
+                    f"{SICOOO_API}/boletos",
+                    params={
+                        "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
+                        "codigoModalidade": 1,
+                        "nossoNumero": nn
+                    },
+                    headers={"Authorization": f"Bearer {token}"}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    boletos = data.get("resultado", {}).get("boletos", [])
+                    if not boletos:
+                        boleto_unico = data.get("resultado", {}).get("boleto") or data.get("boleto")
+                        if boleto_unico:
+                            boletos = [boleto_unico]
+                    if boletos:
+                        situacao = extrair_situacao(boletos[0]).upper()
+                        if "LIQUIDADO" in situacao or "PAGO" in situacao:
+                            conta.status = StatusConta.PAGO
+                            conta.data_recebimento = date.today()
+                            atualizados += 1
+                        elif "BAIXADO" in situacao:
+                            conta.status = StatusConta.CANCELADO
+                            atualizados += 1
+                else:
+                    erros.append(f"{nn}: HTTP {resp.status_code}")
+        except Exception as e:
+            erros.append(f"{nn}: {str(e)}")
     db.commit()
-    return {"success": True, "atualizados": atualizados}
+    return {"success": True, "atualizados": atualizados, "erros": erros}
 
 
 @router.post("/webhook", response_class=JSONResponse)
@@ -707,17 +730,6 @@ def listar_boletos_sicoob(
     boletos, erro = _buscar_boletos_por_pagador(db, cpf_cnpj, data_inicio, data_fim, codigo_situacao)
     if erro:
         return {"success": False, "error": erro}
-
-    def extrair_situacao(boleto: dict) -> str:
-        for campo in ("situacao", "codigoSituacao", "situacaoCodigo", "situacaoBoleto"):
-            raw = boleto.get(campo)
-            if raw is not None:
-                break
-        else:
-            raw = None
-        if isinstance(raw, dict):
-            return str(raw.get("codigo", raw.get("descricao", raw)))
-        return str(raw or "")
 
     debug_amostra = {}
     vistos = set()
