@@ -1,9 +1,8 @@
 import enum
-import traceback
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 
 from database import get_db
 from models import (Assinatura, AssinaturaHistorico, Cliente, Fornecedor, Empresa, Produto,
@@ -276,19 +275,19 @@ def gerar_cobranca(request: Request, assinatura_id: int, db: Session = Depends(g
 
 @router.post("/{assinatura_id}/gerar-nfse")
 def gerar_nfse_assinatura(request: Request, assinatura_id: int, db: Session = Depends(get_db)):
+    assinatura = db.query(Assinatura).options(
+        joinedload(Assinatura.cliente), joinedload(Assinatura.produto)
+    ).filter(Assinatura.id == assinatura_id).first()
+    if not assinatura:
+        request.session["error"] = "Assinatura não encontrada"
+        return RedirectResponse(url="/assinaturas", status_code=303)
+
+    empresa = db.query(Empresa).first()
+    if not empresa:
+        request.session["error"] = "Empresa não configurada"
+        return RedirectResponse(url="/assinaturas", status_code=303)
+
     try:
-        assinatura = db.query(Assinatura).options(
-            joinedload(Assinatura.cliente), joinedload(Assinatura.produto)
-        ).filter(Assinatura.id == assinatura_id).first()
-        if not assinatura:
-            request.session["error"] = "Assinatura não encontrada"
-            return RedirectResponse(url="/assinaturas", status_code=303)
-
-        empresa = db.query(Empresa).first()
-        if not empresa:
-            request.session["error"] = "Empresa não configurada"
-            return RedirectResponse(url="/assinaturas", status_code=303)
-
         numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
         empresa.ultimo_numero_nfse = int(numero_nfse)
 
@@ -329,11 +328,7 @@ def gerar_nfse_assinatura(request: Request, assinatura_id: int, db: Session = De
         request.session["message"] = f"Rascunho NFSe #{numero_nfse} gerado para assinatura! Revise antes de emitir."
         return RedirectResponse(url=f"/nfse/detalhe/{nfse.id}", status_code=303)
     except Exception as e:
-        try:
-            db.rollback()
-        except Exception:
-            pass
-        print(f"ERRO gerar NFSe assinatura {assinatura_id}: {traceback.format_exc()}")
+        db.rollback()
         request.session["error"] = f"Erro ao gerar NFSe: {str(e)}"
         return RedirectResponse(url="/assinaturas", status_code=303)
 
