@@ -357,7 +357,7 @@ def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 
             contas = contas.filter(ContaReceber.status == StatusConta.CANCELADO)
         elif s == "VENCIDO":
             contas = contas.filter(
-                ContaReceber.status == StatusConta.PENDENTE,
+                ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]),
                 ContaReceber.data_vencimento < hoje,
             )
         else:
@@ -369,7 +369,7 @@ def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 
     total = 0.0
     for c in contas.all():
         status_str = (c.status.value if hasattr(c.status, 'value') else c.status) if c.status else "pendente"
-        if status_str == "pendente" and c.data_vencimento and c.data_vencimento < hoje:
+        if status_str in ("pendente", "vencido") and c.data_vencimento and c.data_vencimento < hoje:
             status_str = "vencido"
         boletos.append({
             "id": c.id,
