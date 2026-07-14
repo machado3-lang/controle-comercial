@@ -708,6 +708,14 @@ def listar_boletos_sicoob(
     if erro:
         return {"success": False, "error": erro}
 
+    def extrair_situacao(boleto: dict) -> str:
+        raw = boleto.get("situacao")
+        if raw is None:
+            raw = boleto.get("codigoSituacao") or boleto.get("situacaoCodigo")
+        if isinstance(raw, dict):
+            return str(raw.get("codigo", raw.get("descricao", raw)))
+        return str(raw or "")
+
     vistos = set()
     boletos_unicos = []
     for b in (boletos or []):
@@ -722,7 +730,8 @@ def listar_boletos_sicoob(
                 "dataEmissao": b.get("dataEmissao", ""),
                 "cliente": b.get("pagador", {}).get("nome", ""),
                 "cpfCnpj": b.get("pagador", {}).get("numeroCpfCnpj", ""),
-                "situacao": str(b.get("situacao", "")),
+                "situacao": extrair_situacao(b),
+                "situacaoRaw": str(b.get("situacao", "")),
                 "linhaDigitavel": b.get("linhaDigitavel", ""),
                 "nossoSistema": nn in nossos_numeros,
             })
