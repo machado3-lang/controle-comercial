@@ -982,7 +982,8 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
             # Tenta baixar PDF — 1º ADN, 2º Betha, 3º fallback local
             try:
                 from services.nfse_betha import BethaNfseService
-                service = BethaNfseService()
+                _empresa_pdf = db.query(Empresa).first()
+                service = BethaNfseService(empresa=_empresa_pdf)
                 chave = nfse.codigo_verificacao
                 pdf_bytes = None
                 # 1ª tentativa: ADN (DANFSe oficial)
