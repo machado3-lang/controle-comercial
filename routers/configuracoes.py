@@ -76,6 +76,13 @@ async def salvar_configuracoes(
     sicoob_cert_password: str = Form(""),
     sicoob_cert_file: UploadFile = File(None),
     sicoob_key_file: UploadFile = File(None),
+    smtp_host: str = Form(""),
+    smtp_port: int = Form(587),
+    smtp_user: str = Form(""),
+    smtp_password: str = Form(""),
+    smtp_from_email: str = Form(""),
+    smtp_from_name: str = Form(""),
+    email_auto_enviar: str = Form(""),
     cert_file: UploadFile = File(None),
     cert_password_form: str = Form(""),
     logo: UploadFile = File(None),
@@ -210,6 +217,14 @@ async def salvar_configuracoes(
     elif cert_password_form:
         empresa.cert_password = cert_password_form
 
+    empresa.smtp_host = smtp_host or None
+    empresa.smtp_port = smtp_port or 587
+    empresa.smtp_user = smtp_user or None
+    if smtp_password:
+        empresa.smtp_password = smtp_password
+    empresa.smtp_from_email = smtp_from_email or None
+    empresa.smtp_from_name = smtp_from_name or None
+    empresa.email_auto_enviar = (email_auto_enviar == "1")
     empresa.sicoob_token = None
     empresa.updated_at = datetime.now()
     db.commit()
@@ -247,3 +262,49 @@ async def upload_restore(request: Request, arquivo: UploadFile = File(...)):
         return JSONResponse(stats)
     except Exception as e:
         return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.post("/testar-email")
+async def testar_email(request: Request, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"success": False, "error": "Nao autenticado"})
+    form = await request.form()
+    empresa = db.query(Empresa).first()
+    if not empresa:
+        return JSONResponse({"success": False, "error": "Empresa nao encontrada"})
+    empresa.smtp_host = form.get("smtp_host", "") or None
+    empresa.smtp_port = int(form.get("smtp_port", 587))
+    empresa.smtp_user = form.get("smtp_user", "") or None
+    pwd = form.get("smtp_password", "")
+    if pwd:
+        empresa.smtp_password = pwd
+    empresa.smtp_from_email = form.get("smtp_from_email", "") or None
+    empresa.smtp_from_name = form.get("smtp_from_name", "") or None
+    empresa.email_auto_enviar = (form.get("email_auto_enviar", "") == "1")
+    db.commit()
+
+    from services.email_service import enviar_email, get_smtp_config, render_email_template
+    config = get_smtp_config(db)
+    if not config:
+        return JSONResponse({"success": False, "error": "Preencha servidor, usuario e senha"})
+
+    from models import Usuario
+    usuario = db.query(Usuario).filter(Usuario.id == request.session.get("user_id")).first()
+    destinatario = usuario.email if usuario else config["from_email"]
+    corpo = render_email_template("notificacao.html", {
+        "empresa_nome": config["from_name"],
+        "cliente_nome": "Teste",
+        "descricao": "Email de teste do sistema",
+        "valor": "R$ 0,00",
+        "vencimento": "-",
+        "nosso_numero": "",
+        "numero_documento": "",
+        "nfse_numero": "",
+        "nfse_codigo_verificacao": "",
+        "whats_link": "",
+        "ano": datetime.now().year,
+    })
+    result = enviar_email(destinatario, "Teste de configuracao de email", corpo, db=db)
+    if result["success"]:
+        return JSONResponse({"success": True})
+    return JSONResponse({"success": False, "error": result.get("error", "Erro desconhecido")})
+

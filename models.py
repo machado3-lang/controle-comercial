@@ -191,12 +191,16 @@ class ContaReceber(Base):
     motivo_baixa = Column(String(100), nullable=True)
     tipo_documento_id = Column(Integer, ForeignKey("tipos_documento.id"), nullable=True)
     plano_conta_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True)
+    nfse_id = Column(Integer, ForeignKey("nfse.id"), nullable=True)
+    email_enviado = Column(Boolean, default=False)
+    data_envio_email = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     cliente = relationship("Cliente", back_populates="contas_receber")
     tipo_documento = relationship("TipoDocumento")
     plano_conta = relationship("PlanoDeContas")
+    nfse = relationship("NFSe")
 
 
 class Assinatura(Base):
@@ -481,6 +485,13 @@ class Empresa(Base):
     sicoob_cert_password = Column(String(100), nullable=True)
     sicoob_cert_base64 = Column(Text, nullable=True)  # Certificado armazenado como base64
     sicoob_cert_key_base64 = Column(Text, nullable=True)  # Chave armazenada como base64
+    smtp_host = Column(String(200), nullable=True)
+    smtp_port = Column(Integer, default=587)
+    smtp_user = Column(String(200), nullable=True)
+    smtp_password = Column(String(200), nullable=True)
+    smtp_from_email = Column(String(200), nullable=True)
+    smtp_from_name = Column(String(200), nullable=True)
+    email_auto_enviar = Column(Boolean, default=True)
     observacao = Column(Text, nullable=True)
     categoria_servico_padrao_id = Column(Integer, ForeignKey("categorias_produto.id"), nullable=True)
     notaas_api_key = Column(Text, nullable=True)

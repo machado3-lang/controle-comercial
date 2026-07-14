@@ -2,7 +2,7 @@ import os
 import json
 import logging
 from datetime import datetime, date
-from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException
+from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException, BackgroundTasks
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc
@@ -198,6 +198,7 @@ def emitir_avulsa_salvar(
                 data_vencimento=datetime.strptime(data_competencia, '%Y-%m-%d').date() if data_competencia else date.today(),
                 forma_pagamento="NFSe",
                 observacao=f"Gerado automaticamente da NFSe #{nfse.id}",
+                nfse_id=nfse.id,
             )
             db.add(cobranca)
             db.commit()
@@ -318,6 +319,7 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db))
                 data_vencimento=pedido.data,
                 forma_pagamento="NFSe",
                 observacao=f"Gerado automaticamente da NFSe #{nfse.id} (Pedido #{pedido.id})",
+                nfse_id=nfse.id,
             )
             db.add(cobranca)
             db.commit()
@@ -669,6 +671,7 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         data_vencimento=date.today(),
         forma_pagamento="NFSe",
         observacao=f"Gerado manualmente da NFSe #{nfse.id}",
+        nfse_id=nfse.id,
     )
     db.add(cobranca)
     db.commit()
@@ -723,7 +726,7 @@ def excluir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
 
 
 @router.post("/{nfse_id}/transmitir")
-def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
+def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db), background_tasks: BackgroundTasks = None):
     nfse = db.query(NFSe).options(
         selectinload(NFSe.itens),
         selectinload(NFSe.cliente),
@@ -785,6 +788,11 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
             if resultado.get('retry_iss_retido'):
                 msg += " ISS retido foi marcado automaticamente."
             request.session["message"] = msg
+            if background_tasks:
+                from services.email_service import enviar_notificacao_conta
+                cob = db.query(ContaReceber).filter(ContaReceber.nfse_id == nfse.id).first()
+                if cob:
+                    background_tasks.add_task(enviar_notificacao_conta, cob.id)
         elif sp == 'processando':
             nfse.status = "em_processamento"
             db.commit()
@@ -818,6 +826,11 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                         nfse.pdf_path = pdf_url
                     db.commit()
                     request.session["message"] = f"NFSe #{nfse.numero} já estava processada! Autorizada com sucesso."
+                    if background_tasks:
+                        from services.email_service import enviar_notificacao_conta
+                        cob = db.query(ContaReceber).filter(ContaReceber.nfse_id == nfse.id).first()
+                        if cob:
+                            background_tasks.add_task(enviar_notificacao_conta, cob.id)
                 elif sp_sync == 'processando':
                     nfse.status = "em_processamento"
                     nfse.mensagem_retorno = "DPS já recebida, aguardando processamento."
@@ -869,6 +882,11 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                             nfse.pdf_path = pdf_url
                         db.commit()
                         request.session["message"] = f"NFSe #{nfse.numero} reemitida com novo número!"
+                        if background_tasks:
+                            from services.email_service import enviar_notificacao_conta
+                            cob = db.query(ContaReceber).filter(ContaReceber.nfse_id == nfse.id).first()
+                            if cob:
+                                background_tasks.add_task(enviar_notificacao_conta, cob.id)
                     elif sp2 == 'processando':
                         nfse.status = "em_processamento"
                         nfse.mensagem_retorno = "Reenviado com novo número, aguardando processamento."

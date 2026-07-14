@@ -84,6 +84,16 @@ def run_migrations():
         "ALTER TABLE nfe ADD COLUMN IF NOT EXISTS aliquota_estadual FLOAT DEFAULT 0.0",
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS nfe_aliquota_federal FLOAT DEFAULT 0.0",
         "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS nfe_aliquota_estadual FLOAT DEFAULT 0.0",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS smtp_host VARCHAR(200)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS smtp_port INTEGER DEFAULT 587",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS smtp_user VARCHAR(200)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS smtp_password VARCHAR(200)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS smtp_from_email VARCHAR(200)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS smtp_from_name VARCHAR(200)",
+        "ALTER TABLE empresa ADD COLUMN IF NOT EXISTS email_auto_enviar BOOLEAN DEFAULT TRUE",
+        "ALTER TABLE contas_receber ADD COLUMN IF NOT EXISTS nfse_id INTEGER REFERENCES nfse(id)",
+        "ALTER TABLE contas_receber ADD COLUMN IF NOT EXISTS email_enviado BOOLEAN DEFAULT FALSE",
+        "ALTER TABLE contas_receber ADD COLUMN IF NOT EXISTS data_envio_email TIMESTAMP",
     ]
     # SQLite não suporta IF NOT EXISTS em ADD COLUMN, usar PRAGMA para verificar
     if "sqlite" in str(engine.url):
@@ -342,6 +352,38 @@ def run_migrations():
         if "plano_conta_id" not in existing_cr:
             conn.execute(text("ALTER TABLE contas_receber ADD COLUMN plano_conta_id INTEGER"))
             conn.commit()
+        if "nfse_id" not in existing_cr:
+            conn.execute(text("ALTER TABLE contas_receber ADD COLUMN nfse_id INTEGER"))
+            conn.commit()
+        if "email_enviado" not in existing_cr:
+            conn.execute(text("ALTER TABLE contas_receber ADD COLUMN email_enviado BOOLEAN DEFAULT 0"))
+            conn.commit()
+        if "data_envio_email" not in existing_cr:
+            conn.execute(text("ALTER TABLE contas_receber ADD COLUMN data_envio_email TIMESTAMP"))
+            conn.commit()
+        cols_emp = inspector.get_columns("empresa")
+        existing_emp = {c['name'] for c in cols_emp}
+        if "smtp_host" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN smtp_host VARCHAR(200)"))
+            conn.commit()
+        if "smtp_port" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN smtp_port INTEGER DEFAULT 587"))
+            conn.commit()
+        if "smtp_user" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN smtp_user VARCHAR(200)"))
+            conn.commit()
+        if "smtp_password" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN smtp_password VARCHAR(200)"))
+            conn.commit()
+        if "smtp_from_email" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN smtp_from_email VARCHAR(200)"))
+            conn.commit()
+        if "smtp_from_name" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN smtp_from_name VARCHAR(200)"))
+            conn.commit()
+        if "email_auto_enviar" not in existing_emp:
+            conn.execute(text("ALTER TABLE empresa ADD COLUMN email_auto_enviar BOOLEAN DEFAULT 1"))
+            conn.commit()
         conn.close()
     else:
         try:
@@ -427,6 +469,16 @@ def run_migrations():
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='cert_base64') THEN ALTER TABLE empresa ADD COLUMN cert_base64 TEXT; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='cert_validade') THEN ALTER TABLE empresa ADD COLUMN cert_validade DATE; END IF;
                         IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='nfe_ultnsu') THEN ALTER TABLE empresa ADD COLUMN nfe_ultnsu VARCHAR(20); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='smtp_host') THEN ALTER TABLE empresa ADD COLUMN smtp_host VARCHAR(200); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='smtp_port') THEN ALTER TABLE empresa ADD COLUMN smtp_port INTEGER DEFAULT 587; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='smtp_user') THEN ALTER TABLE empresa ADD COLUMN smtp_user VARCHAR(200); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='smtp_password') THEN ALTER TABLE empresa ADD COLUMN smtp_password VARCHAR(200); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='smtp_from_email') THEN ALTER TABLE empresa ADD COLUMN smtp_from_email VARCHAR(200); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='smtp_from_name') THEN ALTER TABLE empresa ADD COLUMN smtp_from_name VARCHAR(200); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='empresa' AND column_name='email_auto_enviar') THEN ALTER TABLE empresa ADD COLUMN email_auto_enviar BOOLEAN DEFAULT TRUE; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contas_receber' AND column_name='nfse_id') THEN ALTER TABLE contas_receber ADD COLUMN nfse_id INTEGER REFERENCES nfse(id); END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contas_receber' AND column_name='email_enviado') THEN ALTER TABLE contas_receber ADD COLUMN email_enviado BOOLEAN DEFAULT FALSE; END IF;
+                        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='contas_receber' AND column_name='data_envio_email') THEN ALTER TABLE contas_receber ADD COLUMN data_envio_email TIMESTAMP; END IF;
                         IF (SELECT character_maximum_length FROM information_schema.columns WHERE table_name='produtos' AND column_name='codigo_tributacao_municipal') < 20 THEN ALTER TABLE produtos ALTER COLUMN codigo_tributacao_municipal TYPE VARCHAR(20); END IF;
                     END $$;
                 """))

@@ -4,12 +4,12 @@ import json
 import os
 import ssl
 from datetime import datetime, timedelta, date
-from fastapi import APIRouter, Depends, Request, Form, UploadFile, File
+from fastapi import APIRouter, Depends, Request, Form, UploadFile, File, BackgroundTasks
 from fastapi.responses import RedirectResponse, JSONResponse, Response
 from sqlalchemy import func
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Empresa, ContaReceber, StatusConta
+from models import Empresa, ContaReceber, StatusConta, Cliente
 
 router = APIRouter(prefix="/sicoob", tags=["Sicoob"])
 
@@ -281,7 +281,7 @@ async def salvar_credenciais(
 
 
 @router.post("/emitir-boleto/{conta_id}")
-async def emitir_boleto_route(request: Request, conta_id: int, db: Session = Depends(get_db)):
+async def emitir_boleto_route(request: Request, conta_id: int, db: Session = Depends(get_db), background_tasks: BackgroundTasks = None):
     form = await request.form()
     numero_documento = form.get("numero_documento", "").strip() or None
     conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
@@ -294,6 +294,9 @@ async def emitir_boleto_route(request: Request, conta_id: int, db: Session = Dep
     result = emitir_boleto(db, conta)
     if result["success"]:
         request.session["message"] = {"tipo": "success", "texto": f"Boleto emitido: {result.get('boleto_url', '')}"}
+        if background_tasks:
+            from services.email_service import enviar_notificacao_conta
+            background_tasks.add_task(enviar_notificacao_conta, conta.id)
     else:
         request.session["message"] = {"tipo": "danger", "texto": f"Erro: {result['error']}"}
     return RedirectResponse(url="/contas/receber", status_code=303)
@@ -338,53 +341,64 @@ def obter_boleto(request: Request, conta_id: str, db: Session = Depends(get_db))
 
 
 @router.get("/api/listar-boletos", response_class=JSONResponse)
-def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 1, size: int = 10, situacao: str = None):
+def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 1, size: int = 10, situacao: str = None, busca: str = None):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
     token, error = get_token_or_error(db, "boletos_consulta")
     if error:
         return {"success": False, "error": error}
-    
+
+    hoje = date.today()
     contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
         ContaReceber.boleto_emitido == True
     )
     if situacao:
-        if situacao.upper() == "PAGO":
+        s = situacao.upper()
+        if s == "PAGO":
             contas = contas.filter(ContaReceber.status == StatusConta.PAGO)
-        elif situacao.upper() == "PENDENTE":
-            contas = contas.filter(ContaReceber.status == StatusConta.PENDENTE)
-        elif situacao.upper() == "CANCELADO":
+        elif s == "CANCELADO":
             contas = contas.filter(ContaReceber.status == StatusConta.CANCELADO)
+        elif s == "VENCIDO":
+            contas = contas.filter(
+                ContaReceber.status == StatusConta.PENDENTE,
+                ContaReceber.data_vencimento < hoje,
+            )
+        else:
+            contas = contas.filter(ContaReceber.status == StatusConta.PENDENTE)
+    if busca:
+        contas = contas.filter(ContaReceber.cliente.has(Cliente.nome.ilike(f"%{busca}%")))
+
     boletos = []
-    for c in contas.limit(100).all():
+    total = 0.0
+    for c in contas.all():
+        status_str = (c.status.value if hasattr(c.status, 'value') else c.status) if c.status else "pendente"
+        if status_str == "pendente" and c.data_vencimento and c.data_vencimento < hoje:
+            status_str = "vencido"
         boletos.append({
-            "id": c.id, 
-            "nossoNumero": c.api_nosso_numero or c.nosso_numero, 
+            "id": c.id,
+            "nossoNumero": c.api_nosso_numero or c.nosso_numero,
             "seuNumero": c.descricao or f"DOC-{c.id}",
-            "valor": c.valor, 
-            "dataVencimento": str(c.data_vencimento), 
+            "valor": c.valor,
+            "dataVencimento": str(c.data_vencimento),
             "dataEmissao": str(c.data_emissao) if c.data_emissao else "-",
             "cliente": c.cliente.nome if c.cliente else "",
-            "situacao": (c.status.value if hasattr(c.status, 'value') else c.status) if c.status else "pendente"
+            "situacao": status_str,
         })
-    return {"success": True, "boletos": boletos}
+        total += float(c.valor or 0)
+    return {"success": True, "boletos": boletos, "total": round(total, 2)}
 
 
-@router.get("/boleto-pdf/{nosso_numero}")
-def obter_pdf_boleto(request: Request, nosso_numero: str, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return JSONResponse(content={"success": False, "error": "Não autenticado"})
+def obter_pdf_boleto_bytes(nosso_numero: str, db) -> tuple:
     emp = get_empresa(db)
+    if not emp:
+        return None, "Empresa não encontrada"
     cert_config = get_cert_config(db)
-    
     token = refresh_sicoob_token(db, "boletos_consulta")
     if not token:
-        return {"success": False, "error": "Falha ao obter token Sicoob"}
-    
+        return None, "Falha ao obter token Sicoob"
     client_args = {"timeout": 30}
     if cert_config and "cert" in cert_config:
         client_args["cert"] = cert_config["cert"]
-    
     with httpx.Client(**client_args) as client:
         resp = client.get(
             f"{SICOOO_API}/boletos/segunda-via",
@@ -402,17 +416,28 @@ def obter_pdf_boleto(request: Request, nosso_numero: str, db: Session = Depends(
                 data = json.loads(raw_json)
                 resultado = data.get("resultado", data)
                 pdf_base64 = resultado.get("pdfBoleto", "")
+                if not pdf_base64:
+                    return None, "PDF não retornado pela API"
                 pdf_bytes = base64.b64decode(pdf_base64)
-                headers = {"Content-Disposition": f"inline; filename=boleto_{nosso_numero}.pdf"}
-                return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+                return pdf_bytes, None
             except Exception as e:
-                import traceback
-                return {"success": False, "error": f"Erro PDF: {str(e)}", "trace": traceback.format_exc()}
-        return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+                return None, str(e)
+        return None, f"HTTP {resp.status_code}: {resp.text}"
+
+
+@router.get("/boleto-pdf/{nosso_numero}")
+def obter_pdf_boleto(request: Request, nosso_numero: str, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse(content={"success": False, "error": "Não autenticado"})
+    pdf_bytes, error = obter_pdf_boleto_bytes(nosso_numero, db)
+    if pdf_bytes:
+        headers = {"Content-Disposition": f"inline; filename=boleto_{nosso_numero}.pdf"}
+        return Response(content=pdf_bytes, media_type="application/pdf", headers=headers)
+    return {"success": False, "error": error}
 
 
 @router.post("/emitir-em-lote")
-def emitir_em_lote(request: Request, db: Session = Depends(get_db)):
+def emitir_em_lote(request: Request, db: Session = Depends(get_db), background_tasks: BackgroundTasks = None):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
     emp = get_empresa(db)
@@ -432,6 +457,9 @@ def emitir_em_lote(request: Request, db: Session = Depends(get_db)):
         result = emitir_boleto(db, c)
         if result["success"]:
             sucessos += 1
+            if background_tasks:
+                from services.email_service import enviar_notificacao_conta
+                background_tasks.add_task(enviar_notificacao_conta, c.id)
         else:
             erros.append(f"Conta #{c.id}: {result['error']}")
 
@@ -724,11 +752,17 @@ async def importar_boleto(request: Request, db: Session = Depends(get_db)):
     if not nosso_numero:
         return {"success": False, "error": "nossoNumero é obrigatório"}
 
-    existente = db.query(ContaReceber).filter(
-        (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
-    ).first()
-    if existente:
-        return {"success": False, "error": "Boleto já importado no sistema"}
+    from sqlalchemy import or_
+
+    filters = [
+        ContaReceber.api_nosso_numero == nosso_numero,
+        ContaReceber.nosso_numero == nosso_numero,
+    ]
+    if seu_numero:
+        filters.append(ContaReceber.api_nosso_numero == seu_numero)
+        filters.append(ContaReceber.nosso_numero == seu_numero)
+
+    existente = db.query(ContaReceber).filter(or_(*filters)).first()
 
     try:
         cpf_cnpj_limp = ''.join(filter(str.isdigit, cpf_cnpj_raw))
@@ -769,15 +803,30 @@ async def importar_boleto(request: Request, db: Session = Depends(get_db)):
         else:
             status = StatusConta.PENDENTE
 
+        if existente:
+            existente.cliente_id = cliente.id
+            existente.valor = valor
+            existente.data_vencimento = data_vencimento
+            existente.data_emissao = data_emissao
+            existente.status = status
+            existente.boleto_emitido = True
+            if seu_numero:
+                existente.nosso_numero = seu_numero
+            existente.api_nosso_numero = nosso_numero
+            existente.boleto_url = linha_digitavel
+            db.commit()
+            return {"success": True, "message": f"Boleto {nosso_numero} atualizado", "conta_id": existente.id}
+
+        novo_numero = seu_numero or nosso_numero
         conta = ContaReceber(
             cliente_id=cliente.id,
-            descricao=f"Boleto Sicoob - {seu_numero or nosso_numero}",
+            descricao=f"Boleto Sicoob - {novo_numero}",
             valor=valor,
             data_vencimento=data_vencimento,
             data_emissao=data_emissao,
             status=status,
             boleto_emitido=True,
-            nosso_numero=seu_numero or nosso_numero,
+            nosso_numero=novo_numero,
             api_nosso_numero=nosso_numero,
             boleto_url=linha_digitavel,
         )
