@@ -585,8 +585,7 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
     
     atualizados = 0
     erros = []
-    debug_respostas = []
-    for i, conta in enumerate(contas):
+    for conta in contas:
         nn = conta.api_nosso_numero or conta.nosso_numero
         try:
             with httpx.Client(**client_args) as client:
@@ -601,20 +600,14 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
                 )
                 if resp.status_code == 200:
                     data = resp.json()
-                    if i < 3:
-                        chaves = list(data.keys())
-                        if "resultado" in data and isinstance(data["resultado"], dict):
-                            chaves_resultado = list(data["resultado"].keys())
-                            primeiro = str({k: str(data["resultado"][k])[:100] for k in list(data["resultado"].keys())[:5]})
-                        else:
-                            chaves_resultado = []
-                            primeiro = str({k: str(data[k])[:100] for k in chaves[:5]})
-                        debug_respostas.append({"nossoNumero": nn, "chaves_topo": chaves, "chaves_resultado": chaves_resultado, "amostra": primeiro})
-                    boletos = data.get("resultado", {}).get("boletos", [])
+                    resultado = data.get("resultado", {})
+                    boletos = resultado.get("boletos", [])
                     if not boletos:
-                        boleto_unico = data.get("resultado", {}).get("boleto") or data.get("boleto")
+                        boleto_unico = resultado.get("boleto")
                         if boleto_unico:
                             boletos = [boleto_unico]
+                    if not boletos and "nossoNumero" in resultado:
+                        boletos = [resultado]
                     if boletos:
                         situacao = extrair_situacao(boletos[0]).upper()
                         if "LIQUIDADO" in situacao or "PAGO" in situacao:
@@ -629,7 +622,7 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
         except Exception as e:
             erros.append(f"{nn}: {str(e)}")
     db.commit()
-    return {"success": True, "atualizados": atualizados, "erros": erros, "_debug": debug_respostas}
+    return {"success": True, "atualizados": atualizados, "erros": erros}
 
 
 @router.post("/webhook", response_class=JSONResponse)
