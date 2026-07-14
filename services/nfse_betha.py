@@ -429,8 +429,7 @@ class BethaNfseService:
         """Tenta baixar o DANFSe (PDF) do ADN: GET https://adn.nfse.gov.br/danfse/{chaveAcesso}"""
         import logging as _lg
         _lg.info(f"Baixando DANFSe ADN {chave_acesso[:10]}...")
-        session = self._get_session()
-        session.verify = False
+        session = self._get_adn_session()
         try:
             r = session.get(f"{ADN_DANFSE_URL}/{chave_acesso}", timeout=30)
             ct = r.headers.get('content-type', '')

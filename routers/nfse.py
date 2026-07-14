@@ -579,34 +579,40 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe não encontrada")
 
+    # 1. Tenta baixar DANFSe oficial (ADN + Betha)
+    if nfse.status == 'autorizada' and nfse.codigo_verificacao:
+        try:
+            from services.nfse_betha import BethaNfseService
+            service = BethaNfseService()
+            pdf_bytes = service.baixar_danfse_adn(nfse.codigo_verificacao)
+            if not pdf_bytes:
+                danfse_url = service.obter_danfse_url(str(nfse.numero), nfse.codigo_verificacao)
+                if danfse_url:
+                    import requests
+                    r = requests.get(danfse_url, timeout=30, verify=False)
+                    if r.status_code == 200 and 'application/pdf' in r.headers.get('content-type', ''):
+                        pdf_bytes = r.content
+            if pdf_bytes:
+                pdf_filename = f"nfse_{nfse.numero or nfse.id}.pdf"
+                pdf_path = f"static/uploads/nfse/{pdf_filename}"
+                os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+                with open(pdf_path, 'wb') as f:
+                    f.write(pdf_bytes)
+                nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
+                db.commit()
+                from fastapi.responses import FileResponse
+                return FileResponse(pdf_path, media_type="application/pdf",
+                                   filename=pdf_filename)
+        except Exception as e:
+            logger.warning(f"Erro ao baixar DANFSe oficial: {e}")
+
+    # 2. Fallback: PDF local já existente
     if nfse.pdf_path and os.path.exists(f".{nfse.pdf_path}"):
         from fastapi.responses import FileResponse
         return FileResponse(f".{nfse.pdf_path}", media_type="application/pdf",
                            filename=f"nfse_{nfse.numero or nfse.id}.pdf")
 
-    # Tenta baixar DANFSe da Betha
-    if nfse.status == 'autorizada' and nfse.numero:
-        try:
-            from services.nfse_betha import BethaNfseService
-            service = BethaNfseService()
-            danfse_url = service.obter_danfse_url(str(nfse.numero), nfse.codigo_verificacao)
-            if danfse_url:
-                import requests
-                r = requests.get(danfse_url, timeout=30, verify=False)
-                if r.status_code == 200 and 'application/pdf' in r.headers.get('content-type', ''):
-                    pdf_filename = f"nfse_{nfse.numero or nfse.id}.pdf"
-                    pdf_path = f"static/uploads/nfse/{pdf_filename}"
-                    os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-                    with open(pdf_path, 'wb') as f:
-                        f.write(r.content)
-                    nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
-                    db.commit()
-                    from fastapi.responses import FileResponse
-                    return FileResponse(pdf_path, media_type="application/pdf",
-                                       filename=pdf_filename)
-        except Exception as e:
-            logger.warning(f"Erro ao baixar DANFSe da Betha: {e}")
-
+    # 3. Gera PDF local novo
     empresa = db.query(Empresa).first()
     cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
     if not cliente:
