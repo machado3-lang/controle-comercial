@@ -792,10 +792,11 @@ async def importar_boleto(request: Request, db: Session = Depends(get_db)):
         except:
             data_emissao = date.today()
 
-        # Situação no Sicoob: 1=EmAberto, 3=Liquidado, 2=Baixado
-        if situacao in ("3", "LIQUIDADO", "PAGO"):
+        # Situação no Sicoob: 1=EmAberto, 2=Baixado, 3=Liquidado
+        sit_upper = situacao.upper().strip()
+        if sit_upper in ("3", "LIQUIDADO", "PAGO"):
             status = StatusConta.PAGO
-        elif situacao in ("2", "BAIXADO"):
+        elif sit_upper in ("2", "BAIXADO"):
             status = StatusConta.CANCELADO
         else:
             status = StatusConta.PENDENTE
