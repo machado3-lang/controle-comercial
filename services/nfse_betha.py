@@ -15,7 +15,7 @@ import warnings
 from typing import Optional
 from requests import Session
 from requests.auth import HTTPBasicAuth
-from datetime import datetime
+from datetime import datetime, timezone, timedelta
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -940,7 +940,14 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str
     if total_vlr == 0:
         total_vlr = float(nfse.valor_total or 0)
 
-    data_emissao = nfse.data_emissao or datetime.now()
+    FUSO_LOCAL = timezone(timedelta(hours=-4))
+    raw = nfse.data_emissao
+    if raw:
+        if raw.tzinfo is None:
+            raw = raw.replace(tzinfo=timezone.utc)
+        data_emissao = raw.astimezone(FUSO_LOCAL)
+    else:
+        data_emissao = datetime.now(FUSO_LOCAL)
 
     cod_serv = "010101"
     desc_serv = "Servicos"
@@ -991,7 +998,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
-      <dhEmi>{data_emissao.strftime('%Y-%m-%dT%H:%M:%S')}</dhEmi>
+      <dhEmi>{data_emissao.strftime('%Y-%m-%dT%H:%M:%S-04:00')}</dhEmi>
       <verAplic>fly_WS_1.1.0</verAplic>
       <serie>{serie}</serie>
       <nDPS>{ndps}</nDPS>
