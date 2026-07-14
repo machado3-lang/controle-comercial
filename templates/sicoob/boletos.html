@@ -467,10 +467,10 @@ function buscarBoletosSicoob() {
 
 function getSituacaoDisplay(situacao) {
     const s = ((situacao || '').toString()).toLowerCase();
-    if (s === '1' || s === 'entrada_normal' || s === 'emaberto' || s === 'em_aberto' || s === 'em aberto') return {label: 'EM ABERTO', color: 'blue'};
-    if (s === '2' || s === 'baixado') return {label: 'BAIXADO', color: 'rose'};
-    if (s === '3' || s === 'liquidado' || s === 'pago') return {label: 'LIQUIDADO', color: 'emerald'};
-    return {label: s || 'DESCONHECIDO', color: 'slate'};
+    if (s === '3' || s.includes('liquidado') || s.includes('pago')) return {label: 'LIQUIDADO', color: 'emerald'};
+    if (s === '2' || s.includes('baixado')) return {label: 'BAIXADO', color: 'rose'};
+    if (s === '1' || s.includes('aberto') || s.includes('normal')) return {label: 'EM ABERTO', color: 'blue'};
+    return {label: 'DESCONHECIDO', color: 'slate'};
 }
 
 function renderizarBoletosSicoob() {
