@@ -5,6 +5,7 @@ import time
 import secrets
 import urllib.parse
 from datetime import datetime, timedelta, date
+from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import RedirectResponse, JSONResponse
