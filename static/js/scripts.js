@@ -26,6 +26,22 @@ function escapeHtml(str) {
         .replace(/'/g, '&#39;');
 }
 
+// Renderiza item de produto/servico no dropdown de busca.
+// Padroniza: nome + codigo (em azul) + preco.
+function formatProdutoItem(s) {
+    if (!s) return '';
+    var html = escapeHtml(s.nome || '');
+    var codigo = s.codigo || s.codigo_lc116 || s.sku;
+    if (codigo) {
+        html += ' (<span class="text-cyan-400">' + escapeHtml(codigo) + '</span>)';
+    }
+    var preco = (typeof s.preco === 'number') ? s.preco : parseFloat(s.preco);
+    if (!isNaN(preco)) {
+        html += ' - R$ ' + preco.toFixed(2);
+    }
+    return html;
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function(el) {

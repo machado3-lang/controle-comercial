@@ -254,9 +254,8 @@ document.getElementById('servicoSearch').addEventListener('input', function(e) {
                 'data-codigo_lc116="' + (p.codigo_lc116 || '') + '" ' +
                 'data-codigo_tributacao_municipal="' + (p.codigo_tributacao_municipal || '') + '" ' +
                 'data-nome="' + p.nome.replace(/'/g, '&#39;') + '">' +
-                '<div class="font-medium text-cyan-300">' + p.nome + '</div>' +
+                '<div class="font-medium text-cyan-300">' + formatProdutoItem(p) + '</div>' +
                 '<div class="text-xs text-slate-400">LC116: ' + (p.codigo_lc116 || '010101') + (p.codigo_tributacao_municipal ? ' | NBS: ' + p.codigo_tributacao_municipal : '') + '</div>' +
-                '<div class="text-sm text-emerald-400">R$ ' + p.preco.toFixed(2) + '</div>' +
                 '</div>';
         }).join('');
         dropdown.classList.remove('hidden');

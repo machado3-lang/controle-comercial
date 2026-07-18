@@ -300,8 +300,8 @@ document.getElementById('produtoSearch').addEventListener('input', function(e) {
                 'data-id="' + p.id + '" data-preco="' + p.preco + '" data-estoque="' + p.estoque + '" ' +
                 'data-ncm="' + (p.ncm || '99999999') + '" data-un="' + (p.unidade || 'UN') + '" ' +
                 'data-codigo="' + (p.codigo || '') + '" data-nome="' + p.nome.replace(/'/g, '&#39;') + '">' +
-                '<div class="font-medium text-cyan-300">' + p.nome + '</div>' +
-                '<div class="text-xs text-slate-400">NCM: ' + (p.ncm || '99999999') + (p.codigo ? ' | Cód: ' + p.codigo : '') + '</div>' +
+                '<div class="font-medium text-cyan-300">' + formatProdutoItem(p) + '</div>' +
+                '<div class="text-xs text-slate-400">NCM: ' + (p.ncm || '99999999') + '</div>' +
                 '<div class="text-sm text-emerald-400">R$ ' + p.preco.toFixed(2) + ' <span class="text-xs ' + corEstoque + '">(Est: ' + p.estoque + ')</span></div>' +
                 '</div>';
         }).join('');

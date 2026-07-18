@@ -284,7 +284,7 @@ if (item) {
               if (term.length >= 1) {
                   const results = servicos_json.filter(s => s.nome.toLowerCase().includes(term));
                   if (results.length > 0) {
-                      servicoDropdown.innerHTML = results.map(s => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${s.id}" data-preco="${s.preco}" data-fornecedor="${s.fornecedor_id||''}">${s.nome}${s.codigo_lc116 ? ' (<span class="text-cyan-400">' + s.codigo_lc116 + '</span>)' : ''} - R$ ${s.preco.toFixed(2)}</div>`).join('');
+                      servicoDropdown.innerHTML = results.map(s => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${s.id}" data-preco="${s.preco}" data-fornecedor="${s.fornecedor_id||''}">${formatProdutoItem(s)}</div>`).join('');
                       servicoDropdown.classList.remove('hidden');
                   } else {
                       servicoDropdown.classList.add('hidden');

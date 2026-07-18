@@ -281,9 +281,8 @@ document.getElementById('itemSearch').addEventListener('input', function(e) {
             if (itens.length > 0) {
                 dropdown.innerHTML = itens.map(i => 
                     `<div class="p-3 hover:bg-slate-800/50 cursor-pointer border-b border-slate-800/30 last:border-0" data-id="${i.id}" data-preco="${i.preco}" data-tipo="${i.tipo}" data-descricao="${i.descricao}">
-                        <div class="font-medium text-cyan-300">${i.nome}</div>
+                        <div class="font-medium text-cyan-300">${formatProdutoItem(i)}</div>
                         <div class="text-xs text-slate-400">${i.descricao || ''}${i.tipo === 'kit' ? ' <span class="text-amber-400">[KIT]</span>' : i.tipo === 'servico' ? ' <span class="text-indigo-400">[SRV]</span>' : ''}</div>
-                        <div class="text-sm text-emerald-400">R$ ${i.preco.toFixed(2)}</div>
                     </div>`
                 ).join('');
                 dropdown.classList.remove('hidden');
@@ -457,9 +456,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 buscarClientes(term).then(function(clientes) {
                     if (clientes.length > 0) {
                         clientesDropdown.innerHTML = clientes.map(function(c) {
-                            return '<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer border-b border-slate-800/30 last:border-0" data-id="' + c.id + '">' +
-                                '<div class="font-medium text-sm text-cyan-300">' + formatPessoaItem(c) + '</div>' +
-                                '</div>';
+                            return '<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="' + c.id + '">' + formatPessoaItem(c) + '</div>';
                         }).join('');
                         clientesDropdown.classList.remove('hidden');
                     } else {
