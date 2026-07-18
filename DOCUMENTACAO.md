@@ -463,6 +463,10 @@ O sistema usa **dois tipos de certificado** conforme o módulo:
 | `BETHA_CNPJ` | Conforme NFSe | CNPJ do prestador |
 | `WEBHOOK_SICOOB_SECRET` / `WEBHOOK_NFE_SECRET` | Recomendada | Segredos dos webhooks (fail-closed se vazios) |
 
+> **Exemplo de `CERT_MASTER_KEY` gerado (substituir por valor próprio em produção):**
+> `CERT_MASTER_KEY=47ba13d4351ae5c50f4a4b86d4229f7662cd876ee1bafd9fd04230bbf58c75bc`
+> Este valor é um segredo. Se já houver certificados salvos com o fallback do `SECRET_KEY`, ao trocar para esta chave será necessário reenviar os certificados uma vez. Em produção, gere o seu próprio (`python -c "import secrets; print(secrets.token_hex(32))"`) e mantenha-o estável.
+
 ### Como Testar
 
 Servidor: `run_server.bat` (uvicorn, porta 3000, `--reload`). Login admin padrão: `admin@controle.com` / `admin123` (senha de teste — alterar em produção).
