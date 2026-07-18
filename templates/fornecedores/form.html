@@ -20,10 +20,10 @@
                 <input type="date" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="data_cadastro" value="{{ fornecedor.created_at.strftime('%Y-%m-%d') if fornecedor and fornecedor.created_at else '' }}">
             </div>
             <div>
-                <label class="form-label text-cyan-300">Tipo</label>
+                <label class="form-label text-cyan-300">Tipo de Pessoa</label>
                 <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="tipo_pessoa">
-                    <option value="fisica" {{ 'selected' if fornecedor and fornecedor.tipo_pessoa == 'fisica' }}>PF</option>
-                    <option value="juridica" {{ 'selected' if fornecedor and fornecedor.tipo_pessoa == 'juridica' }}>PJ</option>
+                    <option value="juridica" {{ 'selected' if (not fornecedor) or fornecedor.tipo_pessoa == 'juridica' }}>Jurídica</option>
+                    <option value="fisica" {{ 'selected' if fornecedor and fornecedor.tipo_pessoa == 'fisica' }}>Física</option>
                 </select>
             </div>
             <div>
