@@ -1,5 +1,5 @@
-from sqlalchemy import Column, Integer, BigInteger, String, Float, Date, Text, ForeignKey, DateTime, Enum, Boolean
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, Integer, BigInteger, String, Float, Numeric, Date, Text, ForeignKey, DateTime, Enum, Boolean
+from sqlalchemy.orm import relationship, deferred
 from datetime import datetime, date
 import enum
 
@@ -17,7 +17,7 @@ class NFeDistribuida(Base):
     chave_acesso = Column(String(44), unique=True, nullable=False, index=True)
     numero = Column(String(20), nullable=True)
     dh_emi = Column(String(30), nullable=True)
-    valor = Column(Float, nullable=True)
+    valor = Column(Numeric(12, 2), nullable=True)
     emitente_nome = Column(String(300), nullable=True)
     emitente_cnpj = Column(String(20), nullable=True)
     destinatario_nome = Column(String(300), nullable=True)
@@ -46,12 +46,21 @@ def recreate_tables():
 
 
 class StatusConta(str, enum.Enum):
-    PENDENTE = "pendente"
-    PAGO = "pago"
-    VENCIDO = "vencido"
-    CANCELADO = "cancelado"
-    BAIXA_SOLICITADA = "baixa_solicitada"
-    EXCLUIDO = "excluido"
+    PENDENTE = "PENDENTE"
+    PAGO = "PAGO"
+    VENCIDO = "VENCIDO"
+    CANCELADO = "CANCELADO"
+    BAIXA_SOLICITADA = "BAIXA_SOLICITADA"
+    EXCLUIDO = "EXCLUIDO"
+
+    @classmethod
+    def _missing_(cls, value):
+        if isinstance(value, str):
+            upper = value.upper()
+            for m in cls:
+                if m.value == upper:
+                    return m
+        return None
 
 
 class Usuario(Base):
@@ -150,17 +159,24 @@ class ContaPagar(Base):
     __tablename__ = "contas_pagar"
 
     id = Column(Integer, primary_key=True, index=True)
-    fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True)
+    fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True, index=True)
     descricao = Column(String(300), nullable=False)
-    valor = Column(Float, nullable=False)
-    data_vencimento = Column(Date, nullable=False)
-    data_pagamento = Column(Date, nullable=True)
-    status = Column(Enum(StatusConta), default=StatusConta.PENDENTE)
+    valor = Column(Numeric(12, 2), nullable=False)
+    valor_juros = Column(Numeric(12, 2), default=0)
+    valor_desconto = Column(Numeric(12, 2), default=0)
+    valor_total = Column(Numeric(12, 2), nullable=True)
+    data_vencimento = Column(Date, nullable=False, index=True)
+    data_pagamento = Column(Date, nullable=True, index=True)
+    status = Column(Enum(StatusConta, name='statusconta', native_enum=True), default=StatusConta.PENDENTE, index=True)
     forma_pagamento = Column(String(100), nullable=True)
+
+
+
+
     observacao = Column(Text, nullable=True)
     numero_documento = Column(String(30), nullable=True)
     tipo_documento_id = Column(Integer, ForeignKey("tipos_documento.id"), nullable=True)
-    plano_conta_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True)
+    plano_conta_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -173,16 +189,23 @@ class ContaReceber(Base):
     __tablename__ = "contas_receber"
 
     id = Column(Integer, primary_key=True, index=True)
-    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True, index=True)
     descricao = Column(String(300), nullable=False)
-    valor = Column(Float, nullable=False)
-    data_vencimento = Column(Date, nullable=False)
-    data_recebimento = Column(Date, nullable=True)
-    status = Column(Enum(StatusConta), default=StatusConta.PENDENTE)
+    valor = Column(Numeric(12, 2), nullable=False)
+    valor_juros = Column(Numeric(12, 2), default=0)
+    valor_desconto = Column(Numeric(12, 2), default=0)
+    valor_total = Column(Numeric(12, 2), nullable=True)
+    data_vencimento = Column(Date, nullable=False, index=True)
+    data_recebimento = Column(Date, nullable=True, index=True)
+    status = Column(Enum(StatusConta, name='statusconta', native_enum=True), default=StatusConta.PENDENTE, index=True)
     forma_pagamento = Column(String(100), nullable=True)
+
+
+
+
     observacao = Column(Text, nullable=True)
     nosso_numero = Column(String(30), nullable=True, unique=True)
-    boleto_emitido = Column(Boolean, default=False)
+    boleto_emitido = Column(Boolean, default=False, index=True)
     boleto_url = Column(String(500), nullable=True)
     boleto_txid = Column(String(50), nullable=True)
     numero_documento = Column(String(30), nullable=True)
@@ -190,38 +213,40 @@ class ContaReceber(Base):
     data_emissao = Column(Date, nullable=True)
     motivo_baixa = Column(String(100), nullable=True)
     tipo_documento_id = Column(Integer, ForeignKey("tipos_documento.id"), nullable=True)
-    plano_conta_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True)
+    plano_conta_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True, index=True)
     nfse_id = Column(Integer, ForeignKey("nfse.id"), nullable=True)
     email_enviado = Column(Boolean, default=False)
     data_envio_email = Column(DateTime, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    consolidacao_id = Column(Integer, ForeignKey("pedidos_consolidados.id"), nullable=True, index=True)
 
     cliente = relationship("Cliente", back_populates="contas_receber")
     tipo_documento = relationship("TipoDocumento")
     plano_conta = relationship("PlanoDeContas")
     nfse = relationship("NFSe")
+    consolidacao = relationship("PedidoConsolidado", back_populates="contas_receber")
 
 
 class Assinatura(Base):
     __tablename__ = "assinaturas"
 
     id = Column(Integer, primary_key=True, index=True)
-    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
     bling_id = Column(BigInteger, nullable=True, unique=True)
     bling_updated_at = Column(DateTime, nullable=True)
     bling_pending_sync = Column(Boolean, default=False)
     periodicidade = Column(Integer, default=1)
     descricao = Column(String(300), nullable=False)
-    valor = Column(Float, nullable=False)
+    valor = Column(Numeric(12, 2), nullable=False)
     quantidade = Column(Integer, nullable=True)
     data_inicio = Column(Date, nullable=False)
-    data_fim = Column(Date, nullable=True)
+    data_fim = Column(Date, nullable=True, index=True)
     dia_vencimento = Column(Integer, nullable=False)
     mes_vencimento = Column(Integer, default=0)
     situacao = Column(Integer, default=1)
     fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True)
-    valor_revenda = Column(Float, nullable=True)
+    valor_revenda = Column(Numeric(12, 2), nullable=True)
     numero_contrato = Column(String(50), nullable=True)
     observacao = Column(Text, nullable=True)
     produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True)
@@ -240,12 +265,12 @@ class AssinaturaHistorico(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     assinatura_id = Column(Integer, ForeignKey("assinaturas.id"), nullable=False)
-    valor_anterior = Column(Float, nullable=True)
-    valor_revenda_anterior = Column(Float, nullable=True)
+    valor_anterior = Column(Numeric(12, 2), nullable=True)
+    valor_revenda_anterior = Column(Numeric(12, 2), nullable=True)
     quantidade_anterior = Column(Integer, nullable=True)
     dia_vencimento_anterior = Column(Integer, nullable=True)
-    valor_novo = Column(Float, nullable=True)
-    valor_revenda_novo = Column(Float, nullable=True)
+    valor_novo = Column(Numeric(12, 2), nullable=True)
+    valor_revenda_novo = Column(Numeric(12, 2), nullable=True)
     quantidade_novo = Column(Integer, nullable=True)
     dia_vencimento_novo = Column(Integer, nullable=True)
     data_alteracao = Column(DateTime, default=datetime.now)
@@ -257,7 +282,7 @@ class OrdemServico(Base):
     __tablename__ = "ordens_servico"
 
     id = Column(Integer, primary_key=True, index=True)
-    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
     bling_id = Column(BigInteger, nullable=True, unique=True)
     bling_updated_at = Column(DateTime, nullable=True)
     bling_pending_sync = Column(Boolean, default=False)
@@ -268,12 +293,12 @@ class OrdemServico(Base):
     defeito_relatado = Column(Text, nullable=True)
     servicos_executados = Column(Text, nullable=True)
     pecas_utilizadas = Column(Text, nullable=True)
-    valor_servico = Column(Float, default=0)
-    valor_pecas = Column(Float, default=0)
-    valor_total = Column(Float, default=0)
+    valor_servico = Column(Numeric(12, 2), default=0)
+    valor_pecas = Column(Numeric(12, 2), default=0)
+    valor_total = Column(Numeric(12, 2), default=0)
     data_entrada = Column(Date, nullable=False, default=date.today)
     data_saida = Column(Date, nullable=True)
-    status = Column(Enum(StatusOS), default=StatusOS.ABERTA)
+    status = Column(Enum(StatusOS, native_enum=False), default=StatusOS.ABERTA, index=True)
     tecnico = Column(String(200), nullable=True)
     autorizado_por = Column(String(200), nullable=True)
     numero_requisicao = Column(String(100), nullable=True)
@@ -309,8 +334,8 @@ class Produto(Base):
     codigo = Column(String(50), nullable=True, unique=True)
     nome = Column(String(200), nullable=False)
     descricao = Column(Text, nullable=True)
-    preco = Column(Float, nullable=False, default=0)
-    preco_custo = Column(Float, nullable=True)
+    preco = Column(Numeric(12, 2), nullable=False, default=0)
+    preco_custo = Column(Numeric(12, 2), nullable=True)
     ncm = Column(String(10), nullable=True)
     origem = Column(Integer, default=0)  # 0=nacional, 1=importado
     unidade = Column(String(10), nullable=True, default="UN")
@@ -359,7 +384,7 @@ class ProdutoVariacao(Base):
     produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=False)
     nome_variacao = Column(String(100), nullable=True)
     sku = Column(String(50), nullable=False, unique=True)
-    preco_adicional = Column(Float, default=0)
+    preco_adicional = Column(Numeric(12, 2), default=0)
     estoque_atual = Column(Float, default=0)
     estoque_minimo = Column(Float, default=0)
     created_at = Column(DateTime, default=datetime.now)
@@ -387,6 +412,14 @@ class StatusPedido(str, enum.Enum):
     APROVADO = "aprovado"
     FATURADO = "faturado"
     PRE_VENDA = "pre_venda"
+    CONSOLIDADO = "consolidado"
+    CANCELADO = "cancelado"
+
+
+class StatusConsolidacao(str, enum.Enum):
+    ABERTO = "aberto"
+    PROCESSANDO = "processando"
+    CONCLUIDO = "concluido"
     CANCELADO = "cancelado"
 
 
@@ -402,17 +435,18 @@ class PedidoVenda(Base):
     __tablename__ = "pedidos_venda"
 
     id = Column(Integer, primary_key=True, index=True)
-    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False)
-    numero = Column(String(50), nullable=True)
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
+    numero = Column(String(50), nullable=True, unique=True, index=True)
     data = Column(Date, nullable=False, default=date.today)
-    status = Column(Enum(StatusPedido), default=StatusPedido.PENDENTE)
-    total = Column(Float, nullable=False, default=0)
+    status = Column(Enum(StatusPedido, native_enum=False), default=StatusPedido.PENDENTE, index=True)
+    total = Column(Numeric(12, 2), nullable=False, default=0)
     observacao = Column(Text, nullable=True)
     tipo_pedido = Column(String(20), default="venda")  # venda ou pre_venda
     forma_pagamento = Column(String(20), nullable=True)
     gerar_boleto = Column(Boolean, default=False)
     terminos_boleto = Column(Text, nullable=True)
-    pedido_agrupado_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True)  # Referência ao pedido criado pelo agrupamento
+    consolidacao_id = Column(Integer, ForeignKey("pedidos_consolidados.id"), nullable=True, index=True)
+    pedido_agrupado_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -420,7 +454,8 @@ class PedidoVenda(Base):
     itens = relationship("PedidoVendaItem", back_populates="pedido", cascade="all, delete-orphan")
     nfse = relationship("NFSe", back_populates="pedido", uselist=False)
     nfes = relationship("NFe", back_populates="pedido")
-    pedido_agrupado = relationship("PedidoVenda", remote_side=[id])
+    consolidacao = relationship("PedidoConsolidado", back_populates="pedidos_origem")
+    pedido_agrupado = relationship("PedidoVenda", remote_side=[id], backref="pedidos_origem_agrupamento")
 
 
 class PedidoVendaItem(Base):
@@ -434,8 +469,8 @@ class PedidoVendaItem(Base):
 
     descricao = Column(String(300), nullable=False)
     quantidade = Column(Float, nullable=False, default=1)
-    preco_unitario = Column(Float, nullable=False, default=0)
-    total = Column(Float, nullable=False, default=0)
+    preco_unitario = Column(Numeric(12, 2), nullable=False, default=0)
+    total = Column(Numeric(12, 2), nullable=False, default=0)
     fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True)
 
     pedido = relationship("PedidoVenda", back_populates="itens")
@@ -444,6 +479,84 @@ class PedidoVendaItem(Base):
     fornecedor = relationship("Fornecedor")
     pai = relationship("PedidoVendaItem", remote_side=[id], back_populates="filhos")
     filhos = relationship("PedidoVendaItem", back_populates="pai")
+
+
+class PedidoConsolidado(Base):
+    """Pedido consolidado/agrupado - representa o pedido final de faturamento"""
+    __tablename__ = "pedidos_consolidados"
+
+    id = Column(Integer, primary_key=True, index=True)
+    numero = Column(String(50), nullable=True, unique=True, index=True)
+    data = Column(Date, nullable=False, default=date.today)
+    data_fechamento = Column(Date, nullable=True)  # Data do fechamento mensal
+    cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
+    status = Column(Enum(StatusConsolidacao, native_enum=False), default=StatusConsolidacao.ABERTO, index=True)
+    total = Column(Numeric(12, 2), nullable=False, default=0)
+    observacao = Column(Text, nullable=True)
+    forma_pagamento = Column(String(20), nullable=True)
+    gerar_boleto = Column(Boolean, default=False)
+    terminos_boleto = Column(Text, nullable=True)
+    periodo_inicio = Column(Date, nullable=True)  # Início do período de consolidação
+    periodo_fim = Column(Date, nullable=True)     # Fim do período de consolidação
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    finalizado_at = Column(DateTime, nullable=True)
+    finalizado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+
+    cliente = relationship("Cliente")
+    pedidos_origem = relationship("PedidoVenda", back_populates="consolidacao")
+    itens = relationship("PedidoConsolidadoItem", back_populates="consolidacao", cascade="all, delete-orphan")
+    contas_receber = relationship("ContaReceber", back_populates="consolidacao")
+    nfse = relationship("NFSe", back_populates="consolidacao", uselist=False)
+    finalizador = relationship("Usuario", foreign_keys=[finalizado_por])
+
+    @property
+    def qtd_pedidos_origem(self):
+        return len(self.pedidos_origem) if self.pedidos_origem else 0
+
+    @property
+    def numeros_pedidos_origem(self):
+        return ", ".join([p.numero or f"#{p.id}" for p in self.pedidos_origem]) if self.pedidos_origem else ""
+
+
+class PedidoConsolidadoItem(Base):
+    """Itens do pedido consolidado (podem ser agregados de múltiplos pedidos)"""
+    __tablename__ = "pedidos_consolidados_itens"
+
+    id = Column(Integer, primary_key=True, index=True)
+    consolidacao_id = Column(Integer, ForeignKey("pedidos_consolidados.id"), nullable=False, index=True)
+    produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True)
+    variacao_id = Column(Integer, ForeignKey("produto_variacoes.id"), nullable=True)
+    descricao = Column(String(300), nullable=False)
+    quantidade = Column(Numeric(12, 3), nullable=False, default=0)
+    preco_unitario = Column(Numeric(12, 2), nullable=False, default=0)
+    total = Column(Numeric(12, 2), nullable=False, default=0)
+    unidade = Column(String(10), nullable=True, default="UN")
+    ncm = Column(String(10), nullable=True)
+    cfop = Column(String(4), nullable=True)
+    created_at = Column(DateTime, default=datetime.now)
+
+    consolidacao = relationship("PedidoConsolidado", back_populates="itens")
+    produto = relationship("Produto")
+    variacao = relationship("ProdutoVariacao")
+    itens_origem = relationship("PedidoConsolidadoItemOrigem", back_populates="item_consolidado", cascade="all, delete-orphan")
+
+
+class PedidoConsolidadoItemOrigem(Base):
+    """Rastreabilidade: vincula cada item consolidado aos itens originais dos pré-pedidos"""
+    __tablename__ = "pedidos_consolidados_itens_origem"
+
+    id = Column(Integer, primary_key=True, index=True)
+    item_consolidado_id = Column(Integer, ForeignKey("pedidos_consolidados_itens.id"), nullable=False, index=True)
+    pedido_origem_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=False, index=True)
+    item_origem_id = Column(Integer, ForeignKey("pedidos_venda_itens.id"), nullable=False)
+    quantidade = Column(Numeric(12, 3), nullable=False, default=0)
+    preco_unitario = Column(Numeric(12, 2), nullable=False, default=0)
+    total = Column(Numeric(12, 2), nullable=False, default=0)
+
+    item_consolidado = relationship("PedidoConsolidadoItem", back_populates="itens_origem")
+    pedido_origem = relationship("PedidoVenda", foreign_keys=[pedido_origem_id])
+    item_origem = relationship("PedidoVendaItem", foreign_keys=[item_origem_id])
 
 
 class Empresa(Base):
@@ -482,9 +595,10 @@ class Empresa(Base):
     sicoob_beneficiario = Column(String(20), nullable=True)
     sicoob_cert_path = Column(String(500), nullable=True)
     sicoob_cert_key_path = Column(String(500), nullable=True)
-    sicoob_cert_password = Column(String(100), nullable=True)
-    sicoob_cert_base64 = Column(Text, nullable=True)  # Certificado armazenado como base64
-    sicoob_cert_key_base64 = Column(Text, nullable=True)  # Chave armazenada como base64
+    sicoob_cert_password = Column(String(100), nullable=True)  # DEPRECATED: use cert_store.py instead
+    sicoob_cert_base64 = deferred(Column(Text, nullable=True))  # DEPRECATED: use cert_store.py instead
+    sicoob_cert_key_base64 = deferred(Column(Text, nullable=True))  # DEPRECATED: use cert_store.py instead
+    sicoob_cert_id = Column(Integer, nullable=True)   # ID do certificado no armazenamento seguro
     smtp_host = Column(String(200), nullable=True)
     smtp_port = Column(Integer, default=587)
     smtp_user = Column(String(200), nullable=True)
@@ -495,19 +609,24 @@ class Empresa(Base):
     observacao = Column(Text, nullable=True)
     categoria_servico_padrao_id = Column(Integer, ForeignKey("categorias_produto.id"), nullable=True)
     notaas_api_key = Column(Text, nullable=True)
-    aliquota_iss = Column(Float, nullable=False, default=2.0)
-    aliquota_federal = Column(Float, nullable=False, default=0.0)
-    aliquota_estadual = Column(Float, nullable=False, default=0.0)
-    aliquota_municipal = Column(Float, nullable=False, default=0.0)
-    nfe_aliquota_federal = Column(Float, nullable=False, default=0.0)
-    nfe_aliquota_estadual = Column(Float, nullable=False, default=0.0)
+    aliquota_iss = Column(Numeric(7, 4), nullable=False, default=2.0)
+    aliquota_federal = Column(Numeric(7, 4), nullable=False, default=0.0)
+    aliquota_estadual = Column(Numeric(7, 4), nullable=False, default=0.0)
+    aliquota_municipal = Column(Numeric(7, 4), nullable=False, default=0.0)
+    nfe_aliquota_federal = Column(Numeric(7, 4), nullable=False, default=0.0)
+    nfe_aliquota_estadual = Column(Numeric(7, 4), nullable=False, default=0.0)
     notaas_ambiente = Column(String(1), nullable=False, default="2")
     serie_nfe = Column(Integer, nullable=False, default=1)
     ultimo_numero_nfe = Column(Integer, nullable=False, default=0)
     ultimo_numero_nfse = Column(Integer, nullable=False, default=0)
+    ultimo_numero_pedido = Column(Integer, default=0)
+    ultimo_codigo_cliente = Column(Integer, default=0)
+    ultimo_codigo_fornecedor = Column(Integer, default=0)
+    ultimo_codigo_produto = Column(Integer, default=0)
     cert_path = Column(String(500), nullable=True)
-    cert_password = Column(String(100), nullable=True)
-    cert_base64 = Column(Text, nullable=True)  # Certificado A1 armazenado como base64
+    cert_password = Column(String(100), nullable=True)  # DEPRECATED: use cert_store.py instead
+    cert_base64 = deferred(Column(Text, nullable=True))  # DEPRECATED: use cert_store.py instead
+    cert_id = Column(Integer, nullable=True)   # ID do certificado no armazenamento seguro
     cert_validade = Column(Date, nullable=True)  # Data de validade do certificado
     nfe_ultnsu = Column(String(20), nullable=True)  # Último NSU consultado na SEFAZ
     cfop_padrao = Column(String(4), nullable=False, default="5102")
@@ -538,6 +657,21 @@ class PlanoDeContas(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     children = relationship("PlanoDeContas", backref="parent", remote_side=[id])
+
+
+class AuditLog(Base):
+    __tablename__ = "audit_log"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True, index=True)
+    acao = Column(String(100), nullable=False, index=True)
+    entidade = Column(String(100), nullable=True)
+    entidade_id = Column(Integer, nullable=True)
+    detalhes = Column(Text, nullable=True)
+    ip = Column(String(50), nullable=True)
+    created_at = Column(DateTime, default=datetime.now, index=True)
+
+    usuario = relationship("Usuario")
 
 
 class CfopNatureza(Base):

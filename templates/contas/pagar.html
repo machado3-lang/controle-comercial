@@ -15,6 +15,7 @@
                 <option value="pago" {{ 'selected' if status_filtro == 'pago' }}>Pago</option>
                 <option value="vencido" {{ 'selected' if status_filtro == 'vencido' }}>Vencido</option>
                 <option value="cancelado" {{ 'selected' if status_filtro == 'cancelado' }}>Cancelado</option>
+                <option value="baixa_solicitada" {{ 'selected' if status_filtro == 'baixa_solicitada' }}>Baixa Sol.</option>
             </select>
             <input type="date" class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-28 md:w-32" name="data_inicio" value="{{ data_inicio }}" onchange="this.form.submit()">
             <input type="date" class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-28 md:w-32" name="data_fim" value="{{ data_fim }}" onchange="this.form.submit()">
@@ -38,9 +39,9 @@
         <thead class="bg-slate-950/50">
             <tr>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Descrição</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase tracking-wider">Fornecedor</th>
-                <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase tracking-wider">Valor</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider">Vencimento</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase tracking-wider cursor-pointer" onclick="ordenar('fornecedor')">Fornecedor {% if sort == 'fornecedor' %}<i data-lucide="{{ 'arrow-up' if ordem == 'asc' else 'arrow-down' }}" class="w-3 h-3 inline"></i>{% endif %}</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase tracking-wider cursor-pointer" onclick="ordenar('valor')">Valor {% if sort == 'valor' %}<i data-lucide="{{ 'arrow-up' if ordem == 'asc' else 'arrow-down' }}" class="w-3 h-3 inline"></i>{% endif %}</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider cursor-pointer" onclick="ordenar('data_vencimento')">Vencimento {% if sort == 'data_vencimento' %}<i data-lucide="{{ 'arrow-up' if ordem == 'asc' else 'arrow-down' }}" class="w-3 h-3 inline"></i>{% endif %}</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase tracking-wider">Pagamento</th>
                 <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase tracking-wider">Status</th>
                 <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase tracking-wider">Ações</th>
@@ -48,23 +49,24 @@
         </thead>
         <tbody class="divide-y divide-slate-800/60">{% if not busca %}{% set busca = "" %}{% endif %}{% if not status_filtro %}{% set status_filtro = "" %}{% endif %}
             {% for c in contas %}
-            <tr class="hover:bg-slate-800/40 transition {% if c.status.value in ['vencido', 'pendente'] and c.data_vencimento < now() %}bg-rose-950/20{% endif %}">
+            <tr class="hover:bg-slate-800/40 transition {% if c.status.name.lower() in ['vencido', 'pendente'] and c.data_vencimento < now() %}bg-rose-950/20{% endif %}">
                 <td class="px-4 py-3 text-sm text-slate-100">{{ c.descricao }}</td>
                 <td class="px-4 py-3 text-sm text-slate-300">{{ c.fornecedor.nome if c.fornecedor else '-' }}</td>
                 <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(c.valor) }}</td>
-                <td class="px-4 py-3 text-sm{% if c.status.value in ['pendente', 'vencido'] and c.data_vencimento < now() %} text-rose-400{% else %} text-cyan-300{% endif %}">{{ c.data_vencimento }}</td>
+                <td class="px-4 py-3 text-sm{% if c.status.name.lower() in ['pendente', 'vencido'] and c.data_vencimento < now() %} text-rose-400{% else %} text-cyan-300{% endif %}">{{ c.data_vencimento }}</td>
                 <td class="px-4 py-3 text-sm text-emerald-300">{{ c.data_pagamento or '-' }}</td>
                 <td class="px-4 py-3 text-center">
-                    {% set cor = 'emerald' if c.status.value == 'pago' else 'amber' if c.status.value == 'pendente' else 'rose' if c.status.value == 'vencido' else 'slate' %}
-                    <span class="px-2 py-1 text-xs font-medium bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 rounded-full">{{ c.status.value }}</span>
+                    {% set status_display = 'vencido' if c.status.name.lower() in ['pendente', 'vencido'] and c.data_vencimento < now() else c.status.name.lower() %}
+                    {% set cor = 'emerald' if status_display == 'pago' else 'amber' if status_display == 'pendente' else 'rose' if status_display == 'vencido' else 'slate' %}
+                    <span class="px-2 py-1 text-xs font-medium bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 rounded-full">{{ status_display }}</span>
                 </td>
 <td class="px-4 py-3 text-center align-middle">
                      <div class="flex items-center justify-center gap-1">
-                         {% if c.status.value not in ['pago', 'cancelado', 'baixa_solicitada'] %}
+                         {% if c.status.name.lower() not in ['pago', 'cancelado', 'baixa_solicitada'] %}
                          <button type="button" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" onclick="abrirPagamento({{ c.id }}, '{{ c.descricao|e }}', '{{ c.fornecedor.nome if c.fornecedor else '---' }}', {{ c.valor }})" title="Pagar"><i data-lucide="check-circle" class="w-4 h-4"></i></button>
                          <button type="button" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" onclick="abrirEditarPagar({{ c.id }})" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></button>
                          {% endif %}
-                         {% if c.status.value == 'pago' %}
+                         {% if c.status.name.lower() == 'pago' %}
                           <button type="button" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Estornar" onclick="confirmarEstorno('/contas/pagar/{{ c.id }}/estornar')"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
                          {% else %}
                          <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarExclusao('/contas/pagar/{{ c.id }}/excluir')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
@@ -80,10 +82,38 @@
     </div>
 </div>
 
+<div class="flex items-center justify-between px-4 py-3 border-t border-slate-800/60">
+    <div class="flex items-center gap-2 text-sm text-slate-400">
+        <span>Por página:</span>
+        <select class="bg-slate-900/60 border border-slate-800/80 rounded-lg text-sm px-2 py-1 text-slate-100" onchange="irPagina(1, this.value)">
+            <option value="20" {{ 'selected' if per_page == 20 }}>20</option>
+            <option value="30" {{ 'selected' if per_page == 30 }}>30</option>
+            <option value="50" {{ 'selected' if per_page == 50 }}>50</option>
+        </select>
+        <span>Página {{ page }} de {{ total_pages }} ({{ total_count }} itens)</span>
+    </div>
+    <div class="flex items-center gap-1">
+        {% if page > 1 %}
+        <a href="#" onclick="irPagina(1, {{ per_page }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&laquo;</a>
+        <a href="#" onclick="irPagina({{ page-1 }}, {{ per_page }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&lsaquo;</a>
+        {% endif %}
+        {% set start = [1, page - 2] | max %}
+        {% set end = [total_pages, page + 2] | min %}
+        {% for p in range(start, end + 1) %}
+        <a href="#" onclick="irPagina({{ p }}, {{ per_page }}); return false;" class="px-2 py-1 text-sm border rounded-lg transition {% if p == page %}bg-cyan-500/20 text-cyan-400 border-cyan-500/50{% else %}border-slate-800/80 hover:bg-slate-800/50 text-slate-300{% endif %}">{{ p }}</a>
+        {% endfor %}
+        {% if page < total_pages %}
+        <a href="#" onclick="irPagina({{ page+1 }}, {{ per_page }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&rsaquo;</a>
+        <a href="#" onclick="irPagina({{ total_pages }}, {{ per_page }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&raquo;</a>
+        {% endif %}
+    </div>
+</div>
+
 <div class="modal fade" id="modalNova">
     <div class="modal-dialog">
         <form method="post" action="/contas/pagar/nova" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
-            <div class="modal-header border-b border-slate-800/50">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="modal-header border-b border-slate-800/50">
                 <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">Nova Conta a Pagar</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
@@ -157,7 +187,8 @@
 <div class="modal fade" id="modalEditarConta">
     <div class="modal-dialog">
         <form method="post" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl" id="formEditarConta">
-            <div class="modal-header border-b border-slate-800/50">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="modal-header border-b border-slate-800/50">
                 <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">Editar Conta a Pagar</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
@@ -175,17 +206,40 @@
 <div class="modal fade" id="modalPagar">
     <div class="modal-dialog">
         <form method="post" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl" id="formPagar">
-            <div class="modal-header border-b border-slate-800/50">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="modal-header border-b border-slate-800/50">
                 <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">Confirmar Pagamento</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
                 <p class="mb-4"><strong>Descrição:</strong> <span id="pagarDescricao" class="block text-sm text-slate-300"></span></p>
                 <p class="mb-4"><strong>Fornecedor:</strong> <span id="pagarFornecedor" class="block text-sm text-slate-300"></span></p>
-                <p class="mb-4"><strong>Valor:</strong> <span id="pagarValor" class="block font-semibold text-emerald-400 text-lg"></span></p>
-                <div class="space-y-4">
-                    <label class="block text-sm font-medium text-slate-300 mb-1">Data do Pagamento</label>
-                    <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-lg text-slate-100 focus:border-cyan-500/50" name="data_pagamento" required>
+                <p class="mb-2"><strong>Valor Original:</strong> <span id="pagarValor" class="block font-semibold text-emerald-400 text-lg"></span></p>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Valor Pago</label>
+                        <input type="number" step="0.01" min="0" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-lg text-slate-100 focus:border-cyan-500/50" name="valor_pago" id="pagarValorPago">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Data do Pagamento</label>
+                        <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-lg text-slate-100 focus:border-cyan-500/50" name="data_pagamento" id="pagarData" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-rose-400 mb-1">Juros / Multa (+)</label>
+                        <input type="number" step="0.01" min="0" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-lg text-slate-100 focus:border-cyan-500/50" name="juros" id="pagarJuros" value="0">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-emerald-400 mb-1">Desconto (-)</label>
+                        <input type="number" step="0.01" min="0" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-lg text-slate-100 focus:border-cyan-500/50" name="desconto" id="pagarDesconto" value="0">
+                    </div>
+                </div>
+                <div class="mt-3 p-3 bg-slate-950/50 border border-slate-800/50 rounded-xl flex justify-between items-center">
+                    <span class="text-slate-400 text-sm">Total Pago (real):</span>
+                    <strong class="text-emerald-400 text-lg" id="pagarTotal">R$ 0,00</strong>
+                </div>
+                <div class="mt-3">
+                    <label class="block text-xs font-medium text-rose-400 mb-1">Senha de Confirmação</label>
+                    <input type="password" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-lg text-slate-100 focus:border-cyan-500/50" name="senha" required>
                 </div>
             </div>
             <div class="modal-footer border-t border-slate-800/50">
@@ -201,10 +255,37 @@
 {% block scripts %}
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
+function irPagina(pag, tamanho) {
+    const form = document.querySelector('.flex.items-center.flex-wrap form');
+    if (!form) { location.href = '?page=' + pag + '&per_page=' + tamanho; return; }
+    let inp = document.querySelector('input[name="page"]');
+    if (!inp) { inp = document.createElement('input'); inp.type = 'hidden'; inp.name = 'page'; form.appendChild(inp); }
+    inp.value = pag;
+    let inp2 = document.querySelector('input[name="per_page"]');
+    if (!inp2) { inp2 = document.createElement('input'); inp2.type = 'hidden'; inp2.name = 'per_page'; form.appendChild(inp2); }
+    inp2.value = tamanho;
+    form.submit();
+}
+
+function ordenar(col) {
+    const url = new URL(window.location.href);
+    const atual = url.searchParams.get('sort') || '';
+    const ordemAtual = url.searchParams.get('ordem') || 'asc';
+    if (atual === col) {
+        url.searchParams.set('ordem', ordemAtual === 'asc' ? 'desc' : 'asc');
+    } else {
+        url.searchParams.set('sort', col);
+        url.searchParams.set('ordem', 'asc');
+    }
+    url.searchParams.set('page', '1');
+    window.location.href = url.toString();
+}
+
+function mudarTamanho(tamanho) { irPagina(1, tamanho); }
+
 function exportarExcel() {
-    const tabela = document.getElementById('tabelaContasPagar');
-    const wb = XLSX.utils.table_to_book(tabela, { sheet: "Contas a Pagar" });
-    XLSX.writeFile(wb, 'contas-pagar.xlsx');
+    const params = new URLSearchParams(window.location.search);
+    window.open('/contas/pagar/exportar?' + params.toString(), '_blank');
 }
 
 function exportarPdf() {

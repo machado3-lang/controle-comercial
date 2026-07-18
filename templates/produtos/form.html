@@ -7,7 +7,8 @@
     </div>
     
     <form method="post" enctype="multipart/form-data" class="p-4" id="formProduto">
-        <input type="hidden" name="situacao" id="situacaoInput" value="A">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="situacao" id="situacaoInput" value="A">
         <div class="flex flex-col md:flex-row gap-4">
             <div class="text-center">
                 <label class="block text-sm font-medium text-cyan-400 mb-2">Foto do Produto</label>

@@ -41,9 +41,15 @@
             <i data-lucide="mail" class="w-4 h-4 inline me-1"></i> Email
         </button>
     </li>
+    <li class="nav-item">
+        <a href="/configuracoes/logs" class="px-4 py-2.5 text-sm font-medium rounded-t-xl transition-all inline-block text-slate-400 hover:text-slate-200 hover:bg-slate-800/40">
+            <i data-lucide="activity" class="w-4 h-4 inline me-1"></i> Logs
+        </a>
+    </li>
 </ul>
 
 <form method="post" enctype="multipart/form-data" id="formConfig">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="aba" id="inputAba" value="{{ aba or 'empresa' }}">
 
     <!-- Aba: Dados da Empresa -->
@@ -93,14 +99,6 @@
                     </div>
                 </div>
                 <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                    <div>
-                        <h6 class="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3"><i data-lucide="lock" class="w-4 h-4 inline me-1"></i> Senha de Administrador</h6>
-                        <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Nova Senha</label><input type="password" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="senha_admin" placeholder="Digite nova senha"></div>
-                            <div><label class="block text-xs font-medium text-cyan-400 mb-1">Confirmar Senha</label><input type="password" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="senha_admin_confirm" placeholder="Confirme a senha"></div>
-                            <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Lembrete da Senha</label><input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="senha_lembrete" placeholder="Palavra-chave para lembrar" value="{{ empresa.senha_lembrete if empresa and empresa.senha_lembrete else '' }}"></div>
-                        </div>
-                    </div>
                     <div>
                         <h6 class="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3"><i data-lucide="edit-3" class="w-4 h-4 inline me-1"></i> Observação</h6>
                         <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="5">{{ empresa.observacao if empresa else '' }}</textarea>
@@ -400,17 +398,6 @@ function mudarAba(aba) {
 }
 
 document.addEventListener('DOMContentLoaded', function() {
-    const senha = document.querySelector('input[name="senha_admin"]');
-    const senhaConfirm = document.querySelector('input[name="senha_admin_confirm"]');
-    if (senha && senhaConfirm) {
-        senhaConfirm.addEventListener('input', function() {
-            if (this.value && this.value !== senha.value) {
-                this.setCustomValidity('Senhas não coincidem');
-            } else {
-                this.setCustomValidity('');
-            }
-        });
-    }
 
     const chkBling = document.getElementById('chkBlingDesabilitado');
     if (chkBling) {
@@ -431,7 +418,7 @@ document.getElementById('btnTestarEmail')?.addEventListener('click', function() 
     status.className = 'text-xs text-slate-400';
     const form = document.getElementById('formConfig');
     const formData = new FormData(form);
-    fetch('/configuracoes/testar-email', { method: 'POST', body: formData })
+        csrfFetch('/configuracoes/testar-email', { method: 'POST', body: formData })
         .then(r => r.json())
         .then(data => {
             btn.innerHTML = originalHtml;
@@ -502,7 +489,7 @@ document.querySelectorAll('.btn-bling-import').forEach(btn => {
         const statusEl = document.getElementById('blingImportStatus');
         statusEl.textContent = 'Processando...';
         statusEl.className = 'text-xs mt-2 text-slate-400';
-        fetch(url, { method: 'POST' })
+        csrfFetch(url, { method: 'POST' })
             .then(r => {
                 if (r.redirected) {
                     statusEl.textContent = 'Operação concluída. Recarregue a página para ver os números atualizados.';
@@ -535,11 +522,12 @@ if (restoreFile && btnRestore) {
         if (!file) return;
         const formData = new FormData();
         formData.append('arquivo', file);
+        const csrfToken = document.querySelector('meta[name="csrf-token"]').getAttribute('content');
         this.disabled = true;
         this.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Restaurando...';
         restoreStatus.textContent = 'Enviando e processando...';
         restoreStatus.className = 'text-xs mt-2 text-slate-400';
-        fetch('/configuracoes/restore', { method: 'POST', body: formData })
+        fetch('/configuracoes/restore?csrf_token=' + encodeURIComponent(csrfToken), { method: 'POST', body: formData })
             .then(r => r.json())
             .then(data => {
                 if (data.error) {

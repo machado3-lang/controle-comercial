@@ -12,10 +12,13 @@ IMPORTANTE:
 import os
 import logging
 import warnings
+import tempfile
 from typing import Optional
 from requests import Session
 from requests.auth import HTTPBasicAuth
 from datetime import datetime, timezone, timedelta
+
+from services.cert_store import load_certificate, extract_cert_info, create_temp_pfx
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -40,14 +43,31 @@ class BethaNfseService:
         self.senha = os.getenv('BETHA_SENHA')
         self.cert_path = cert_path or os.getenv('CERT_PATH', './certs/certificado.pfx')
         self.cert_password = cert_password or os.getenv('CERT_PASSWORD')
+        self._temp_pfx_path = None
         if empresa:
             self.load_cert_from_empresa(empresa)
         if not self.usuario or not self.senha:
             raise NFSeBethaError("Credenciais Betha não configuradas no .env")
 
     def load_cert_from_empresa(self, empresa):
-        """Carrega certificado A1 a partir do registro Empresa (do banco de dados)"""
-        import tempfile, base64
+        """
+        Carrega certificado A1 do armazenamento seguro (arquivo criptografado).
+        Fallback para base64 no banco (compatibilidade).
+        """
+        # Tenta carregar do armazenamento seguro
+        if getattr(empresa, 'cert_id', None):
+            pfx_data = load_certificate('empresa', empresa.cert_id)
+            if pfx_data:
+                self._temp_pfx_path = create_temp_pfx('empresa', empresa.cert_id)
+                self.cert_path = self._temp_pfx_path
+                self.cert_password = empresa.cert_password or os.getenv('CERT_PASSWORD', '')
+                info = extract_cert_info(pfx_data, empresa.cert_password or '')
+                if info.get('valida'):
+                    logger.info(f"Certificado NFSe carregado do armazenamento seguro. Válido até: {info['valida']}")
+                return
+
+        # Fallback: base64 no banco (modo legado)
+        import base64
         if empresa.cert_base64:
             pfx = base64.b64decode(empresa.cert_base64)
             tmp = os.path.join(tempfile.gettempdir(), 'certificado.pfx')
@@ -55,14 +75,13 @@ class BethaNfseService:
                 f.write(pfx)
             self.cert_path = tmp
             self.cert_password = empresa.cert_password or ''
+            logger.warning("Certificado carregado do banco (base64) - modo legado. Migre para armazenamento seguro.")
         elif empresa.cert_path:
             self.cert_path = empresa.cert_path
-            self.cert_password = empresa.cert_password or ''
+            self.cert_password = empresa.cert_password or os.getenv('CERT_PASSWORD', '')
 
     def _get_pem_combined(self) -> str:
-        import os
         from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
-        import tempfile
         with open(self.cert_path, 'rb') as f:
             pfx_data = f.read()
         private_key, cert, _ = pkcs12.load_key_and_certificates(
@@ -87,6 +106,14 @@ class BethaNfseService:
         session.auth = HTTPBasicAuth(self.usuario, self.senha)
         return session
 
+    def __del__(self):
+        # Limpa arquivo temporário se criado
+        if self._temp_pfx_path and os.path.exists(self._temp_pfx_path):
+            try:
+                os.unlink(self._temp_pfx_path)
+            except Exception:
+                pass
+
     def gerar_id_dps(self, cmun: str, cnpj: str, serie: str, ndps: str) -> str:
         """Gera ID DPS no formato: DPS + cMun(7) + série(1) + CNPJ(14) + 0000 + série(1) + nDPS(15) = 45 chars"""
         p1 = f'{serie}{cnpj}'
@@ -98,8 +125,6 @@ class BethaNfseService:
         try:
             logger.info(f"Enviando DPS para Betha (tpAmb={tpAmb})...")
             session = self._get_session()
-            session.verify = False
-
             soap_xml = f'''<soapenv:Envelope xmlns="http://www.betha.com.br/e-nota-dps" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
    <soapenv:Header/>
    <soapenv:Body>
@@ -147,7 +172,6 @@ class BethaNfseService:
         """Consulta status da DPS enviada"""
         logger.info(f"Consultando status da DPS {protocolo}...")
         session = self._get_session()
-        session.verify = False
         
         cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
         cnpj = os.getenv('BETHA_CNPJ', '13133714000110')
@@ -230,7 +254,7 @@ class BethaNfseService:
         """Consulta dados da NFSe via REST API (Fly e-Nota) para obter URL do DANFSe"""
         try:
             session = self._get_session()
-            session.verify = False
+            
             params = {'numero': numero}
             if codigo_verificacao:
                 params['codigoVerificacao'] = codigo_verificacao
@@ -268,7 +292,7 @@ class BethaNfseService:
     def _get_adn_session(self) -> Session:
         """Session apenas com certificado (sem basic auth) para ADN"""
         session = Session()
-        session.verify = False
+        
         if os.path.exists(self.cert_path):
             pem_path = self._get_pem_combined()
             session.cert = pem_path
@@ -450,7 +474,7 @@ class BethaNfseService:
         chave = codigo_verificacao
         logger.info(f"Consultando NFSe {numero_nfse} no SEFIN ({chave[:10]}...)...")
         session = self._get_session()
-        session.verify = False
+        
         situacao = 'normal'
 
         try:
@@ -467,7 +491,8 @@ class BethaNfseService:
             xml_b64 = data.get('nfseXmlGZipB64')
             if xml_b64:
                 try: xml_nfse = gzip.decompress(base64.b64decode(xml_b64)).decode('utf-8')
-                except Exception: pass
+                except Exception as e:
+                    logger.warning(f"Erro ao decodificar XML NFSe: {e}")
 
             # 2) Busca evento de cancelamento no SEFIN (tipoEvento 101101 = cancelamento)
             if situacao == 'normal':
@@ -524,8 +549,7 @@ class BethaNfseService:
         val = numero_nfse or protocolo
         logger.info(f"CancelarDpsEnvio {tag}={ref}...")
         session = self._get_session()
-        session.verify = False
-
+        
         cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
         cnpj = os.getenv('BETHA_CNPJ', '13133714000110')
 
@@ -625,7 +649,7 @@ class BethaNfseService:
 </soapenv:Envelope>'''
 
         session = self._get_session()
-        session.verify = False
+        
         try:
             response = session.post(
                 BETHA_NFSE_URL,
@@ -723,7 +747,7 @@ class BethaNfseService:
 </soapenv:Envelope>'''
 
         session = self._get_session()
-        session.verify = False
+        
         response = session.post(
             BETHA_NFSE_CANCEL_URL, data=soap_xml.encode('utf-8'),
             headers={'Content-Type': 'text/xml; charset=utf-8', 'SOAPAction': 'CancelarNfseEnvio'},

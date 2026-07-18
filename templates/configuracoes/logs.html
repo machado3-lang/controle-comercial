@@ -1,0 +1,98 @@
+{% extends "base.html" %}
+{% block title %}Logs de Auditoria - Controle Comercial{% endblock %}
+{% block content %}
+<div class="flex justify-between items-center mb-6">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="activity" class="w-6 h-6 inline me-2"></i> Logs de Auditoria</h4>
+    <a href="/configuracoes" class="px-4 py-2 text-sm bg-slate-800/60 border border-slate-700/60 rounded-xl text-slate-300 hover:bg-slate-700/60 transition">
+        <i data-lucide="arrow-left" class="w-4 h-4 inline me-1"></i> Voltar
+    </a>
+</div>
+
+<form method="get" action="/configuracoes/logs" class="bg-slate-900/40 border border-slate-800/50 rounded-2xl p-4 mb-4 flex flex-wrap items-end gap-3">
+    <div>
+        <label class="block text-xs font-medium text-cyan-400 mb-1">Data Início</label>
+        <input type="date" name="data_inicio" value="{{ data_inicio }}" class="w-40 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+    </div>
+    <div>
+        <label class="block text-xs font-medium text-cyan-400 mb-1">Data Fim</label>
+        <input type="date" name="data_fim" value="{{ data_fim }}" class="w-40 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+    </div>
+    <div>
+        <label class="block text-xs font-medium text-cyan-400 mb-1">Usuário</label>
+        <select name="usuario_id" class="w-48 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+            <option value="0">Todos</option>
+            {% for u in usuarios %}
+            <option value="{{ u.id }}" {{ 'selected' if u.id == usuario_id }}>{{ u.nome }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="block text-xs font-medium text-cyan-400 mb-1">Ação</label>
+        <select name="acao" class="w-44 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+            <option value="">Todas</option>
+            {% for a in acoes %}
+            <option value="{{ a }}" {{ 'selected' if a == acao }}>{{ a }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="block text-xs font-medium text-cyan-400 mb-1">Entidade</label>
+        <select name="entidade" class="w-44 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+            <option value="">Todas</option>
+            {% for e in entidades %}
+            <option value="{{ e }}" {{ 'selected' if e == entidade }}>{{ e }}</option>
+            {% endfor %}
+        </select>
+    </div>
+    <div>
+        <label class="block text-xs font-medium text-cyan-400 mb-1">Detalhes (busca)</label>
+        <input type="text" name="detalhes" value="{{ detalhes }}" placeholder="Palavra-chave..." class="w-48 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+    </div>
+    <button type="submit" class="px-4 py-2 bg-cyan-600/80 hover:bg-cyan-600 text-white rounded-xl font-medium transition"><i data-lucide="filter" class="w-4 h-4 inline me-1"></i> Filtrar</button>
+    <a href="/configuracoes/logs" class="px-4 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition">Limpar</a>
+</form>
+
+<div class="bg-slate-900/40 border border-slate-800/50 rounded-2xl overflow-hidden">
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead>
+                {% macro sort_url(col) %}/configuracoes/logs?{% if data_inicio %}data_inicio={{ data_inicio }}&{% endif %}{% if data_fim %}data_fim={{ data_fim }}&{% endif %}{% if usuario_id %}usuario_id={{ usuario_id }}&{% endif %}{% if acao %}acao={{ acao }}&{% endif %}{% if entidade %}entidade={{ entidade }}&{% endif %}{% if detalhes %}detalhes={{ detalhes }}&{% endif %}sort={{ col }}&ordem={% if sort == col and ordem != 'asc' %}asc{% else %}desc{% endif %}{% endmacro %}
+                {% macro sort_ind(col) %}{% if sort == col %}{% if ordem == 'asc' %} ▲{% else %} ▼{% endif %}{% endif %}{% endmacro %}
+                <tr class="border-b border-slate-800/60 text-xs uppercase tracking-wider text-slate-500">
+                    <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-cyan-300"><a href="{{ sort_url('data') }}">Data/Hora{{ sort_ind('data') }}</a></th>
+                    <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-cyan-300"><a href="{{ sort_url('usuario') }}">Usuário{{ sort_ind('usuario') }}</a></th>
+                    <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-cyan-300"><a href="{{ sort_url('acao') }}">Ação{{ sort_ind('acao') }}</a></th>
+                    <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-cyan-300"><a href="{{ sort_url('entidade') }}">Entidade{{ sort_ind('entidade') }}</a></th>
+                    <th class="px-4 py-3 text-left">ID</th>
+                    <th class="px-4 py-3 text-left cursor-pointer select-none hover:text-cyan-300"><a href="{{ sort_url('detalhes') }}">Detalhes{{ sort_ind('detalhes') }}</a></th>
+                    <th class="px-4 py-3 text-left">IP</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for log in logs %}
+                <tr class="border-b border-slate-800/40 hover:bg-slate-800/30 transition">
+                    <td class="px-4 py-3 text-slate-300 whitespace-nowrap">{{ log.created_at.strftime('%d/%m/%Y %H:%M') }}</td>
+                    <td class="px-4 py-3 text-slate-300">{{ log.usuario.nome if log.usuario else 'Sistema' }}</td>
+                    <td class="px-4 py-3">
+                        <span class="px-2 py-1 text-xs font-medium rounded-full
+                            {% if log.acao == 'excluir' %}bg-rose-950/50 text-rose-400
+                            {% elif log.acao == 'salvar_configuracoes' %}bg-cyan-950/50 text-cyan-400
+                            {% else %}bg-slate-800/50 text-slate-400{% endif %}">
+                            {{ log.acao }}
+                        </span>
+                    </td>
+                    <td class="px-4 py-3 text-slate-400">{{ log.entidade or '-' }}</td>
+                    <td class="px-4 py-3 text-slate-400">{{ log.entidade_id or '-' }}</td>
+                    <td class="px-4 py-3 text-slate-300 max-w-xs truncate">{{ log.detalhes or '-' }}</td>
+                    <td class="px-4 py-3 text-slate-500 text-xs">{{ log.ip or '-' }}</td>
+                </tr>
+                {% else %}
+                <tr><td colspan="7" class="px-4 py-12 text-center text-slate-500">Nenhum registro de auditoria encontrado</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% include "partials/paginacao.html" %}
+{% endblock %}

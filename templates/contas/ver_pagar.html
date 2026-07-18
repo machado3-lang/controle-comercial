@@ -14,9 +14,14 @@
                     <div><span class="text-emerald-400">Fornecedor:</span> {{ conta.fornecedor.nome if conta.fornecedor else "-" }}</div>
                     <div><span class="text-cyan-400">Descrição:</span> {{ conta.descricao }}</div>
                     <div><span class="text-amber-400">Valor:</span> R$ {{ "%.2f"|format(conta.valor) }}</div>
+                    {% if conta.status.name == 'PAGO' %}
+                    <div><span class="text-rose-400">Juros/Multa:</span> R$ {{ "%.2f"|format(conta.valor_juros or 0) }}</div>
+                    <div><span class="text-emerald-400">Desconto:</span> R$ {{ "%.2f"|format(conta.valor_desconto or 0) }}</div>
+                    <div><span class="text-cyan-300 font-semibold">Total Pago (real):</span> R$ {{ "%.2f"|format(conta.valor_total or conta.valor) }}</div>
+                    {% endif %}
                     <div><span class="text-cyan-400">Vencimento:</span> {{ conta.data_vencimento.strftime('%d/%m/%Y') }}</div>
                     <div><span class="text-emerald-400">Pagamento:</span> {{ conta.data_pagamento.strftime('%d/%m/%Y') if conta.data_pagamento else "-" }}</div>
-                    <div><span class="text-rose-400">Status:</span> {{ conta.status.value }}</div>
+                    <div><span class="text-rose-400">Status:</span> {{ conta.status.name.lower() }}</div>
                     <div><span class="text-slate-400">Nº Documento:</span> {{ conta.numero_documento or "-" }}</div>
                     <div><span class="text-slate-400">Forma Pagamento:</span> {{ conta.forma_pagamento or "-" }}</div>
                     <div><span class="text-slate-400">Tipo Documento:</span> {{ conta.tipo_documento.nome if conta.tipo_documento else "-" }}</div>
@@ -27,7 +32,7 @@
         </div>
         <div class="mt-6 flex gap-2">
             <button onclick="window.location='/contas/pagar/{{ conta.id }}/editar'" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl transition"><i data-lucide="edit" class="w-4 h-4 inline me-1"></i> Editar</button>
-            <button onclick="if(confirm('Excluir?')) { fetch('/contas/pagar/{{ conta.id }}/excluir', {method: 'POST'}).then(() => window.location='/contas/pagar'); }" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition"><i data-lucide="trash-2" class="w-4 h-4 inline me-1"></i> Excluir</button>
+            <button onclick="if(confirm('Excluir?')) { csrfFetch('/contas/pagar/{{ conta.id }}/excluir', {method: 'POST'}).then(() => window.location='/contas/pagar'); }" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition"><i data-lucide="trash-2" class="w-4 h-4 inline me-1"></i> Excluir</button>
         </div>
     </div>
 </div>

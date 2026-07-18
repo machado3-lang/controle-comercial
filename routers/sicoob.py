@@ -1,15 +1,23 @@
 import base64
-import httpx
 import json
 import os
-import ssl
+import time
+import logging
+import secrets
+from decimal import Decimal, ROUND_HALF_UP
+import httpx
 from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File, BackgroundTasks
 from fastapi.responses import RedirectResponse, JSONResponse, Response
-from sqlalchemy import func
+from sqlalchemy import func, desc as sql_desc, asc as sql_asc
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Empresa, ContaReceber, StatusConta, Cliente
+from routers.contas import conta_vencida
+from app.core.security import confirma_senha_usuario
+from services.audit import registrar_auditoria
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sicoob", tags=["Sicoob"])
 
@@ -27,9 +35,6 @@ def extrair_situacao(boleto: dict) -> str:
     if isinstance(raw, dict):
         return str(raw.get("codigo", raw.get("descricao", raw)))
     return str(raw or "")
-
-CERT_DIR = "certs"
-
 
 def get_empresa(db: Session) -> Empresa | None:
     return db.query(Empresa).first()
@@ -49,17 +54,29 @@ def refresh_sicoob_token(db: Session, scope: str = "boletos_consulta") -> str | 
     cert_config = get_cert_config(db)
     cert_path = cert_config["cert"] if cert_config else None
     
-    with httpx.Client(timeout=30, cert=cert_path if cert_path else None) as client:
-        resp = client.post(
-            SICOOO_AUTH,
-            content=f"grant_type=client_credentials&client_id={emp.sicoob_client_id or ''}&scope={scope}",
-            headers={"Content-Type": "application/x-www-form-urlencoded"},
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            emp.sicoob_token = data.get("access_token")
-            db.commit()
-            return emp.sicoob_token
+    for tentativa in range(3):
+        try:
+            with httpx.Client(timeout=30, cert=cert_path if cert_path else None) as client:
+                resp = client.post(
+                    SICOOO_AUTH,
+                    content=f"grant_type=client_credentials&client_id={emp.sicoob_client_id or ''}&scope={scope}",
+                    headers={"Content-Type": "application/x-www-form-urlencoded"},
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                emp.sicoob_token = data.get("access_token")
+                db.commit()
+                return emp.sicoob_token
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (429, 502, 503, 504) and tentativa < 2:
+                time.sleep(2 ** tentativa)
+                continue
+            return None
+        except Exception as e:
+            logger.warning(f"Falha ao obter token Sicoob (tentativa {tentativa+1}/3): {e}")
+            if tentativa < 2:
+                time.sleep(2 ** tentativa)
+                continue
     return None
 
 
@@ -82,7 +99,23 @@ def get_cert_config(db: Session) -> dict | None:
     emp = get_empresa(db)
     if not emp:
         return None
-    # Preferir certificados em base64 (persistem no banco)
+    # Preferir certificados do armazenamento seguro (cert_store)
+    if emp.sicoob_cert_id:
+        from services.cert_store import load_certificate
+        cert_data = load_certificate("sicoob", emp.sicoob_cert_id)
+        if cert_data:
+            import tempfile
+            with tempfile.NamedTemporaryFile(delete=False, suffix='.pem') as f:
+                f.write(cert_data)
+                cert_path = f.name
+            key_path = None
+            key_data = load_certificate("sicoob_key", emp.sicoob_cert_id)
+            if key_data:
+                with tempfile.NamedTemporaryFile(delete=False, suffix='.pem') as f:
+                    f.write(key_data)
+                    key_path = f.name
+            return {"cert": (cert_path, key_path) if key_path else cert_path, "password": emp.sicoob_cert_password or None}
+    # Fallback: base64 legacy
     if emp.sicoob_cert_base64:
         import base64
         cert_content = base64.b64decode(emp.sicoob_cert_base64)
@@ -141,7 +174,7 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
 
     body = {
         "seuNumero": nosso_numero,
-        "valor": float(conta.valor),
+        "valor": conta.valor,
         "dataVencimento": conta.data_vencimento.strftime("%Y-%m-%d"),
         "dataEmissao": data_emissao,
         "codigoModalidade": 1,
@@ -172,28 +205,43 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
         if cert_config and "cert" in cert_config:
             client_args["cert"] = cert_config["cert"]
         
-        # Removido debug
-        with httpx.Client(**client_args) as client:
-            resp = client.post(
-                f"{SICOOO_API}/boletos",
-                json=body,
-                headers={
-                    "Authorization": f"Bearer {token}",
-                    "Content-Type": "application/json",
-                },
-            )
-            if resp.status_code == 401:
-                token = refresh_sicoob_token(db, "boletos_inclusao")
-                if not token:
-                    return {"success": False, "error": "Falha ao renovar token Sicoob"}
-                resp = client.post(
-                    f"{SICOOO_API}/boletos",
-                    json=body,
-                    headers={
-                        "Authorization": f"Bearer {token}",
-                        "Content-Type": "application/json",
-                    },
-                )
+        resp = None
+        for tentativa in range(3):
+            try:
+                with httpx.Client(**client_args) as client:
+                    resp = client.post(
+                        f"{SICOOO_API}/boletos",
+                        json=body,
+                        headers={
+                            "Authorization": f"Bearer {token}",
+                            "Content-Type": "application/json",
+                        },
+                    )
+                    if resp.status_code == 401:
+                        token = refresh_sicoob_token(db, "boletos_inclusao")
+                        if not token:
+                            return {"success": False, "error": "Falha ao renovar token Sicoob"}
+                        resp = client.post(
+                            f"{SICOOO_API}/boletos",
+                            json=body,
+                            headers={
+                                "Authorization": f"Bearer {token}",
+                                "Content-Type": "application/json",
+                            },
+                        )
+                    resp.raise_for_status()
+                    break
+            except httpx.HTTPStatusError as e:
+                resp = e.response
+                if e.response.status_code in (429, 502, 503, 504) and tentativa < 2:
+                    time.sleep(2 ** tentativa)
+                    continue
+                break
+            except Exception:
+                if tentativa < 2:
+                    time.sleep(2 ** tentativa)
+                    continue
+                break
         if resp.status_code in (200, 201):
             data = resp.json()
             resultado = data.get("resultado", data)
@@ -209,8 +257,9 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
             if api_data_emissao:
                 try:
                     conta.data_emissao = datetime.strptime(api_data_emissao, "%Y-%m-%d").date()
-                except: pass
-            
+                except Exception as e:
+                    logger.warning(f"Erro ao parsear data emissão do boleto: {e}")
+
             conta.boleto_emitido = True
             conta.boleto_url = resultado.get("codigoBarras") or resultado.get("linhaDigitavel") or "Boleto emitido"
             conta.boleto_txid = resultado.get("txid")
@@ -229,7 +278,7 @@ def pagina_sicoob(request: Request, db: Session = Depends(get_db)):
     msg = request.session.pop("message", None)
     if msg:
         messages.append(msg)
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "sicoob/index.html",
         {
             "request": request,
@@ -241,9 +290,9 @@ def pagina_sicoob(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/boletos")
 def pagina_boletos(request: Request, db: Session = Depends(get_db)):
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "sicoob/boletos.html",
-        {"request": request},
+        {"request": request, "sort": "data_vencimento", "ordem": "desc"},
     )
 
 
@@ -263,29 +312,19 @@ async def salvar_credenciais(
         emp.sicoob_client_id = sicoob_client_id or emp.sicoob_client_id
         emp.sicoob_conta_corrente = sicoob_conta_corrente or emp.sicoob_conta_corrente
         emp.sicoob_beneficiario = sicoob_beneficiario or emp.sicoob_beneficiario
-        emp.sicoob_cert_password = sicoob_cert_password or emp.sicoob_cert_password
+        if sicoob_cert_password:
+            emp.sicoob_cert_password = sicoob_cert_password
         
         if cert_file and cert_file.filename:
-            import base64
+            from services.cert_store import store_certificate
             content = await cert_file.read()
-            emp.sicoob_cert_base64 = base64.b64encode(content).decode('utf-8')
-            os.makedirs("certs", exist_ok=True)
-            ext = cert_file.filename.split('.')[-1]
-            cert_path = f"certs/cert_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}"
-            with open(cert_path, "wb") as f:
-                f.write(content)
-            emp.sicoob_cert_path = cert_path
+            store_certificate("sicoob", emp.id or 0, content, sicoob_cert_password)
+            emp.sicoob_cert_id = emp.id
         
         if key_file and key_file.filename:
-            import base64
+            from services.cert_store import store_certificate
             content = await key_file.read()
-            emp.sicoob_cert_key_base64 = base64.b64encode(content).decode('utf-8')
-            os.makedirs("certs", exist_ok=True)
-            ext = key_file.filename.split('.')[-1]
-            key_path = f"certs/key_{datetime.now().strftime('%Y%m%d%H%M%S')}.{ext}"
-            with open(key_path, "wb") as f:
-                f.write(content)
-            emp.sicoob_cert_key_path = key_path
+            store_certificate("sicoob_key", emp.id or 0, content, "")
         
         db.commit()
         request.session["message"] = {"tipo": "success", "texto": "Credenciais salvas com sucesso"}
@@ -353,36 +392,57 @@ def obter_boleto(request: Request, conta_id: str, db: Session = Depends(get_db))
 
 
 @router.get("/api/listar-boletos", response_class=JSONResponse)
-def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 1, size: int = 10, situacao: str = None, busca: str = None):
+def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 1, size: int = 20, situacao: str = None, busca: str = None, data_inicio: str = None, data_fim: str = None, sort: str = "data_vencimento", ordem: str = "desc"):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
 
     hoje = date.today()
-    contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
+    query = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
         ContaReceber.boleto_emitido == True
     )
     if situacao:
         s = situacao.upper()
         if s == "PAGO":
-            contas = contas.filter(ContaReceber.status == StatusConta.PAGO)
+            query = query.filter(ContaReceber.status == StatusConta.PAGO)
         elif s == "CANCELADO":
-            contas = contas.filter(ContaReceber.status == StatusConta.CANCELADO)
+            query = query.filter(ContaReceber.status == StatusConta.CANCELADO)
         elif s == "VENCIDO":
-            contas = contas.filter(
+            query = query.filter(
                 ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]),
                 ContaReceber.data_vencimento < hoje,
             )
         else:
-            contas = contas.filter(ContaReceber.status == StatusConta.PENDENTE)
+            query = query.filter(ContaReceber.status == StatusConta.PENDENTE)
     if busca:
-        contas = contas.filter(ContaReceber.cliente.has(Cliente.nome.ilike(f"%{busca}%")))
+        query = query.filter(ContaReceber.cliente.has(Cliente.nome.ilike(f"%{busca}%")))
+    if data_inicio:
+        try:
+            query = query.filter(ContaReceber.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
+        except ValueError:
+            logger.warning(f"Data de início inválida no filtro de boletos: {data_inicio}")
+    if data_fim:
+        try:
+            query = query.filter(ContaReceber.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
+        except ValueError:
+            logger.warning(f"Data de fim inválida no filtro de boletos: {data_fim}")
 
+    if sort == "cliente":
+        query = query.outerjoin(Cliente, ContaReceber.cliente_id == Cliente.id)
+    total_count = query.count()
+    total_pages = max(1, (total_count + size - 1) // size)
+    page = max(1, min(page, total_pages))
+    offset = (page - 1) * size
+
+    order_func = sql_desc if ordem == "desc" else sql_asc
+    if sort == "cliente":
+        ordered_query = query.order_by(order_func(Cliente.nome), ContaReceber.id)
+    else:
+        sort_col = getattr(ContaReceber, sort, ContaReceber.data_vencimento)
+        ordered_query = query.order_by(order_func(sort_col), ContaReceber.id)
     boletos = []
-    total = 0.0
-    for c in contas.all():
-        status_str = (c.status.value if hasattr(c.status, 'value') else c.status) if c.status else "pendente"
-        if status_str in ("pendente", "vencido") and c.data_vencimento and c.data_vencimento < hoje:
-            status_str = "vencido"
+    total_valor = 0.0
+    for c in ordered_query.offset(offset).limit(size).all():
+        status_str = "vencido" if conta_vencida(c, hoje) else (c.status.name.lower() if hasattr(c.status, 'name') else str(c.status)) if c.status else "pendente"
         boletos.append({
             "id": c.id,
             "nossoNumero": c.api_nosso_numero or c.nosso_numero,
@@ -390,11 +450,13 @@ def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 
             "valor": c.valor,
             "dataVencimento": str(c.data_vencimento),
             "dataEmissao": str(c.data_emissao) if c.data_emissao else "-",
+            "dataRecebimento": str(c.data_recebimento) if c.data_recebimento else None,
             "cliente": c.cliente.nome if c.cliente else "",
             "situacao": status_str,
         })
-        total += float(c.valor or 0)
-    return {"success": True, "boletos": boletos, "total": round(total, 2)}
+        total_valor += float(c.valor or 0)
+    return {"success": True, "boletos": boletos, "total": round(total_valor, 2),
+            "page": page, "size": size, "total_pages": total_pages, "total_count": total_count}
 
 
 def obter_pdf_boleto_bytes(nosso_numero: str, db) -> tuple:
@@ -408,30 +470,44 @@ def obter_pdf_boleto_bytes(nosso_numero: str, db) -> tuple:
     client_args = {"timeout": 30}
     if cert_config and "cert" in cert_config:
         client_args["cert"] = cert_config["cert"]
-    with httpx.Client(**client_args) as client:
-        resp = client.get(
-            f"{SICOOO_API}/boletos/segunda-via",
-            params={
-                "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
-                "codigoModalidade": 1,
-                "nossoNumero": nosso_numero,
-                "gerarPdf": True
-            },
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        if resp.status_code == 200:
-            try:
-                raw_json = resp.text
-                data = json.loads(raw_json)
-                resultado = data.get("resultado", data)
-                pdf_base64 = resultado.get("pdfBoleto", "")
-                if not pdf_base64:
-                    return None, "PDF não retornado pela API"
-                pdf_bytes = base64.b64decode(pdf_base64)
-                return pdf_bytes, None
-            except Exception as e:
-                return None, str(e)
-        return None, f"HTTP {resp.status_code}: {resp.text}"
+    for tentativa in range(3):
+        try:
+            with httpx.Client(**client_args) as client:
+                resp = client.get(
+                    f"{SICOOO_API}/boletos/segunda-via",
+                    params={
+                        "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
+                        "codigoModalidade": 1,
+                        "nossoNumero": nosso_numero,
+                        "gerarPdf": True
+                    },
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                resp.raise_for_status()
+                break
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (429, 502, 503, 504) and tentativa < 2:
+                time.sleep(2 ** tentativa)
+                continue
+            return None, f"HTTP {e.response.status_code}: {e.response.text}"
+        except Exception as e:
+            if tentativa < 2:
+                time.sleep(2 ** tentativa)
+                continue
+            return None, str(e)
+    if resp and resp.status_code == 200:
+        try:
+            raw_json = resp.text
+            data = json.loads(raw_json)
+            resultado = data.get("resultado", data)
+            pdf_base64 = resultado.get("pdfBoleto", "")
+            if not pdf_base64:
+                return None, "PDF não retornado pela API"
+            pdf_bytes = base64.b64decode(pdf_base64)
+            return pdf_bytes, None
+        except Exception as e:
+            return None, str(e)
+    return None, f"HTTP {resp.status_code}: {resp.text}"
 
 
 @router.get("/boleto-pdf/{nosso_numero}")
@@ -489,9 +565,10 @@ async def baixar_boleto_route(request: Request, nosso_numero: str, db: Session =
     try:
         body_req = await request.json()
         motivo = body_req.get("motivo", "")
-    except:
+    except (json.JSONDecodeError, AttributeError):
+        logger.warning(f"Falha ao decodificar JSON do corpo da requisição de baixa de boleto {nosso_numero}")
         motivo = ""
-    
+
     conta_inicial = None
     if nosso_numero.isdigit():
         conta_inicial = db.query(ContaReceber).filter(ContaReceber.id == int(nosso_numero)).first()
@@ -587,46 +664,77 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
     erros = []
     for conta in contas:
         nn = conta.api_nosso_numero or conta.nosso_numero
-        try:
-            with httpx.Client(**client_args) as client:
-                resp = client.get(
-                    f"{SICOOO_API}/boletos",
-                    params={
-                        "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
-                        "codigoModalidade": 1,
-                        "nossoNumero": nn
-                    },
-                    headers={"Authorization": f"Bearer {token}"}
-                )
-                if resp.status_code == 200:
-                    data = resp.json()
-                    resultado = data.get("resultado", {})
-                    boletos = resultado.get("boletos", [])
-                    if not boletos:
-                        boleto_unico = resultado.get("boleto")
-                        if boleto_unico:
-                            boletos = [boleto_unico]
-                    if not boletos and "nossoNumero" in resultado:
-                        boletos = [resultado]
-                    if boletos:
-                        situacao = extrair_situacao(boletos[0]).upper()
-                        if "LIQUIDADO" in situacao or "PAGO" in situacao:
-                            conta.status = StatusConta.PAGO
+        resp = None
+        for tentativa in range(3):
+            try:
+                with httpx.Client(**client_args) as client:
+                    resp = client.get(
+                        f"{SICOOO_API}/boletos",
+                        params={
+                            "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
+                            "codigoModalidade": 1,
+                            "nossoNumero": nn
+                        },
+                        headers={"Authorization": f"Bearer {token}"}
+                    )
+                    resp.raise_for_status()
+                    break
+            except httpx.HTTPStatusError as e:
+                resp = e.response
+                if e.response.status_code in (429, 502, 503, 504) and tentativa < 2:
+                    time.sleep(2 ** tentativa)
+                    continue
+                break
+            except Exception:
+                if tentativa < 2:
+                    time.sleep(2 ** tentativa)
+                    continue
+                break
+        if resp is not None and resp.status_code == 200:
+            data = resp.json()
+            resultado = data.get("resultado", {})
+            boletos = resultado.get("boletos", [])
+            if not boletos:
+                boleto_unico = resultado.get("boleto")
+                if boleto_unico:
+                    boletos = [boleto_unico]
+            if not boletos and "nossoNumero" in resultado:
+                boletos = [resultado]
+            if boletos:
+                boleto_data = boletos[0]
+                situacao = extrair_situacao(boleto_data).upper()
+                if "LIQUIDADO" in situacao or "PAGO" in situacao:
+                    conta.status = StatusConta.PAGO
+                    data_pgto = boleto_data.get("dataPagamento") or boleto_data.get("dataLiquidacao") or boleto_data.get("dataCredito")
+                    if data_pgto:
+                        try:
+                            conta.data_recebimento = datetime.strptime(str(data_pgto)[:10], "%Y-%m-%d").date()
+                        except (ValueError, TypeError):
+                            logger.warning(f"Data de pagamento inválida ao sincronizar boleto {nn}: {data_pgto}")
                             conta.data_recebimento = date.today()
-                            atualizados += 1
-                        elif "BAIXADO" in situacao:
-                            conta.status = StatusConta.CANCELADO
-                            atualizados += 1
-                else:
-                    erros.append(f"{nn}: HTTP {resp.status_code}")
-        except Exception as e:
-            erros.append(f"{nn}: {str(e)}")
+                    else:
+                        conta.data_recebimento = date.today()
+                    atualizados += 1
+                elif "BAIXADO" in situacao:
+                    conta.status = StatusConta.CANCELADO
+                    atualizados += 1
+        elif resp is not None:
+            erros.append(f"{nn}: HTTP {resp.status_code}")
+        else:
+            erros.append(f"{nn}: falha de conexão")
     db.commit()
     return {"success": True, "atualizados": atualizados, "erros": erros}
 
 
 @router.post("/webhook", response_class=JSONResponse)
 async def webhook_sicoob(request: Request, db: Session = Depends(get_db)):
+    webhook_secret = os.environ.get("WEBHOOK_SICOOB_SECRET", "")
+    if not webhook_secret:
+        logger.warning("WEBHOOK_SICOOB_SECRET não configurado - webhook bloqueado")
+        return JSONResponse({"success": False, "error": "Forbidden"}, status_code=403)
+    provided = request.headers.get("X-Webhook-Secret") or request.query_params.get("secret") or ""
+    if not secrets.compare_digest(provided, webhook_secret):
+        return JSONResponse({"success": False, "error": "Forbidden"}, status_code=403)
     payload = await request.json()
     nosso_numero = payload.get("nossoNumero") or payload.get("numeroTitulo")
     
@@ -658,7 +766,7 @@ def testar_token(request: Request, db: Session = Depends(get_db)):
         return {"success": False, "error": "Client ID Sicoob não configurado"}
     token = refresh_sicoob_token(db, "boletos_consulta")
     if token:
-        return {"success": True, "token": "****" + token[-10:], "message": "Token obtido com sucesso"}
+        return {"success": True, "message": "Token obtido com sucesso"}
     return {"success": False, "error": "Falha ao obter token - verifique certificado"}
 def _buscar_boletos_por_pagador(
     db: Session, cpf_cnpj: str,
@@ -814,12 +922,14 @@ async def importar_boleto(request: Request, db: Session = Depends(get_db)):
 
         try:
             data_vencimento = datetime.strptime(data_vencimento_str, "%Y-%m-%d").date()
-        except:
+        except (ValueError, TypeError):
+            logger.warning(f"Data de vencimento inválida ao importar boleto {nosso_numero}: {data_vencimento_str}")
             data_vencimento = date.today()
 
         try:
             data_emissao = datetime.strptime(data_emissao_str, "%Y-%m-%d").date()
-        except:
+        except (ValueError, TypeError):
+            logger.warning(f"Data de emissão inválida ao importar boleto {nosso_numero}: {data_emissao_str}")
             data_emissao = date.today()
 
         # Situação no Sicoob: 1=EmAberto, 2=Baixado, 3=Liquidado
@@ -925,8 +1035,8 @@ async def alterar_boleto(request: Request, nosso_numero: str, db: Session = Depe
                 if "dataVencimento" in body:
                     try:
                         conta.data_vencimento = datetime.strptime(body["dataVencimento"], "%Y-%m-%d").date()
-                    except:
-                        pass
+                    except (ValueError, TypeError):
+                        logger.warning(f"Data de vencimento inválida ao alterar boleto {nosso_numero}: {body.get('dataVencimento')}")
                 db.commit()
             return {"success": True}
         return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
@@ -938,9 +1048,8 @@ async def excluir_boleto_api(request: Request, nosso_numero: str, db: Session = 
         return JSONResponse({"success": False, "error": "Não autenticado"}, status_code=403)
     form = await request.form()
     senha = form.get("senha", "")
-    emp = get_empresa(db)
-    if not emp or not emp.senha_admin or senha != emp.senha_admin:
-        return {"success": False, "error": "Senha inválida"}
+    if not confirma_senha_usuario(request, db, senha):
+        return {"success": False, "error": "Senha inválida ou usuário não autorizado"}
     
     conta = db.query(ContaReceber).filter(
         (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
@@ -948,5 +1057,10 @@ async def excluir_boleto_api(request: Request, nosso_numero: str, db: Session = 
     if conta:
         conta.status = StatusConta.CANCELADO
         db.commit()
+        registrar_auditoria(
+            db, request.session.get("user_id"), "excluir",
+            "boleto", 0, f"Boleto: {nosso_numero}",
+            request.client.host if request.client else None
+        )
         return {"success": True, "message": "Boleto excluído do sistema"}
     return {"success": False, "error": "Boleto não encontrado"}

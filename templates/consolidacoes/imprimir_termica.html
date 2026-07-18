@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=80mm, initial-scale=1.0">
+    <title>Consolidação {{ consolidacao.numero or consolidacao.id }}</title>
+    <style>
+        @page { margin: 0; size: 80mm auto; }
+        body { font-family: 'Courier New', monospace; font-size: 11px; margin: 0; padding: 5px 8px; color: #000; width: 72mm; }
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        .center { text-align: center; }
+        .right { text-align: right; }
+        .left { text-align: left; }
+        .bold { font-weight: bold; }
+        .divider { border-top: 1px dashed #000; margin: 4px 0; }
+        .divider-solid { border-top: 1px solid #000; margin: 4px 0; }
+        table { width: 100%; border-collapse: collapse; font-size: 10px; }
+        td { padding: 1px 0; vertical-align: top; }
+        .item-desc { max-width: 38mm; word-wrap: break-word; }
+        .item-qtd { text-align: center; width: 10mm; }
+        .item-unit { text-align: center; width: 8mm; }
+        .item-price { text-align: right; width: 12mm; }
+        .item-total { text-align: right; width: 12mm; font-weight: bold; }
+        .totals td { padding: 2px 0; }
+        .no-print { display: none; }
+        @media screen {
+            body { background: #f5f5f5; display: flex; justify-content: center; }
+            .thermal-paper { background: white; max-width: 80mm; margin: 10px auto; padding: 5px 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        }
+    </style>
+</head>
+<body>
+    <div class="thermal-paper">
+        <div class="center" style="font-size: 10px;">Controliz Controle Comercial</div>
+        <div class="center bold" style="font-size: 16px;">MultiCom</div>
+        {% if empresa and empresa.razao_social %}
+        <div class="center">{{ empresa.razao_social }}</div>
+        {% endif %}
+        {% if empresa and empresa.cnpj %}
+        <div class="center">CNPJ: {{ empresa.cnpj }}</div>
+        {% endif %}
+        <div class="divider"></div>
+
+        <div class="center bold" style="font-size: 13px;">CONSOLIDAÇÃO DE PEDIDOS</div>
+        <div class="center">{{ consolidacao.numero or '#' + consolidacao.id|string }}</div>
+        <div class="divider"></div>
+
+        <table>
+            <tr><td class="bold">Cliente:</td><td>{{ consolidacao.cliente.nome if consolidacao.cliente else '-' }}</td></tr>
+            {% if consolidacao.cliente and consolidacao.cliente.cpf_cnpj %}
+            <tr><td class="bold">CPF/CNPJ:</td><td>{{ consolidacao.cliente.cpf_cnpj }}</td></tr>
+            {% endif %}
+            <tr><td class="bold">Data:</td><td>{{ consolidacao.data.strftime('%d/%m/%Y') if consolidacao.data else '-' }}</td></tr>
+            {% if consolidacao.data_fechamento %}
+            <tr><td class="bold">Fechamento:</td><td>{{ consolidacao.data_fechamento.strftime('%d/%m/%Y') }}</td></tr>
+            {% endif %}
+            {% if consolidacao.periodo_inicio and consolidacao.periodo_fim %}
+            <tr><td class="bold">Período:</td><td>{{ consolidacao.periodo_inicio.strftime('%d/%m/%Y') }} ~ {{ consolidacao.periodo_fim.strftime('%d/%m/%Y') }}</td></tr>
+            {% endif %}
+            {% if consolidacao.forma_pagamento %}
+            <tr><td class="bold">Pagamento:</td><td>{{ FORMAS_PAGAMENTO.get(consolidacao.forma_pagamento, consolidacao.forma_pagamento) }}</td></tr>
+            {% endif %}
+        </table>
+
+        {% if consolidacao.pedidos_origem %}
+        <div class="divider"></div>
+        <div class="bold">PEDIDOS AGRUPADOS ({{ consolidacao.qtd_pedidos_origem }})</div>
+        <table>
+            {% for p in consolidacao.pedidos_origem %}
+            <tr><td>{{ p.numero or '#' + p.id|string }}</td><td class="right">{{ p.data.strftime('%d/%m/%Y') if p.data else '-' }}</td><td class="right bold">{{ "%.2f"|format(p.total or 0) }}</td></tr>
+            {% endfor %}
+        </table>
+        {% endif %}
+
+        <div class="divider"></div>
+        <div class="bold">ITENS CONSOLIDADOS</div>
+        <table>
+            <tr>
+                <td class="item-desc bold" style="width:40mm;">Descrição</td>
+                <td class="item-unit bold">UN</td>
+                <td class="item-qtd bold">Qtd</td>
+                <td class="item-price bold">Preço</td>
+                <td class="item-total bold">Total</td>
+            </tr>
+            <tr><td colspan="5"><div class="divider-solid" style="margin:0;"></div></td></tr>
+            {% for item in consolidacao.itens %}
+            <tr>
+                <td class="item-desc">{{ item.descricao or (item.produto.nome if item.produto else '') or (item.produto.codigo if item.produto else '') or '---' }}</td>
+                <td class="item-unit">{{ item.unidade or 'UN' }}</td>
+                <td class="item-qtd">{{ "%.3f"|format(item.quantidade or 0) }}</td>
+                <td class="item-price">{{ "%.2f"|format(item.preco_unitario or 0) }}</td>
+                <td class="item-total">{{ "%.2f"|format(item.total or 0) }}</td>
+            </tr>
+            {% endfor %}
+        </table>
+        <div class="divider"></div>
+
+        <table class="totals">
+            <tr>
+                <td style="text-align:right; font-weight:bold; font-size:13px;">TOTAL GERAL: R$ {{ "%.2f"|format(consolidacao.total or 0) }}</td>
+            </tr>
+        </table>
+        <div class="divider"></div>
+
+        {% if consolidacao.observacao %}
+        <div class="bold">Obs:</div>
+        <div style="font-size: 10px;">{{ consolidacao.observacao }}</div>
+        <div class="divider"></div>
+        {% endif %}
+
+        <div class="center" style="font-size: 9px;">---</div>
+        <div class="center" style="font-size: 9px;">Obrigado pela preferência!</div>
+        <div class="center" style="font-size: 9px;">{{ empresa.razao_social if empresa else 'MultiCom' }}</div>
+        <div style="height: 15px;"></div>
+
+        <div class="no-print center" style="margin-top: 10px;">
+            <button onclick="window.print()" style="padding:8px 20px; font-size:14px; cursor:pointer;">Imprimir</button>
+            <button onclick="window.close()" style="padding:8px 20px; font-size:14px; cursor:pointer;">Fechar</button>
+        </div>
+    </div>
+</body>
+</html>

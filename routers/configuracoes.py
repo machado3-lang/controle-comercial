@@ -1,18 +1,18 @@
 import os
 import json
-import base64
-from fastapi import APIRouter, Depends, Request, Form, UploadFile, File
+from fastapi import APIRouter, Depends, Request, Form, UploadFile, File, Query
 from fastapi.responses import RedirectResponse, Response, JSONResponse
-from sqlalchemy.orm import Session
-from datetime import datetime
-
+from sqlalchemy.orm import Session, selectinload
+from datetime import datetime, timedelta
 from database import get_db
-from models import Empresa, Cliente, Fornecedor, Assinatura, OrdemServico, Produto
+from models import Empresa, Cliente, Fornecedor, Produto
 from services.backup import generate_backup, restore_backup
+from services.cert_store import store_certificate
+from app.core.security import verificar_admin
+from services.audit import registrar_auditoria
 
 router = APIRouter(prefix="/configuracoes", tags=["Configuracoes"])
 
-CERT_DIR = "certs"
 UPLOAD_DIR = "static/uploads"
 
 
@@ -24,7 +24,7 @@ def configuracoes(request: Request, db: Session = Depends(get_db), aba: str = "e
     msg = request.session.pop("message", None)
     if msg:
         messages.append(msg)
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "configuracoes/form.html",
         {
             "request": request,
@@ -61,9 +61,6 @@ async def salvar_configuracoes(
     celular: str = Form(""),
     email: str = Form(""),
     site: str = Form(""),
-    senha_admin: str = Form(""),
-    senha_admin_confirm: str = Form(""),
-    senha_lembrete: str = Form(""),
     observacao: str = Form(""),
     bling_client_id: str = Form(""),
     bling_client_secret: str = Form(""),
@@ -98,6 +95,26 @@ async def salvar_configuracoes(
     nfe_aliquota_estadual: float = Form(0.0),
     ultimo_numero_nfse: int = Form(0),
 ):
+    # CSRF already validated by middleware
+    if not verificar_admin(request, db):
+        from itsdangerous import TimestampSigner
+        from base64 import b64encode
+        import json
+        from app.core.config import settings
+        signer = TimestampSigner(settings.SECRET_KEY)
+        data = b64encode(json.dumps(request.session).encode("utf-8"))
+        signed = signer.sign(data)
+        response = RedirectResponse(url=f"/configuracoes?aba={aba}", status_code=303)
+        response.set_cookie(
+            key="session",
+            value=signed.decode("utf-8"),
+            max_age=60*60*24*7,
+            path="/",
+            httponly=True,
+            samesite="lax",
+            secure=settings.session_cookie_secure,
+        )
+        return response
     empresa = db.query(Empresa).first()
     if empresa:
         empresa.razao_social = razao_social
@@ -115,9 +132,6 @@ async def salvar_configuracoes(
         empresa.celular = celular
         empresa.email = email
         empresa.site = site
-        if senha_admin and senha_admin == senha_admin_confirm:
-            empresa.senha_admin = senha_admin
-            empresa.senha_lembrete = senha_lembrete
         empresa.observacao = observacao
         empresa.bling_client_id = bling_client_id
         empresa.bling_client_secret = bling_client_secret
@@ -146,8 +160,6 @@ async def salvar_configuracoes(
             bairro=bairro, cidade=cidade, estado=estado, cep=cep,
             codigo_ibge=codigo_ibge or None,
             telefone=telefone, celular=celular, email=email, site=site,
-            senha_admin=senha_admin if senha_admin else None,
-            senha_lembrete=senha_lembrete,
             observacao=observacao,
             bling_client_id=bling_client_id,
             bling_client_secret=bling_client_secret,
@@ -168,28 +180,17 @@ async def salvar_configuracoes(
         )
         db.add(empresa)
 
+    # Persiste a empresa para obter o id antes de gravar os certificados.
+    db.commit()
+
     if sicoob_cert_file and sicoob_cert_file.filename:
-        os.makedirs(CERT_DIR, exist_ok=True)
-        ext = os.path.splitext(sicoob_cert_file.filename)[1].lower()
-        filename = f"sicoob_cert_{empresa.id or 'temp'}{ext}"
-        filepath = os.path.join(CERT_DIR, filename)
         content = await sicoob_cert_file.read()
-        with open(filepath, "wb") as f:
-            f.write(content)
-        empresa.sicoob_cert_path = filepath
-        empresa.sicoob_cert_base64 = base64.b64encode(content).decode('utf-8')
-        if sicoob_cert_password:
-            empresa.sicoob_cert_password = sicoob_cert_password
+        store_certificate("sicoob", empresa.id, content, sicoob_cert_password)
+        empresa.sicoob_cert_id = empresa.id
 
     if sicoob_key_file and sicoob_key_file.filename:
-        ext = os.path.splitext(sicoob_key_file.filename)[1].lower()
-        filename = f"sicoob_key_{empresa.id or 'temp'}{ext}"
-        filepath = os.path.join(CERT_DIR, filename)
         content = await sicoob_key_file.read()
-        with open(filepath, "wb") as f:
-            f.write(content)
-        empresa.sicoob_cert_key_path = filepath
-        empresa.sicoob_cert_key_base64 = base64.b64encode(content).decode('utf-8')
+        store_certificate("sicoob_key", empresa.id, content, "")
 
     if logo and logo.filename:
         ext = os.path.splitext(logo.filename)[1].lower()
@@ -205,8 +206,8 @@ async def salvar_configuracoes(
         from cryptography.hazmat.primitives.serialization import pkcs12
         from datetime import date
         content = await cert_file.read()
-        empresa.cert_base64 = base64.b64encode(content).decode()
-        empresa.cert_password = cert_password_form
+        store_certificate("empresa", empresa.id, content, cert_password_form)
+        empresa.cert_id = empresa.id
         try:
             _, cert, _ = pkcs12.load_key_and_certificates(
                 content, password=cert_password_form.encode() if cert_password_form else None
@@ -214,8 +215,6 @@ async def salvar_configuracoes(
             empresa.cert_validade = cert.not_valid_date_after.date() if hasattr(cert.not_valid_date_after, 'date') else cert.not_valid_date_after
         except Exception:
             empresa.cert_validade = None
-    elif cert_password_form:
-        empresa.cert_password = cert_password_form
 
     empresa.smtp_host = smtp_host or None
     empresa.smtp_port = smtp_port or 587
@@ -228,6 +227,11 @@ async def salvar_configuracoes(
     empresa.sicoob_token = None
     empresa.updated_at = datetime.now()
     db.commit()
+    registrar_auditoria(
+        db, request.session.get("user_id"), "salvar_configuracoes",
+        "empresa", empresa.id, f"Aba: {aba}",
+        request.client.host if request.client else None
+    )
     request.session["message"] = {"tipo": "success", "texto": "Dados salvos com sucesso!"}
     return RedirectResponse(url=f"/configuracoes?aba={aba}", status_code=303)
 
@@ -236,6 +240,11 @@ async def salvar_configuracoes(
 def download_backup(request: Request):
     if not request.session.get("user_id"):
         return JSONResponse({"error": "Não autenticado"}, status_code=401)
+    from database import get_db
+    from models import Usuario
+    db = next(get_db())
+    if not verificar_admin(request, db):
+        return JSONResponse({"error": "Acesso negado: apenas administradores"}, status_code=403)
     try:
         backup = generate_backup()
         content = json.dumps(backup, ensure_ascii=False, indent=2, default=str)
@@ -253,6 +262,11 @@ def download_backup(request: Request):
 async def upload_restore(request: Request, arquivo: UploadFile = File(...)):
     if not request.session.get("user_id"):
         return JSONResponse({"error": "Não autenticado"}, status_code=401)
+    from database import get_db
+    from models import Usuario
+    db = next(get_db())
+    if not verificar_admin(request, db):
+        return JSONResponse({"error": "Acesso negado: apenas administradores"}, status_code=403)
     if not arquivo.filename or not arquivo.filename.endswith(".json"):
         return JSONResponse({"error": "Envie um arquivo .json válido"}, status_code=400)
     try:
@@ -265,8 +279,8 @@ async def upload_restore(request: Request, arquivo: UploadFile = File(...)):
 
 @router.post("/testar-email")
 async def testar_email(request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return JSONResponse({"success": False, "error": "Nao autenticado"})
+    if not verificar_admin(request, db):
+        return JSONResponse({"success": False, "error": "Acesso negado: apenas administradores"})
     form = await request.form()
     empresa = db.query(Empresa).first()
     if not empresa:
@@ -308,3 +322,72 @@ async def testar_email(request: Request, db: Session = Depends(get_db)):
         return JSONResponse({"success": True})
     return JSONResponse({"success": False, "error": result.get("error", "Erro desconhecido")})
 
+
+@router.get("/logs")
+def visualizar_logs(
+    request: Request, db: Session = Depends(get_db),
+    page: int = 1, per_page: int = 50,
+    data_inicio: str = Query(""), data_fim: str = Query(""),
+    usuario_id: int = Query(0), acao: str = Query(""), entidade: str = Query(""),
+    detalhes: str = Query(""), sort: str = Query(""), ordem: str = Query(""),
+):
+    if not verificar_admin(request, db):
+        return RedirectResponse(url="/auth/login", status_code=303)
+    from models import AuditLog, Usuario
+    from sqlalchemy import desc
+    query = db.query(AuditLog)
+
+    if data_inicio:
+        try:
+            query = query.filter(AuditLog.created_at >= datetime.strptime(data_inicio, "%Y-%m-%d"))
+        except ValueError:
+            pass
+    if data_fim:
+        try:
+            fim = datetime.strptime(data_fim, "%Y-%m-%d") + timedelta(days=1)
+            query = query.filter(AuditLog.created_at < fim)
+        except ValueError:
+            pass
+    if usuario_id:
+        query = query.filter(AuditLog.user_id == usuario_id)
+    if acao:
+        query = query.filter(AuditLog.acao == acao)
+    if entidade:
+        query = query.filter(AuditLog.entidade.ilike(f"%{entidade}%"))
+    if detalhes:
+        query = query.filter(AuditLog.detalhes.ilike(f"%{detalhes}%"))
+
+    # Ordenação por colunas principais
+    sort_map = {
+        "data": AuditLog.created_at,
+        "usuario": AuditLog.user_id,
+        "acao": AuditLog.acao,
+        "entidade": AuditLog.entidade,
+        "detalhes": AuditLog.detalhes,
+    }
+    order_col = sort_map.get(sort, AuditLog.created_at)
+    descendente = (ordem != "asc")
+    query = query.order_by(order_col.desc() if descendente else order_col.asc())
+
+    total = query.count()
+    logs = (
+        query
+        .options(selectinload(AuditLog.usuario))
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+    total_pages = max(1, (total + per_page - 1) // per_page)
+
+    usuarios = db.query(Usuario).order_by(Usuario.nome).all()
+    acoes = [a[0] for a in db.query(AuditLog.acao).distinct().order_by(AuditLog.acao).all() if a[0]]
+    entidades = [e[0] for e in db.query(AuditLog.entidade).distinct().order_by(AuditLog.entidade).all() if e[0]]
+
+    return request.app.state.templates.TemplateResponse(request, "configuracoes/logs.html", {
+        "request": request, "logs": logs,
+        "usuarios": usuarios, "acoes": acoes, "entidades": entidades,
+        "data_inicio": data_inicio, "data_fim": data_fim,
+        "usuario_id": usuario_id, "acao": acao, "entidade": entidade, "detalhes": detalhes,
+        "sort": sort, "ordem": ordem,
+        "page": page, "per_page": per_page, "total": total, "total_pages": total_pages,
+    })

@@ -1,17 +1,17 @@
 import json
 import httpx
 import re
+import time
 import secrets
 import urllib.parse
-from urllib.parse import urlencode
 from datetime import datetime, timedelta, date
-from typing import Optional
 from pydantic import BaseModel
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Cliente, Fornecedor, Empresa, Assinatura, OrdemServico, StatusOS, Produto, CategoriaProduto, MarcaProduto
+from app.core.lifespan import limiter
 
 router = APIRouter(prefix="/bling", tags=["Bling"])
 
@@ -48,54 +48,68 @@ def get_token(db: Session) -> str | None:
 
 def _refresh_token(db: Session, emp: Empresa):
     """Refresh the access token using the refresh token."""
-    try:
-        import base64
-        creds = base64.b64encode(f"{emp.bling_client_id}:{emp.bling_client_secret}".encode()).decode()
-        with httpx.Client(timeout=15) as client:
-            resp = client.post(BLING_TOKEN,
-                headers={
-                    "Authorization": f"Basic {creds}",
-                    "Content-Type": "application/json",
-                    "Accept": "1.0",
-                },
-                json={
-                    "grant_type": "refresh_token",
-                    "refresh_token": emp.bling_refresh_token,
-                },
-            )
-            if resp.status_code != 200:
-                emp.bling_token = None
-                emp.bling_refresh_token = None
-                emp.bling_token_expires_at = None
+    import base64
+    creds = base64.b64encode(f"{emp.bling_client_id}:{emp.bling_client_secret}".encode()).decode()
+    for tentativa in range(3):
+        try:
+            with httpx.Client(timeout=15) as client:
+                resp = client.post(BLING_TOKEN,
+                    headers={
+                        "Authorization": f"Basic {creds}",
+                        "Content-Type": "application/json",
+                        "Accept": "1.0",
+                    },
+                    json={
+                        "grant_type": "refresh_token",
+                        "refresh_token": emp.bling_refresh_token,
+                    },
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                emp.bling_token = data.get("access_token")
+                emp.bling_refresh_token = data.get("refresh_token", emp.bling_refresh_token)
+                expires_in = data.get("expires_in", 21600)
+                emp.bling_token_expires_at = datetime.now() + timedelta(seconds=expires_in)
                 db.commit()
                 return
-            data = resp.json()
-            emp.bling_token = data.get("access_token")
-            emp.bling_refresh_token = data.get("refresh_token", emp.bling_refresh_token)
-            expires_in = data.get("expires_in", 21600)
-            emp.bling_token_expires_at = datetime.now() + timedelta(seconds=expires_in)
-            db.commit()
-    except Exception:
-        emp.bling_token = None
-        emp.bling_refresh_token = None
-        emp.bling_token_expires_at = None
-        db.commit()
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (429, 502, 503, 504) and tentativa < 2:
+                time.sleep(2 ** tentativa)
+                continue
+            break
+        except Exception:
+            if tentativa < 2:
+                time.sleep(2 ** tentativa)
+                continue
+            break
+    emp.bling_token = None
+    emp.bling_refresh_token = None
+    emp.bling_token_expires_at = None
+    db.commit()
 
 
 def call_bling(token: str, method: str, path: str, json_body: dict = None) -> dict:
     url = f"{BLING_API}/{path}"
     headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-    try:
-        with httpx.Client(timeout=30) as client:
-            resp = client.request(method, url, headers=headers, json=json_body)
-            payload = {}
-            try:
-                payload = resp.json()
-            except Exception:
-                pass
-            return {"status": resp.status_code, "data": payload.get("data"), "body": payload}
-    except Exception as e:
-        return {"status": 0, "data": None, "body": {"error": str(e)}}
+    for tentativa in range(3):
+        try:
+            with httpx.Client(timeout=30) as client:
+                resp = client.request(method, url, headers=headers, json=json_body)
+                if resp.status_code in (429, 500, 502, 503, 504) and tentativa < 2:
+                    time.sleep(2 ** tentativa)
+                    continue
+                payload = {}
+                try:
+                    payload = resp.json()
+                except Exception:
+                    pass
+                return {"status": resp.status_code, "data": payload.get("data"), "body": payload}
+        except Exception as e:
+            if tentativa < 2:
+                time.sleep(2 ** tentativa)
+                continue
+            return {"status": 0, "data": None, "body": {"error": str(e)}}
+    return {"status": 0, "data": None, "body": {"error": "Falha após 3 tentativas"}}
 
 
 # ─── contatos data mapping ────────────────────────────────────────
@@ -337,7 +351,7 @@ def pagina_bling(request: Request, db: Session = Depends(get_db)):
     synced_fornecedores = db.query(Fornecedor).filter(Fornecedor.bling_id.isnot(None)).count()
     synced_produtos = db.query(Produto).filter(Produto.bling_id.isnot(None)).count()
 
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "bling/index.html", {
             "request": request,
             "messages": messages,
@@ -618,6 +632,7 @@ def webhook_get():
 
 
 @router.post("/webhook")
+@limiter.limit("100/minute")
 def webhook_receiver(
     payload: BlingWebhookPayload,
     request: Request,
@@ -628,7 +643,7 @@ def webhook_receiver(
         return JSONResponse({"error": "Webhook não configurado"}, status_code=403)
 
     secret = request.query_params.get("secret")
-    if not secret or secret != empresa.bling_webhook_secret:
+    if not secret or not secrets.compare_digest(secret, empresa.bling_webhook_secret):
         return JSONResponse({"error": "Assinatura inválida"}, status_code=403)
 
     evento = payload.evento
@@ -1554,136 +1569,4 @@ def testar_conexao(request: Request, db: Session = Depends(get_db)):
             return JSONResponse({"success": False, "error": str(e)})
 
 
-@router.get("/debug-contato/{bling_id}")
-def debug_contato(bling_id: int, request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return JSONResponse({"error": "Não autenticado"})
-    token = get_token(db)
-    if not token:
-        return JSONResponse({"error": "Sem token"})
-    # raw call to see exactly what the v3 API returns
-    import httpx
-    try:
-        with httpx.Client(timeout=15) as client:
-            resp = client.get(
-                f"https://api.bling.com.br/Api/v3/contatos/{bling_id}",
-                headers={"Authorization": f"Bearer {token}", "Accept": "application/json"}
-            )
-            return JSONResponse({
-                "status": resp.status_code,
-                "raw_body": resp.json() if resp.status_code == 200 else resp.text[:3000]
-            })
-    except Exception as e:
-        return JSONResponse({"error": str(e)})
 
-
-@router.get("/debug-produto/{bling_id}")
-def debug_produto(bling_id: int, request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return JSONResponse({"error": "Não autenticado"})
-    token = get_token(db)
-    if not token:
-        return JSONResponse({"error": "Sem token"})
-    r = call_bling(token, "GET", f"produtos/{bling_id}")
-    return JSONResponse(r)
-
-
-@router.get("/debug-ids")
-def debug_ids(request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return JSONResponse({"error": "Não autenticado"})
-    clientes = db.query(Cliente.bling_id, Cliente.nome).filter(Cliente.bling_id.isnot(None)).limit(5).all()
-    fornecedores = db.query(Fornecedor.bling_id, Fornecedor.nome).filter(Fornecedor.bling_id.isnot(None)).limit(5).all()
-    produtos = db.query(Produto.bling_id, Produto.nome).filter(Produto.bling_id.isnot(None)).limit(5).all()
-    return JSONResponse({
-        "clientes": [{"id": c.bling_id, "nome": c.nome} for c in clientes],
-        "fornecedores": [{"id": f.bling_id, "nome": f.nome} for f in fornecedores],
-        "produtos": [{"id": p.bling_id, "nome": p.nome} for p in produtos],
-    })
-
-
-@router.get("/debug-primeiro-contato")
-def debug_primeiro_contato(request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return JSONResponse({"error": "Não autenticado"})
-    token = get_token(db)
-    if not token:
-        return JSONResponse({"error": "Sem token"})
-    lista = call_bling(token, "GET", "contatos?pagina=1&limite=1")
-    if lista["status"] != 200 or not lista["data"]:
-        return JSONResponse({"error": "Não achou contatos", "raw": lista})
-    cid = lista["data"][0].get("id")
-    if not cid:
-        return JSONResponse({"error": "Contato sem ID"})
-    detalhe = call_bling(token, "GET", f"contatos/{cid}")
-    return JSONResponse({"id_usado": cid, "detalhe": detalhe})
-
-
-@router.get("/debug-primeiro-produto")
-def debug_primeiro_produto(request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return JSONResponse({"error": "Não autenticado"})
-    token = get_token(db)
-    if not token:
-        return JSONResponse({"error": "Sem token"})
-    # pegar primeiro ID da lista
-    lista = call_bling(token, "GET", "produtos?pagina=1&limite=1")
-    if lista["status"] != 200 or not lista["data"]:
-        return JSONResponse({"error": "Não achou produtos", "raw": lista})
-    pid = lista["data"][0].get("id")
-    if not pid:
-        return JSONResponse({"error": "Produto sem ID"})
-    detalhe = call_bling(token, "GET", f"produtos/{pid}")
-    return JSONResponse({"id_usado": pid, "detalhe": detalhe})
-
-
-@router.get("/debug-raw-contatos")
-def debug_raw_contatos(request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return JSONResponse({"error": "Não autenticado"})
-    token = get_token(db)
-    if not token:
-        return JSONResponse({"error": "Sem token"})
-    r = call_bling(token, "GET", "contatos?pagina=1&limite=2")
-    return JSONResponse(r)
-
-
-@router.get("/debug-raw-produtos")
-def debug_raw_produtos(request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return JSONResponse({"error": "Não autenticado"})
-    token = get_token(db)
-    if not token:
-        return JSONResponse({"error": "Sem token"})
-    r = call_bling(token, "GET", "produtos?pagina=1&limite=2")
-    return JSONResponse(r)
-
-
-@router.get("/debug-v2-contato/{bling_id}")
-def debug_v2_contato(bling_id: int, request: Request, db: Session = Depends(get_db)):
-    if not request.session.get("user_id"):
-        return JSONResponse({"error": "Não autenticado"})
-    emp = db.query(Empresa).first()
-    if not emp or not emp.bling_api_key_v2:
-        return JSONResponse({"error": "API Key v2 não configurada. Configure em Configurações > Integr. Bling."})
-    resultados = {}
-    key = emp.bling_api_key_v2
-    headers = {"Accept": "application/json"}
-    urls = [
-        f"https://bling.com.br/Api/v2/contato/{bling_id}/json/",
-        f"https://bling.com.br/Api/v2/contatos/{bling_id}/json/",
-        f"https://bling.com.br/contato/{bling_id}",
-        f"https://bling.com.br/{bling_id}",
-        f"https://www.bling.com.br/Api/v2/contato/{bling_id}/json/",
-    ]
-    try:
-        with httpx.Client(timeout=15) as client:
-            for url in urls:
-                try:
-                    r = client.get(url, params={"apikey": key}, headers=headers)
-                    resultados[url] = {"status": r.status_code, "body": r.text[:2000]}
-                except Exception as ex:
-                    resultados[url] = {"error": str(ex)}
-            return JSONResponse(resultados)
-    except Exception as e:
-        return JSONResponse({"error": str(e)})

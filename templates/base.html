@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>{% block title %}Controle Comercial{% endblock %}</title>
+    <meta name="csrf-token" content="{{ csrf_token() if csrf_token is defined else '' }}">
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css">
@@ -163,17 +164,42 @@
         {% block content %}{% endblock %}
     </div>
 
+    <div class="modal fade" id="modalValidacao" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+                <div class="modal-header border-b border-slate-800/50">
+                    <h5 class="modal-title text-amber-400"><i data-lucide="alert-triangle" class="w-5 h-5 inline me-2"></i> Validação</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <p id="validacaoMensagem" class="text-slate-300"></p>
+                </div>
+                <div class="modal-footer border-t border-slate-800/50">
+                    <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="modal fade" id="modalConfirmarExclusao" tabindex="-1">
         <div class="modal-dialog modal-dialog-centered">
             <form method="post" action="" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl" id="formExcluirModal" onsubmit="return handleSubmitExclusao(this)">
-                <div class="modal-header border-b border-slate-800/50">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="modal-header border-b border-slate-800/50">
                     <h5 class="modal-title text-cyan-400">Confirmar Exclusão</h5>
                     <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
                 </div>
                 <div class="modal-body">
                     <p class="text-slate-300 mb-3">Deseja realmente excluir este registro?</p>
+                    <div id="avisoExclusaoContas" class="hidden mb-3 p-3 rounded-xl bg-amber-950/30 border border-amber-800/50 text-amber-300 text-sm">
+                        Este pedido já possui <strong>registros vinculados</strong> (itens, NFSe e/ou NFe). Ao excluí-lo, eles impedirão a exclusão.
+                        <div class="form-check mt-2">
+                            <input class="form-check-input" type="checkbox" id="excluirContas" name="excluir_contas" value="1">
+                            <label class="form-check-label" for="excluirContas">Excluir também os registros vinculados</label>
+                        </div>
+                    </div>
                     <div class="mb-3">
-                        <label class="form-label text-cyan-300">Senha de Administrador *</label>
+                        <label class="form-label text-cyan-300">Sua Senha *</label>
                         <input type="password" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="senha" required>
                     </div>
                 </div>
@@ -194,12 +220,18 @@
         document.getElementById('toast-container').insertAdjacentHTML('beforeend', toastHtml);
         setTimeout(() => document.querySelector('#toast-container > div:last-child')?.remove(), 4000);
     }
+    function showValidationError(mensagem) {
+        document.getElementById('validacaoMensagem').textContent = mensagem;
+        const modal = new bootstrap.Modal(document.getElementById('modalValidacao'));
+        modal.show();
+    }
     document.addEventListener('DOMContentLoaded', function() {
         const toastMsg = sessionStorage.getItem('toast-mensagem');
         const toastTipo = sessionStorage.getItem('toast-tipo');
         if (toastMsg) { showToast(toastMsg, toastTipo); sessionStorage.removeItem('toast-mensagem'); sessionStorage.removeItem('toast-tipo'); }
         if (window.lucide) lucide.createIcons();
         document.addEventListener('submit', function(e) {
+            if (e.defaultPrevented) return;
             const btn = e.target.querySelector('button[type="submit"]');
             if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 me-1 animate-spin"></i> Aguarde...'; if (window.lucide) lucide.createIcons(); }
         });

@@ -19,10 +19,10 @@
     </div>
     <div><label class="block text-xs font-medium text-cyan-400 mb-1">Status</label>
         <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="status">
-            <option value="pendente" {% if conta and conta.status.value == 'pendente' %}selected{% endif %}>Pendente</option>
-            <option value="vencido" {% if conta and conta.status.value == 'vencido' %}selected{% endif %}>Vencido</option>
-            <option value="pago" {% if conta and conta.status.value == 'pago' %}selected{% endif %}>Pago</option>
-            <option value="cancelado" {% if conta and conta.status.value == 'cancelado' %}selected{% endif %}>Cancelado</option>
+            <option value="pendente" {% if conta and conta.status.name.lower() == 'pendente' %}selected{% endif %}>Pendente</option>
+            <option value="vencido" {% if conta and conta.status.name.lower() == 'vencido' %}selected{% endif %}>Vencido</option>
+            <option value="pago" {% if conta and conta.status.name.lower() == 'pago' %}selected{% endif %}>Pago</option>
+            <option value="cancelado" {% if conta and conta.status.name.lower() == 'cancelado' %}selected{% endif %}>Cancelado</option>
         </select>
     </div>
     <div><label class="block text-xs font-medium text-cyan-400 mb-1">Data Recebimento</label>
@@ -51,7 +51,7 @@
         </select>
     </div>
     <div><label class="block text-xs font-medium text-cyan-400 mb-1">Plano de Contas (Receita)</label>
-        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="plano_conta_id">
+        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="plano_conta_id" required>
             <option value="">Selecione...</option>
             {% for pc in planos_contas %}<option value="{{ pc.id }}" {% if conta.plano_conta_id == pc.id %}selected{% endif %}>{{ pc.codigo }} - {{ pc.nome }}</option>{% endfor %}
         </select>

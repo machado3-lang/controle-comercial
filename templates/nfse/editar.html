@@ -10,7 +10,8 @@
             </div>
             <div class="p-4">
                 <form method="post" id="formEditarNfse" action="/nfse/{{ nfse.id }}/editar">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <div class="relative">
                             <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>
                             <input type="text" id="clienteSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off" value="{{ nfse.cliente.nome if nfse.cliente else '' }}">

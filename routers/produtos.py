@@ -3,11 +3,27 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session, selectinload, joinedload
 from sqlalchemy import func
 from datetime import date, datetime
+from decimal import Decimal, ROUND_HALF_UP, InvalidOperation
+
+
+def to_decimal(v, default="0.00"):
+    """Converte para Decimal com segurança; retorna default se vazio/inválido."""
+    try:
+        if v is None or (isinstance(v, str) and v.strip() == ""):
+            return Decimal(str(default))
+        return Decimal(str(v).replace(",", "."))
+    except (ValueError, TypeError, InvalidOperation):
+        return Decimal(str(default))
 from typing import Optional
 import os
+import logging
 from database import get_db
 from models import Produto, Fornecedor, CategoriaProduto, PedidoVenda, MarcaProduto, ProdutoVariacao
 from models import ProdutoComposicao, Empresa
+from app.core.security import confirma_senha_usuario
+from services.audit import registrar_auditoria
+
+logger = logging.getLogger(__name__)
 
 UNIDADES_MEDIDA = ["cm", "m", "mm", "UN", "KG", "L"]
 
@@ -31,6 +47,10 @@ def _proximo_sku_produto(db: Session) -> str:
     return f"SKU-{max_num + 1:05d}"
 
 def _proximo_codigo_produto(db: Session) -> str:
+    empresa = db.query(Empresa).with_for_update().first()
+    if empresa:
+        empresa.ultimo_codigo_produto = (empresa.ultimo_codigo_produto or 0) + 1
+        return f"{empresa.ultimo_codigo_produto:05d}"
     codigos = db.query(Produto.codigo).filter(Produto.codigo.isnot(None)).all()
     codigos = [c[0] for c in codigos if c[0]]
     
@@ -79,7 +99,14 @@ def proximo_sku_endpoint(request: Request, db: Session = Depends(get_db)):
     return {"sku": _proximo_sku_produto(db)}
 
 @router.get("/")
-def listar_produtos(request: Request, db: Session = Depends(get_db), busca: str = Query(""), situacao: str = Query(""), fornecedor_id: Optional[str] = Query(""), categoria_id: Optional[str] = Query(""), marca_id: Optional[str] = Query(""), estoque_filtro: str = Query(""), tipo_filtro: str = Query("")):
+def listar_produtos(
+    request: Request, db: Session = Depends(get_db),
+    busca: str = Query(""), situacao: str = Query(""),
+    fornecedor_id: Optional[str] = Query(""), categoria_id: Optional[str] = Query(""),
+    marca_id: Optional[str] = Query(""), estoque_filtro: str = Query(""),
+    tipo_filtro: str = Query(""),
+    page: int = Query(1), per_page: int = Query(20),
+):
     from sqlalchemy.orm import selectinload
     f_id = int(fornecedor_id) if fornecedor_id else None
     c_id = int(categoria_id) if categoria_id else None
@@ -104,18 +131,23 @@ def listar_produtos(request: Request, db: Session = Depends(get_db), busca: str 
         query = query.filter(Produto.categoria_id == c_id)
     if m_id:
         query = query.filter(Produto.marca_id == m_id)
-    produtos = query.order_by(Produto.nome).all()
+    total_count = query.count()
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    offset = (page - 1) * per_page
+    produtos = query.order_by(Produto.nome).offset(offset).limit(per_page).all()
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
     categorias = db.query(CategoriaProduto).order_by(CategoriaProduto.nome).all()
     marcas = db.query(MarcaProduto).order_by(MarcaProduto.nome).all()
     proximo_pedido = db.query(func.max(PedidoVenda.numero)).scalar()
     try:
         proximo_pedido = str(int(proximo_pedido) + 1) if proximo_pedido else "1"
-    except:
+    except (ValueError, TypeError):
+        logger.warning(f"Falha ao gerar próximo número de pedido a partir de: {proximo_pedido}")
         proximo_pedido = "1"
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "produtos/listar.html",
-        {"request": request, "produtos": produtos, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "busca": busca, "situacao": situacao, "fornecedor_id": f_id, "categoria_id": c_id, "marca_id": m_id, "estoque_filtro": estoque_filtro, "tipo_filtro": tipo_filtro, "proximo_pedido": proximo_pedido}
+        {"request": request, "produtos": produtos, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "busca": busca, "situacao": situacao, "fornecedor_id": f_id, "categoria_id": c_id, "marca_id": m_id, "estoque_filtro": estoque_filtro, "tipo_filtro": tipo_filtro, "proximo_pedido": proximo_pedido, "page": page, "per_page": per_page, "total_pages": total_pages, "total_count": total_count}
     )
 
 
@@ -129,7 +161,7 @@ def novo_produto_form(request: Request, db: Session = Depends(get_db)):
     itens_disponiveis = db.query(Produto).options(selectinload(Produto.variacoes)).order_by(Produto.nome).all()
     itens_json = [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome} for i in itens_disponiveis if i.tipo in ('produto', 'servico')]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
-    return request.app.state.templates.TemplateResponse("produtos/form.html", {"request": request, "produto": None, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "editar": False, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "proximo_codigo": _proximo_codigo_produto(db), "fornecedores_json": fornecedores_json})
+    return request.app.state.templates.TemplateResponse(request, "produtos/form.html", {"request": request, "produto": None, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "editar": False, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "proximo_codigo": _proximo_codigo_produto(db), "fornecedores_json": fornecedores_json})
 
 
 @router.post("/novo")
@@ -138,8 +170,8 @@ def criar_produto(
     codigo: str = Form(""),
     nome: str = Form(...),
     descricao: str = Form(""),
-    preco: float = Form(None),
-    preco_custo: float = Form(0),
+    preco: str = Form(""),
+    preco_custo: str = Form(""),
     ncm: str = Form(""),
     unidade: str = Form("UN"),
     origem: int = Form(0),
@@ -164,8 +196,7 @@ def criar_produto(
 ):
     if not codigo:
         codigo = _proximo_codigo_produto(db)
-    if not preco or preco == '':
-        preco = 0.0
+    preco_val = to_decimal(preco, "0.00")
     foto_path = None
     if foto and foto.filename:
         ext = foto.filename.split('.')[-1] if '.' in foto.filename else ''
@@ -189,8 +220,8 @@ def criar_produto(
         codigo=codigo if codigo else None,
         nome=nome,
         descricao=descricao,
-        preco=preco if preco else 0.0,
-        preco_custo=preco_custo if preco_custo else None,
+        preco=preco_val,
+        preco_custo=to_decimal(preco_custo) if preco_custo and preco_custo.strip() else None,
         ncm=ncm if ncm else None,
         unidade=unidade,
         origem=origem,
@@ -221,7 +252,8 @@ def criar_produto(
         import json
         try:
             varList = json.loads(variacoes) if variacoes else []
-        except:
+        except (json.JSONDecodeError, TypeError):
+            logger.warning(f"Falha ao decodificar JSON de variações na criação do produto: {variacoes}")
             varList = []
         if varList and len(varList) > 0:
             for item in varList:
@@ -258,7 +290,8 @@ def criar_produto(
                     ))
                 db.commit()
         except Exception as e:
-            print(f"Erro ao salvar insumos: {e}")
+            logger.error(f"Erro ao salvar insumos do produto: {e}")
+            request.session["error"] = "Erro ao salvar composição do produto"
     return RedirectResponse(url="/produtos", status_code=303)
 
 
@@ -279,7 +312,7 @@ def editar_produto(request: Request, produto_id: int, db: Session = Depends(get_
     itens_disponiveis = db.query(Produto).options(selectinload(Produto.variacoes)).order_by(Produto.nome).all()
     itens_json = [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome} for i in itens_disponiveis if i.tipo in ('produto', 'servico')]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "produtos/form.html",
         {"request": request, "produto": produto, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "editar": True, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "fornecedores_json": fornecedores_json}
     )
@@ -291,8 +324,8 @@ def atualizar_produto(
     codigo: str = Form(""),
     nome: str = Form(...),
     descricao: str = Form(""),
-    preco: float = Form(None),
-    preco_custo: float = Form(0),
+    preco: str = Form(""),
+    preco_custo: str = Form(""),
     ncm: str = Form(""),
     unidade: str = Form("UN"),
     origem: int = Form(0),
@@ -317,14 +350,13 @@ def atualizar_produto(
 ):
     produto = db.query(Produto).filter(Produto.id == produto_id).first()
     if produto:
-        if not preco or preco == '':
-            preco = produto.preco  # Mantém o preço existente se vier vazio
+        preco_val = to_decimal(preco) if preco and preco.strip() else produto.preco
         produto.codigo = codigo if codigo else None
         produto.nome = nome
         produto.descricao = descricao
-        produto.preco = preco
+        produto.preco = preco_val
         # preco já foi tratado acima
-        produto.preco_custo = preco_custo if preco_custo else None
+        produto.preco_custo = to_decimal(preco_custo) if preco_custo and preco_custo.strip() else None
         produto.ncm = ncm if ncm else None
         produto.unidade = unidade
         produto.origem = origem
@@ -369,7 +401,7 @@ def atualizar_produto(
                     db.add(ProdutoVariacao(
                         produto_id=produto_id,
                         nome_variacao=item.get("nome_variacao", "Padrão"),
-                        sku=item["sku"],
+                        sku=item.get("sku", ""),
                         preco_adicional=item.get("preco_adicional", 0),
                         estoque_atual=item.get("estoque_atual", 0),
                         estoque_minimo=item.get("estoque_minimo", 0)
@@ -399,19 +431,25 @@ def atualizar_produto(
                     ))
                 db.commit()
             except Exception as e:
-                pass
+                logger.error(f"Erro ao salvar insumos na edição do produto {produto_id}: {e}")
+                request.session["error"] = "Erro ao salvar composição do produto"
     return RedirectResponse(url="/produtos", status_code=303)
 
 
 @router.post("/{produto_id}/excluir")
 def excluir_produto(request: Request, produto_id: int, db: Session = Depends(get_db), senha: str = Form("")):
-    empresa = db.query(Empresa).first()
-    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
+    if not confirma_senha_usuario(request, db, senha):
+        return JSONResponse({"erro": "Senha inválida ou usuário não autorizado"}, status_code=403)
     produto = db.query(Produto).filter(Produto.id == produto_id).first()
     if produto:
-        db.delete(produto)
+        produto_nome = produto.nome
+        produto.situacao = "I"
         db.commit()
+        registrar_auditoria(
+            db, request.session.get("user_id"), "excluir",
+            "produto", produto_id, f"Produto: {produto_nome}",
+            request.client.host if request.client else None
+        )
     return RedirectResponse(url="/produtos", status_code=303)
 
 
@@ -419,7 +457,7 @@ def excluir_produto(request: Request, produto_id: int, db: Session = Depends(get
 @router.get("/categorias")
 def listar_categorias(request: Request, db: Session = Depends(get_db)):
     categorias = db.query(CategoriaProduto).order_by(CategoriaProduto.nome).all()
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "produtos/categorias.html",
         {"request": request, "categorias": categorias}
     )
@@ -439,7 +477,7 @@ def editar_categoria_form(request: Request, categoria_id: int, db: Session = Dep
     if not cat:
         return RedirectResponse(url="/produtos/categorias", status_code=303)
     categorias = db.query(CategoriaProduto).order_by(CategoriaProduto.nome).all()
-    return request.app.state.templates.TemplateResponse("produtos/categorias.html", {"request": request, "categorias": categorias, "editar_categoria": cat})
+    return request.app.state.templates.TemplateResponse(request, "produtos/categorias.html", {"request": request, "categorias": categorias, "editar_categoria": cat})
 
 
 @router.post("/categorias/editar/{categoria_id}")
@@ -467,7 +505,7 @@ def excluir_categoria(request: Request, categoria_id: int, db: Session = Depends
 @router.get("/marcas")
 def listar_marcas(request: Request, db: Session = Depends(get_db)):
     marcas = db.query(MarcaProduto).order_by(MarcaProduto.nome).all()
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "produtos/marcas.html",
         {"request": request, "marcas": marcas}
     )
@@ -487,7 +525,7 @@ def editar_marca_form(request: Request, marca_id: int, db: Session = Depends(get
     if not marca:
         return RedirectResponse(url="/produtos/marcas", status_code=303)
     marcas = db.query(MarcaProduto).order_by(MarcaProduto.nome).all()
-    return request.app.state.templates.TemplateResponse("produtos/marcas.html", {"request": request, "marcas": marcas, "editar_marca": marca})
+    return request.app.state.templates.TemplateResponse(request, "produtos/marcas.html", {"request": request, "marcas": marcas, "editar_marca": marca})
 
 
 @router.post("/marcas/editar/{marca_id}")
@@ -518,7 +556,7 @@ def pdf_selecionados(request: Request, db: Session = Depends(get_db), ids: str =
     empresa = db.query(Empresa).first()
     id_list = [int(i) for i in ids.split(',') if i.isdigit()]
     produtos = db.query(Produto).options(joinedload(Produto.variacoes)).filter(Produto.id.in_(id_list)).all() if id_list else []
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "produtos/pdf_selecionados.html",
         {"request": request, "produtos": produtos, "empresa": empresa}
     )

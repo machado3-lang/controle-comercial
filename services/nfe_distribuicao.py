@@ -29,6 +29,18 @@ class NFeDistribuicaoService:
 
     def _load_cert(self, empresa: Empresa):
         import tempfile
+        # Try secure cert_store first
+        if getattr(empresa, 'cert_id', None):
+            from services.cert_store import load_certificate
+            pfx_data = load_certificate("empresa", empresa.cert_id)
+            if pfx_data:
+                tmp = os.path.join(tempfile.gettempdir(), 'certificado_nfe.pfx')
+                with open(tmp, 'wb') as f:
+                    f.write(pfx_data)
+                self.cert_path = tmp
+                self.cert_password = empresa.cert_password or os.getenv('CERT_PASSWORD', '')
+                return
+        # Fallback: base64 legacy
         if empresa.cert_base64:
             pfx = base64.b64decode(empresa.cert_base64)
             tmp = os.path.join(tempfile.gettempdir(), 'certificado_nfe.pfx')
@@ -63,7 +75,6 @@ class NFeDistribuicaoService:
 
     def _get_session(self) -> Session:
         session = Session()
-        session.verify = False
         if self.cert_path and os.path.exists(self.cert_path):
             pem = self._get_pem_combined()
             session.cert = pem
@@ -280,6 +291,10 @@ class NFeDistribuicaoService:
         try:
             existente = self.db.query(NFeDistribuida).filter(NFeDistribuida.chave_acesso == chave).first()
             if existente:
+                if xml and not existente.xml:
+                    existente.xml = xml
+                    existente.schema_nfe = schema
+                    self.db.commit()
                 return
             reg = NFeDistribuida(
                 chave_acesso=chave,
@@ -316,8 +331,6 @@ class NFeDistribuicaoService:
 
         m = re.search(r'<[^:>]*:?nNF[^>]*>(\d+)</', xml)
         if m: numero = m.group(1)
-        m = re.search(r'<[^:>]*:?dhEmi[^>]*>([^<]+)</', xml)
-        if m: dh_emi = m.group(1)
         m = re.search(r'<[^:>]*:?dhEmi[^>]*>([^<]+)</', xml)
         if m: dh_emi = m.group(1)
         m = re.search(r'<[^:>]*:?vNF[^>]*>([\d.]+)</', xml)

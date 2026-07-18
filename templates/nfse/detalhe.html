@@ -12,13 +12,15 @@
             {% endif %}
             {% if nfse.status == 'em_processamento' %}
             <form method="post" action="/nfse/{{ nfse.id }}/sincronizar" class="inline">
-                <button type="submit" class="flex items-center px-3 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10 text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sincronizar</button>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-3 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10 text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sincronizar</button>
             </form>
             {% endif %}
             {% if nfse.status == 'pendente' %}
             {% if nfse.protocolo %}
             <form method="post" action="/nfse/{{ nfse.id }}/sincronizar" class="inline">
-                <button type="submit" class="flex items-center px-3 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10 text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sincronizar</button>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-3 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10 text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sincronizar</button>
             </form>
             {% else %}
             <button type="button" onclick="confirmReenviar({{ nfse.id }}, '{{ nfse.numero }}')" class="flex items-center px-3 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10 text-sm"><i data-lucide="send" class="w-4 h-4 me-1"></i> Reenviar</button>
@@ -26,7 +28,8 @@
             {% endif %}
             {% if nfse.status == 'autorizada' %}
             <form method="post" action="/nfse/{{ nfse.id }}/sincronizar" class="inline">
-                <button type="submit" class="flex items-center px-3 py-2 text-sky-400 border border-sky-800/50 rounded-xl hover:bg-sky-950/30 transition text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sinc.</button>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-3 py-2 text-sky-400 border border-sky-800/50 rounded-xl hover:bg-sky-950/30 transition text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sinc.</button>
             </form>
             <button type="button" onclick="confirmCancelar({{ nfse.id }}, '{{ nfse.numero }}')" class="flex items-center px-3 py-2 text-rose-400 border border-rose-800/50 rounded-xl hover:bg-rose-950/30 transition text-sm"><i data-lucide="x-circle" class="w-4 h-4 me-1"></i> Cancelar</button>
             <a href="https://e-gov.betha.com.br/e-nota/contribuinte/pro_cancelarnota.faces" target="_blank" class="flex items-center px-3 py-2 text-rose-400 border border-rose-800/50 rounded-xl hover:bg-rose-950/30 transition text-sm"><i data-lucide="external-link" class="w-4 h-4 me-1"></i> Portal</a>
@@ -35,13 +38,15 @@
             {% endif %}
             {% if nfse.status == 'cancelada' %}
             <form method="post" action="/nfse/{{ nfse.id }}/sincronizar" class="inline">
-                <button type="submit" class="flex items-center px-3 py-2 text-sky-400 border border-sky-800/50 rounded-xl hover:bg-sky-950/30 transition text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sinc.</button>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-3 py-2 text-sky-400 border border-sky-800/50 rounded-xl hover:bg-sky-950/30 transition text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sinc.</button>
             </form>
             {% endif %}
             {% if nfse.status == 'erro' %}
             {% if nfse.protocolo %}
             <form method="post" action="/nfse/{{ nfse.id }}/sincronizar" class="inline">
-                <button type="submit" class="flex items-center px-3 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10 text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sincronizar</button>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-3 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10 text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sincronizar</button>
             </form>
             {% endif %}
             <button type="button" onclick="confirmReenviar({{ nfse.id }}, '{{ nfse.numero }}')" class="flex items-center px-3 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10 text-sm"><i data-lucide="send" class="w-4 h-4 me-1"></i> Reenviar</button>
@@ -151,7 +156,8 @@
         <div class="border-t border-slate-800/60 pt-4 flex flex-wrap gap-2">
             {% if not cobranca and nfse.status in ('rascunho', 'autorizada', 'pendente') %}
             <form method="post" action="/nfse/{{ nfse.id }}/gerar-cobranca" class="inline">
-                <button type="submit" class="flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition"><i data-lucide="banknote" class="w-4 h-4 me-1"></i> Gerar Cobrança</button>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition"><i data-lucide="banknote" class="w-4 h-4 me-1"></i> Gerar Cobrança</button>
             </form>
             {% endif %}
         </div>
@@ -166,7 +172,8 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <form method="post" id="formCancelar">
-                <div class="modal-body">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="modal-body">
                     <p class="text-slate-300">Confirmar cancelamento da <strong>NFSe #<span id="cancelarNumero"></span></strong>?</p>
                     <div class="mt-3">
                         <label class="block text-xs font-medium text-cyan-400 mb-1">Motivo do Cancelamento</label>
@@ -198,7 +205,8 @@
             <div class="modal-footer border-t border-slate-800/50">
                 <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Voltar</button>
                 <form method="post" id="formTransmitir" class="inline">
-                    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
                         <i data-lucide="send" class="w-4 h-4 me-1"></i> Sim, Transmitir
                     </button>
                 </form>
@@ -220,7 +228,8 @@
             <div class="modal-footer border-t border-slate-800/50">
                 <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Voltar</button>
                 <form method="post" id="formExcluir" class="inline">
-                    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-rose-500/10">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-rose-500/10">
                         <i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Sim, Excluir
                     </button>
                 </form>
@@ -243,7 +252,8 @@
             <div class="modal-footer border-t border-slate-800/50">
                 <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Voltar</button>
                 <form method="post" id="formReenviar" class="inline">
-                    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10">
                         <i data-lucide="send" class="w-4 h-4 me-1"></i> Sim, Reenviar
                     </button>
                 </form>

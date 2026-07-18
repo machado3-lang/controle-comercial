@@ -120,7 +120,8 @@
             <div class="modal-footer border-t border-slate-800/50">
                 <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Voltar</button>
                 <form method="post" id="formTransmitir" class="inline">
-                    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
                         <i data-lucide="send" class="w-4 h-4 me-1"></i> Sim, Transmitir
                     </button>
                 </form>

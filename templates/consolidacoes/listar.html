@@ -1,0 +1,151 @@
+{% extends "base.html" %}
+{% block title %}Consolidações{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between w-full mb-6 gap-4 flex-wrap">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="package" class="w-6 h-6 inline me-2"></i> Consolidações de Pedidos</h4>
+    <div class="flex items-center gap-2">
+        <a href="/pedidos" class="flex items-center h-9 px-3 text-sm bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/10"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar aos Pedidos</a>
+        <a href="/consolidacoes/nova" class="flex items-center h-9 px-3 text-sm bg-gradient-to-r from-emerald-500 to-cyan-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> Nova Consolidação</a>
+    </div>
+</div>
+
+<form class="glass-card mb-6" method="get">
+    <div class="p-4 border-b border-slate-800/60 flex flex-wrap gap-3 items-end">
+        <div>
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Buscar</label>
+            <div class="flex">
+                <input type="text" class="w-44 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-l-xl text-slate-100 focus:border-cyan-500/50 text-sm" name="busca" placeholder="Cliente/Nº..." value="{{ busca }}">
+                <button class="flex items-center justify-center h-9 w-9 bg-slate-800 border border-white/10 rounded-r-md -ml-px text-cyan-400 transition" type="submit"><i data-lucide="search" class="w-3.5 h-3.5"></i></button>
+            </div>
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-cyan-400 mb-1">De</label>
+            <input type="date" class="w-36 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 text-sm" name="data_inicio" value="{{ data_inicio }}">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Até</label>
+            <input type="date" class="w-36 px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 text-sm" name="data_fim" value="{{ data_fim }}">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Status</label>
+            <select class="w-36 h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="status" onchange="this.form.submit()">
+                <option value="">Todos</option>
+                <option value="aberto" {{ 'selected' if status == 'aberto' }}>Aberto</option>
+                <option value="processando" {{ 'selected' if status == 'processando' }}>Processando</option>
+                <option value="concluido" {{ 'selected' if status == 'concluido' }}>Concluído</option>
+                <option value="cancelado" {{ 'selected' if status == 'cancelado' }}>Cancelado</option>
+            </select>
+        </div>
+        <div class="flex items-end pb-0.5">
+            <a href="/consolidacoes" class="h-9 px-3 text-sm border border-slate-700 rounded-xl text-slate-400 hover:text-slate-200 hover:bg-slate-800/50 transition flex items-center"><i data-lucide="x" class="w-3.5 h-3.5 me-1"></i> Limpar</a>
+        </div>
+    </div>
+</form>
+
+<div class="overflow-x-auto w-full">
+    <div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl shadow-xl overflow-hidden">
+        <table class="w-full divide-y divide-slate-800/60">
+        <thead class="bg-slate-950/50">
+            <tr>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase cursor-pointer" onclick="ordenar('numero')">Nº {% if sort == 'numero' %}<i data-lucide="{{ 'arrow-up' if ordem == 'asc' else 'arrow-down' }}" class="w-3 h-3 inline"></i>{% endif %}</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase cursor-pointer" onclick="ordenar('cliente')">Cliente {% if sort == 'cliente' %}<i data-lucide="{{ 'arrow-up' if ordem == 'asc' else 'arrow-down' }}" class="w-3 h-3 inline"></i>{% endif %}</th>
+                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase cursor-pointer" onclick="ordenar('data')">Data {% if sort == 'data' %}<i data-lucide="{{ 'arrow-up' if ordem == 'asc' else 'arrow-down' }}" class="w-3 h-3 inline"></i>{% endif %}</th>
+                <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase cursor-pointer" onclick="ordenar('total')">Total {% if sort == 'total' %}<i data-lucide="{{ 'arrow-up' if ordem == 'asc' else 'arrow-down' }}" class="w-3 h-3 inline"></i>{% endif %}</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">Status</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase">Pedidos</th>
+                <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase">Ações</th>
+            </tr>
+        </thead>
+        <tbody class="divide-y divide-slate-800/60">
+            {% for c in consolidacoes %}
+            <tr class="hover:bg-slate-800/40 transition">
+                <td class="px-4 py-3 text-sm font-medium text-slate-100"><a href="/consolidacoes/{{ c.id }}">{{ c.numero or '#' + c.id|string }}</a></td>
+                <td class="px-4 py-3 text-sm text-cyan-300">{{ c.cliente.nome if c.cliente else '-' }}</td>
+                <td class="px-4 py-3 text-sm text-slate-300">{{ c.data.strftime('%d/%m/%Y') if c.data else '-' }}</td>
+                <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(c.total or 0) }}</td>
+                <td class="px-4 py-3 text-center">
+                    {% set cor = 'success' if c.status == 'concluido' else 'primary' if c.status == 'processando' else 'warning' if c.status == 'aberto' else 'danger' %}
+                    <span class="px-2 py-1 text-xs font-medium
+                        {% if c.status == 'concluido' %} bg-emerald-950/50 text-emerald-400 border border-emerald-800/50
+                        {% elif c.status == 'processando' %} bg-indigo-950/50 text-indigo-400 border border-indigo-800/50
+                        {% elif c.status == 'aberto' %} bg-cyan-950/50 text-cyan-400 border border-cyan-800/50
+                        {% else %} bg-rose-950/50 text-rose-400 border border-rose-800/50 {% endif %}
+                        rounded-full">{{ STATUS_LABELS.get(c.status, c.status) }}</span>
+                </td>
+                <td class="px-4 py-3 text-center text-sm text-slate-300">{{ c.qtd_pedidos_origem }}</td>
+                <td class="px-4 py-3 text-center align-middle" style="min-width: 7rem;">
+                    <div class="flex items-center justify-center gap-1">
+                        <a href="/consolidacoes/{{ c.id }}" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Ver"><i data-lucide="eye" class="w-4 h-4"></i></a>
+                        <a href="/consolidacoes/{{ c.id }}/imprimir" target="_blank" class="inline-flex p-1.5 text-slate-300 border border-slate-700 rounded hover:bg-slate-800/50 transition" title="Imprimir"><i data-lucide="printer" class="w-4 h-4"></i></a>
+                        <a href="/consolidacoes/{{ c.id }}/imprimir?termica=1" target="_blank" class="inline-flex p-1.5 text-slate-500 border border-slate-700 rounded hover:bg-slate-800/50 transition" title="Impressão térmica 80mm"><i data-lucide="printer" class="w-4 h-4"></i></a>
+                        {% if c.status == 'aberto' %}
+                        <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarCancelamento({{ c.id }})" title="Cancelar"><i data-lucide="x-circle" class="w-4 h-4"></i></button>
+                        {% endif %}
+                    </div>
+                </td>
+            </tr>
+            {% else %}
+            <tr><td colspan="7" class="px-4 py-12 text-center text-slate-500">Nenhuma consolidação encontrada</td></tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    </div>
+</div>
+
+{% include "partials/paginacao.html" %}
+
+<!-- Modal Confirmar Cancelamento -->
+<div id="modalCancelar" class="fixed inset-0 bg-black/70 backdrop-blur-sm hidden items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md">
+        <div class="p-4 border-b border-slate-800 flex justify-between items-center">
+            <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-medium">Cancelar Consolidação</h5>
+            <button onclick="fecharModalCancelar()" class="text-slate-400 hover:text-slate-100"><i data-lucide="x" class="w-5 h-5"></i></button>
+        </div>
+        <form method="post" id="formCancelar">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="p-4">
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Motivo (opcional)</label>
+                <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="motivo" rows="2" placeholder="Informe o motivo..."></textarea>
+            </div>
+            <div class="p-4 border-t border-slate-800 flex justify-end gap-2">
+                <button type="button" onclick="fecharModalCancelar()" class="px-4 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition">Não</button>
+                <button type="submit" class="px-4 py-2 bg-rose-500/20 hover:bg-rose-500/30 text-rose-400 border border-rose-500/30 rounded-xl font-medium transition">Sim, Cancelar</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<script>
+let cancelarId = null;
+function ordenar(col) {
+    const url = new URL(window.location.href);
+    const atual = url.searchParams.get('sort') || '';
+    const ordemAtual = url.searchParams.get('ordem') || 'desc';
+    if (atual === col) {
+        url.searchParams.set('ordem', ordemAtual === 'asc' ? 'desc' : 'asc');
+    } else {
+        url.searchParams.set('sort', col);
+        url.searchParams.set('ordem', 'asc');
+    }
+    window.location.href = url.toString();
+}
+
+function confirmarCancelamento(id) {
+    cancelarId = id;
+    document.getElementById('formCancelar').action = `/consolidacoes/${id}/cancelar`;
+    document.getElementById('modalCancelar').classList.remove('hidden');
+    document.getElementById('modalCancelar').classList.add('flex');
+    if (window.lucide) lucide.createIcons();
+}
+
+function fecharModalCancelar() {
+    cancelarId = null;
+    document.getElementById('modalCancelar').classList.add('hidden');
+    document.getElementById('modalCancelar').classList.remove('flex');
+}
+
+document.getElementById('modalCancelar')?.addEventListener('click', function(e) {
+    if (e.target === this) fecharModalCancelar();
+});
+</script>
+{% endblock %}

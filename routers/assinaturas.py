@@ -1,4 +1,4 @@
-import enum
+import logging
 from datetime import datetime, date, timedelta
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
@@ -8,6 +8,10 @@ from database import get_db
 from models import (Assinatura, AssinaturaHistorico, Cliente, Fornecedor, Empresa, Produto,
                    ContaReceber, StatusConta, get_safe_day)
 from models_nfe import NFSe, NFSeItem
+from app.core.security import confirma_senha_usuario
+from services.audit import registrar_auditoria
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/assinaturas", tags=["Assinaturas"])
 
@@ -60,7 +64,7 @@ def _proximo_vencimento(assinatura: Assinatura) -> date | None:
 def listar_assinaturas(
     request: Request, db: Session = Depends(get_db),
     periodicidade: str = Query(""), status_filtro: str = Query(""), busca: str = Query(""),
-    vencimento_dias: str = Query("")
+    vencimento_dias: str = Query(""), sort: str = Query(""), ordem: str = Query("")
 ):
     from sqlalchemy.orm import joinedload
     query = db.query(Assinatura).options(joinedload(Assinatura.cliente), joinedload(Assinatura.fornecedor)).join(Cliente)
@@ -76,6 +80,19 @@ def listar_assinaturas(
             pass
     if busca:
         query = query.filter(Cliente.nome.ilike(f"%{busca}%") | Cliente.fantasia.ilike(f"%{busca}%") | Cliente.cpf_cnpj.ilike(f"%{busca}%"))
+
+    # Ordenação por colunas (cliente, descricao, revenda, data_inicio, vencimento)
+    sort_map = {
+        "cliente": Cliente.nome,
+        "descricao": Assinatura.descricao,
+        "revenda": Fornecedor.nome,
+        "data_inicio": Assinatura.data_inicio,
+        "vencimento": Assinatura.dia_vencimento,
+    }
+    order_col = sort_map.get(sort, Assinatura.data_inicio)
+    descendente = (ordem != "asc")
+    query = query.order_by(order_col.desc() if descendente else order_col.asc())
+
     if vencimento_dias:
         try:
             dias = int(vencimento_dias)
@@ -85,12 +102,12 @@ def listar_assinaturas(
                 (Assinatura.data_fim == None) | (Assinatura.data_fim >= hoje),
                 Assinatura.data_inicio <= fim
             )
-            assinaturas = query.order_by(Assinatura.data_inicio.desc()).all()
+            assinaturas = query.all()
             assinaturas = [a for a in assinaturas if _proximo_vencimento(a) and hoje <= _proximo_vencimento(a) <= fim]
         except ValueError:
-            assinaturas = query.order_by(Assinatura.data_inicio.desc()).all()
+            assinaturas = query.all()
     else:
-        assinaturas = query.order_by(Assinatura.data_inicio.desc()).all()
+        assinaturas = query.all()
     
     for a in assinaturas:
         prox = _proximo_vencimento(a)
@@ -125,6 +142,7 @@ def listar_assinaturas(
          "clientes_json": clientes_json, "fornecedores_json": fornecedores_json, "servicos_json": servicos_json,
          "periodicidade": periodicidade, "status_filtro": status_filtro,
          "busca": busca, "vencimento_dias": vencimento_dias, "SITUACAO_LABELS": SITUACAO_LABELS,
+         "sort": sort, "ordem": ordem,
          "PERIODICIDADE_LABELS": PERIODICIDADE_LABELS, "lucro_total": lucro_total}
     )
 
@@ -149,7 +167,6 @@ def criar_assinatura(
     observacao: str = Form(None),
 ):
     try:
-        print(f"[DEBUG] criar_assinatura: cliente_id={cliente_id}, servico_id={servico_id}, valor={valor}")
         inicio = date.fromisoformat(data_inicio)
         fim = date.fromisoformat(data_fim) if data_fim else None
         
@@ -265,7 +282,7 @@ def _salvar_historico(db: Session, assinatura: Assinatura, valor, valor_revenda,
         db.add(historico)
 
 
-@router.get("/{assinatura_id}/gerar-cobranca")
+@router.post("/{assinatura_id}/gerar-cobranca")
 def gerar_cobranca(request: Request, assinatura_id: int, db: Session = Depends(get_db)):
     assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
     if assinatura:
@@ -361,7 +378,7 @@ def editar_assinatura(request: Request, assinatura_id: int, db: Session = Depend
          "fornecedores": fornecedores, "servicos": servicos,
          "historico": historico,
          "clientes_json": clientes_json, "fornecedores_json": fornecedores_json, "servicos_json": servicos_json,
-         "senha_definida": bool(empresa and empresa.senha_admin)}
+         "senha_definida": True}
     )
 
 
@@ -425,15 +442,20 @@ def excluir_historico(
     db: Session = Depends(get_db),
     senha: str = Form(""),
 ):
-    empresa = db.query(Empresa).first()
-    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
+    if not confirma_senha_usuario(request, db, senha):
+        return JSONResponse({"erro": "Senha inválida ou usuário não autorizado"}, status_code=403)
     historico = db.query(AssinaturaHistorico).filter(
         AssinaturaHistorico.id == historico_id
     ).first()
     if historico:
         db.delete(historico)
         db.commit()
+        registrar_auditoria(
+            db, request.session.get("user_id"), "excluir",
+            "assinatura_historico", historico_id,
+            f"Assinatura #{assinatura_id} - Histórico #{historico_id}",
+            request.client.host if request.client else None
+        )
     return RedirectResponse(url=f"/assinaturas/{assinatura_id}/editar", status_code=303)
 
 
@@ -448,12 +470,22 @@ def cancelar_assinatura(request: Request, assinatura_id: int, db: Session = Depe
 
 @router.post("/{assinatura_id}/excluir")
 def excluir_assinatura(request: Request, assinatura_id: int, db: Session = Depends(get_db), senha: str = Form("")):
-    empresa = db.query(Empresa).first()
-    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"success": False, "error": "Senha inválida"}, status_code=403)
+    if not confirma_senha_usuario(request, db, senha):
+        return JSONResponse({"success": False, "error": "Senha inválida ou usuário não autorizado"}, status_code=403)
     assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
-    if assinatura:
+    if not assinatura:
+        return JSONResponse({"success": False, "error": "Assinatura não encontrada"}, status_code=404)
+    try:
         db.delete(assinatura)
         db.commit()
+        registrar_auditoria(
+            db, request.session.get("user_id"), "excluir",
+            "assinatura", assinatura_id,
+            f"Assinatura #{assinatura_id}",
+            request.client.host if request.client else None
+        )
         return JSONResponse({"success": True, "message": "Assinatura excluída com sucesso"})
-    return JSONResponse({"success": False, "error": "Assinatura não encontrada"}, status_code=404)
+    except Exception:
+        db.rollback()
+        logger.exception("Erro ao excluir assinatura %s", assinatura_id)
+        return JSONResponse({"success": False, "error": "Erro interno ao excluir a assinatura"}, status_code=500)

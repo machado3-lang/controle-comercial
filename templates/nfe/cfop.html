@@ -108,7 +108,7 @@ function editarCfop(id, cfop, natureza) {
 document.getElementById('formCfop').addEventListener('submit', function(e) {
     e.preventDefault();
     const formData = new FormData(this);
-    fetch('/nfe/cfop/salvar', { method: 'POST', body: formData })
+    csrfFetch('/nfe/cfop/salvar', { method: 'POST', body: formData })
         .then(r => r.json())
         .then(d => { if (d.success) location.reload(); });
 });
@@ -124,7 +124,7 @@ document.getElementById('btnConfirmarExclusao').addEventListener('click', functi
     if (!cfopExcluirId) return;
     const formData = new FormData();
     formData.append('id', cfopExcluirId);
-    fetch('/nfe/cfop/excluir', { method: 'POST', body: formData })
+    csrfFetch('/nfe/cfop/excluir', { method: 'POST', body: formData })
         .then(r => r.json())
         .then(d => { if (d.success) { cfopExcluirModal.hide(); location.reload(); } });
 });

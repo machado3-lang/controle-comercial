@@ -139,7 +139,7 @@ def extract_nfse_data(xml_string: str) -> dict:
         'codigo_autenticacao': codigo_autenticacao.text if codigo_autenticacao is not None else '',
         'prestador': {
             'razao_social': prestador_razao.text if prestador_razao is not None else '',
-            'cnpj': format_cnpj(prestador_cnpj.text if tomador_cnpj is not None else ''),
+            'cnpj': format_cnpj(prestador_cnpj.text if prestador_cnpj is not None else ''),
             'inscricao_municipal': prestador_im.text if prestador_im is not None else '',
             'endereco': 'Rua Exemplo, 100 - Dourados/MS'
         },

@@ -2,12 +2,18 @@ from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
-
 from database import get_db
 from models import Fornecedor, ContaPagar, Empresa
+from services.validators import validar_cliente_fornecedor
+from app.core.security import confirma_senha_usuario
+from services.audit import registrar_auditoria
 
 
 def _proximo_codigo_fornecedor(db: Session) -> str:
+    empresa = db.query(Empresa).with_for_update().first()
+    if empresa:
+        empresa.ultimo_codigo_fornecedor = (empresa.ultimo_codigo_fornecedor or 0) + 1
+        return f"FOR-{empresa.ultimo_codigo_fornecedor:04d}"
     codigos = db.query(Fornecedor.codigo).filter(Fornecedor.codigo.isnot(None)).all()
     codigos = [c[0] for c in codigos if c[0]]
     
@@ -32,7 +38,11 @@ router = APIRouter(prefix="/fornecedores", tags=["Fornecedores"])
 
 
 @router.get("/")
-def listar_fornecedores(request: Request, db: Session = Depends(get_db), busca: str = Query(""), situacao: str = Query("")):
+def listar_fornecedores(
+    request: Request, db: Session = Depends(get_db),
+    busca: str = Query(""), situacao: str = Query(""),
+    page: int = Query(1), per_page: int = Query(20),
+):
     query = db.query(Fornecedor)
     if busca:
         query = query.filter(
@@ -40,10 +50,16 @@ def listar_fornecedores(request: Request, db: Session = Depends(get_db), busca: 
         )
     if situacao:
         query = query.filter(Fornecedor.situacao == situacao)
-    fornecedores = query.order_by(Fornecedor.nome).all()
-    return request.app.state.templates.TemplateResponse(
+    total_count = query.count()
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    offset = (page - 1) * per_page
+    fornecedores = query.order_by(Fornecedor.nome).offset(offset).limit(per_page).all()
+    return request.app.state.templates.TemplateResponse(request, 
         "fornecedores/listar.html",
-        {"request": request, "fornecedores": fornecedores, "busca": busca, "filtro_situacao": situacao}
+        {"request": request, "fornecedores": fornecedores, "busca": busca,
+         "filtro_situacao": situacao, "page": page, "per_page": per_page,
+         "total_pages": total_pages, "total_count": total_count}
     )
 
 
@@ -57,7 +73,7 @@ def buscar_fornecedores(request: Request, db: Session = Depends(get_db), q: str 
 
 @router.get("/novo")
 def novo_fornecedor(request: Request, db: Session = Depends(get_db)):
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "fornecedores/form.html",
         {"request": request, "fornecedor": None, "proximo_codigo": _proximo_codigo_fornecedor(db)}
     )
@@ -87,6 +103,21 @@ def criar_fornecedor(
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
 ):
+    erros = validar_cliente_fornecedor(
+        nome=nome,
+        tipo_pessoa=tipo_pessoa,
+        cpf_cnpj=cpf_cnpj,
+        ie=inscricao_estadual,
+        uf=estado,
+        cep=cep,
+        telefone=telefone,
+        celular=celular,
+        email=email,
+    )
+    if erros:
+        request.session["message"] = {"tipo": "danger", "texto": "; ".join(erros)}
+        return RedirectResponse(url="/fornecedores/novo", status_code=303)
+
     if not codigo:
         codigo = _proximo_codigo_fornecedor(db)
     if data_cadastro:
@@ -94,7 +125,7 @@ def criar_fornecedor(
     else:
         created_at = datetime.now()
     fornecedor = Fornecedor(
-        codigo=_proximo_codigo_fornecedor(db),
+        codigo=codigo,
         nome=nome, cpf_cnpj=cpf_cnpj, tipo_pessoa=tipo_pessoa,
         email=email, telefone=telefone,
         celular=celular, endereco=endereco, bairro=bairro, cidade=cidade,
@@ -114,7 +145,7 @@ def detalhe_fornecedor(request: Request, fornecedor_id: int, db: Session = Depen
     if not fornecedor:
         return RedirectResponse(url="/fornecedores", status_code=303)
     contas = db.query(ContaPagar).filter(ContaPagar.fornecedor_id == fornecedor_id).order_by(ContaPagar.data_vencimento.desc()).all()
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "fornecedores/detalhe.html",
         {"request": request, "fornecedor": fornecedor, "contas": contas}
     )
@@ -125,7 +156,7 @@ def editar_fornecedor(request: Request, fornecedor_id: int, db: Session = Depend
     fornecedor = db.query(Fornecedor).filter(Fornecedor.id == fornecedor_id).first()
     if not fornecedor:
         return RedirectResponse(url="/fornecedores", status_code=303)
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "fornecedores/form.html",
         {"request": request, "fornecedor": fornecedor}
     )
@@ -185,12 +216,17 @@ def atualizar_fornecedor(
 
 @router.post("/{fornecedor_id}/excluir")
 def excluir_fornecedor(request: Request, fornecedor_id: int, db: Session = Depends(get_db), senha: str = Form("")):
-    empresa = db.query(Empresa).first()
-    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"success": False, "error": "Senha inválida"}, status_code=403)
+    if not confirma_senha_usuario(request, db, senha):
+        return JSONResponse({"success": False, "error": "Senha inválida ou usuário não autorizado"}, status_code=403)
     fornecedor = db.query(Fornecedor).filter(Fornecedor.id == fornecedor_id).first()
     if fornecedor:
-        db.delete(fornecedor)
+        fornecedor_nome = fornecedor.nome
+        fornecedor.situacao = "I"
         db.commit()
+        registrar_auditoria(
+            db, request.session.get("user_id"), "excluir",
+            "fornecedor", fornecedor_id, f"Fornecedor: {fornecedor_nome}",
+            request.client.host if request.client else None
+        )
         return {"success": True, "redirect": "/fornecedores"}
     return {"success": False, "error": "Fornecedor não encontrado"}

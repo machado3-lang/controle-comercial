@@ -4,9 +4,12 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, date
 from sqlalchemy import or_
+from sqlalchemy.orm import selectinload
 
 from database import get_db
 from models import OrdemServico, Cliente, Empresa, StatusOS, Produto, MarcaProduto, CategoriaProduto
+from app.core.security import confirma_senha_usuario
+from services.audit import registrar_auditoria
 
 router = APIRouter(prefix="/ordens-servico", tags=["Ordens de Serviço"])
 
@@ -14,18 +17,45 @@ router = APIRouter(prefix="/ordens-servico", tags=["Ordens de Serviço"])
 @router.get("/")
 def listar_ordens(
     request: Request, db: Session = Depends(get_db),
-    status_filtro: str = Query(""), busca: str = Query("")
+    status_filtro: str = Query(""), busca: str = Query(""),
+    page: int = Query(1), per_page: int = Query(20),
+    sort: str = Query(""), ordem: str = Query(""),
 ):
-    query = db.query(OrdemServico).join(Cliente)
+    query = db.query(OrdemServico).options(selectinload(OrdemServico.cliente)).join(Cliente)
     if status_filtro:
-        query = query.filter(OrdemServico.status == status_filtro)
+        try:
+            status_enum = StatusOS(status_filtro)
+            query = query.filter(OrdemServico.status == status_enum.name)
+        except ValueError:
+            query = query.filter(OrdemServico.status == status_filtro)
     if busca:
         query = query.filter(
             OrdemServico.equipamento.ilike(f"%{busca}%") |
             Cliente.nome.ilike(f"%{busca}%") |
             OrdemServico.defeito_relatado.ilike(f"%{busca}%")
         )
-    ordens = query.order_by(OrdemServico.data_entrada.desc()).all()
+
+    # Ordenação por colunas principais
+    sort_map = {
+        "cliente": Cliente.nome,
+        "equipamento": OrdemServico.equipamento,
+        "entrada": OrdemServico.data_entrada,
+        "saida": OrdemServico.data_saida,
+        "valor": OrdemServico.valor_total,
+        "tecnico": OrdemServico.tecnico,
+        "autorizado": OrdemServico.autorizado_por,
+        "requisicao": OrdemServico.numero_requisicao,
+        "status": OrdemServico.status,
+    }
+    order_col = sort_map.get(sort, OrdemServico.data_entrada)
+    descendente = (ordem != "asc")
+    query = query.order_by(order_col.desc() if descendente else order_col.asc())
+
+    total = query.count()
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    offset = (page - 1) * per_page
+    ordens = query.offset(offset).limit(per_page).all()
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     marcas = db.query(MarcaProduto).order_by(MarcaProduto.nome).all()
     servicos = db.query(Produto).filter(Produto.tipo == 'servico').order_by(Produto.nome).all()
@@ -34,12 +64,14 @@ def listar_ordens(
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
     servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": s.preco} for s in servicos]
     pecas_json = [{"id": p.id, "nome": p.nome, "preco": p.preco} for p in pecas]
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "ordens_servico/listar.html",
         {"request": request, "ordens": ordens, "clientes": clientes, "marcas": marcas,
          "servicos": servicos, "pecas": pecas,
          "clientes_json": clientes_json, "marcas_json": marcas_json, "servicos_json": servicos_json, "pecas_json": pecas_json,
-         "status_filtro": status_filtro, "busca": busca, "StatusOS": StatusOS}
+          "status_filtro": status_filtro, "busca": busca, "StatusOS": StatusOS,
+          "sort": sort, "ordem": ordem,
+          "page": page, "per_page": per_page, "total_pages": total_pages, "total_count": total}
     )
 
 
@@ -53,7 +85,7 @@ def nova_ordem(request: Request, db: Session = Depends(get_db)):
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
     servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": s.preco} for s in servicos]
     pecas_json = [{"id": p.id, "nome": p.nome, "preco": p.preco} for p in pecas]
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "ordens_servico/form.html",
         {"request": request, "ordem": None, "clientes": clientes, "marcas": marcas,
          "servicos": servicos, "pecas": pecas, "clientes_json": clientes_json, 
@@ -105,7 +137,7 @@ def detalhe_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
     servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": s.preco} for s in servicos]
     pecas_json = [{"id": p.id, "nome": p.nome, "preco": p.preco} for p in pecas]
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "ordens_servico/detalhe.html",
         {"request": request, "ordem": ordem, "clientes": clientes, "marcas": marcas,
          "servicos": servicos, "pecas": pecas, "StatusOS": StatusOS,
@@ -153,7 +185,7 @@ def editar_ordem_form(request: Request, ordem_id: int, db: Session = Depends(get
         except (json.JSONDecodeError, TypeError):
             pecas_existentes = []
 
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "ordens_servico/editar.html",
         {"request": request, "ordem": ordem, "clientes": clientes, "marcas": marcas,
          "categorias": categorias, "servicos": servicos, "pecas": pecas,
@@ -249,7 +281,7 @@ def imprimir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db
         return RedirectResponse(url="/ordens-servico", status_code=303)
     empresa = db.query(Empresa).first()
     from datetime import datetime
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "ordens_servico/imprimir.html",
         {"request": request, "ordem": ordem, "empresa": empresa, "datetime": datetime, "tipo_impressao": tipo}
     )
@@ -257,11 +289,16 @@ def imprimir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db
 
 @router.post("/{ordem_id}/excluir")
 def excluir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db), senha: str = Form("")):
-    empresa = db.query(Empresa).first()
-    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
+    if not confirma_senha_usuario(request, db, senha):
+        return JSONResponse({"erro": "Senha inválida ou usuário não autorizado"}, status_code=403)
     ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
     if ordem:
-        db.delete(ordem)
+        ordem_descricao = ordem.equipamento or f"OS #{ordem_id}"
+        ordem.status = StatusOS.CANCELADA
         db.commit()
+        registrar_auditoria(
+            db, request.session.get("user_id"), "excluir",
+            "ordem_servico", ordem_id, f"OS: {ordem_descricao}",
+            request.client.host if request.client else None
+        )
     return RedirectResponse(url="/ordens-servico", status_code=303)

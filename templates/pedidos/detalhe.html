@@ -64,16 +64,24 @@
     <div class="p-4 border-t border-slate-800/60 flex flex-col md:flex-row md:justify-between gap-3">
         <div class="w-48">
             <form method="post" action="/pedidos/{{ pedido.id }}/status">
-                <label class="block text-xs font-medium text-cyan-400 mb-1">Status</label>
-                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="status" onchange="this.form.submit()">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <label class="block text-xs font-medium text-cyan-400 mb-1">Status</label>
+                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="status" onchange="this.form.submit()" {% if pedido.status == 'faturado' %}disabled title="Pedido faturado não pode ter o status alterado"{% endif %}>
                     <option value="pendente" {% if pedido.status == 'pendente' %}selected{% endif %}>Pendente</option>
                     <option value="aprovado" {% if pedido.status == 'aprovado' %}selected{% endif %}>Aprovado</option>
-                    <option value="faturado" {% if pedido.status == 'faturado' %}selected{% endif %}>Faturado</option>
+                    <option value="faturado" {% if pedido.status == 'faturado' %}selected{% endif %} {% if pedido.consolidacao_id %}disabled title="Fature pela consolidação"{% endif %}>Faturado</option>
                     <option value="pre_venda" {% if pedido.status == 'pre_venda' %}selected{% endif %}>Pré-venda</option>
                     <option value="cancelado" {% if pedido.status == 'cancelado' %}selected{% endif %}>Cancelado</option>
                 </select>
             </form>
         </div>
+        {% if pedido.status != 'faturado' and pedido.status != 'pre_venda' %}
+        <form method="post" action="/pedidos/{{ pedido.id }}/status" class="flex items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="status" value="pre_venda">
+            <button type="submit" class="px-3 py-2 text-amber-300 border border-amber-700 rounded-xl hover:bg-amber-950/30 transition text-sm" title="Rebaixar para pré-venda e liberar para consolidação"><i data-lucide="corner-up-left" class="w-3 h-3 me-1 inline"></i> Marcar Pré-venda</button>
+        </form>
+        {% endif %}
         <div class="flex flex-wrap gap-2 items-start">
             {% if pedido.pedido_agrupado_id %}
             <span class="px-2 py-1 text-xs font-medium bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-full">Agrupado em Pedido #{{ pedido.pedido_agrupado.numero or pedido.pedido_agrupado.id }}</span>
@@ -86,6 +94,7 @@
             <p class="w-full text-xs text-rose-400 mb-1"><i data-lucide="alert-triangle" class="w-3 h-3 inline me-1"></i> LC116 diferentes ({{ codigos_unicos | join(', ') }}) — NFS-e não pode ser emitida.</p>
             {% endif %}
             <a href="/pedidos/{{ pedido.id }}/imprimir" class="flex items-center px-3 py-1 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition text-sm" target="_blank"><i data-lucide="printer" class="w-3 h-3 me-1"></i> Imprimir</a>
+            <a href="/pedidos/{{ pedido.id }}/imprimir?termica=1" class="flex items-center px-3 py-1 text-slate-400 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition text-sm" target="_blank" title="Impressão térmica 80mm"><i data-lucide="printer" class="w-3 h-3 me-1"></i> Térmica</a>
             <a href="/nfe/emitir/pedido/{{ pedido.id }}" class="flex items-center px-3 py-1 text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition text-sm"><i data-lucide="file-text" class="w-3 h-3 me-1"></i> Gerar NFe</a>
             {% endif %}
             {% if pedido.nfes %}
@@ -106,7 +115,8 @@
         <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="check-circle" class="w-5 h-5 inline me-1"></i> Finalizar Pedido</h5>
     </div>
     <form method="post" action="/pedidos/{{ pedido.id }}/finalizar" class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
-        <div>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div>
             <label class="block text-xs font-medium text-cyan-400 mb-1">Tipo *</label>
             <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tipo_pedido" required>
                 <option value="venda">Venda</option>
@@ -136,6 +146,27 @@
             <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10"><i data-lucide="check-circle" class="w-4 h-4 me-1"></i> Finalizar</button>
         </div>
     </form>
+</div>
+{% endif %}
+
+{% if pedido.consolidacao %}
+<div class="glass-card mb-6">
+    <div class="p-4 border-b border-slate-800/60 flex justify-between items-center">
+        <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 font-medium">
+            <i data-lucide="package" class="w-5 h-5 inline me-2"></i> Pedido Consolidado
+        </h5>
+            <a href="/consolidacoes/{{ pedido.consolidacao.id }}" class="px-3 py-1.5 text-xs bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 rounded-lg hover:bg-emerald-500/30 transition">
+            Ver Consolidação {{ pedido.consolidacao.numero }}
+        </a>
+    </div>
+    <div class="p-4 text-sm">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 text-slate-300">
+            <div><span class="text-slate-500">Status:</span> <span class="font-medium">{{ STATUS_LABELS.get(pedido.consolidacao.status, pedido.consolidacao.status) }}</span></div>
+            <div><span class="text-slate-500">Total:</span> <span class="font-medium text-emerald-400">R$ {{ "%.2f"|format(pedido.consolidacao.total or 0) }}</span></div>
+            <div><span class="text-slate-500">Pedidos:</span> <span class="font-medium">{{ pedido.consolidacao.qtd_pedidos_origem }}</span></div>
+            <div><span class="text-slate-500">Data:</span> <span class="font-medium">{{ pedido.consolidacao.data.strftime('%d/%m/%Y') if pedido.consolidacao.data else '-' }}</span></div>
+        </div>
+    </div>
 </div>
 {% endif %}
 

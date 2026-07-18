@@ -1,0 +1,286 @@
+{% extends "base.html" %}
+{% block title %}Nova Consolidação{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between w-full mb-6 gap-4">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">
+        <i data-lucide="package-plus" class="w-6 h-6 inline me-2"></i> Nova Consolidação de Pedidos
+    </h4>
+    <a href="/consolidacoes" class="flex items-center px-3 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition">
+        <i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar
+    </a>
+</div>
+
+<div class="glass-card mb-6">
+    <div class="p-4 border-b border-slate-800/60">
+        <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-medium">
+            <i data-lucide="filter" class="w-5 h-5 inline me-2"></i> Filtros de Busca
+        </h5>
+    </div>
+    <form method="get" action="/consolidacoes/nova" class="p-4 flex flex-wrap gap-4 items-end">
+        <div class="w-80 relative">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente</label>
+            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 cliente-search" placeholder="Digite para buscar cliente..." autocomplete="off" value="{% if cliente_id %}{{ clientes | selectattr('id', 'equalto', cliente_id) | first | map(attribute='nome') | first }}{% endif %}">
+            <div id="clientes-dropdown" class="absolute z-[100] w-full bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto shadow-lg"></div>
+            <input type="hidden" name="cliente_id" id="clienteId" value="{{ cliente_id }}">
+        </div>
+        <div class="w-40">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Período Início</label>
+            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="periodo_inicio" value="{{ periodo_inicio }}">
+        </div>
+        <div class="w-40">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Período Fim</label>
+            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="periodo_fim" value="{{ periodo_fim }}">
+        </div>
+        <button class="px-3 py-2 border border-slate-800/80 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition" type="submit"><i data-lucide="search" class="w-4 h-4"></i></button>
+    </form>
+</div>
+
+<form method="post" action="/consolidacoes/criar" id="formConsolidacao" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="pedido_ids" id="pedido_ids_input" value="[]">
+
+    <div class="glass-card">
+        <div class="p-4 border-b border-slate-800/60 flex justify-between items-center">
+            <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-medium">
+                <i data-lucide="shopping-cart" class="w-5 h-5 inline me-2"></i> Pré-Pedidos Disponíveis
+            </h5>
+            <div class="flex items-center gap-2">
+                <span class="text-xs text-slate-400">Total selecionado: <span id="totalSelecionado" class="text-emerald-400 font-bold">R$ 0,00</span></span>
+                <span class="text-xs text-slate-400">Qtd: <span id="qtdSelecionada" class="text-emerald-400 font-bold">0</span> pedidos</span>
+            </div>
+        </div>
+        <div class="p-4 max-h-96 overflow-y-auto">
+            {% if clientes_agrupados %}
+                {% for cliente_id, dados in clientes_agrupados.items() %}
+                <div class="mb-4 border border-slate-800/50 rounded-xl overflow-hidden">
+                    <div class="px-4 py-3 bg-slate-900/50 flex items-center justify-between">
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" class="chk-cliente w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded" value="{{ cliente_id }}">
+                            <span class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">{{ dados.cliente.nome }}</span>
+                            <span class="text-emerald-400 font-bold">R$ {{ "%.2f"|format(dados.total) }}</span>
+                            <span class="text-slate-400 text-sm">({{ dados.pedidos|length }} pedidos, {{ dados.qtd_itens }} itens)</span>
+                        </label>
+                    </div>
+                    <div class="p-4">
+                        <div class="overflow-x-auto">
+                            <table class="w-full divide-y divide-slate-800/60">
+                                <thead class="bg-slate-950/50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-center"><input type="checkbox" class="todos-pedidos w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded" data-cliente="{{ cliente_id }}"></th>
+                                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Nº Pedido</th>
+                                        <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Data</th>
+                                        <th class="px-3 py-2 text-right text-xs font-semibold text-emerald-400 uppercase">Total</th>
+                                        <th class="px-3 py-2 text-center text-xs font-semibold text-slate-400 uppercase">Itens</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-800/60">
+                                    {% for p in dados.pedidos %}
+                                    <tr class="hover:bg-slate-800/40 transition pedido-row" data-pedido-id="{{ p.id }}">
+                                        <td class="px-3 py-2 text-center"><input type="checkbox" name="pedido_ids" value="{{ p.id }}" class="pedido-item w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded" data-cliente="{{ cliente_id }}"></td>
+                                        <td class="px-3 py-2 text-sm text-slate-100">{{ p.numero or '#' + p.id|string }}</td>
+                                        <td class="px-3 py-2 text-sm text-slate-300">{{ p.data.strftime('%d/%m/%Y') if p.data else '-' }}</td>
+                                        <td class="px-3 py-2 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(p.total or 0) }}</td>
+                                        <td class="px-3 py-2 text-center text-sm text-slate-400">{{ p.itens|length if p.itens else 0 }}</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+            {% else %}
+            <div class="text-center py-12 text-slate-500">
+                <i data-lucide="inbox" class="w-12 h-12 mx-auto mb-3 opacity-50"></i>
+                <p>Nenhum pré-pedido disponível para consolidação</p>
+                <p class="text-sm mt-1">Crie pedidos com status "Pré-venda" ou "Pendente" primeiro</p>
+            </div>
+            {% endif %}
+        </div>
+    </div>
+
+    <div class="glass-card">
+        <div class="p-4 border-b border-slate-800/60">
+            <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-medium">
+                <i data-lucide="file-text" class="w-5 h-5 inline me-2"></i> Dados da Consolidação
+            </h5>
+        </div>
+        <div class="p-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div class="md:col-span-2">
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
+                <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="3" placeholder="Observações sobre esta consolidação..."></textarea>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Forma de Pagamento</label>
+                <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="forma_pagamento">
+                    <option value="">Não definido</option>
+                    <option value="avista">À Vista</option>
+                    <option value="aprazo">À Prazo</option>
+                    <option value="boleto">Boleto</option>
+                    <option value="cartao_credito">Cartão Crédito</option>
+                    <option value="cartao_debito">Cartão Débito</option>
+                </select>
+            </div>
+            <div class="flex items-end">
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded" name="gerar_boleto" id="gerar_boleto">
+                    <label for="gerar_boleto" class="text-sm text-slate-300 cursor-pointer">Gerar Boleto</label>
+                </div>
+            </div>
+        </div>
+        <div id="boleto_fields" class="p-4 border-t border-slate-800/60 hidden">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Termos do Boleto</label>
+            <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="terminos_boleto" rows="2"></textarea>
+        </div>
+    </div>
+
+    <div class="flex justify-end gap-2">
+        <a href="/consolidacoes" class="px-4 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition flex items-center"><i data-lucide="x" class="w-4 h-4 me-1"></i> Cancelar</a>
+        <button type="submit" id="btnCriar" disabled class="flex items-center px-4 py-2 bg-slate-700/50 text-slate-500 border border-slate-700 rounded-xl font-medium transition-all opacity-50 cursor-not-allowed"><i data-lucide="package" class="w-4 h-4 me-1"></i> Criar Consolidação</button>
+    </div>
+</form>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function buscarClientes(q) {
+    if (!q || q.length < 2) return [];
+    try {
+        const r = await fetch(`/clientes/buscar?q=${encodeURIComponent(q)}`);
+        const d = await r.json();
+        return d.clientes || [];
+    } catch { return []; }
+}
+
+function formatarDocClientes(cpf_cnpj) {
+    if (!cpf_cnpj) return '';
+    var d = cpf_cnpj.replace(/\D/g, '');
+    if (d.length === 14) return d.substring(0,2) + '.' + d.substring(2,5) + '.' + d.substring(5,8) + '/' + d.substring(8,12) + '-' + d.substring(12);
+    if (d.length === 11) return d.substring(0,3) + '.' + d.substring(3,6) + '.' + d.substring(6,9) + '-' + d.substring(9);
+    return cpf_cnpj;
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    const checkboxes = document.querySelectorAll('.pedido-item');
+    const clientCheckboxes = document.querySelectorAll('.chk-cliente');
+    const allCheckboxes = document.querySelectorAll('.todos-pedidos');
+    const btnCriar = document.getElementById('btnCriar');
+    const totalEl = document.getElementById('totalSelecionado');
+    const qtdEl = document.getElementById('qtdSelecionada');
+    const inputHidden = document.getElementById('pedido_ids_input');
+
+    function atualizar() {
+        const selecionados = document.querySelectorAll('.pedido-item:checked');
+        const ids = Array.from(selecionados).map(cb => cb.value);
+        const total = Array.from(selecionados).reduce((sum, cb) => {
+            const row = cb.closest('tr');
+            const totalText = row.querySelector('td:nth-child(4)').textContent;
+            return sum + parseFloat(totalText.replace('R$ ', '').replace(',', '.'));
+        }, 0);
+        inputHidden.value = JSON.stringify(ids);
+        totalEl.textContent = 'R$ ' + total.toFixed(2).replace('.', ',');
+        qtdEl.textContent = ids.length;
+        btnCriar.disabled = ids.length === 0;
+        btnCriar.classList.toggle('bg-slate-700/50', ids.length === 0);
+        btnCriar.classList.toggle('text-slate-500', ids.length === 0);
+        btnCriar.classList.toggle('border-slate-700', ids.length === 0);
+        btnCriar.classList.toggle('opacity-50', ids.length === 0);
+        btnCriar.classList.toggle('cursor-not-allowed', ids.length === 0);
+        if (ids.length > 0) {
+            btnCriar.classList.add('bg-gradient-to-r', 'from-emerald-500', 'to-cyan-600', 'hover:from-emerald-600', 'hover:to-cyan-700', 'text-white', 'shadow-lg', 'shadow-emerald-500/10');
+        } else {
+            btnCriar.classList.remove('bg-gradient-to-r', 'from-emerald-500', 'to-cyan-600', 'hover:from-emerald-600', 'hover:to-cyan-700', 'text-white', 'shadow-lg', 'shadow-emerald-500/10');
+        }
+    }
+
+    // Cliente checkbox - seleciona todos os pedidos do cliente
+    clientCheckboxes.forEach(chk => {
+        chk.addEventListener('change', function() {
+            const cid = this.value;
+            document.querySelectorAll(`.pedido-item[data-cliente="${cid}"]`).forEach(cb => {
+                cb.checked = this.checked;
+            });
+            atualizar();
+        });
+    });
+
+    // "Todos pedidos" do cliente
+    allCheckboxes.forEach(chk => {
+        chk.addEventListener('change', function() {
+            const cid = this.dataset.cliente;
+            document.querySelectorAll(`.pedido-item[data-cliente="${cid}"]`).forEach(cb => cb.checked = this.checked);
+            document.querySelector(`.chk-cliente[value="${cid}"]`).checked = this.checked;
+            atualizar();
+        });
+    });
+
+    // Pedidos individuais
+    checkboxes.forEach(cb => {
+        cb.addEventListener('change', atualizar);
+    });
+
+    // Boleto fields
+    document.getElementById('gerar_boleto').addEventListener('change', function() {
+        document.getElementById('boleto_fields').classList.toggle('hidden', !this.checked);
+    });
+
+    // Client search autocomplete
+    const clienteSearch = document.querySelector('.cliente-search');
+    const clientesDropdown = document.getElementById('clientes-dropdown');
+    const clienteIdInput = document.getElementById('clienteId');
+
+    if (clienteSearch) {
+        if (clienteIdInput && clienteIdInput.value) {
+            buscarClientes(clienteIdInput.value).then(clientes => {
+                const cliente = clientes.find(function(c) { return c.id == clienteIdInput.value; });
+                if (cliente) {
+                    clienteSearch.value = cliente.nome;
+                }
+            });
+        }
+
+        clienteSearch.addEventListener('input', function(e) {
+            var term = e.target.value;
+            if (term.length >= 2) {
+                buscarClientes(term).then(function(clientes) {
+                    if (clientes.length > 0) {
+                        clientesDropdown.innerHTML = clientes.map(function(c) {
+                            var doc = formatarDocClientes(c.cpf_cnpj);
+                            return '<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer border-b border-slate-800/30 last:border-0" data-id="' + c.id + '">' +
+                                '<div class="font-medium text-sm text-cyan-300">' + c.nome + '</div>' +
+                                (c.fantasia ? '<div class="text-xs text-slate-400">' + c.fantasia + '</div>' : '') +
+                                (doc ? '<div class="text-xs text-cyan-400/80">' + doc + '</div>' : '') +
+                                '</div>';
+                        }).join('');
+                        clientesDropdown.classList.remove('hidden');
+                    } else {
+                        clientesDropdown.innerHTML = '<div class="p-3 text-sm text-slate-400 text-center">Nenhum cliente encontrado</div>';
+                        clientesDropdown.classList.remove('hidden');
+                    }
+                }).catch(function() {
+                    clientesDropdown.classList.add('hidden');
+                });
+            } else {
+                clientesDropdown.classList.add('hidden');
+            }
+        });
+
+        clientesDropdown.addEventListener('click', function(e) {
+            var item = e.target.closest('[data-id]');
+            if (item) {
+                clienteSearch.value = item.querySelector('.font-medium').textContent;
+                clienteIdInput.value = item.dataset.id;
+                clientesDropdown.classList.add('hidden');
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.cliente-search') && !e.target.closest('#clientes-dropdown')) {
+                clientesDropdown.classList.add('hidden');
+            }
+        });
+    }
+});
+</script>
+{% endblock %}

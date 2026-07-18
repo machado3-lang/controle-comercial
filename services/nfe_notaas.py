@@ -1,10 +1,36 @@
 import json
+import time
 import httpx
 from typing import Optional
 from models import Empresa
 
 
 API_BASE = "https://platform.notaas.com.br/api/v1"
+
+
+def _http_retry(method: str, url: str, empresa: Empresa, json_body: dict = None, params: dict = None, timeout: int = 30):
+    headers = _get_headers(empresa)
+    for tentativa in range(3):
+        try:
+            with httpx.Client(timeout=timeout) as client:
+                if method == "GET":
+                    resp = client.get(url, headers=headers, params=params)
+                elif method == "POST":
+                    resp = client.post(url, json=json_body, headers=headers)
+                else:
+                    resp = client.request(method, url, json=json_body, headers=headers, params=params)
+                resp.raise_for_status()
+                return resp
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code in (429, 502, 503, 504) and tentativa < 2:
+                time.sleep(2 ** tentativa)
+                continue
+            raise Exception(f"Erro NotaAs: {e.response.status_code} - {e.response.text}")
+        except Exception as e:
+            if tentativa < 2:
+                time.sleep(2 ** tentativa)
+                continue
+            raise
 
 
 def _get_headers(empresa: Empresa) -> dict:
@@ -21,38 +47,26 @@ def _get_ambiente(empresa: Empresa) -> int:
 def emitir_nfe(empresa: Empresa, payload: dict) -> dict:
     url = f"{API_BASE}/nfe/emitir"
     payload["modelo"] = payload.get("modelo", 55)
-    with httpx.Client(timeout=30) as client:
-        resp = client.post(url, json=payload, headers=_get_headers(empresa))
-        if resp.status_code == 202:
-            return resp.json()
-        raise Exception(f"Erro NotaAs: {resp.status_code} - {resp.text}")
+    resp = _http_retry("POST", url, empresa, json_body=payload, timeout=30)
+    return resp.json()
 
 
 def consultar_status(empresa: Empresa, invoice_id: str) -> dict:
     url = f"{API_BASE}/nfe/invoices/{invoice_id}/status"
-    with httpx.Client(timeout=15) as client:
-        resp = client.get(url, headers=_get_headers(empresa))
-        if resp.status_code == 200:
-            return resp.json()
-        raise Exception(f"Erro NotaAs: {resp.status_code} - {resp.text}")
+    resp = _http_retry("GET", url, empresa, timeout=15)
+    return resp.json()
 
 
 def baixar_pdf(empresa: Empresa, invoice_id: str) -> bytes:
     url = f"{API_BASE}/nfe/invoices/{invoice_id}/danfe"
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(url, headers=_get_headers(empresa))
-        if resp.status_code == 200:
-            return resp.content
-        raise Exception(f"Erro NotaAs: {resp.status_code} - {resp.text}")
+    resp = _http_retry("GET", url, empresa, timeout=30)
+    return resp.content
 
 
 def baixar_xml(empresa: Empresa, invoice_id: str) -> str:
     url = f"{API_BASE}/nfe/invoices/{invoice_id}/xml"
-    with httpx.Client(timeout=30) as client:
-        resp = client.get(url, headers=_get_headers(empresa))
-        if resp.status_code == 200:
-            return resp.text
-        raise Exception(f"Erro NotaAs: {resp.status_code} - {resp.text}")
+    resp = _http_retry("GET", url, empresa, timeout=30)
+    return resp.text
 
 
 def consultar_municipios(empresa: Empresa, uf: str = None) -> list:
@@ -60,21 +74,15 @@ def consultar_municipios(empresa: Empresa, uf: str = None) -> list:
     params = {}
     if uf:
         params["uf"] = uf
-    with httpx.Client(timeout=15) as client:
-        resp = client.get(url, headers=_get_headers(empresa), params=params)
-        if resp.status_code == 200:
-            return resp.json()
-        raise Exception(f"Erro NotaAs: {resp.status_code} - {resp.text}")
+    resp = _http_retry("GET", url, empresa, params=params, timeout=15)
+    return resp.json()
 
 
 def cancelar_nfe(empresa: Empresa, invoice_id: str, motivo: str) -> dict:
     url = f"{API_BASE}/nfe/cancelar"
     payload = {"invoiceId": invoice_id, "justificativa": motivo}
-    with httpx.Client(timeout=30) as client:
-        resp = client.post(url, json=payload, headers=_get_headers(empresa))
-        if resp.status_code in (200, 202):
-            return resp.json()
-        raise Exception(f"Erro NotaAs: {resp.status_code} - {resp.text}")
+    resp = _http_retry("POST", url, empresa, json_body=payload, timeout=30)
+    return resp.json()
 
 
 def montar_payload_nfe(
@@ -277,3 +285,58 @@ def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse):
             itens_nfse.append(insumo)
         elif insumo.tipo == "kit":
             _explodir_kit(db, insumo, qtd, itens_nfe, itens_nfse)
+
+
+def explodir_itens_consolidacao(consolidacao, db) -> tuple:
+    """Explode itens de uma consolidação em itens NFe (produtos) e NFSe (serviços)"""
+    itens_nfe = []
+    itens_nfse = []
+
+    for item in consolidacao.itens:
+        produto = item.produto
+        if not produto:
+            continue
+        if produto.tipo == "produto":
+            itens_nfe.append({
+                "produto_id": produto.id,
+                "descricao": item.descricao or produto.nome,
+                "ncm": produto.ncm,
+                "unidade": produto.unidade or "UN",
+                "quantidade": item.quantidade or 1,
+                "preco_unitario": item.preco_unitario or 0,
+                "origem": produto.origem or 0,
+            })
+        elif produto.tipo == "servico":
+            itens_nfse.append(item)
+        elif produto.tipo == "kit" and db:
+            _explodir_kit(db, produto, item.quantidade or 1, itens_nfe, itens_nfse)
+
+    return itens_nfe, itens_nfse
+
+
+def explodir_itens_consolidacao(consolidacao=None, db=None) -> tuple:
+    """Explode itens de uma consolidação separando produtos (NFe) e serviços (NFSe)"""
+    itens_nfe = []
+    itens_nfse = []
+
+    if consolidacao:
+        for item in consolidacao.itens:
+            produto = item.produto
+            if not produto:
+                continue
+            if produto.tipo == "produto":
+                itens_nfe.append({
+                    "produto_id": produto.id,
+                    "descricao": item.descricao or produto.nome,
+                    "ncm": produto.ncm,
+                    "unidade": produto.unidade or "UN",
+                    "quantidade": item.quantidade or 1,
+                    "preco_unitario": item.preco_unitario or 0,
+                    "origem": produto.origem or 0,
+                })
+            elif produto.tipo == "servico":
+                itens_nfse.append(item)
+            elif produto.tipo == "kit" and db:
+                _explodir_kit(db, produto, item.quantidade or 1, itens_nfe, itens_nfse)
+
+    return itens_nfe, itens_nfse

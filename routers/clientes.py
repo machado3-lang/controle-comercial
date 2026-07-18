@@ -1,14 +1,20 @@
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
 from datetime import datetime, date
 
 from database import get_db
 from models import Cliente, ContaReceber, Assinatura, OrdemServico, Empresa
+from services.validators import validar_cliente_fornecedor
+from app.core.security import confirma_senha_usuario
+from services.audit import registrar_auditoria
 
 
 def _proximo_codigo_cliente(db: Session) -> str:
+    empresa = db.query(Empresa).with_for_update().first()
+    if empresa:
+        empresa.ultimo_codigo_cliente = (empresa.ultimo_codigo_cliente or 0) + 1
+        return f"CLI-{empresa.ultimo_codigo_cliente:04d}"
     codigos = db.query(Cliente.codigo).filter(Cliente.codigo.isnot(None)).all()
     codigos = [c[0] for c in codigos if c[0]]
     
@@ -32,7 +38,11 @@ router = APIRouter(prefix="/clientes", tags=["Clientes"])
 
 
 @router.get("/")
-def listar_clientes(request: Request, db: Session = Depends(get_db), busca: str = Query(""), situacao: str = Query("")):
+def listar_clientes(
+    request: Request, db: Session = Depends(get_db),
+    busca: str = Query(""), situacao: str = Query(""),
+    page: int = Query(1), per_page: int = Query(20),
+):
     query = db.query(Cliente)
     if busca:
         query = query.filter(
@@ -40,10 +50,16 @@ def listar_clientes(request: Request, db: Session = Depends(get_db), busca: str 
         )
     if situacao:
         query = query.filter(Cliente.situacao == situacao)
-    clientes = query.order_by(Cliente.nome).all()
-    return request.app.state.templates.TemplateResponse(
+    total_count = query.count()
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    offset = (page - 1) * per_page
+    clientes = query.order_by(Cliente.nome).offset(offset).limit(per_page).all()
+    return request.app.state.templates.TemplateResponse(request, 
         "clientes/listar.html",
-        {"request": request, "clientes": clientes, "busca": busca, "filtro_situacao": situacao}
+        {"request": request, "clientes": clientes, "busca": busca,
+         "filtro_situacao": situacao, "page": page, "per_page": per_page,
+         "total_pages": total_pages, "total_count": total_count}
     )
 
 
@@ -57,7 +73,7 @@ def buscar_clientes(request: Request, db: Session = Depends(get_db), q: str = Qu
 
 @router.get("/novo")
 def novo_cliente(request: Request, db: Session = Depends(get_db)):
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "clientes/form.html",
         {"request": request, "cliente": None, "proximo_codigo": _proximo_codigo_cliente(db)}
     )
@@ -91,6 +107,22 @@ def criar_cliente(
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
 ):
+    # Validação centralizada
+    erros = validar_cliente_fornecedor(
+        nome=nome,
+        tipo_pessoa=tipo_pessoa,
+        cpf_cnpj=cpf_cnpj,
+        ie=inscricao_estadual,
+        uf=estado,
+        cep=cep,
+        telefone=telefone,
+        celular=celular,
+        email=email,
+    )
+    if erros:
+        request.session["message"] = {"tipo": "danger", "texto": "; ".join(erros)}
+        return RedirectResponse(url="/clientes/novo", status_code=303)
+
     if not codigo:
         codigo = _proximo_codigo_cliente(db)
     if data_cadastro:
@@ -98,7 +130,7 @@ def criar_cliente(
     else:
         created_at = datetime.now()
     cliente = Cliente(
-        codigo=_proximo_codigo_cliente(db),
+        codigo=codigo,
         nome=nome, cpf_cnpj=cpf_cnpj, tipo_pessoa=tipo_pessoa,
         email=email, telefone=telefone,
         celular=celular, endereco=endereco, bairro=bairro, cidade=cidade,
@@ -122,7 +154,7 @@ def detalhe_cliente(request: Request, cliente_id: int, db: Session = Depends(get
     contas = db.query(ContaReceber).filter(ContaReceber.cliente_id == cliente_id).order_by(ContaReceber.data_vencimento.desc()).all()
     assinaturas = db.query(Assinatura).filter(Assinatura.cliente_id == cliente_id).all()
     ordens = db.query(OrdemServico).filter(OrdemServico.cliente_id == cliente_id).order_by(OrdemServico.data_entrada.desc()).all()
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "clientes/detalhe.html",
         {"request": request, "cliente": cliente, "contas": contas, "assinaturas": assinaturas, "ordens": ordens}
     )
@@ -133,7 +165,7 @@ def editar_cliente(request: Request, cliente_id: int, db: Session = Depends(get_
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
     if not cliente:
         return RedirectResponse(url="/clientes", status_code=303)
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "clientes/form.html",
         {"request": request, "cliente": cliente}
     )
@@ -201,12 +233,17 @@ def atualizar_cliente(
 
 @router.post("/{cliente_id}/excluir")
 def excluir_cliente(request: Request, cliente_id: int, db: Session = Depends(get_db), senha: str = Form("")):
-    empresa = db.query(Empresa).first()
-    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"success": False, "error": "Senha inválida"}, status_code=403)
+    if not confirma_senha_usuario(request, db, senha):
+        return JSONResponse({"success": False, "error": "Senha inválida ou usuário não autorizado"}, status_code=403)
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
     if cliente:
-        db.delete(cliente)
+        cliente_nome = cliente.nome
+        cliente.situacao = "I"
         db.commit()
+        registrar_auditoria(
+            db, request.session.get("user_id"), "excluir",
+            "cliente", cliente_id, f"Cliente: {cliente_nome}",
+            request.client.host if request.client else None
+        )
         return {"success": True, "redirect": "/clientes"}
     return {"success": False, "error": "Cliente não encontrado"}

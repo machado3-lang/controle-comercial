@@ -43,7 +43,7 @@
             {% if cobranca %}
             <div class="p-3 bg-slate-800/40 rounded-xl">
                 <p class="text-xs text-slate-500">Cobrança</p>
-                <a href="/contas/receber/{{ cobranca.id }}" class="text-sm text-emerald-400 hover:text-emerald-300">R$ {{ "%.2f"|format(cobranca.valor) }} - {{ cobranca.status.value if cobranca.status else 'Pendente' }}</a>
+                <a href="/contas/receber/{{ cobranca.id }}" class="text-sm text-emerald-400 hover:text-emerald-300">R$ {{ "%.2f"|format(cobranca.valor) }} - {{ cobranca.status.name.lower() if cobranca.status else 'pendente' }}</a>
             </div>
             {% endif %}
         </div>
@@ -108,7 +108,8 @@
             {% endif %}
             {% if not cobranca and nfe.status in ('rascunho', 'issued') %}
             <form method="post" action="/nfe/{{ nfe.id }}/gerar-cobranca" class="inline">
-                <button type="submit" class="flex items-center px-3 py-2 text-sm text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-3 py-2 text-sm text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition">
                     <i data-lucide="banknote" class="w-4 h-4 me-1"></i> Gerar Cobrança
                 </button>
             </form>
@@ -131,7 +132,8 @@
 <div class="modal fade" id="modalCancelar">
     <div class="modal-dialog">
         <form method="post" action="/nfe/{{ nfe.id }}/cancelar" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
-            <div class="modal-header border-b border-slate-800/50">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="modal-header border-b border-slate-800/50">
                 <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-rose-400 to-red-400 font-semibold">Cancelar NFe</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
@@ -161,7 +163,8 @@
             <div class="modal-footer border-t border-slate-800/50">
                 <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Voltar</button>
                 <form method="post" id="formExcluir" class="inline">
-                    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-rose-500/10">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-rose-500 to-red-600 hover:from-rose-600 hover:to-red-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-rose-500/10">
                         <i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Sim, Excluir
                     </button>
                 </form>

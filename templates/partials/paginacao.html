@@ -1,0 +1,43 @@
+<div class="flex items-center justify-between px-4 py-3 border-t border-slate-800/60">
+    <div class="flex items-center gap-2 text-sm text-slate-400">
+        <span>Por página:</span>
+        <select class="bg-slate-900/60 border border-slate-800/80 rounded-lg text-sm px-2 py-1 text-slate-100" onchange="irPagina(1, this.value)">
+            <option value="20" {{ 'selected' if (per_page|default(20)) == 20 }}>20</option>
+            <option value="30" {{ 'selected' if (per_page|default(20)) == 30 }}>30</option>
+            <option value="50" {{ 'selected' if (per_page|default(20)) == 50 }}>50</option>
+        </select>
+        {% set p = page or 1 %}
+        {% set pp = per_page or 20 %}
+        {% set tp = total_pages or 1 %}
+        {% set tc = total_count or 0 %}
+        <span>Página {{ p }} de {{ tp }} ({{ tc }} itens)</span>
+    </div>
+    <div class="flex items-center gap-1">
+        {% if p > 1 %}
+        <a href="#" onclick="irPagina(1, {{ pp }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&laquo;</a>
+        <a href="#" onclick="irPagina({{ p-1 }}, {{ pp }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&lsaquo;</a>
+        {% endif %}
+        {% set start = [1, p - 2] | max %}
+        {% set end = [tp, p + 2] | min %}
+        {% for pg in range(start, end + 1) %}
+        <a href="#" onclick="irPagina({{ pg }}, {{ pp }}); return false;" class="px-2 py-1 text-sm border rounded-lg transition {% if pg == p %}bg-cyan-500/20 text-cyan-400 border-cyan-500/50{% else %}border-slate-800/80 hover:bg-slate-800/50 text-slate-300{% endif %}">{{ pg }}</a>
+        {% endfor %}
+        {% if p < tp %}
+        <a href="#" onclick="irPagina({{ p+1 }}, {{ pp }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&rsaquo;</a>
+        <a href="#" onclick="irPagina({{ tp }}, {{ pp }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&raquo;</a>
+        {% endif %}
+    </div>
+</div>
+<script>
+function irPagina(pag, tamanho) {
+    const form = document.querySelector('form');
+    if (!form) { location.href = '?page=' + pag + '&per_page=' + tamanho; return; }
+    let inp = form.querySelector('input[name="page"]');
+    if (!inp) { inp = document.createElement('input'); inp.type = 'hidden'; inp.name = 'page'; form.appendChild(inp); }
+    inp.value = pag;
+    let inp2 = form.querySelector('input[name="per_page"]');
+    if (!inp2) { inp2 = document.createElement('input'); inp2.type = 'hidden'; inp2.name = 'per_page'; form.appendChild(inp2); }
+    inp2.value = tamanho;
+    form.submit();
+}
+</script>

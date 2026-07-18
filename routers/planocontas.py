@@ -1,10 +1,10 @@
 from fastapi import APIRouter, Depends, Request, Form
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
-from datetime import datetime
 
 from database import get_db
 from models import PlanoDeContas
+from app.core.security import verificar_admin
 
 router = APIRouter(prefix="/plano-contas", tags=["Plano de Contas"])
 
@@ -23,7 +23,7 @@ def build_tree(contas, parent_id=None, nivel=0):
 def listar_planos(request: Request, db: Session = Depends(get_db)):
     contas = db.query(PlanoDeContas).order_by(PlanoDeContas.codigo).all()
     tree = build_tree(contas)
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "contas/plano_contas.html",
         {"request": request, "tree": tree}
     )
@@ -35,6 +35,8 @@ def criar_conta(
     codigo: str = Form(...), nome: str = Form(...),
     tipo: str = Form(...), parent_id: int = Form(0)
 ):
+    if not verificar_admin(request, db):
+        return RedirectResponse(url="/", status_code=303)
     if db.query(PlanoDeContas).filter(PlanoDeContas.codigo == codigo).first():
         request.session["error"] = "Código já existe"
         return RedirectResponse(url="/plano-contas", status_code=303)
@@ -56,6 +58,8 @@ def editar_conta(
     request: Request, conta_id: int, db: Session = Depends(get_db),
     codigo: str = Form(...), nome: str = Form(...), tipo: str = Form(...)
 ):
+    if not verificar_admin(request, db):
+        return RedirectResponse(url="/", status_code=303)
     conta = db.query(PlanoDeContas).filter(PlanoDeContas.id == conta_id).first()
     if not conta:
         request.session["error"] = "Conta não encontrada"
@@ -73,6 +77,8 @@ def editar_conta(
 
 @router.post("/{conta_id}/toggle")
 def toggle_conta(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    if not verificar_admin(request, db):
+        return JSONResponse({"erro": "Acesso negado"}, status_code=403)
     conta = db.query(PlanoDeContas).filter(PlanoDeContas.id == conta_id).first()
     if not conta:
         return JSONResponse({"erro": "Conta não encontrada"}, status_code=404)
@@ -83,6 +89,8 @@ def toggle_conta(request: Request, conta_id: int, db: Session = Depends(get_db))
 
 @router.post("/{conta_id}/excluir")
 def excluir_conta(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    if not verificar_admin(request, db):
+        return JSONResponse({"erro": "Acesso negado"}, status_code=403)
     conta = db.query(PlanoDeContas).filter(PlanoDeContas.id == conta_id).first()
     if not conta:
         return JSONResponse({"erro": "Conta não encontrada"}, status_code=404)

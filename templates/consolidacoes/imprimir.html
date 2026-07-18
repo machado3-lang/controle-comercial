@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Consolidação {{ consolidacao.numero or consolidacao.id }}</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white !important; }
+            .glass-card { box-shadow: none !important; border: 1px solid #e5e7eb !important; background: white !important; }
+        }
+        .table-lines td, .table-lines th { border-bottom: 1px solid #e5e7eb; }
+        @page { margin: 1.5cm; size: A4; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen p-4 md:p-8">
+    <div class="max-w-4xl mx-auto bg-white shadow-xl rounded-xl overflow-hidden">
+        <!-- Top Bar -->
+        <div class="no-print flex justify-end p-2 bg-slate-100 border-b border-slate-200">
+            <button onclick="window.close()" class="flex items-center gap-1 px-3 py-1.5 text-sm text-slate-600 hover:text-slate-900 hover:bg-slate-200 rounded-lg transition">
+                <i data-lucide="x" class="w-4 h-4"></i> Fechar
+            </button>
+        </div>
+
+        <!-- Header -->
+        <div class="bg-gradient-to-r from-slate-900 to-slate-800 text-white p-6">
+            <div class="flex items-center justify-between">
+                <div class="text-xs text-slate-400">Controliz Controle Comercial</div>
+                <div class="text-lg font-bold text-white text-right">MultiCom</div>
+            </div>
+            <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mt-4">
+                <div>
+                    <h1 class="text-2xl md:text-3xl font-bold">CONSOLIDAÇÃO DE PEDIDOS</h1>
+                    <p class="text-slate-300 mt-1">{{ consolidacao.numero or '#' + consolidacao.id|string }}</p>
+                </div>
+                <div class="text-right md:text-right">
+                    <p class="text-sm text-slate-300">Data: {{ consolidacao.data.strftime('%d/%m/%Y') if consolidacao.data else '-' }}</p>
+                    {% if consolidacao.data_fechamento %}
+                    <p class="text-sm text-slate-300">Fechamento: {{ consolidacao.data_fechamento.strftime('%d/%m/%Y') }}</p>
+                    {% endif %}
+                    {% if consolidacao.periodo_inicio and consolidacao.periodo_fim %}
+                    <p class="text-sm text-slate-300">Período: {{ consolidacao.periodo_inicio.strftime('%d/%m/%Y') }} a {{ consolidacao.periodo_fim.strftime('%d/%m/%Y') }}</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Empresa e Cliente -->
+        <div class="p-6 border-b border-slate-200">
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <div>
+                    <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">EMITENTE</h3>
+                    {% if empresa %}
+                    <p class="font-semibold text-slate-900">{{ empresa.razao_social or empresa.nome_fantasia }}</p>
+                    {% if empresa.cnpj %}<p class="text-sm text-slate-600">CNPJ: {{ empresa.cnpj }}</p>{% endif %}
+                    {% if empresa.endereco %}<p class="text-sm text-slate-600">{{ empresa.endereco }}{% if empresa.numero %}, {{ empresa.numero }}{% endif %}{% if empresa.bairro %} - {{ empresa.bairro }}{% endif %}</p>{% endif %}
+                    {% if empresa.cidade and empresa.estado %}<p class="text-sm text-slate-600">{{ empresa.cidade }}/{{ empresa.estado }} - CEP: {{ empresa.cep or '' }}</p>{% endif %}
+                    {% else %}
+                    <p class="text-sm text-slate-500">Empresa não configurada</p>
+                    {% endif %}
+                </div>
+                <div class="md:text-right">
+                    <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">CLIENTE</h3>
+                    {% if consolidacao.cliente %}
+                    <p class="font-semibold text-slate-900">{{ consolidacao.cliente.nome }}</p>
+                    {% if consolidacao.cliente.cpf_cnpj %}<p class="text-sm text-slate-600">CNPJ/CPF: {{ consolidacao.cliente.cpf_cnpj }}</p>{% endif %}
+                    {% if consolidacao.cliente.endereco %}<p class="text-sm text-slate-600">{{ consolidacao.cliente.endereco }}{% if consolidacao.cliente.numero %}, {{ consolidacao.cliente.numero }}{% endif %}{% if consolidacao.cliente.bairro %} - {{ consolidacao.cliente.bairro }}{% endif %}</p>{% endif %}
+                    {% if consolidacao.cliente.cidade and consolidacao.cliente.estado %}<p class="text-sm text-slate-600">{{ consolidacao.cliente.cidade }}/{{ consolidacao.cliente.estado }} - CEP: {{ consolidacao.cliente.cep or '' }}</p>{% endif %}
+                    {% else %}
+                    <p class="text-sm text-slate-500">Cliente não informado</p>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Status Badge -->
+        <div class="px-6 py-3 border-b border-slate-200 bg-slate-50">
+            <div class="flex items-center justify-between">
+                <span class="text-sm text-slate-600">Status: <strong class="text-slate-900">{{ STATUS_LABELS.get(consolidacao.status, consolidacao.status) }}</strong></span>
+                <div class="flex items-center gap-2 text-sm text-slate-600">
+                    {% if consolidacao.forma_pagamento %}
+                    <span class="px-2 py-1 bg-slate-100 rounded">Pagamento: {{ FORMAS_PAGAMENTO.get(consolidacao.forma_pagamento, consolidacao.forma_pagamento) }}</span>
+                    {% endif %}
+                    {% if consolidacao.gerar_boleto %}
+                    <span class="px-2 py-1 bg-amber-100 text-amber-800 rounded">Com Boleto</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+
+        <!-- Pedidos Origem -->
+        {% if consolidacao.pedidos_origem %}
+        <div class="p-6 border-b border-slate-200">
+            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">PEDIDOS AGRUPADOS ({{ consolidacao.qtd_pedidos_origem }})</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full table-lines text-sm">
+                    <thead class="bg-slate-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left font-medium text-slate-600">Nº Pedido</th>
+                            <th class="px-3 py-2 text-left font-medium text-slate-600">Data</th>
+                            <th class="px-3 py-2 text-right font-medium text-slate-600">Total</th>
+                            <th class="px-3 py-2 text-center font-medium text-slate-600">Itens</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for p in consolidacao.pedidos_origem %}
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-3 py-2">{{ p.numero or '#' + p.id|string }}</td>
+                            <td class="px-3 py-2">{{ p.data.strftime('%d/%m/%Y') if p.data else '-' }}</td>
+                            <td class="px-3 py-2 text-right font-medium">R$ {{ "%.2f"|format(p.total or 0) }}</td>
+                            <td class="px-3 py-2 text-center text-slate-500">{{ p.itens|length if p.itens else 0 }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="bg-slate-50">
+                        <tr>
+                            <th class="px-3 py-2 text-left font-medium text-slate-900" colspan="2">TOTAL</th>
+                            <th class="px-3 py-2 text-right font-medium text-slate-900">R$ {{ "%.2f"|format(consolidacao.total or 0) }}</th>
+                            <th class="px-3 py-2 text-center font-medium text-slate-500">{{ consolidacao.itens|length }}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+
+        <!-- Itens Consolidados -->
+        <div class="p-6">
+            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">ITENS CONSOLIDADOS</h3>
+            <div class="overflow-x-auto">
+                <table class="w-full table-lines text-sm">
+                    <thead class="bg-slate-900 text-white">
+                        <tr>
+                            <th class="px-3 py-2 text-left font-medium">Descrição</th>
+                            <th class="px-3 py-2 text-center font-medium">UND</th>
+                            <th class="px-3 py-2 text-right font-medium">Quantidade</th>
+                            <th class="px-3 py-2 text-right font-medium">Preço Unit.</th>
+                            <th class="px-3 py-2 text-right font-medium">Total</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in consolidacao.itens %}
+                        <tr class="hover:bg-slate-50">
+                            <td class="px-3 py-2">
+                                <div class="font-medium text-slate-900">{{ item.descricao or (item.produto.nome if item.produto else '') or '---' }}</div>
+                                {% if item.produto and item.produto.codigo %}<div class="text-xs text-slate-500">Cód: {{ item.produto.codigo }}</div>{% endif %}
+                                {% if item.ncm %}<div class="text-xs text-slate-500">NCM: {{ item.ncm }}</div>{% endif %}
+                            </td>
+                            <td class="px-3 py-2 text-center text-slate-600">{{ item.unidade or 'UN' }}</td>
+                            <td class="px-3 py-2 text-right font-medium">{{ "%.3f"|format(item.quantidade or 0) }}</td>
+                            <td class="px-3 py-2 text-right">R$ {{ "%.2f"|format(item.preco_unitario or 0) }}</td>
+                            <td class="px-3 py-2 text-right font-semibold text-slate-900">R$ {{ "%.2f"|format(item.total or 0) }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot class="bg-slate-100">
+                        <tr>
+                            <th class="px-3 py-3 text-left font-semibold text-slate-900" colspan="4">TOTAL GERAL</th>
+                            <th class="px-3 py-3 text-right font-bold text-lg text-emerald-600">R$ {{ "%.2f"|format(consolidacao.total or 0) }}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+
+        <!-- Observações -->
+        {% if consolidacao.observacao %}
+        <div class="px-6 py-4 border-t border-slate-200 bg-slate-50">
+            <h3 class="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">OBSERVAÇÕES</h3>
+            <p class="text-sm text-slate-700 whitespace-pre-wrap">{{ consolidacao.observacao }}</p>
+        </div>
+        {% endif %}
+
+        <!-- Footer -->
+        <div class="px-6 py-4 border-t border-slate-200 bg-slate-50 flex flex-col md:flex-row md:items-center md:justify-between gap-4 text-sm text-slate-600">
+            <div class="flex items-center gap-4">
+                {% if consolidacao.finalizado_por %}
+                <span>Finalizado por: Usuário #{{ consolidacao.finalizado_por }}</span>
+                {% endif %}
+                {% if consolidacao.finalizado_at %}
+                <span>Em: {{ consolidacao.finalizado_at.strftime('%d/%m/%Y %H:%M') }}</span>
+                {% endif %}
+            </div>
+            <div class="flex items-center gap-4">
+                <span>Página 1 de 1</span>
+                <button class="no-print px-4 py-2 bg-slate-900 text-white rounded-lg hover:bg-slate-800 transition" onclick="window.print()"><i data-lucide="printer" class="w-4 h-4 inline me-1"></i> Imprimir</button>
+                <button class="no-print px-4 py-2 border border-slate-300 text-slate-600 rounded-lg hover:bg-slate-100 transition" onclick="window.close()"><i data-lucide="x" class="w-4 h-4 inline me-1"></i> Fechar</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="no-print text-center mt-6 text-sm text-slate-500">
+        Pressione Ctrl+P para imprimir ou salvar como PDF
+    </div>
+
+    <script>lucide.createIcons();</script>
+</body>
+</html>

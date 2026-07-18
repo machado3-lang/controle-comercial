@@ -395,3 +395,51 @@ Dados da empresa para impressão, NFe, NFSe e integrações:
 - **Tipos de Itens:** `produto` (venda), `servico` (execução), `kit` (composição de insumos).
 - **Impressão Modal:** Preview antes de finalizar - permite escolher A4 ou térmica 80mm.
 - **Webhook:** Requer URL pública (ngrok para testes, HTTPS em produção).
+## Auditoria Geral e Melhorias (Sessão de Verificação)
+
+Revisão técnica completa do sistema cobrindo segurança, tratamento de erros, consistência de dados e melhorias. Abaixo o que foi corrigido nesta sessão.
+
+### Problemas Críticos Corrigidos
+
+| # | Problema | Arquivo | Correção |
+|---|-----------|---------|----------|
+| 1 | `Decimal(valor)` sem tratamento → HTTP 500 em formulários com valor inválido/vazio (Contas e Produtos) | `routers/contas.py`, `routers/produtos.py` | Helper `to_decimal(v, default)` aplicado a todos os pontos de conversão de valor/preço. |
+| 2 | `except: pass` silenciava perda de itens do pedido em `salvar_pedido` | `routers/pedidos.py:294` | Agora faz `db.rollback()`, loga o erro e exibe mensagem de erro (sem perda silenciosa de dados). |
+| 3 | Webhooks Sicoob/NFSe abertos se o segredo de ambiente estivesse vazio | `routers/sicoob.py:731`, `routers/nfe.py:1644` | **Fail-closed**: se `WEBHOOK_*_SECRET` não definido, retorna 403. |
+| 4 | Vazamento parcial de token Sicoob (últimos 10 caracteres) em `testar_token` | `routers/sicoob.py:767` | Removido; endpoint retorna apenas booleano de sucesso. |
+| 5 | `verify=False` desabilitava validação TLS em download de DANFSe (MITM) | `routers/nfse.py:794,1202` | Alterado para `verify=True`. |
+| 6 | Baixar/estornar contas sem confirmação de senha e sem validação de estado (qualquer usuário logado afeta saldo) | `routers/contas.py` (baixar/estornar) | Agora exigem `confirma_senha_usuario` e só permitem baixa de contas PENDENTE/VENCIDO. Modal ganhou campo "Senha de Confirmação". |
+| 7 | `finalizar_pedido` faturava pedido mesmo pertencendo a consolidação (duplicidade) | `routers/pedidos.py:439` | Bloqueia faturamento direto de pedido vinculado a consolidação. |
+| 8 | **PDF de Contas quebrado** (`gerar_pdf_contas`): para `tipo="receber"` caía no fallback `c.fornecedor` (inexistente em `ContaReceber`) quando `c.cliente` era `None` → `AttributeError`; lógica de `parte` frágil e soma de total sem `Decimal` | `services/nfse_pdf.py:226`, `routers/contas.py` | Duck-typing com `getattr` por tipo (cliente/fornecedor), None-safe, total em `Decimal`, `pdf.output()` tratado (bytes/bytearray), cabeçalho repetido na quebra de página e rótulo de filtro. Validado: receber 2752 B, pagar 2405 B, e caso "receber sem cliente" (antes quebrava). |
+
+### Funcionalidades Implementadas (Histórico da Sessão)
+
+- **Consolidação de Pedidos:** regras de negócio (somente `PRE_VENDA` entra), cliente titular = 1º pedido, cliente diverso permitido em criação e consolidação aberta (com aviso), remoção de pedido de consolidação aberta (volta a `PRE_VENDA`; se vazia, exclui a consolidação), trava de status `FATURADO` imutável, correção de bug de comparação `forma_pagamento` (string vs enum).
+- **Ordenação de listagens:** Assinaturas (cliente, descrição, revenda, data início, vencimento), Ordens de Serviço (cliente, equipamento, entrada, saída, valor, técnico, autorizado, requisição, status), Logs de Auditoria (data, usuário, ação, entidade, detalhes).
+- **Logs de Auditoria:** filtros por data (início/fim), usuário, ação, entidade e detalhes; ordenação por colunas.
+- **Contas a Pagar/Receber — Juros/Desconto/Valor Real:** modelos ganharam `valor_juros`, `valor_desconto`, `valor_total`; na baixa informa-se valor pago/recebido + juros − desconto = total real; exibido em detalhe e modal. Padrão ERP profissional.
+
+### Itens Pendentes (Recomendados, Não Críticos)
+
+- **Middleware `/api/` público:** `/api/` está em `_public_prefixes` (lifespan.py) — qualquer nova rota sob `/api/` nasce sem checagem de login. Recomenda-se remover de público e exigir sessão no middleware (manter só webhooks).
+- **`SETUP_TOKEN` obrigatório em produção:** se vazio, `auth.py:53` cria admin sem autenticação. Validar obrigatoriedade em produção (como já feito para `SECRET_KEY`).
+- **`finalizado_por` da consolidação:** campo existe no modelo mas nunca é preenchido (`consolidacoes.py`). Adicionar auditoria de quem finalizou.
+- **Corrida de numeração:** cálculo de próximo número via `max()` sem lock no fallback. `Empresa.with_for_update()` cobre o caso feliz.
+- **Eager-load `cliente` em `detalhe_pedido`** para evitar AttributeError se cliente for null.
+- **Exposição de traceback:** `generic_exception_handler` expõe stack trace quando não é produção — garantir `ENVIRONMENT=production` em produção.
+
+### Relatórios Disponíveis vs. ERP Profissional
+
+**Existentes e funcionais:**
+- PDF listas: Contas a Pagar/Receber (corrigido), Pedidos (`/pedidos/{id}/pdf`), Produtos selecionados (`/produtos/pdf-selecionados`), Boleto Sicoob, DANFE (NFe) e DANFSE (NFSe).
+- HTML financeiros: Previsão de Recebimentos (`/contas/previsao-recebimentos`), Inadimplência (`/contas/inadimplencia`) e **DRE** (`/contas/dre`, com plano de contas + não-classificados).
+- Excel export: Contas a Pagar/Receber (`/pagar/exportar`, `/receber/exportar`).
+
+**Lacunas (sugestões de implementação futura):**
+- Recibo individual de pagamento/recebimento (1 conta) em PDF.
+- Relatório de vendas por período/cliente e extrato por cliente/fornecedor.
+- Razão contábil e fluxo de caixa projetado (além da previsão atual).
+
+### Como Testar
+
+Servidor: `run_server.bat` (uvicorn, porta 3000, `--reload`). Login admin padrão: `admin@controle.com` / `admin123` (senha de teste — alterar em produção).

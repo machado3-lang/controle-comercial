@@ -9,8 +9,9 @@
     
     {% set editavel = assinatura.situacao == 1 %}
     
-    <form method="post" class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-        <div class="relative">
+    <form method="post" class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4" onsubmit="return validarEditarAssinatura()">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="relative">
             <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>
             <input type="text" id="clienteSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off" {% if not editavel %}readonly{% endif %}>
             <div id="clienteDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
@@ -41,8 +42,8 @@
         <div><label class="block text-xs font-medium text-emerald-400 mb-1">Valor *</label>
             <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="valor" required value="{{ assinatura.valor }}" id="valorEdit" {% if not editavel %}readonly{% endif %}>
         </div>
-        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Quantidade</label>
-            <input type="number" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="quantidade" value="{{ assinatura.quantidade if assinatura.quantidade else '' }}" placeholder="Nº de pessoas" {% if not editavel %}readonly{% endif %}>
+        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Quantidade *</label>
+            <input type="number" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="quantidade" value="{{ assinatura.quantidade if assinatura.quantidade else '' }}" placeholder="Nº de pessoas" required {% if not editavel %}readonly{% endif %}>
         </div>
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Dia Vencimento *</label>
             <input type="number" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="dia_vencimento" min="1" max="31" required value="{{ assinatura.dia_vencimento }}" {% if not editavel %}readonly{% endif %}>
@@ -54,13 +55,13 @@
             </select>
         </div>
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Número do Contrato</label>
-            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_contrato" value="{{ assinatura.numero_contrato if assinatura.numero_contrato else '' }}" placeholder="Sugerido: código do cliente" {% if not editavel %}readonly{% endif %}>
+            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_contrato" id="numeroContratoEdit" value="{{ assinatura.numero_contrato if assinatura.numero_contrato else '' }}" placeholder="Sugerido: código do cliente" {% if not editavel %}readonly{% endif %}>
         </div>
         <div><label class="block text-xs font-medium text-cyan-400 mb-1">Data Início *</label>
-            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_inicio" required value="{{ assinatura.data_inicio.strftime('%Y-%m-%d') if assinatura.data_inicio else '' }}" {% if not editavel %}readonly{% endif %}>
+            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_inicio" required max="9999-12-31" value="{{ assinatura.data_inicio.strftime('%Y-%m-%d') if assinatura.data_inicio else '' }}" {% if not editavel %}readonly{% endif %}>
         </div>
-        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Data Fim</label>
-            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_fim" value="{{ assinatura.data_fim.strftime('%Y-%m-%d') if assinatura.data_fim else '' }}" {% if not editavel %}readonly{% endif %}>
+        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Data Fim *</label>
+            <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_fim" value="{{ assinatura.data_fim.strftime('%Y-%m-%d') if assinatura.data_fim else '' }}" required max="9999-12-31" {% if not editavel %}readonly{% endif %}>
         </div>
         <div class="md:col-span-2">
             <label class="block text-xs font-medium text-cyan-400 mb-1">Serviço *</label>
@@ -80,8 +81,8 @@
             <h6 class="text-cyan-400 mt-2 mb-2"><i data-lucide="store" class="w-4 h-4 inline me-1"></i> Revenda (Fornecedor terceirizado)</h6>
         </div>
         <input type="hidden" name="fornecedor_id" id="fornecedorId" value="{{ assinatura.fornecedor_id or '' }}">
-        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Custo da Revenda (valor de referência)</label>
-            <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="valor_revenda" value="{{ assinatura.valor_revenda if assinatura.valor_revenda else '' }}" {% if not editavel %}readonly{% endif %}>
+        <div><label class="block text-xs font-medium text-cyan-400 mb-1">Custo da Revenda (valor de referência) *</label>
+            <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="valor_revenda" value="{{ assinatura.valor_revenda if assinatura.valor_revenda else '' }}" required {% if not editavel %}readonly{% endif %}>
         </div>
         <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
             <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="3" {% if not editavel %}readonly{% endif %}>{{ assinatura.observacao or '' }}</textarea>
@@ -146,7 +147,8 @@
 <div class="modal fade" id="modalConfirmarHistorico" tabindex="-1">
      <div class="modal-dialog modal-dialog-centered">
          <form method="post" action="" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl" id="formExcluirHistorico">
-             <div class="modal-header border-b border-slate-800/50">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="modal-header border-b border-slate-800/50">
                  <h5 class="modal-title text-cyan-400">Confirmar Exclusão</h5>
                  <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
              </div>
@@ -225,19 +227,23 @@ if (clienteDropdown) {
              const item = e.target.closest('[data-id]');
              if (item) {
                  clienteSearch.value = item.textContent;
-                 const select = document.getElementById('clienteId');
-                 if (select) {
-                     let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
-                     if (!opt) {
-                         opt = document.createElement('option');
-                         opt.value = item.dataset.id;
-                         opt.textContent = item.textContent;
-                         opt.selected = true;
-                         select.appendChild(opt);
-                     } else {
-                         opt.selected = true;
-                     }
-                 }
+                  const select = document.getElementById('clienteId');
+                  if (select) {
+                      let opt = select.querySelector(`option[value="${item.dataset.id}"]`);
+                      if (!opt) {
+                          opt = document.createElement('option');
+                          opt.value = item.dataset.id;
+                          opt.textContent = item.textContent;
+                          opt.selected = true;
+                          select.appendChild(opt);
+                      } else {
+                          opt.selected = true;
+                      }
+                  }
+                  const contratoEdit = document.getElementById('numeroContratoEdit');
+                  if (contratoEdit && item.dataset.codigo) {
+                      contratoEdit.value = item.dataset.codigo;
+                  }
                  this.classList.add('hidden');
              }
          });
@@ -320,6 +326,34 @@ function excluirHistorico(id) {
     }
     const modal = new bootstrap.Modal(modalEl);
     modal.show();
+}
+
+function validarEditarAssinatura() {
+    const campos = [
+        { id: 'clienteId', nome: 'Cliente' },
+        { id: 'servicoId', nome: 'Serviço' },
+    ];
+    for (const c of campos) {
+        const el = document.getElementById(c.id);
+        if (!el || !el.value) {
+            showValidationError(`Selecione um ${c.nome}.`);
+            return false;
+        }
+    }
+    const form = document.querySelector('#modalConfirmarHistorico')?.closest('form') || document.querySelector('form[onsubmit]');
+    const inputs = document.querySelectorAll('form[onsubmit] input[name], form[onsubmit] select[name]');
+    for (const inp of inputs) {
+            if (inp.name === 'observacao' || inp.name === 'csrf_token') continue;
+            if (inp.name === 'descricao') continue;
+        if (inp.name === 'fornecedor_id') continue;
+        if (!inp.value || inp.value.trim() === '') {
+            const labels = inp.closest('div')?.querySelectorAll('label');
+            const label = labels?.length ? labels[0].textContent?.replace(' *', '').trim() : inp.name;
+            showValidationError(`O campo "${label}" é obrigatório.`);
+            return false;
+        }
+    }
+    return true;
 }
 </script>
 {% endblock %}

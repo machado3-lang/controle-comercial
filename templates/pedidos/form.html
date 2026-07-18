@@ -10,7 +10,8 @@
             </div>
             
             <form method="post" action="/pedidos/salvar" id="formPedido" class="p-4">
-                {% if pedido %}
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    {% if pedido %}
                 <input type="hidden" name="pedido_id" value="{{ pedido.id }}">
                 {% endif %}
                 <div class="grid grid-cols-12 gap-3 mb-4">
@@ -51,7 +52,7 @@
                     </div>
                     <div class="col-span-2">
                         <label class="block text-xs font-medium text-emerald-400 mb-1">Preço</label>
-                        <input type="text" id="precoDisplay" class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-xl text-emerald-400" readonly placeholder="R$ 0,00">
+                        <input type="number" step="0.01" id="precoAdd" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-emerald-400 focus:border-emerald-500/50" value="0">
                     </div>
                     <div class="col-span-1 flex items-end">
                         <button type="button" id="btnAdicionar" class="w-full h-9 px-4 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all flex items-center justify-center" title="Adicionar"><i data-lucide="plus" class="w-4 h-4"></i></button>
@@ -72,8 +73,12 @@
                                 <div class="text-xs text-slate-400">{{ item.descricao or '' }}</div>
                             </div>
                             <div class="col-span-1"><span class="text-sm text-cyan-300">{{ item.variacao.nome_variacao if item.variacao else '-' }}</span></div>
-                            <div class="col-span-2"><span class="text-sm text-slate-300">{{ item.quantidade }}</span></div>
-                            <div class="col-span-2"><span class="text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(item.preco_unitario or 0) }}</span></div>
+                            <div class="col-span-2">
+                                <input type="number" step="0.01" min="0" class="w-full px-2 py-1.5 bg-slate-800/50 border border-slate-700/50 rounded-lg text-slate-100 focus:border-cyan-500/50 text-right item-qtd" value="{{ item.quantidade }}">
+                            </div>
+                            <div class="col-span-2">
+                                <input type="number" step="0.01" min="0" class="w-full px-2 py-1.5 bg-slate-800/50 border border-slate-700/50 rounded-lg text-emerald-400 focus:border-emerald-500/50 text-right item-preco" value="{{ item.preco_unitario or 0 }}">
+                            </div>
                             <div class="col-span-1 flex justify-end">
                                 <button type="button" class="remove-item p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Remover"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                             </div>
@@ -84,7 +89,6 @@
                 </div>
                 
                 <input type="hidden" name="itens" id="itensJson">
-                <input type="hidden" name="pedido_id" value="{{ pedido.id if pedido else '' }}">
                 
                 <div class="mt-4">
                     <label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
@@ -104,6 +108,16 @@
                     <div class="flex justify-between">
                         <span class="text-slate-400">Subtotal:</span>
                         <span class="text-slate-200 font-medium">R$ <span id="subtotal">0.00</span></span>
+                    </div>
+                    <div class="grid grid-cols-2 gap-2 mb-2">
+                        <div>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Desc. %</label>
+                            <input type="number" step="0.1" min="0" max="100" id="descontoPct" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" value="0">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-emerald-400 mb-1">Desc. R$</label>
+                            <input type="number" step="0.01" min="0" id="descontoValor" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-emerald-400 focus:border-emerald-500/50" value="0">
+                        </div>
                     </div>
                     <div class="flex justify-between border-t border-slate-700 pt-3">
                         <span class="text-slate-400">Total:</span>
@@ -188,15 +202,54 @@ async function buscarClientes(q) {
 }
 
 function atualizarTotal() {
-    let total = 0;
+    let subtotal = 0;
     document.querySelectorAll('.item-row').forEach(row => {
-        const preco = parseFloat(row.dataset.preco) || 0;
-        const qtd = parseFloat(row.dataset.qtd) || 0;
-        total += preco * qtd;
+        const preco = parseFloat(row.querySelector('.item-preco')?.value) || 0;
+        const qtd = parseFloat(row.querySelector('.item-qtd')?.value) || 0;
+        row.dataset.preco = preco;
+        row.dataset.qtd = qtd;
+        subtotal += preco * qtd;
     });
+    document.getElementById('subtotal').textContent = subtotal.toFixed(2);
+    
+    const pct = parseFloat(document.getElementById('descontoPct')?.value) || 0;
+    const descValor = (subtotal * pct / 100).toFixed(2);
+    document.getElementById('descontoValor').value = descValor;
+    
+    const total = subtotal - parseFloat(descValor);
     document.getElementById('total').textContent = total.toFixed(2);
-    document.getElementById('subtotal').textContent = total.toFixed(2);
 }
+
+function recalcularDesconto() {
+    const subtotal = parseFloat(document.getElementById('subtotal').textContent) || 0;
+    const pctInput = document.getElementById('descontoPct');
+    const valorInput = document.getElementById('descontoValor');
+    const pct = parseFloat(pctInput.value) || 0;
+    const valor = parseFloat(valorInput.value) || 0;
+    if (document.activeElement === pctInput && pct > 0) {
+        valorInput.value = (subtotal * pct / 100).toFixed(2);
+    } else if (document.activeElement === valorInput && valor > 0 && subtotal > 0) {
+        pctInput.value = (valor / subtotal * 100).toFixed(1);
+    }
+    atualizarTotal();
+}
+
+document.getElementById('descontoPct').addEventListener('input', recalcularDesconto);
+document.getElementById('descontoValor').addEventListener('input', recalcularDesconto);
+
+document.getElementById('itens-container').addEventListener('input', function(e) {
+    if (e.target.classList.contains('item-qtd') || e.target.classList.contains('item-preco')) {
+        const row = e.target.closest('.item-row');
+        if (e.target.classList.contains('item-qtd')) {
+            row.dataset.qtd = e.target.value;
+        }
+        if (e.target.classList.contains('item-preco')) {
+            row.dataset.preco = e.target.value;
+        }
+        atualizarTotal();
+        salvarItens();
+    }
+});
 
 function temVariacaoNoKit(itemData) {
     if (!itemData || !itemData.composicoes) return false;
@@ -258,7 +311,7 @@ document.getElementById('itemDropdown').addEventListener('click', function(e) {
         document.getElementById('produtoSelecionado').value = itemId;
         document.getElementById('itemSearch').value = itemEl.querySelector('.font-medium').textContent;
         document.getElementById('descricaoAdd').value = descricaoItem;
-        document.getElementById('precoDisplay').value = precoBase.toFixed(2);
+        document.getElementById('precoAdd').value = precoBase.toFixed(2);
         this.classList.add('hidden');
         
         const variacaoContainer = document.querySelector('.variacao-add-container');
@@ -291,8 +344,8 @@ document.getElementById('itemDropdown').addEventListener('click', function(e) {
 document.getElementById('variacaoAddSelect').addEventListener('change', function() {
     const selected = this.selectedOptions[0];
     const precoAdicional = parseFloat(selected?.dataset?.precoAdicional) || 0;
-    const precoBase = parseFloat(document.getElementById('precoDisplay').value) || 0;
-    document.getElementById('precoDisplay').value = (precoBase + precoAdicional).toFixed(2);
+    const precoBase = parseFloat(document.getElementById('precoAdd').value) || 0;
+    document.getElementById('precoAdd').value = (precoBase + precoAdicional).toFixed(2);
 });
 
 document.getElementById('btnAdicionar').addEventListener('click', function() {
@@ -300,7 +353,7 @@ document.getElementById('btnAdicionar').addEventListener('click', function() {
     const variacaoId = document.getElementById('variacaoAddSelect').value;
     const descricao = document.getElementById('descricaoAdd').value;
     const quantidade = parseFloat(document.getElementById('qtdAdd').value) || 1;
-    const precoStr = document.getElementById('precoDisplay').value;
+    const precoStr = document.getElementById('precoAdd').value;
     const preco = parseFloat(precoStr) || 0;
     
     if (!produtoId || preco <= 0) {
@@ -324,8 +377,12 @@ document.getElementById('btnAdicionar').addEventListener('click', function() {
             <div class="text-xs text-slate-400">${descricao}</div>
         </div>
         <div class="col-span-1"><span class="text-sm text-cyan-300">${variacaoNome || '-'}</span></div>
-        <div class="col-span-2"><span class="text-sm text-slate-300">${quantidade}</span></div>
-        <div class="col-span-2"><span class="text-sm text-emerald-400 font-medium">R$ ${preco.toFixed(2)}</span></div>
+        <div class="col-span-2">
+            <input type="number" step="0.01" min="0" class="w-full px-2 py-1.5 bg-slate-800/50 border border-slate-700/50 rounded-lg text-slate-100 focus:border-cyan-500/50 text-right item-qtd" value="${quantidade}">
+        </div>
+        <div class="col-span-2">
+            <input type="number" step="0.01" min="0" class="w-full px-2 py-1.5 bg-slate-800/50 border border-slate-700/50 rounded-lg text-emerald-400 focus:border-emerald-500/50 text-right item-preco" value="${preco.toFixed(2)}">
+        </div>
         <div class="col-span-1 flex justify-end">
             <button type="button" class="remove-item p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Remover"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
         </div>
@@ -339,7 +396,7 @@ document.getElementById('btnAdicionar').addEventListener('click', function() {
     document.getElementById('itemSearch').value = '';
     document.getElementById('produtoSelecionado').value = '';
     document.getElementById('descricaoAdd').value = '';
-    document.getElementById('precoDisplay').value = '';
+    document.getElementById('precoAdd').value = '';
     document.getElementById('qtdAdd').value = '1';
     document.getElementById('variacaoAddSelect').innerHTML = '<option value="">Selecionar...</option>';
     document.querySelector('.variacao-add-container').classList.add('hidden');
@@ -358,8 +415,8 @@ function salvarItens() {
     document.querySelectorAll('.item-row').forEach(row => {
         const item_id = row.querySelector('.item-select')?.value;
         const variacao_id = row.querySelector('.variacao-select')?.value || '';
-        const qtd = parseFloat(row.dataset.qtd) || 1;
-        const preco = parseFloat(row.dataset.preco) || 0;
+        const qtd = parseFloat(row.querySelector('.item-qtd')?.value) || 1;
+        const preco = parseFloat(row.querySelector('.item-preco')?.value) || 0;
         const descricao = row.children[0]?.querySelector('.text-xs')?.textContent || '';
         
         if (item_id && preco > 0) {
@@ -369,60 +426,71 @@ function salvarItens() {
     document.getElementById('itensJson').value = JSON.stringify(itens);
 }
 
-document.querySelector('.cliente-search')?.addEventListener('input', function(e) {
-    const term = e.target.value;
-    const dropdown = document.getElementById('clientes-dropdown');
-    if (term.length >= 2) {
-        buscarClientes(term).then(clientes => {
-            if (clientes.length > 0) {
-                dropdown.innerHTML = clientes.map(c => {
-                    let doc = '';
-                    if (c.cpf_cnpj) {
-                        const d = c.cpf_cnpj.replace(/\D/g, '');
-                        if (d.length === 14) {
-                            doc = ` <span class="text-cyan-400 text-xs">( ${d.substring(0,2)}.${d.substring(2,5)}.${d.substring(5,8)}/${d.substring(8,12)}-${d.substring(12)} )</span>`;
-                        } else if (d.length === 11) {
-                            doc = ` <span class="text-cyan-400 text-xs">( ${d.substring(0,3)}.${d.substring(3,6)}.${d.substring(6,9)}-${d.substring(9)} )</span>`;
-                        }
-                    }
-                    return `<div class="p-3 hover:bg-slate-800/50 cursor-pointer border-b border-slate-800/30 last:border-0" data-id="${c.id}">
-                        <div class="font-medium text-cyan-300">${c.nome}</div>
-                        ${c.fantasia ? `<div class="text-xs text-slate-400">${c.fantasia}</div>` : ''}<span class="text-cyan-400 text-xs">${doc}</span>
-                    </div>`;
-                }).join('');
-                dropdown.classList.remove('hidden');
-            } else {
-                dropdown.classList.add('hidden');
-            }
-        }).catch(err => {
-            console.error('Erro buscarClientes:', err);
-            dropdown.classList.add('hidden');
-        });
-    } else {
-        dropdown.classList.add('hidden');
-    }
-});
-
-document.getElementById('clientes-dropdown').addEventListener('click', function(e) {
-    const item = e.target.closest('[data-id]');
-    if (item) {
-        document.querySelector('.cliente-search').value = item.querySelector('.font-medium').textContent;
-        document.getElementById('clienteId').value = item.dataset.id;
-        this.classList.add('hidden');
-    }
-});
-
 document.addEventListener('DOMContentLoaded', function() {
     lucide.createIcons();
     atualizarTotal();
     salvarItens();
-    
-    const clienteId = document.getElementById('clienteId')?.value;
-    if (clienteId) {
-        const cliente = clientesData.find(c => c.id == clienteId);
-        if (cliente) {
-            document.querySelector('.cliente-search').value = cliente.nome;
+
+    const clienteSearch = document.querySelector('.cliente-search');
+    const clientesDropdown = document.getElementById('clientes-dropdown');
+    const clienteIdInput = document.getElementById('clienteId');
+
+    if (clienteSearch) {
+        if (clienteIdInput && clienteIdInput.value) {
+            const cliente = clientesData.find(function(c) { return c.id == clienteIdInput.value; });
+            if (cliente) {
+                clienteSearch.value = cliente.nome;
+            }
         }
+
+        function formatarDocClientes(cpf_cnpj) {
+            if (!cpf_cnpj) return '';
+            var d = cpf_cnpj.replace(/\D/g, '');
+            if (d.length === 14) return d.substring(0,2) + '.' + d.substring(2,5) + '.' + d.substring(5,8) + '/' + d.substring(8,12) + '-' + d.substring(12);
+            if (d.length === 11) return d.substring(0,3) + '.' + d.substring(3,6) + '.' + d.substring(6,9) + '-' + d.substring(9);
+            return cpf_cnpj;
+        }
+
+        clienteSearch.addEventListener('input', function(e) {
+            var term = e.target.value;
+            if (term.length >= 2) {
+                buscarClientes(term).then(function(clientes) {
+                    if (clientes.length > 0) {
+                        clientesDropdown.innerHTML = clientes.map(function(c) {
+                            var doc = formatarDocClientes(c.cpf_cnpj);
+                            return '<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer border-b border-slate-800/30 last:border-0" data-id="' + c.id + '">' +
+                                '<div class="font-medium text-sm text-cyan-300">' + c.nome + '</div>' +
+                                (c.fantasia ? '<div class="text-xs text-slate-400">' + c.fantasia + '</div>' : '') +
+                                (doc ? '<div class="text-xs text-cyan-400/80">' + doc + '</div>' : '') +
+                                '</div>';
+                        }).join('');
+                        clientesDropdown.classList.remove('hidden');
+                    } else {
+                        clientesDropdown.innerHTML = '<div class="p-3 text-sm text-slate-400 text-center">Nenhum cliente encontrado</div>';
+                        clientesDropdown.classList.remove('hidden');
+                    }
+                }).catch(function() {
+                    clientesDropdown.classList.add('hidden');
+                });
+            } else {
+                clientesDropdown.classList.add('hidden');
+            }
+        });
+
+        clientesDropdown.addEventListener('click', function(e) {
+            var item = e.target.closest('[data-id]');
+            if (item) {
+                clienteSearch.value = item.querySelector('.font-medium').textContent;
+                clienteIdInput.value = item.dataset.id;
+                clientesDropdown.classList.add('hidden');
+            }
+        });
+
+        document.addEventListener('click', function(e) {
+            if (!e.target.closest('.cliente-search') && !e.target.closest('#clientes-dropdown')) {
+                clientesDropdown.classList.add('hidden');
+            }
+        });
     }
 });
 

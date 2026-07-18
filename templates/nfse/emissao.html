@@ -30,7 +30,8 @@
         {% endif %}
         
         <form method="post" action="/nfse/emitir/{{ pedido.id }}">
-            <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition"><i data-lucide="send" class="w-4 h-4 inline me-1"></i> Emitir NFSe</button>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition"><i data-lucide="send" class="w-4 h-4 inline me-1"></i> Emitir NFSe</button>
         </form>
     </div>
 </div>

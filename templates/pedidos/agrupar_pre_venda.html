@@ -22,6 +22,7 @@
 </div>
 
 <form method="post" action="/pedidos/pre-venda/finalizar-grupo" id="formGrupo" class="space-y-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     {% for cliente_id, dados in clientes_agrupados.items() %}
     <div class="glass-card">
         <div class="p-3 border-b border-slate-800/60">

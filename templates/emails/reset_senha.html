@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+</head>
+<body style="font-family: Arial, sans-serif; background-color: #0f172a; margin: 0; padding: 20px;">
+    <table width="100%" cellpadding="0" cellspacing="0" style="max-width: 600px; margin: 0 auto; background-color: #1e293b; border-radius: 12px; overflow: hidden;">
+        <tr>
+            <td style="padding: 32px 24px; text-align: center; background: linear-gradient(135deg, #06b6d4, #3b82f6);">
+                <h1 style="color: #ffffff; margin: 0; font-size: 20px;">Redefinição de Senha</h1>
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 32px 24px; color: #cbd5e1; font-size: 14px; line-height: 1.6;">
+                <p>Olá, <strong style="color: #f1f5f9;">{{ usuario_nome }}</strong>!</p>
+                <p>Recebemos uma solicitação para redefinir sua senha. Clique no botão abaixo para criar uma nova senha:</p>
+                <p style="text-align: center; margin: 24px 0;">
+                    <a href="{{ reset_url }}" style="display: inline-block; padding: 12px 32px; background: linear-gradient(135deg, #06b6d4, #3b82f6); color: #ffffff; text-decoration: none; border-radius: 8px; font-weight: 600; font-size: 14px;">Redefinir Senha</a>
+                </p>
+                <p style="color: #94a3b8; font-size: 12px;">Este link expira em {{ validade }}. Se você não solicitou esta redefinição, ignore este email.</p>
+                <p style="color: #64748b; font-size: 12px;">Se o botão não funcionar, copie e cole o link abaixo no navegador:<br>{{ reset_url }}</p>
+            </td>
+        </tr>
+        <tr>
+            <td style="padding: 16px 24px; text-align: center; background-color: #0f172a; color: #64748b; font-size: 11px;">
+                &copy; {{ ano }} Controle Comercial
+            </td>
+        </tr>
+    </table>
+</body>
+</html>

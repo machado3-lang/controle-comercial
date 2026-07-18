@@ -37,7 +37,8 @@
         {% if editar_marca %}
         <h5 class="text-emerald-400 font-semibold mb-4"><i data-lucide="pencil" class="w-5 h-5 inline me-2"></i> Editar Marca</h5>
         <form method="post" action="/produtos/marcas/editar/{{ editar_marca.id }}">
-            <div class="mb-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="mb-4">
                 <label class="block text-xs font-medium text-cyan-400 mb-1">Nome *</label>
                 <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="nome" value="{{ editar_marca.nome }}" required>
             </div>
@@ -47,7 +48,8 @@
         {% else %}
         <h5 class="text-emerald-400 font-semibold mb-4"><i data-lucide="plus-circle" class="w-5 h-5 inline me-2"></i> Nova Marca</h5>
         <form method="post" action="/produtos/marcas/nova">
-            <div class="mb-4">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="mb-4">
                 <label class="block text-xs font-medium text-cyan-400 mb-1">Nome *</label>
                 <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="nome" placeholder="Nome da marca..." required>
             </div>

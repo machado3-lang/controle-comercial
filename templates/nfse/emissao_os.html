@@ -10,7 +10,8 @@
         <p class="text-slate-400 mb-3"><strong>Valor Serviço:</strong> R$ {{ "%.2f"|format(os.valor_servico) }}</p>
 
         <form method="post">
-            <button type="submit" class="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10"><i data-lucide="save" class="w-4 h-4 inline me-1"></i> Salvar Rascunho NFSe</button>
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <button type="submit" class="px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10"><i data-lucide="save" class="w-4 h-4 inline me-1"></i> Salvar Rascunho NFSe</button>
         </form>
     </div>
 </div>

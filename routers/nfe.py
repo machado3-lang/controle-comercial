@@ -1,6 +1,9 @@
+import logging
 import os
 import json
 import re
+import secrets
+from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date
 from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse, Response, JSONResponse
@@ -10,13 +13,15 @@ from sqlalchemy import desc
 from database import get_db
 from models import (Cliente, Empresa, PedidoVenda, PedidoVendaItem,
                     StatusPedido, Produto, OrdemServico, CfopNatureza,
-                    ContaReceber)
+                    ContaReceber, PedidoConsolidado, PedidoConsolidadoItem)
 from models_nfe import NFe, NFeItem, NFSe, NFSeItem
 from services.nfe_notaas import (
     emitir_nfe, consultar_status, baixar_pdf, baixar_xml,
     cancelar_nfe, montar_payload_nfe, explodir_itens, consultar_municipios,
     _limpar_doc
 )
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/nfe", tags=["NFe"])
 
@@ -25,8 +30,9 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
 def _proximo_numero(empresa: Empresa, db: Session) -> int:
-    numero = (empresa.ultimo_numero_nfe or 0) + 1
-    empresa.ultimo_numero_nfe = numero
+    empresa_locked = db.query(Empresa).filter(Empresa.id == empresa.id).with_for_update().first()
+    numero = (empresa_locked.ultimo_numero_nfe or 0) + 1
+    empresa_locked.ultimo_numero_nfe = numero
     db.commit()
     return numero
 
@@ -77,7 +83,7 @@ def listar_cfop(request: Request, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
     cfop_list = db.query(CfopNatureza).order_by(CfopNatureza.cfop).all()
     messages = _get_messages(request)
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "nfe/cfop.html",
         {"request": request, "empresa": empresa,
          "cfop_list": cfop_list, "messages": messages}
@@ -135,10 +141,14 @@ def excluir_cfop(
 def listar_nfe(
     request: Request, db: Session = Depends(get_db),
     status: str = Query(""), busca: str = Query(""),
+    sort: str = Query("id"), ordem: str = Query("desc"),
+    page: int = Query(1, ge=1), per_page: int = Query(20, ge=10, le=100),
+    page_sefaz: int = Query(1, ge=1), per_page_sefaz: int = Query(20, ge=5, le=100),
 ):
     empresa = db.query(Empresa).first()
     query = db.query(NFe).options(
-        joinedload(NFe.pedido), joinedload(NFe.os), joinedload(NFe.itens)
+        joinedload(NFe.pedido), joinedload(NFe.os), joinedload(NFe.itens),
+        joinedload(NFe.cliente),
     )
     if status:
         query = query.filter(NFe.status == status)
@@ -146,7 +156,19 @@ def listar_nfe(
         query = query.filter(
             NFe.numero.cast(str).ilike(f"%{busca}%")
         )
-    notas = query.order_by(desc(NFe.id)).all()
+    from sqlalchemy import asc as sql_asc
+    order_func = desc if ordem == "desc" else sql_asc
+    total_count = query.count()
+    if sort == "cliente":
+        query = query.outerjoin(Cliente, NFe.cliente_id == Cliente.id)
+        notas = query.order_by(order_func(Cliente.nome), NFe.id).all()
+    else:
+        sort_col = getattr(NFe, sort, NFe.id)
+        notas = query.order_by(order_func(sort_col), NFe.id).all()
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    page = min(page, total_pages)
+    start = (page - 1) * per_page
+    notas = notas[start:start + per_page]
     # Carrega NFe distribuídas do banco local
     from models import NFeDistribuida
     cnpj_clean = re.sub(r'\D', '', empresa.cnpj) if empresa and empresa.cnpj else ''
@@ -188,11 +210,28 @@ def listar_nfe(
             'destinatario_nome': n.cliente.nome if n.cliente else '',
             'destinatario_cnpj': n.cliente.cpf_cnpj if n.cliente else '',
         })
-    return request.app.state.templates.TemplateResponse(
+    # Aplica ordenação nas listas da SEFAZ conforme params sort/ordem
+    def _sort_key(item):
+        if sort == "contraparte":
+            return (item.get('emitente_nome') or item.get('destinatario_nome') or '').lower()
+        elif sort == "numero":
+            v = item.get('numero') or ''
+            return int(v) if v.isdigit() else v
+        elif sort == "valor":
+            return item.get('valor') or 0
+        else:
+            return item.get('dhEmi') or ''
+    rev = ordem == "desc"
+    dist_emitidas.sort(key=_sort_key, reverse=rev)
+    dist_recebidas.sort(key=_sort_key, reverse=rev)
+    return request.app.state.templates.TemplateResponse(request, 
         "nfe/lista.html",
         {"request": request, "notas": notas, "status": status, "busca": busca,
          "messages": _get_messages(request), "empresa": empresa,
          "STATUS_LABELS": STATUS_LABELS,
+         "sort": sort, "ordem": ordem,
+         "page": page, "per_page": per_page, "total_pages": total_pages, "total_count": total_count,
+         "page_sefaz": page_sefaz, "per_page_sefaz": per_page_sefaz,
          "dist_notas": dist_emitidas + dist_recebidas,
          "dist_emitidas": dist_emitidas, "dist_recebidas": dist_recebidas}
     )
@@ -202,7 +241,7 @@ def listar_nfe(
 def config_nfe(request: Request, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
     cfop_list = db.query(CfopNatureza).order_by(CfopNatureza.cfop).all()
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "nfe/config.html",
         {"request": request, "empresa": empresa,
          "cfop_list": cfop_list,
@@ -248,7 +287,7 @@ def emitir_pedido_form(
         return RedirectResponse(url="/nfe", status_code=303)
 
     itens_nfe, itens_nfse = explodir_itens(pedido=pedido, db=db)
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "nfe/emissao.html",
         {"request": request, "pedido": pedido, "itens_nfe": itens_nfe,
          "itens_nfse": itens_nfse, "empresa": empresa,
@@ -339,7 +378,7 @@ def emitir_pedido_submit(
         numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
         empresa.ultimo_numero_nfse = int(numero_nfse)
         valor_servicos = sum(
-            float(item.total or (item.preco_unitario or 0) * (item.quantidade or 1))
+            Decimal(str(item.total or item.preco_unitario or 0)) * Decimal(str(item.quantidade or 1))
             for item in itens_nfse
         )
 
@@ -364,9 +403,9 @@ def emitir_pedido_submit(
                 nfse_id=nfse.id,
                 produto_id=item.produto_id,
                 descricao=item.descricao or item.produto.nome,
-                quantidade=float(item.quantidade or 1),
-                valor_unitario=float(item.preco_unitario or 0),
-                valor_total=float(item.total or (item.preco_unitario or 0) * (item.quantidade or 1)),
+                quantidade=Decimal(str(item.quantidade or 1)),
+                valor_unitario=Decimal(str(item.preco_unitario or 0)),
+                valor_total=Decimal(str(item.total or (item.preco_unitario or 0) * (item.quantidade or 1))),
                 codigo_servico=item.produto.codigo_lc116 or "",
                 tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
             )
@@ -401,7 +440,7 @@ def emitir_os_form(
         return RedirectResponse(url=f"/nfse/emitir/os/{os_id}", status_code=303)
 
     itens_nfe, _ = explodir_itens(os=os, db=db)
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "nfe/emissao.html",
         {"request": request, "pedido": os, "itens_nfe": itens_nfe,
          "itens_nfse": [], "empresa": empresa,
@@ -488,6 +527,164 @@ def emitir_os_submit(
         return RedirectResponse(url=f"/nfe/emitir/os/{os_id}", status_code=303)
 
 
+@router.get("/emitir/consolidacao/{consolidacao_id}")
+def emitir_consolidacao_form(
+    request: Request, consolidacao_id: int, db: Session = Depends(get_db),
+):
+    empresa = db.query(Empresa).first()
+    consolidacao = db.query(PedidoConsolidado).options(
+        joinedload(PedidoConsolidado.cliente),
+        joinedload(PedidoConsolidado.itens).joinedload(PedidoConsolidadoItem.produto)
+    ).filter(PedidoConsolidado.id == consolidacao_id).first()
+    if not consolidacao:
+        request.session["error"] = "Consolidação não encontrada"
+        return RedirectResponse(url="/consolidacoes", status_code=303)
+
+    if consolidacao.status != "concluido":
+        request.session["error"] = "Apenas consolidações finalizadas podem emitir NFe"
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    itens_nfe, itens_nfse = explodir_itens_consolidacao(consolidacao=consolidacao, db=db)
+    return request.app.state.templates.TemplateResponse(request, 
+        "nfe/emissao.html",
+        {"request": request, "pedido": consolidacao, "itens_nfe": itens_nfe,
+         "itens_nfse": itens_nfse, "empresa": empresa,
+         "messages": _get_messages(request)}
+    )
+
+
+@router.post("/emitir/consolidacao/{consolidacao_id}")
+def emitir_consolidacao_submit(
+    request: Request, consolidacao_id: int, db: Session = Depends(get_db),
+    natureza_operacao: str = Form("Venda de mercadoria"),
+    cfop: str = Form(None),
+):
+    empresa = db.query(Empresa).first()
+    if not empresa or not empresa.notaas_api_key:
+        request.session["error"] = "API Key NotaAs não configurada"
+        return RedirectResponse(url="/nfe/config", status_code=303)
+
+    consolidacao = db.query(PedidoConsolidado).options(
+        joinedload(PedidoConsolidado.cliente),
+        joinedload(PedidoConsolidado.itens).joinedload(PedidoConsolidadoItem.produto)
+    ).filter(PedidoConsolidado.id == consolidacao_id).first()
+    if not consolidacao:
+        request.session["error"] = "Consolidação não encontrada"
+        return RedirectResponse(url="/consolidacoes", status_code=303)
+
+    if consolidacao.status != "concluido":
+        request.session["error"] = "Apenas consolidações finalizadas podem emitir NFe"
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    itens_nfe, itens_nfse = explodir_itens_consolidacao(consolidacao=consolidacao, db=db)
+    if not itens_nfe:
+        if itens_nfse:
+            request.session["message"] = "Consolidação contém apenas serviços. Redirecionando para emissão de NFSe."
+            return RedirectResponse(url=f"/nfse/emitir/consolidacao/{consolidacao_id}", status_code=303)
+        else:
+            request.session["error"] = "Nenhum item do tipo produto para emitir NFe"
+        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+
+    cliente = consolidacao.cliente
+    ie = _limpar_doc(cliente.inscricao_estadual) if hasattr(cliente, 'inscricao_estadual') else None
+    if not ie and not cliente.isento_ie and cliente.indicador_ie != "nao_contribuinte":
+        request.session["error"] = f"Cliente '{cliente.nome}' não possui Inscrição Estadual e não está marcado como Isento IE ou Não contribuinte. Cadastre a IE, marque como isento, ou altere o Tipo Contribuinte para Não contribuinte."
+        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+
+    try:
+        numero_nfe = _proximo_numero(empresa, db)
+        total = sum(i.get("preco_unitario", 0) * i.get("quantidade", 0) for i in itens_nfe)
+        now = datetime.now()
+        nfe = NFe(
+            consolidacao_id=consolidacao_id,
+            origem="consolidacao",
+            cliente_id=cliente.id,
+            numero=numero_nfe,
+            serie=empresa.serie_nfe or 1,
+            status="rascunho",
+            natureza_operacao=natureza_operacao,
+            cfop=cfop or empresa.cfop_padrao,
+            valor_total=total,
+            data_emissao=now,
+            data_saida=now,
+            aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
+            aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
+        )
+        db.add(nfe)
+        db.flush()
+
+        for item in itens_nfe:
+            nfe_item = NFeItem(
+                nfe_id=nfe.id,
+                produto_id=item.get("produto_id"),
+                descricao=item.get("descricao", ""),
+                ncm=item.get("ncm"),
+                cfop=cfop or empresa.cfop_padrao,
+                unidade=item.get("unidade", "UN"),
+                quantidade=item.get("quantidade", 1),
+                preco_unitario=item.get("preco_unitario", 0),
+                total=item.get("quantidade", 1) * item.get("preco_unitario", 0),
+            )
+            db.add(nfe_item)
+
+        # Criar NFSe se houver itens de serviço
+        codigos_lc116 = set()
+        for item in itens_nfse:
+            if item.produto and item.produto.codigo_lc116:
+                codigos_lc116.add(item.produto.codigo_lc116)
+        if len(codigos_lc116) > 1:
+            db.rollback()
+            request.session["error"] = f"Consolidação possui itens de serviço com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura de Dourados-MS não aceita múltiplos códigos na mesma NFS-e. Remova ou separe os itens em consolidações diferentes."
+            return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+
+        numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
+        empresa.ultimo_numero_nfse = int(numero_nfse)
+        valor_servicos = sum(
+            Decimal(str(item.total or item.preco_unitario or 0)) * Decimal(str(item.quantidade or 1))
+            for item in itens_nfse
+        )
+
+        iss_retido = getattr(cliente, 'iss_retido', False) or False
+        nfse = NFSe(
+            consolidacao_id=consolidacao_id,
+            numero=numero_nfse,
+            status="rascunho",
+            valor_total=valor_servicos,
+            data_emissao=now,
+            iss_retido=iss_retido,
+            aliquota_iss=empresa.aliquota_iss or 2.0,
+            aliquota_federal=empresa.aliquota_federal or 0.0,
+            aliquota_estadual=empresa.aliquota_estadual or 0.0,
+            aliquota_municipal=empresa.aliquota_municipal or 0.0,
+        )
+        db.add(nfse)
+        db.flush()
+
+        for item in itens_nfse:
+            nfse_item = NFSeItem(
+                nfse_id=nfse.id,
+                produto_id=item.produto_id,
+                descricao=item.descricao or item.produto.nome,
+                quantidade=Decimal(str(item.quantidade or 1)),
+                valor_unitario=Decimal(str(item.preco_unitario or 0)),
+                valor_total=Decimal(str(item.total or (item.preco_unitario or 0) * (item.quantidade or 1))),
+                codigo_servico=item.produto.codigo_lc116 or "",
+                tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
+            )
+            db.add(nfse_item)
+
+        db.commit()
+        msg = f"Rascunho NFe #{numero_nfe} salvo! Revise antes de transmitir."
+        if numero_nfse:
+            msg += f" Rascunho NFSe #{numero_nfse} criado para os serviços."
+        request.session["message"] = msg
+        return RedirectResponse(url=f"/nfe/{nfe.id}/previa", status_code=303)
+    except Exception as e:
+        db.rollback()
+        request.session["error"] = f"Erro ao salvar rascunho NFe: {str(e)}"
+        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+
+
 @router.get("/emitir/avulsa")
 def emitir_avulsa_form(
     request: Request, db: Session = Depends(get_db),
@@ -519,7 +716,7 @@ def emitir_avulsa_form(
     saved_indicador_presenca = request.session.pop("nfe_avulsa_indicador_presenca", None)
     erro_ie_cliente_id = request.session.pop("nfe_avulsa_erro_ie", None)
 
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "nfe/emissao_avulsa.html",
         {"request": request, "empresa": empresa, "clientes": clientes,
          "produtos": produtos, "clientes_json": clientes_json,
@@ -616,15 +813,15 @@ def emitir_avulsa_submit(
             "descricao": item.get("descricao", ""),
             "ncm": item.get("ncm") or "99999999",
             "unidade": item.get("unidade", "UN"),
-            "quantidade": float(item.get("quantidade", 1)),
-            "preco_unitario": float(item.get("preco_unitario", 0)),
+            "quantidade": Decimal(str(item.get("quantidade", 1))),
+            "preco_unitario": Decimal(str(item.get("preco_unitario", 0))),
             "origem": origem,
         })
 
     if desconto > 0:
         total_bruto = sum(i["preco_unitario"] * i["quantidade"] for i in itens_nfe)
         if total_bruto > 0:
-            fator = 1 - (desconto / total_bruto)
+            fator = Decimal("1") - (Decimal(str(desconto)) / total_bruto)
             for item in itens_nfe:
                 item["preco_unitario"] = round(item["preco_unitario"] * fator, 2)
 
@@ -723,6 +920,8 @@ def nfe_distribuicao(
     request: Request, db: Session = Depends(get_db),
     data_inicio: str = Query(""), data_fim: str = Query(""),
     tipo: str = Query(""), reiniciar: bool = Query(False),
+    sort: str = Query("dhEmi"), ordem: str = Query("desc"),
+    page_sefaz: int = Query(1, ge=1), per_page_sefaz: int = Query(20, ge=5, le=100),
 ):
     """Lista NFe (emitidas e recebidas) via SEFAZ (Distribuição DF-e)"""
     from services.nfe_distribuicao import NFeDistribuicaoService
@@ -741,10 +940,19 @@ def nfe_distribuicao(
         notas = service.listar_nfe(empresa.cnpj)
         cnpj_clean = re.sub(r'\D', '', empresa.cnpj)
 
-        # Carrega do banco local (inclui o que acabou de buscar + arquivo)
+        # Backfill XML para registros antigos que estão sem
+        from models import NFeDistribuida as NFeDist
+        sem_xml = db.query(NFeDist).filter(NFeDist.xml.is_(None), NFeDist.chave_acesso.isnot(None)).all()
+        for reg in sem_xml:
+            try:
+                service.consultar_por_chave(empresa.cnpj, reg.chave_acesso)
+            except Exception as e:
+                logger.warning(f"Backfill XML falhou {reg.chave_acesso}: {e}")
+
+        # Recarrega dados após backfill
         todas = db.query(NFeDistribuida).order_by(NFeDistribuida.nsu.desc()).all()
-        notas_local = []
         previstos = set()
+        notas_local = []
         for n in todas:
             chave = n.chave_acesso
             if chave in previstos:
@@ -804,13 +1012,25 @@ def nfe_distribuicao(
             notas_local = [n for n in notas_local if (n.get('dhEmi') or '')[:10] <= data_fim]
         if tipo:
             notas_local = [n for n in notas_local if n.get('tipo') == tipo]
+        rev = ordem == "desc"
+        if sort == "contraparte":
+            notas_local.sort(key=lambda x: (x.get('emitente_nome') or x.get('destinatario_nome') or '').lower(), reverse=rev)
+        elif sort == "numero":
+            notas_local.sort(key=lambda x: int(x.get('numero') or 0) if (x.get('numero') or '').isdigit() else x.get('numero') or '', reverse=rev)
+        elif sort == "valor":
+            notas_local.sort(key=lambda x: x.get('valor') or 0, reverse=rev)
+        else:
+            notas_local.sort(key=lambda x: x.get('dhEmi') or '', reverse=rev)
         emitidas = [n for n in notas_local if n.get('tipo') == 'emitida']
         recebidas = [n for n in notas_local if n.get('tipo') == 'recebida']
-        return request.app.state.templates.TemplateResponse(
+        return request.app.state.templates.TemplateResponse(request, 
             "nfe/lista.html",
             {"request": request, "notas": [], "busca": "", "status": "",
              "messages": [{"tipo": "success", "texto": f"Arquivo local: {len(notas_local)} NFe ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"}],
              "empresa": empresa, "STATUS_LABELS": STATUS_LABELS,
+             "sort": sort, "ordem": ordem,
+             "page": 1, "per_page": 20, "total_pages": 1, "total_count": 0,
+             "page_sefaz": page_sefaz, "per_page_sefaz": per_page_sefaz,
              "dist_notas": notas_local, "dist_emitidas": emitidas, "dist_recebidas": recebidas}
         )
     except Exception as e:
@@ -870,6 +1090,30 @@ def nfe_dist_xml(request: Request, chave_acesso: str, db: Session = Depends(get_
     return Response(status_code=404, content="XML não encontrado")
 
 
+@router.get("/dist-pdf/{chave_acesso}")
+def nfe_dist_pdf(request: Request, chave_acesso: str, db: Session = Depends(get_db)):
+    from models import NFeDistribuida
+    import tempfile
+    n = db.query(NFeDistribuida).filter(NFeDistribuida.chave_acesso == chave_acesso).first()
+    if not n or not n.xml:
+        raise HTTPException(status_code=404, detail="XML não encontrado")
+
+    tmp = tempfile.NamedTemporaryFile(delete=False, suffix='.pdf')
+    try:
+        from brazilfiscalreport.danfe import Danfe, DanfeConfig
+        config = DanfeConfig(logo=None)
+        danfe = Danfe(xml=n.xml, config=config)
+        danfe.output(tmp.name)
+        with open(tmp.name, 'rb') as f:
+            pdf_bytes = f.read()
+        return Response(content=pdf_bytes, media_type="application/pdf",
+                        headers={"Content-Disposition": f"inline; filename=nfe_{n.numero or chave_acesso[:8]}.pdf"})
+    finally:
+        if os.path.exists(tmp.name):
+            os.unlink(tmp.name)
+    return Response(status_code=500, content="Erro ao gerar PDF")
+
+
 @router.get("/{nfe_id}/previa")
 def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
@@ -884,7 +1128,7 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
     erros = _validar_rascunho(nfe, nfe.cliente or (nfe.pedido.cliente if nfe.pedido else None), empresa)
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "nfe/previa.html",
         {"request": request, "nfe": nfe, "empresa": empresa,
          "erros": erros, "STATUS_LABELS": STATUS_LABELS,
@@ -1004,15 +1248,15 @@ def editar_nfe_submit(
             "descricao": item.get("descricao", ""),
             "ncm": item.get("ncm") or "99999999",
             "unidade": item.get("unidade", "UN"),
-            "quantidade": float(item.get("quantidade", 1)),
-            "preco_unitario": float(item.get("preco_unitario", 0)),
+            "quantidade": Decimal(str(item.get("quantidade", 1))),
+            "preco_unitario": Decimal(str(item.get("preco_unitario", 0))),
             "origem": origem,
         })
 
     if desconto > 0:
         total_bruto = sum(i["preco_unitario"] * i["quantidade"] for i in itens_nfe)
         if total_bruto > 0:
-            fator = 1 - (desconto / total_bruto)
+            fator = Decimal("1") - (Decimal(str(desconto)) / total_bruto)
             for item in itens_nfe:
                 item["preco_unitario"] = round(item["preco_unitario"] * fator, 2)
 
@@ -1153,7 +1397,7 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         "unidade": i.unidade,
         "quantidade": i.quantidade,
         "preco_unitario": i.preco_unitario,
-        "origem": (db.query(Produto).filter(Produto.id == i.produto_id).first().origem or 0) if i.produto_id else 0,
+        "origem": getattr(db.query(Produto).filter(Produto.id == i.produto_id).first(), 'origem', 0) if i.produto_id else 0,
     } for i in nfe.itens]
 
     try:
@@ -1206,14 +1450,13 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
                 if novo_status == "issued":
                     nfe.data_emissao = datetime.now()
                 db.commit()
-        except Exception:
-            pass
-
+        except Exception as e:
+            logger.warning(f"Falha ao consultar status da NFe #{nfe_id}: {e}")
     cobranca = db.query(ContaReceber).filter(
         ContaReceber.observacao.like(f"%NFe #{nfe.id}%")
     ).first()
 
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "nfe/detalhe.html",
         {"request": request, "nfe": nfe, "empresa": empresa,
          "STATUS_LABELS": STATUS_LABELS,
@@ -1242,7 +1485,8 @@ def baixar_pdf_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
                     with open(fpath, 'r', encoding='utf-8') as f:
                         if nfe.invoice_id in f.read(500):
                             return fpath
-                except: pass
+                except Exception as e:
+                    logger.warning(f"Erro ao ler XML NFe: {e}")
         return None
 
     def _gerar_danfe(xml_text):
@@ -1391,12 +1635,19 @@ def buscar_produtos_nfe(
     return JSONResponse({"results": [{
         "id": p.id, "nome": p.nome, "ncm": p.ncm or "99999999",
         "unidade": p.unidade or "UN", "preco": p.preco or 0,
-        "estoque": p.estoque_atual or 0, "codigo": p.codigo or "",
+        "estoque": p.estoque or 0, "codigo": p.codigo or "",
     } for p in results]})
 
 
 @router.post("/webhook")
 async def webhook_nfe(request: Request, db: Session = Depends(get_db)):
+    webhook_secret = os.environ.get("WEBHOOK_NFE_SECRET", "")
+    if not webhook_secret:
+        logger.warning("WEBHOOK_NFE_SECRET não configurado - webhook bloqueado")
+        return JSONResponse({"status": "error", "message": "Forbidden"}, status_code=403)
+    provided = request.headers.get("X-Webhook-Secret") or request.query_params.get("secret") or ""
+    if not secrets.compare_digest(provided, webhook_secret):
+        return JSONResponse({"status": "error", "message": "Forbidden"}, status_code=403)
     try:
         body = await request.json()
         event = body.get("event", "")

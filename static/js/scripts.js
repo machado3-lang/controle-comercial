@@ -58,18 +58,61 @@ function aplicarMascaraCep(input) {
     input.value = val;
 }
 
+function getCsrfToken() {
+    var meta = document.querySelector('meta[name="csrf-token"]');
+    return meta ? meta.getAttribute('content') : '';
+}
+
+// Helper para fetch POST/PUT/PATCH/DELETE com CSRF automático (obrigatório pelo middleware).
+function csrfFetch(url, options) {
+    options = options || {};
+    options.method = (options.method || 'POST').toUpperCase();
+    options.credentials = 'include';
+    var tok = getCsrfToken();
+    var bodyIsJson = false;
+    if (options.body instanceof URLSearchParams) {
+        options.body.append('csrf_token', tok);
+    } else if (options.body instanceof FormData) {
+        if (!options.body.has('csrf_token')) options.body.append('csrf_token', tok);
+    } else if (typeof options.body === 'string' && options.body.indexOf('csrf_token') === -1) {
+        options.body += (options.body ? '&' : '') + 'csrf_token=' + encodeURIComponent(tok);
+    } else if (options.body !== undefined && options.body !== null && typeof options.body === 'object' && !Array.isArray(options.body) && !(options.body instanceof Blob)) {
+        // JSON object (application/json): o middleware não lê token do corpo JSON,
+        // então enviamos na query string.
+        bodyIsJson = true;
+    } else if (options.body === undefined || options.body === null) {
+        options.body = new URLSearchParams({csrf_token: tok});
+        if (!options.headers) options.headers = {};
+        options.headers['Content-Type'] = 'application/x-www-form-urlencoded';
+    }
+    // Anexa o token na query string (aceito pelo middleware como fallback).
+    if (url.indexOf('csrf_token=') === -1) {
+        url += (url.indexOf('?') === -1 ? '?' : '&') + 'csrf_token=' + encodeURIComponent(tok);
+    }
+    return fetch(url, options);
+}
+
 function confirmarExclusao(url) {
-    console.log('confirmarExclusao called with url:', url);
     const form = document.getElementById('formExcluirModal');
     if (!form) {
-        console.error('formExcluirModal not found in DOM');
         alert('Erro: formulário de exclusão não encontrado');
         return;
     }
     form.action = url;
+    const aviso = document.getElementById('avisoExclusaoContas');
+    const chk = document.getElementById('excluirContas');
+    if (chk) chk.checked = false;
+    if (aviso) aviso.classList.add('hidden');
+    // Se for exclusão de pedido, verifica se há contas a receber vinculadas.
+    const m = url.match(/\/pedidos\/(\d+)\/excluir$/);
+    if (m && aviso) {
+        fetch('/pedidos/' + m[1] + '/contas-vinculadas', {credentials: 'include'})
+            .then(r => r.ok ? r.json() : null)
+            .then(d => { if (d && d.tem_contas) aviso.classList.remove('hidden'); })
+            .catch(() => {});
+    }
     const modalEl = document.getElementById('modalConfirmarExclusao');
     if (!modalEl) {
-        console.error('modalConfirmarExclusao not found in DOM');
         alert('Erro: modal de exclusão não encontrado');
         return;
     }
@@ -79,7 +122,7 @@ function confirmarExclusao(url) {
 
 function confirmarEstorno(url) {
     if (!confirm('Estornar esta baixa fará a conta voltar para "em aberto". Confirma?')) return;
-    fetch(url, { method: 'POST', credentials: 'include' })
+    csrfFetch(url, { method: 'POST' })
         .then(r => r.redirected ? window.location.href = r.url : window.location.reload())
         .catch(() => window.location.reload());
 }
@@ -88,9 +131,28 @@ function abrirPagamento(id, descricao, fornecedor, valor) {
     document.getElementById('pagarDescricao').textContent = descricao;
     document.getElementById('pagarFornecedor').textContent = fornecedor;
     document.getElementById('pagarValor').textContent = 'R$ ' + valor.toFixed(2);
+    const vp = document.getElementById('pagarValorPago');
+    if (vp) vp.value = valor.toFixed(2);
+    const dp = document.getElementById('pagarData');
+    if (dp) dp.value = new Date().toISOString().split('T')[0];
     document.getElementById('formPagar').action = '/contas/pagar/' + id + '/baixar';
+    calcularTotalPagar();
     const modal = new bootstrap.Modal(document.getElementById('modalPagar'));
     modal.show();
+}
+
+function calcularTotalPagar() {
+    const num = id => { const el = document.getElementById(id); return el && parseFloat(el.value) ? parseFloat(el.value) : 0; };
+    const total = num('pagarValorPago') + num('pagarJuros') - num('pagarDesconto');
+    const el = document.getElementById('pagarTotal');
+    if (el) el.textContent = 'R$ ' + total.toFixed(2).replace('.', ',');
+}
+
+function calcularTotalReceber() {
+    const num = id => { const el = document.getElementById(id); return el && parseFloat(el.value) ? parseFloat(el.value) : 0; };
+    const total = num('receberValorRecebido') + num('receberJuros') - num('receberDesconto');
+    const el = document.getElementById('receberTotal');
+    if (el) el.textContent = 'R$ ' + total.toFixed(2).replace('.', ',');
 }
 
 function confirmarExclusaoSimples(url) {
@@ -116,7 +178,7 @@ function confirmarExclusaoSimples(url) {
 }
 
 function excluirDireto(url) {
-    fetch(url, { method: 'POST' })
+    csrfFetch(url, { method: 'POST' })
         .then(r => {
             if (r.redirected) {
                 window.location.href = r.url;
@@ -132,12 +194,15 @@ function excluirDireto(url) {
 function handleSubmitExclusao(form) {
     const url = form.action;
     const senha = form.senha.value;
+    const csrf = form.csrf_token ? form.csrf_token.value : '';
+    const excluirContas = document.getElementById('excluirContas') && document.getElementById('excluirContas').checked ? '1' : '';
     const btn = form.querySelector('button[type="submit"]');
+    if (btn) { btn.disabled = true; btn.innerHTML = '<i data-lucide="loader" class="w-4 h-4 me-1"></i> Excluindo...'; if (window.lucide) lucide.createIcons(); }
     fetch(url, {
         method: 'POST',
         credentials: 'include',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: new URLSearchParams({senha: senha})
+        body: new URLSearchParams({senha: senha, csrf_token: csrf, excluir_contas: excluirContas})
     })
     .then(r => r.json().then(d => ({status: r.status, data: d})))
     .then(({status, data}) => {
@@ -146,7 +211,14 @@ function handleSubmitExclusao(form) {
         } else if (data.ok || data.success) {
             showToast('Registro excluído', 'success');
             bootstrap.Modal.getInstance(document.getElementById('modalConfirmarExclusao')).hide();
-            setTimeout(() => window.location.href = data.redirect || '/', 500);
+            setTimeout(() => {
+                if (data.redirect) {
+                    window.location.href = data.redirect;
+                } else {
+                    // Permanece na página atual (a listagem de onde veio o modal).
+                    window.location.href = window.location.pathname;
+                }
+            }, 500);
             return;
         } else {
             showToast(data.erro || data.error || 'Erro na requisição', 'danger');
@@ -169,3 +241,14 @@ function calcularTotal() {
         campo.value = total.toFixed(2);
     }
 }
+
+document.addEventListener('DOMContentLoaded', function () {
+    ['pagarValorPago', 'pagarJuros', 'pagarDesconto'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', calcularTotalPagar);
+    });
+    ['receberValorRecebido', 'receberJuros', 'receberDesconto'].forEach(function (id) {
+        const el = document.getElementById(id);
+        if (el) el.addEventListener('input', calcularTotalReceber);
+    });
+});

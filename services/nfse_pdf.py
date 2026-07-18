@@ -1,5 +1,6 @@
 import os
 from datetime import datetime
+from decimal import Decimal
 from fpdf import FPDF
 
 UPLOAD_DIR = "static/uploads/nfse"
@@ -223,9 +224,9 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
     return f"/static/uploads/nfse/{pdf_filename}"
 
 
-def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
+def gerar_pdf_contas(contas, empresa, tipo="receber", filtros=None) -> bytes:
     pdf = FPDF(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=10)
+    pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
     empresa_nome = (empresa.razao_social or empresa.nome_fantasia or "Empresa") if empresa else "Empresa"
@@ -233,33 +234,57 @@ def gerar_pdf_contas(contas, empresa, tipo="receber") -> bytes:
     pdf.set_font("Helvetica", "B", 12)
     titulo = "Contas a Receber" if tipo == "receber" else "Contas a Pagar"
     pdf.cell(0, 7, titulo, align="C", new_x="LMARGIN", new_y="NEXT")
+    if filtros:
+        pdf.set_font("Helvetica", "", 8)
+        pdf.cell(0, 5, filtros, align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.ln(3)
+
+    # Cabeçalho da tabela
     pdf.set_font("Helvetica", "B", 8)
-    col_w = [62, 26, 22, 18, 62]
+    col_w = [60, 28, 24, 24, 54]
     parte_label = "Cliente" if tipo == "receber" else "Fornecedor"
-    headers = ["Descricao", "Valor", "Vencimento", "Status", parte_label]
+    headers = ["Descrição", "Valor", "Vencimento", "Status", parte_label]
     for i, h in enumerate(headers):
         pdf.cell(col_w[i], 6, h, border=1, align="C")
     pdf.ln()
+
     pdf.set_font("Helvetica", "", 7)
     linha_alt = 5
-    total = 0
+    total = Decimal("0")
     for c in contas:
-        parte = (c.cliente.nome if tipo == "receber" and c.cliente else
-                 c.fornecedor.nome if c.fornecedor else '-')
-        textos = [c.descricao, f"R$ {c.valor:.2f}",
-                  c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '',
-                  c.status.value if hasattr(c.status, 'value') else str(c.status), parte]
-        total += c.valor
+        # Parte (cliente ou fornecedor) - duck typing seguro
+        if tipo == "receber":
+            parte = c.cliente.nome if getattr(c, "cliente", None) else "-"
+        else:
+            parte = c.fornecedor.nome if getattr(c, "fornecedor", None) else "-"
+        status = c.status.name if hasattr(c.status, "name") else str(c.status)
+        valor = c.valor or Decimal("0")
+        total += valor
+        descr = (c.descricao or "-")[:60]
+        textos = [
+            descr,
+            f"R$ {float(valor):.2f}",
+            c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else "-",
+            status.lower(),
+            parte[:30],
+        ]
         if pdf.get_y() + linha_alt > pdf.h - pdf.b_margin:
             pdf.add_page()
+            pdf.set_font("Helvetica", "B", 8)
+            for i, h in enumerate(headers):
+                pdf.cell(col_w[i], 6, h, border=1, align="C")
+            pdf.ln()
+            pdf.set_font("Helvetica", "", 7)
         x0 = pdf.get_x()
         y0 = pdf.get_y()
         for i, t in enumerate(textos):
             pdf.set_xy(x0 + sum(col_w[:i]), y0)
-            pdf.cell(col_w[i], linha_alt, t, border=1, align="L" if i in (0, 4) else "C")
-    pdf.ln(3)
-    pdf.set_font("Helvetica", "B", 9)
-    pdf.cell(0, 6, f"Total: R$ {total:.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
-    pdf.cell(0, 4, f"Emitido em {datetime.now().strftime('%d/%m/%Y as %H:%M')}", align="C", new_x="LMARGIN", new_y="NEXT")
-    return bytes(pdf.output())
+            pdf.cell(col_w[i], linha_alt, str(t), border=1, align="L" if i in (0, 4) else "C")
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "B", 10)
+    pdf.cell(0, 7, f"Total: R$ {float(total):.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "", 8)
+    pdf.cell(0, 5, f"Emitido em {datetime.now().strftime('%d/%m/%Y %H:%M')}", align="C", new_x="LMARGIN", new_y="NEXT")
+    out = pdf.output()
+    return out if isinstance(out, bytes) else bytes(out)

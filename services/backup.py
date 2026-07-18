@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, date
 from decimal import Decimal
 from sqlalchemy import text, inspect as sa_inspect
@@ -29,7 +30,76 @@ TABLES_IN_ORDER = [
     "empresa",
 ]
 
-SKIP_TABLES_ON_RESTORE = {"empresa"}
+ALLOWED_TABLES = set(TABLES_IN_ORDER)
+
+SKIP_TABLES_ON_RESTORE = set()
+
+# Colunas que armazenam enums Python (VARCHAR no banco) e seus tipos de enum.
+# A fonte da verdade são os valores definidos em models.py (case-sensitive).
+_ENUM_COLUMNS = {
+    "status": ("pedidos_venda", "StatusPedido"),
+    "status": ("ordens_servico", "StatusOS"),
+    "status": ("contas_pagar", "StatusConta"),
+    "status": ("contas_receber", "StatusConta"),
+    "forma_pagamento": ("pedidos_venda", "FormaPagamento"),
+    "forma_pagamento": ("contas_pagar", "FormaPagamento"),
+    "forma_pagamento": ("contas_receber", "FormaPagamento"),
+}
+
+
+def _build_enum_lookup():
+    """Constrói um dicionário {coluna: {variante_lower: valor_canônico}} a partir
+    dos enums definidos em models.py."""
+    from models import (
+        StatusPedido, StatusOS, StatusConta, FormaPagamento,
+    )
+    _enum_classes = {
+        "StatusPedido": StatusPedido,
+        "StatusOS": StatusOS,
+        "StatusConta": StatusConta,
+        "FormaPagamento": FormaPagamento,
+    }
+    lookup = {}
+    for col, (_, enum_name) in _ENUM_COLUMNS.items():
+        enum_cls = _enum_classes.get(enum_name)
+        if not enum_cls:
+            continue
+        norm = {}
+        for member in enum_cls:
+            # O SQLAlchemy (native_enum=False) usa o NOME do membro (ex.: CONSOLIDADO)
+            # para ler/gravar, não o .value. Normalizamos para o nome canônico.
+            canon = member.name
+            variantes = {
+                member.name.lower(),
+                member.value.lower(),
+                member.value.lower().replace("_", ""),
+                member.value.lower().replace("_", " "),
+            }
+            for v in variantes:
+                norm[v] = canon
+        lookup[col] = norm
+    return lookup
+
+
+_ENUM_LOOKUP = _build_enum_lookup()
+
+
+def _normalize_enum_value(col_name: str, value):
+    """Normaliza um valor de enum para o NOME canônico do membro em models.py
+    (o que o SQLAlchemy espera com native_enum=False)."""
+    if not isinstance(value, str) or col_name not in _ENUM_LOOKUP:
+        return value
+    key = value.strip().lower()
+    if key in _ENUM_LOOKUP[col_name]:
+        return _ENUM_LOOKUP[col_name][key]
+    return value.strip().upper()
+
+
+def _validate_table(table_name: str) -> str:
+    """Valida se o nome da tabela está na whitelist para prevenir SQL injection."""
+    if table_name not in ALLOWED_TABLES:
+        raise ValueError(f"Tabela não permitida: {table_name}")
+    return table_name
 
 
 def _serialize(val):
@@ -44,6 +114,7 @@ def generate_backup():
     with engine.connect() as conn:
         tables = {}
         for table in TABLES_IN_ORDER:
+            _validate_table(table)
             rows = conn.execute(text(f"SELECT * FROM {table} ORDER BY id")).fetchall()
             if not rows:
                 tables[table] = []
@@ -70,19 +141,29 @@ def _get_pg_columns(conn, table_name):
 
 
 def restore_backup(backup_dict: dict) -> dict:
-    tables_data = backup_dict.get("tables", {})
+    raw = backup_dict.get("tables")
+    if isinstance(raw, dict):
+        tables_data = raw
+    else:
+        # Formato legado: o próprio dict raiz é {tabela: [rows]}
+        tables_data = {
+            k: v for k, v in backup_dict.items()
+            if k in ALLOWED_TABLES and isinstance(v, list)
+        }
     total_imported = 0
     total_errors = 0
     detalhes = []
     tabelas = {}
 
     for table_name in TABLES_IN_ORDER:
+        _validate_table(table_name)
         backup_rows = tables_data.get(table_name, [])
         tabelas[table_name] = {"backup": len(backup_rows), "importado": 0, "erros": 0, "ignorado": 0}
 
     is_pg = "postgresql" in str(engine.url)
 
     for table_name in TABLES_IN_ORDER:
+        _validate_table(table_name)
         if table_name in SKIP_TABLES_ON_RESTORE:
             tabelas[table_name]["ignorado"] = tabelas[table_name]["backup"]
             continue
@@ -109,6 +190,8 @@ def restore_backup(backup_dict: dict) -> dict:
                         for k, v in row_data.items():
                             if db_columns and k not in db_columns:
                                 continue
+                            if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', str(k)):
+                                continue
                             if v is None:
                                 continue
 
@@ -116,8 +199,14 @@ def restore_backup(backup_dict: dict) -> dict:
                             if is_pg and col_type.get("udt_name") in (
                                 "statusconta", "statusos", "statuspedido", "formapagamento"
                             ):
+                                if isinstance(v, str):
+                                    v = v.upper()
                                 col_names.append(k)
                                 col_placeholders.append(f"CAST(:{k} AS {col_type['udt_name']})")
+                            elif k in _ENUM_LOOKUP and isinstance(v, str):
+                                v = _normalize_enum_value(k, v)
+                                col_names.append(k)
+                                col_placeholders.append(f":{k}")
                             else:
                                 col_names.append(k)
                                 col_placeholders.append(f":{k}")
@@ -154,7 +243,7 @@ def restore_backup(backup_dict: dict) -> dict:
                         is_dup = "UniqueViolation" in type(e).__name__ or "duplicate key" in str(e).lower()
                         if is_dup:
                             tabelas[table_name]["ignorado"] += 1
-                            detalhes.append(f"{table_name}:{row_data.get('id', '?')} ignorado (j� existente no banco)")
+                            detalhes.append(f"{table_name}:{row_data.get('id', '?')} ignorado (já existente no banco)")
                         else:
                             tabelas[table_name]["erros"] += 1
                             total_errors += 1

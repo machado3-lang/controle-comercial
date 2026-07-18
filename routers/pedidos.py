@@ -1,10 +1,16 @@
+import logging
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from datetime import date, datetime
 from database import get_db
-from models import Produto, PedidoVenda, PedidoVendaItem, Cliente, StatusPedido, Fornecedor, FormaPagamento, ContaReceber, StatusConta, ProdutoVariacao, ProdutoComposicao, Empresa
+from models import Produto, PedidoVenda, PedidoVendaItem, Cliente, StatusPedido, Fornecedor, FormaPagamento, ContaReceber, StatusConta, ProdutoVariacao, ProdutoComposicao, Empresa, PedidoConsolidadoItemOrigem
+from models_nfe import NFSe, NFe
+from app.core.security import confirma_senha_usuario
+from services.audit import registrar_auditoria
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/pedidos", tags=["Pedidos"])
 
@@ -26,7 +32,12 @@ FORMAS_PAGAMENTO = {
 
 
 @router.get("/")
-def listar_pedidos(request: Request, db: Session = Depends(get_db), busca: str = Query(""), status: str = Query(""), cliente_id: int = Query(0)):
+def listar_pedidos(
+    request: Request, db: Session = Depends(get_db),
+    busca: str = Query(""), status: str = Query(""), cliente_id: int = Query(0),
+    page: int = Query(1), per_page: int = Query(20),
+    sort: str = Query("data"), ordem: str = Query("desc"),
+):
     query = db.query(PedidoVenda).join(Cliente)
     if busca:
         query = query.filter(Cliente.nome.ilike(f"%{busca}%") | PedidoVenda.numero.ilike(f"%{busca}%"))
@@ -34,11 +45,40 @@ def listar_pedidos(request: Request, db: Session = Depends(get_db), busca: str =
         query = query.filter(PedidoVenda.status == status)
     if cliente_id:
         query = query.filter(PedidoVenda.cliente_id == cliente_id)
-    pedidos = query.order_by(PedidoVenda.data.desc()).all()
+
+    # Ordenação
+    if sort == "numero":
+        sort_attr = PedidoVenda.numero
+    elif sort == "cliente":
+        sort_attr = Cliente.nome
+    elif sort == "total":
+        sort_attr = PedidoVenda.total
+    else:
+        sort_attr = PedidoVenda.data
+
+    if ordem == "asc":
+        query = query.order_by(sort_attr.asc())
+    else:
+        query = query.order_by(sort_attr.desc())
+
+    # Paginação
+    total_count = query.count()
+    total_pages = max(1, (total_count + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    offset = (page - 1) * per_page
+    pedidos = query.offset(offset).limit(per_page).all()
+
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
-    return request.app.state.templates.TemplateResponse(
+    return request.app.state.templates.TemplateResponse(request, 
         "pedidos/listar.html",
-        {"request": request, "pedidos": pedidos, "busca": busca, "STATUS_LABELS": STATUS_PEDIDO_LABELS, "clientes": clientes, "cliente_id": cliente_id}
+        {
+            "request": request, "pedidos": pedidos, "busca": busca,
+            "status": status,
+            "STATUS_LABELS": STATUS_PEDIDO_LABELS, "clientes": clientes,
+            "cliente_id": cliente_id, "page": page, "per_page": per_page,
+            "total_pages": total_pages, "total_count": total_count,
+            "sort": sort, "ordem": ordem
+        }
     )
 
 
@@ -78,14 +118,27 @@ async def finalizar_grupo(
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
     if not cliente:
         return RedirectResponse(url="/pedidos/pre-venda/agrupar", status_code=303)
+
+    # Gerar número sequencial para o novo pedido agrupado
+    empresa = db.query(Empresa).with_for_update().first()
+    if empresa:
+        empresa.ultimo_numero_pedido = (empresa.ultimo_numero_pedido or 0) + 1
+        numero = str(empresa.ultimo_numero_pedido)
+    else:
+        ultimo_numero = db.query(func.max(PedidoVenda.numero)).scalar()
+        ultimo_val = int(ultimo_numero) if ultimo_numero else 0
+        numero = str(ultimo_val + 1)
+
     novo_pedido = PedidoVenda(
-        cliente_id=cliente_id_int,
+        cliente_id=cliente_id,
+        numero=numero,
         status=StatusPedido.FATURADO,
         tipo_pedido="venda",
         forma_pagamento=FormaPagamento.AVISTA
     )
     db.add(novo_pedido)
-    db.commit()
+    db.flush()
+
     # Calcular descrição dos pedidos agrupados ANTES do loop
     pedidos_numeros = ", ".join([p.numero or f"#{p.id}" for p in pedidos])
     # Adicionar todos os itens
@@ -146,13 +199,13 @@ def salvar_pedido(
     from sqlalchemy import func
     cliente_id_int = int(cliente_id) if cliente_id else None
     if not cliente_id_int:
-        return RedirectResponse(url="/pedidos", status_code=303)
+        return RedirectResponse(url="/pedidos/", status_code=303)
     pedido_id_int = int(pedido_id) if pedido_id else None
     if pedido_id:
         # EDIÇÃO: Atualizar pedido existente
         pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
         if not pedido:
-            return RedirectResponse(url="/pedidos", status_code=303)
+            return RedirectResponse(url="/pedidos/", status_code=303)
         pedido.cliente_id = cliente_id_int
         if numero:
             pedido.numero = numero
@@ -239,11 +292,14 @@ def salvar_pedido(
         pedido.total = total
         db.commit()
     except Exception as e:
-        pass
-    
+        db.rollback()
+        logger.exception("Erro ao salvar itens do pedido %s", pedido.id if pedido else None)
+        request.session["error"] = "Erro ao salvar os itens do pedido. Verifique os valores informados."
+        return RedirectResponse(url="/pedidos/", status_code=303)
+
     if acao == "emitir":
         return RedirectResponse(url=f"/pedidos/{pedido.id}/imprimir", status_code=303)
-    return RedirectResponse(url="/pedidos", status_code=303)
+    return RedirectResponse(url="/pedidos/", status_code=303)
 
 
 @router.get("/{pedido_id}")
@@ -255,7 +311,7 @@ def detalhe_pedido(request: Request, pedido_id: int, db: Session = Depends(get_d
         selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.filhos).selectinload(PedidoVendaItem.fornecedor)
     ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
-        return RedirectResponse(url="/pedidos", status_code=303)
+        return RedirectResponse(url="/pedidos/", status_code=303)
     produtos = db.query(Produto).order_by(Produto.nome).all()
     return request.app.state.templates.TemplateResponse(
         "pedidos/detalhe.html",
@@ -263,16 +319,57 @@ def detalhe_pedido(request: Request, pedido_id: int, db: Session = Depends(get_d
     )
 
 
+@router.get("/{pedido_id}/contas-vinculadas")
+def pedido_contas_vinculadas(request: Request, pedido_id: int, db: Session = Depends(get_db)):
+    if not request.session.get("user_id"):
+        return JSONResponse({"erro": "Não autorizado"}, status_code=403)
+    n_itens = db.query(func.count(PedidoVendaItem.id)).filter(PedidoVendaItem.pedido_id == pedido_id).scalar() or 0
+    n_nfse = db.query(func.count(NFSe.id)).filter(NFSe.pedido_id == pedido_id).scalar() or 0
+    n_nfe = db.query(func.count(NFe.id)).filter(NFe.pedido_id == pedido_id).scalar() or 0
+    n_origem = db.query(func.count(PedidoConsolidadoItemOrigem.id)).filter(PedidoConsolidadoItemOrigem.pedido_origem_id == pedido_id).scalar() or 0
+    qtd = n_itens + n_nfse + n_nfe + n_origem
+    return JSONResponse({"pedido_id": pedido_id, "tem_contas": qtd > 0, "qtd": qtd,
+                          "detalhe": {"itens": n_itens, "nfse": n_nfse, "nfe": n_nfe, "consolidacoes": n_origem}})
+
+
 @router.post("/{pedido_id}/excluir")
-def excluir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db), senha: str = Form("")):
-    empresa = db.query(Empresa).first()
-    if not empresa or not empresa.senha_admin or senha != empresa.senha_admin:
-        return JSONResponse({"erro": "Senha inválida"}, status_code=403)
+def excluir_pedido(
+    request: Request, pedido_id: int, db: Session = Depends(get_db),
+    senha: str = Form(""), excluir_contas: str = Form(""),
+):
+    if not confirma_senha_usuario(request, db, senha):
+        return JSONResponse({"erro": "Senha inválida ou usuário não autorizado"}, status_code=403)
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
-    if pedido:
+    if not pedido:
+        return JSONResponse({"erro": "Pedido não encontrado"}, status_code=404)
+    try:
+        if excluir_contas == "1":
+            for nfse in db.query(NFSe).filter(NFSe.pedido_id == pedido_id).all():
+                db.delete(nfse)
+            for nfe in db.query(NFe).filter(NFe.pedido_id == pedido_id).all():
+                db.delete(nfe)
+            for orig in db.query(PedidoConsolidadoItemOrigem).filter(PedidoConsolidadoItemOrigem.pedido_origem_id == pedido_id).all():
+                db.delete(orig)
         db.delete(pedido)
         db.commit()
-    return JSONResponse({"ok": True, "redirect": "/pedidos"})
+        registrar_auditoria(
+            db, request.session.get("user_id"), "excluir",
+            "pedido", pedido_id, f"Pedido #{pedido_id}",
+            request.client.host if request.client else None
+        )
+        return JSONResponse({"ok": True, "redirect": "/pedidos/"})
+    except Exception:
+        db.rollback()
+        logger.exception("Erro ao excluir pedido %s", pedido_id)
+        n_nfse = db.query(func.count(NFSe.id)).filter(NFSe.pedido_id == pedido_id).scalar() or 0
+        n_nfe = db.query(func.count(NFe.id)).filter(NFe.pedido_id == pedido_id).scalar() or 0
+        n_itens = db.query(func.count(PedidoVendaItem.id)).filter(PedidoVendaItem.pedido_id == pedido_id).scalar() or 0
+        if (n_nfse + n_nfe + n_itens) > 0:
+            return JSONResponse(
+                {"erro": "Não foi possível excluir: este pedido possui registros vinculados (NFSe, NFe ou itens). Marque a opção para excluí-los também."},
+                status_code=400,
+            )
+        return JSONResponse({"erro": "Erro interno ao excluir o pedido"}, status_code=500)
 
 
 @router.post("/{pedido_id}/status")
@@ -282,11 +379,27 @@ def atualizar_status(
 ):
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
     if pedido:
+        novo = None
         try:
-            pedido.status = StatusPedido(status)
+            novo = StatusPedido(status)
+        except ValueError:
+            request.session["error"] = "Status inválido"
+            return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
+        # Regra de ouro: pedido já faturado não pode mudar de status.
+        if pedido.status == StatusPedido.FATURADO:
+            request.session["error"] = "Pedido já faturado não pode ter o status alterado"
+            return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
+        # Não permitir faturar diretamente um pedido que já pertence a uma consolidação
+        # (o faturamento deve ocorrer pela consolidação).
+        if novo == StatusPedido.FATURADO and pedido.consolidacao_id is not None:
+            request.session["error"] = "Este pedido pertence a uma consolidação; fature pela consolidação"
+            return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
+        try:
+            pedido.status = novo
             db.commit()
-        except:
-            pass
+        except Exception:
+            logger.exception("Erro ao atualizar status do pedido %s", pedido_id)
+            request.session["error"] = "Erro ao atualizar status"
     return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
 
 
@@ -307,7 +420,7 @@ def editar_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db
         joinedload(PedidoVenda.itens).joinedload(PedidoVendaItem.variacao)
     ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
-        return RedirectResponse(url="/pedidos", status_code=303)
+        return RedirectResponse(url="/pedidos/", status_code=303)
     return request.app.state.templates.TemplateResponse(
         "pedidos/form.html",
         {"request": request, "pedido": pedido, "clientes": clientes, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "date": date, "hoje": hoje, "clientes_json": clientes_json}
@@ -325,6 +438,9 @@ def finalizar_pedido(
 ):
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
     if pedido:
+        if pedido.consolidacao_id is not None:
+            request.session["error"] = "Este pedido pertence a uma consolidação; fature pela consolidação"
+            return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
         pedido.status = StatusPedido.FATURADO
         pedido.tipo_pedido = tipo_pedido
         if forma_pagamento:
@@ -349,17 +465,18 @@ def finalizar_pedido(
 
 
 @router.get("/{pedido_id}/imprimir")
-def imprimir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db), tipo: str = Query("faturado")):
+def imprimir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db), tipo: str = Query("faturado"), termica: str = Query("")):
     from sqlalchemy.orm import selectinload
     pedido = db.query(PedidoVenda).options(
         selectinload(PedidoVenda.itens),
         selectinload(PedidoVenda.cliente)
     ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
-        return RedirectResponse(url="/pedidos", status_code=303)
+        return RedirectResponse(url="/pedidos/", status_code=303)
     empresa = db.query(Empresa).first()
+    template_name = "pedidos/imprimir_termica.html" if termica else "pedidos/imprimir.html"
     return request.app.state.templates.TemplateResponse(
-        "pedidos/imprimir.html",
+        template_name,
         {"request": request, "pedido": pedido, "empresa": empresa, "tipo_impressao": tipo, "STATUS_LABELS": STATUS_PEDIDO_LABELS, "FORMAS_PAGAMENTO": FORMAS_PAGAMENTO}
     )
 
@@ -371,6 +488,6 @@ def pdf_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
     # PDF generation would go here
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
-        return RedirectResponse(url="/pedidos", status_code=303)
+        return RedirectResponse(url="/pedidos/", status_code=303)
     # For now redirect to imprimir
     return RedirectResponse(url=f"/pedidos/{pedido_id}/imprimir", status_code=303)
