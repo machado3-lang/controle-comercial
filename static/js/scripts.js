@@ -1,3 +1,31 @@
+// Renderiza item de pessoa (cliente/fornecedor) no dropdown de busca.
+// Padroniza: nome + fantasia + documento (CPF/CNPJ) em azul.
+function formatPessoaItem(p) {
+    if (!p) return '';
+    var html = escapeHtml(p.nome || '');
+    if (p.fantasia && p.fantasia !== p.nome) {
+        html += ' - ' + escapeHtml(p.fantasia);
+    }
+    if (p.cpf_cnpj) {
+        html += ' (<span class="text-cyan-400">' + escapeHtml(p.cpf_cnpj) + '</span>)';
+    } else if (p.cnpj) {
+        html += ' (<span class="text-cyan-400">' + escapeHtml(p.cnpj) + '</span>)';
+    } else if (p.cpf) {
+        html += ' (<span class="text-cyan-400">' + escapeHtml(p.cpf) + '</span>)';
+    }
+    return html;
+}
+
+function escapeHtml(str) {
+    if (str === null || str === undefined) return '';
+    return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 document.addEventListener('DOMContentLoaded', function() {
     var tooltipTriggerList = [].slice.call(document.querySelectorAll('[data-bs-toggle="tooltip"]'));
     tooltipTriggerList.map(function(el) {

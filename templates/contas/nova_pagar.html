@@ -61,7 +61,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (term.length >= 2) {
                 fetch(`/fornecedores/buscar?q=${encodeURIComponent(term)}`).then(r => r.json()).then(d => {
                     if (d.fornecedores && d.fornecedores.length > 0) {
-                        fornecedorDropdown.innerHTML = d.fornecedores.map(f => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${f.id}">${f.nome}${f.fantasia && f.fantasia !== f.nome ? ' - ' + f.fantasia : ''}${f.cpf_cnpj ? ' (<span class="text-cyan-400">' + f.cpf_cnpj + '</span>)' : ''}</div>`).join('');
+                        fornecedorDropdown.innerHTML = d.fornecedores.map(f => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${f.id}">${formatPessoaItem(f)}</div>`).join('');
                         fornecedorDropdown.classList.remove('hidden');
                     } else {
                         fornecedorDropdown.classList.add('hidden');

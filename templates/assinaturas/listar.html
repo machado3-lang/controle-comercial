@@ -235,7 +235,7 @@ document.addEventListener('DOMContentLoaded', function() {
              if (term.length >= 2) {
                  buscarClientes(term).then(clientes => {
                      if (clientes.length > 0) {
-                         clienteDropdown.innerHTML = clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}" data-codigo="${c.codigo||''}">${c.nome}${c.fantasia ? ' - ' + c.fantasia : ''}${c.cpf_cnpj ? ' (<span class="text-cyan-400">' + c.cpf_cnpj + '</span>)' : ''}</div>`).join('');
+                         clienteDropdown.innerHTML = clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}" data-codigo="${c.codigo||''}">${formatPessoaItem(c)}</div>`).join('');
                          clienteDropdown.classList.remove('hidden');
                      } else {
                          clienteDropdown.classList.add('hidden');

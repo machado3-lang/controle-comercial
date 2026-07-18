@@ -439,7 +439,7 @@ document.getElementById('clienteSearchEdit')?.addEventListener('input', function
     if (term.length >= 2) {
         const results = clientes.filter(c => c.nome.toLowerCase().includes(term) || (c.cpf_cnpj && c.cpf_cnpj.includes(term)));
         dropdown.innerHTML = results.length > 0
-            ? results.map(c => '<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="' + c.id + '">' + c.nome + (c.cpf_cnpj ? ' (<span class="text-cyan-400">' + c.cpf_cnpj + '</span>)' : '') + '</div>').join('')
+            ? results.map(c => '<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="' + c.id + '">' + formatPessoaItem(c) + '</div>').join('')
             : '<div class="p-2.5 text-slate-500 text-sm">Nenhum resultado</div>';
         dropdown.classList.remove('hidden');
     } else {

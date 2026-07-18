@@ -89,7 +89,7 @@ document.addEventListener('DOMContentLoaded', function() {
             if (term.length >= 2) {
                 fetch(`/clientes/buscar?q=${encodeURIComponent(term)}`).then(r => r.json()).then(d => {
                     if (d.clientes && d.clientes.length > 0) {
-                        clienteDropdown.innerHTML = d.clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}">${c.nome}</div>`).join('');
+                        clienteDropdown.innerHTML = d.clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}">${formatPessoaItem(c)}</div>`).join('');
                         clienteDropdown.classList.remove('hidden');
                     } else {
                         clienteDropdown.classList.add('hidden');
