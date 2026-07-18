@@ -101,7 +101,10 @@ def _add_missing_columns():
                     break
             if col_type is None:
                 col_type = "TEXT"
-            nullable = "" if col.nullable else " NOT NULL"
+            # Auto-migration sempre adiciona como nullable para nao falhar em
+            # tabelas ja populadas (PostgreSQL nao permite ADD COLUMN NOT NULL
+            # com linhas existentes sem DEFAULT). O modelo mantem a restricao.
+            nullable = ""
             default = ""
             try:
                 with engine.connect() as conn:
