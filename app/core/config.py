@@ -96,7 +96,12 @@ class Settings(BaseSettings):
     
     @property
     def allowed_hosts_list(self) -> List[str]:
-        return [h.strip() for h in self.ALLOWED_HOSTS.split(",")]
+        hosts = [h.strip() for h in self.ALLOWED_HOSTS.split(",") if h.strip()]
+        railway_domain = os.getenv("RAILWAY_PUBLIC_DOMAIN", "").strip()
+        if railway_domain:
+            hosts.append(railway_domain)
+            hosts.append(f"*.{railway_domain.split('.', 1)[-1]}")
+        return hosts
     
     @property
     def cors_origins_list(self) -> List[str]:
@@ -130,6 +135,8 @@ class Settings(BaseSettings):
         if self.is_production:
             if self.ALLOWED_HOSTS == "*" or "*" in self.allowed_hosts_list:
                 raise ValueError("ALLOWED_HOSTS must not contain '*' in production")
+            if not self.allowed_hosts_list and not os.getenv("RAILWAY_PUBLIC_DOMAIN"):
+                raise ValueError("ALLOWED_HOSTS must be set in production (or set RAILWAY_PUBLIC_DOMAIN)")
             origins = self.cors_origins_list
             if not origins or origins == ["*"] or "*" in origins:
                 raise ValueError("CORS_ORIGINS must not be empty or contain '*' in production")
