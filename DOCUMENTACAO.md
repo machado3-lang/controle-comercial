@@ -440,6 +440,14 @@ Revisão técnica completa do sistema cobrindo segurança, tratamento de erros, 
 - Relatório de vendas por período/cliente e extrato por cliente/fornecedor.
 - Razão contábil e fluxo de caixa projetado (além da previsão atual).
 
+### Certificados Digitais no Railway (PENDENTE — impacto em produção)
+
+O sistema usa **dois tipos de certificado** conforme o módulo:
+- **Sicoob (boleto):** campo dedicado na aba Sicoob, formato **PEM** (cert + key). Carregado via `Empresa.sicoob_cert_id`/`sicoob_cert_path` e usado em `routers/sicoob.py` como `httpx.Client(cert=(cert.pem, key.pem))`.
+- **NFSe / NFe / Betha (demais):** formato **PFX** (`Empresa.cert_path`/`cert_id`/`cert_password`, default `./certs/certificado.pfx`), usado pelas emissões.
+
+**RESOLVIDO:** `services/cert_store.py` agora persiste os certificados **criptografados (AES-256-GCM) no PostgreSQL** (colunas `cert_base64`/`sicoob_cert_base64`/`sicoob_cert_key_base64` da tabela `empresa`), não mais em arquivo de disco. Assim sobrevive aos redeploys do Railway (filesystem efêmero). Mapeamento: `empresa`→`cert_base64`, `sicoob`→`sicoob_cert_base64`, `sicoob_key`→`sicoob_cert_key_base64`. A chave mestra vem de `CERT_MASTER_KEY` (fallback `SECRET_KEY` em dev). Sicoob (PEM), NFSe e NFe (PFX) já usam `cert_store`.
+
 ### Como Testar
 
 Servidor: `run_server.bat` (uvicorn, porta 3000, `--reload`). Login admin padrão: `admin@controle.com` / `admin123` (senha de teste — alterar em produção).
