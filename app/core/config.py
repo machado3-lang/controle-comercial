@@ -140,6 +140,8 @@ class Settings(BaseSettings):
             origins = self.cors_origins_list
             if not origins or origins == ["*"] or "*" in origins:
                 raise ValueError("CORS_ORIGINS must not be empty or contain '*' in production")
+            if not os.getenv("CERT_MASTER_KEY"):
+                print("WARNING: CERT_MASTER_KEY nao definida em producao; certificados serao criptografados com fallback do SECRET_KEY (menos isolado). Defina CERT_MASTER_KEY no ambiente.")
 
 
 # Global settings instance

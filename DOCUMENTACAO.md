@@ -440,13 +440,28 @@ Revisão técnica completa do sistema cobrindo segurança, tratamento de erros, 
 - Relatório de vendas por período/cliente e extrato por cliente/fornecedor.
 - Razão contábil e fluxo de caixa projetado (além da previsão atual).
 
-### Certificados Digitais no Railway (PENDENTE — impacto em produção)
+### Certificados Digitais no Railway
 
 O sistema usa **dois tipos de certificado** conforme o módulo:
 - **Sicoob (boleto):** campo dedicado na aba Sicoob, formato **PEM** (cert + key). Carregado via `Empresa.sicoob_cert_id`/`sicoob_cert_path` e usado em `routers/sicoob.py` como `httpx.Client(cert=(cert.pem, key.pem))`.
 - **NFSe / NFe / Betha (demais):** formato **PFX** (`Empresa.cert_path`/`cert_id`/`cert_password`, default `./certs/certificado.pfx`), usado pelas emissões.
 
-**RESOLVIDO:** `services/cert_store.py` agora persiste os certificados **criptografados (AES-256-GCM) no PostgreSQL** (colunas `cert_base64`/`sicoob_cert_base64`/`sicoob_cert_key_base64` da tabela `empresa`), não mais em arquivo de disco. Assim sobrevive aos redeploys do Railway (filesystem efêmero). Mapeamento: `empresa`→`cert_base64`, `sicoob`→`sicoob_cert_base64`, `sicoob_key`→`sicoob_cert_key_base64`. A chave mestra vem de `CERT_MASTER_KEY` (fallback `SECRET_KEY` em dev). Sicoob (PEM), NFSe e NFe (PFX) já usam `cert_store`.
+**RESOLVIDO:** `services/cert_store.py` agora persiste os certificados **criptografados (AES-256-GCM) no PostgreSQL** (colunas `cert_base64`/`sicoob_cert_base64`/`sicoob_cert_key_base64` da tabela `empresa`), não mais em arquivo de disco. Assim sobrevive aos redeploys do Railway (filesystem efêmero). Mapeamento: `empresa`→`cert_base64`, `sicoob`→`sicoob_cert_base64`, `sicoob_key`→`sicoob_cert_key_base64`. Sicoob (PEM), NFSe e NFe (PFX) já usam `cert_store`.
+
+### Variáveis de Ambiente Recomendadas (Produção / Railway)
+
+| Variável | Obrigatória | Descrição |
+|----------|-------------|-----------|
+| `DATABASE_URL` | Sim | URL do PostgreSQL (ex.: `postgresql://...`) |
+| `SECRET_KEY` | Sim | Chave de sessão/CSRF (≥16 chars) |
+| `CSRF_SECRET_KEY` | Sim | Chave de proteção CSRF |
+| `ENVIRONMENT` | Sim | `production` (exige `ALLOWED_HOSTS`/`CORS_ORIGINS` sem `*`) |
+| `ALLOWED_HOSTS` | Sim | Hosts permitidos (ex.: `meu-app.up.railway.app,localhost`). No Railway o domínio `RAILWAY_PUBLIC_DOMAIN` é incluído automaticamente |
+| `CORS_ORIGINS` | Sim | Origens CORS (ex.: `https://meu-app.up.railway.app`) |
+| `CERT_MASTER_KEY` | Recomendada | Chave mestra para criptografar certificados no banco. **Sem ela, usa `SECRET_KEY` como fallback** (menos isolado). Em produção, defina um valor próprio e estável — se mudar, os certificados salvos antes não conseguem ser descriptografados |
+| `BETHA_USUARIO` / `BETHA_SENHA` | Conforme NFSe | Credenciais Betha (Dourados-MS) |
+| `BETHA_CNPJ` | Conforme NFSe | CNPJ do prestador |
+| `WEBHOOK_SICOOB_SECRET` / `WEBHOOK_NFE_SECRET` | Recomendada | Segredos dos webhooks (fail-closed se vazios) |
 
 ### Como Testar
 
