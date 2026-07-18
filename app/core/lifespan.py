@@ -15,6 +15,7 @@ from sqlalchemy import func
 from sqlalchemy.orm import sessionmaker, Session, joinedload
 from database import engine, Base, SessionLocal, get_db
 from models import TipoDocumento, PlanoDeContas, Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda
+import models_nfe  # registra modelos NFe/NFSe no Base.metadata para migração automática
 
 from datetime import date as date_func, timedelta
 from app.core.config import settings
@@ -56,44 +57,64 @@ def run_migrations():
 
 
 def _add_missing_columns():
-    """Add missing columns to existing tables for schema evolution."""
+    """Add missing columns to existing tables for schema evolution.
+    Compara todas as colunas declaradas nos modelos (Base.metadata) com o
+    banco e cria as que faltam. Cobre qualquer nova coluna sem lista hardcoded.
+    """
     from sqlalchemy import inspect as sa_inspect
     from sqlalchemy import text as sa_text
+    from sqlalchemy.types import (
+        String, Integer, BigInteger, Boolean, Float, Numeric,
+        Date, DateTime, Time, JSON, Text, LargeBinary,
+    )
 
-    inspector = sa_inspect(engine)
-    tables_columns = {
-        "assinaturas": {
-            "produto_id": "INTEGER",
-        },
-        "assinaturas_historico": {
-            "dia_vencimento_anterior": "INTEGER",
-            "dia_vencimento_novo": "INTEGER",
-        },
-        "contas_receber": {
-            "data_emissao": "DATE",
-            "consolidacao_id": "INTEGER",
-        },
-        "empresa": {
-            "senha_admin": "VARCHAR(255)",
-        },
+    _TYPE_MAP = {
+        String: lambda c: f"VARCHAR({c.type.length or 255})",
+        Text: lambda c: "TEXT",
+        Integer: lambda c: "INTEGER",
+        BigInteger: lambda c: "BIGINT",
+        Boolean: lambda c: "BOOLEAN",
+        Float: lambda c: "DOUBLE PRECISION",
+        Numeric: lambda c: f"NUMERIC({getattr(c.type, 'precision', 12) or 12},{getattr(c.type, 'scale', 2) or 2})",
+        Date: lambda c: "DATE",
+        DateTime: lambda c: "TIMESTAMP",
+        Time: lambda c: "TIME",
+        JSON: lambda c: "JSONB",
+        LargeBinary: lambda c: "BYTEA",
     }
 
-    for table, columns in tables_columns.items():
-        existing = {c["name"] for c in inspector.get_columns(table)}
-        for col_name, col_type in columns.items():
-            if col_name not in existing:
-                try:
-                    with engine.connect() as conn:
-                        conn.execute(sa_text(
-                            f"ALTER TABLE {table} ADD COLUMN {col_name} {col_type}"
-                        ))
-                        conn.commit()
-                        print(f"[MIGRATION] Added column {table}.{col_name}")
-                except Exception as e:
-                    print(f"[MIGRATION] Could not add {table}.{col_name}: {e}")
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    for table_name, table in Base.metadata.tables.items():
+        # Tabela ainda não existe: create_all ja cuida; aqui só colunas faltantes
+        if table_name not in existing_tables:
+            continue
+        existing_cols = {c["name"] for c in inspector.get_columns(table_name)}
+        for col in table.columns:
+            if col.name in existing_cols:
+                continue
+            col_type = None
+            for base, fn in _TYPE_MAP.items():
+                if isinstance(col.type, base):
+                    col_type = fn(col)
+                    break
+            if col_type is None:
+                col_type = "TEXT"
+            nullable = "" if col.nullable else " NOT NULL"
+            default = ""
+            try:
+                with engine.connect() as conn:
+                    conn.execute(sa_text(
+                        f"ALTER TABLE {table_name} ADD COLUMN {col.name} {col_type}{nullable}{default}"
+                    ))
+                    conn.commit()
+                    print(f"[MIGRATION] Added column {table_name}.{col.name} ({col_type})")
+            except Exception as e:
+                print(f"[MIGRATION] Could not add {table_name}.{col.name}: {e}")
 
     # Create audit_log table if it doesn't exist
-    if "audit_log" not in [t.name for t in inspector.get_table_names()]:
+    if "audit_log" not in existing_tables:
         try:
             with engine.connect() as conn:
                 conn.execute(sa_text("""
