@@ -79,6 +79,31 @@ def novo_cliente(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/checar-cpf-cnpj")
+def checar_cpf_cnpj(q: str = Query(""), db: Session = Depends(get_db)):
+    """Retorna se já existe um cliente com o CPF/CNPJ informado."""
+    doc = "".join(filter(str.isdigit, q))
+    if not doc:
+        return JSONResponse({"existe": False})
+    existente = db.query(Cliente).filter(
+        Cliente.cpf_cnpj.isnot(None),
+        Cliente.cpf_cnpj != "",
+    ).first()
+    # Compara só os dígitos para ignorar máscara
+    achou = None
+    for c in db.query(Cliente).filter(Cliente.cpf_cnpj.isnot(None), Cliente.cpf_cnpj != "").all():
+        if "".join(filter(str.isdigit, c.cpf_cnpj or "")) == doc:
+            achou = c
+            break
+    if achou:
+        return JSONResponse({
+            "existe": True,
+            "nome": achou.nome,
+            "codigo": achou.codigo,
+        })
+    return JSONResponse({"existe": False})
+
+
 @router.post("/novo")
 def criar_cliente(
     request: Request,
@@ -106,7 +131,21 @@ def criar_cliente(
     situacao: str = Form("A"),
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
+    confirmar_duplicado: str = Form(""),
 ):
+    # Checagem de CPF/CNPJ duplicado (permite cadastro só após confirmação)
+    doc = "".join(filter(str.isdigit, cpf_cnpj))
+    if doc:
+        for c in db.query(Cliente).filter(Cliente.cpf_cnpj.isnot(None), Cliente.cpf_cnpj != "").all():
+            if "".join(filter(str.isdigit, c.cpf_cnpj or "")) == doc:
+                if not confirmar_duplicado:
+                    request.session["message"] = {
+                        "tipo": "warning",
+                        "texto": f"Já existe um cliente com este CPF/CNPJ ({c.nome} - {c.codigo}). Cadastro bloqueado. Confirme no aviso do formulário para prosseguir."
+                    }
+                    return RedirectResponse(url="/clientes/novo", status_code=303)
+                break
+
     # Validação centralizada
     erros = validar_cliente_fornecedor(
         nome=nome,

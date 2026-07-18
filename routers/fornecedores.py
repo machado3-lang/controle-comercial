@@ -79,6 +79,18 @@ def novo_fornecedor(request: Request, db: Session = Depends(get_db)):
     )
 
 
+@router.get("/checar-cpf-cnpj")
+def checar_cpf_cnpj(q: str = Query(""), db: Session = Depends(get_db)):
+    """Retorna se já existe um fornecedor com o CPF/CNPJ informado."""
+    doc = "".join(filter(str.isdigit, q))
+    if not doc:
+        return JSONResponse({"existe": False})
+    for f in db.query(Fornecedor).filter(Fornecedor.cpf_cnpj.isnot(None), Fornecedor.cpf_cnpj != "").all():
+        if "".join(filter(str.isdigit, f.cpf_cnpj or "")) == doc:
+            return JSONResponse({"existe": True, "nome": f.nome, "codigo": f.codigo})
+    return JSONResponse({"existe": False})
+
+
 @router.post("/novo")
 def criar_fornecedor(
     request: Request,
@@ -102,7 +114,21 @@ def criar_fornecedor(
     situacao: str = Form("A"),
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
+    confirmar_duplicado: str = Form(""),
 ):
+    # Checagem de CPF/CNPJ duplicado (permite cadastro só após confirmação)
+    doc = "".join(filter(str.isdigit, cpf_cnpj))
+    if doc:
+        for f in db.query(Fornecedor).filter(Fornecedor.cpf_cnpj.isnot(None), Fornecedor.cpf_cnpj != "").all():
+            if "".join(filter(str.isdigit, f.cpf_cnpj or "")) == doc:
+                if not confirmar_duplicado:
+                    request.session["message"] = {
+                        "tipo": "warning",
+                        "texto": f"Já existe um fornecedor com este CPF/CNPJ ({f.nome} - {f.codigo}). Cadastro bloqueado. Confirme no aviso do formulário para prosseguir."
+                    }
+                    return RedirectResponse(url="/fornecedores/novo", status_code=303)
+                break
+
     erros = validar_cliente_fornecedor(
         nome=nome,
         tipo_pessoa=tipo_pessoa,

@@ -5,8 +5,9 @@
     <i data-lucide="users" class="w-6 h-6 inline me-2"></i> {{ 'Editar' if cliente else 'Novo' }} Cliente
 </h4>
 
-<form method="post" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+<form method="post" id="clienteForm" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <input type="hidden" name="confirmar_duplicado" id="confirmarDuplicado" value="">
     <div class="glass-card p-4">
         <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="user" class="w-4 h-4 inline me-1"></i> Dados Cadastrais</h5>
         <div class="grid grid-cols-4 gap-3 mb-3">
@@ -209,6 +210,31 @@ document.addEventListener('DOMContentLoaded', function() {
             if (this.checked) {
                 indicadorSelect.value = 'isento';
             }
+        });
+    }
+
+    // Checagem de CPF/CNPJ duplicado antes de salvar
+    const form = document.getElementById('clienteForm');
+    if (form) {
+        form.addEventListener('submit', function(e) {
+            const docInput = form.querySelector('input[name="cpf_cnpj"]');
+            const doc = docInput ? docInput.value.replace(/\D/g, '') : '';
+            if (doc.length < 11) return; // CPF incompleto ou vazio: segue normal
+            e.preventDefault();
+            fetch(`/clientes/checar-cpf-cnpj?q=${encodeURIComponent(doc)}`)
+                .then(r => r.json())
+                .then(d => {
+                    if (d.existe) {
+                        const msg = `Já existe um cliente com este CPF/CNPJ:\n\n${d.nome} (${d.codigo})\n\nDeseja realmente cadastrar um cliente duplicado?`;
+                        if (confirm(msg)) {
+                            document.getElementById('confirmarDuplicado').value = '1';
+                            form.submit();
+                        }
+                    } else {
+                        form.submit();
+                    }
+                })
+                .catch(() => form.submit());
         });
     }
 });
