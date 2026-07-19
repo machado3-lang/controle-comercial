@@ -467,6 +467,19 @@ O sistema usa **dois tipos de certificado** conforme o módulo:
 > `CERT_MASTER_KEY=47ba13d4351ae5c50f4a4b86d4229f7662cd876ee1bafd9fd04230bbf58c75bc`
 > Este valor é um segredo. Se já houver certificados salvos com o fallback do `SECRET_KEY`, ao trocar para esta chave será necessário reenviar os certificados uma vez. Em produção, gere o seu próprio (`python -c "import secrets; print(secrets.token_hex(32))"`) e mantenha-o estável.
 
+### Persistência de XML de NFe/NFSe no Banco (Railway)
+
+O filesystem do Railway é efêmero (resetado a cada redeploy). Notas emitidas no próprio sistema gravavam XML/PDF apenas em disco (`static/uploads/nfe`, `static/uploads/nfs`, `static/uploads/nfse`), perdendo-se no redeploy.
+
+**RESOLVIDO (commit `7bd2803`):** adicionadas as colunas `xml_text` (Text) em `NFe` e `NFSe`. O XML é persistido no PostgreSQL na emissão, rascunho e sincronização (Betha). As rotas de download/PDF priorizam `xml_text` e geram DANFE/DANFSe sob demanda; o disco e o NotaAs/ADN são fallback. A migração automática do `lifespan.py` cria as colunas e **corrige** `Text` que por engano fossem criadas como `VARCHAR(255)` (o SQLAlchemy trata `Text` como subclasse de `String`, então o `_TYPE_MAP` checa `Text` antes de `String`).
+
+> Notas importadas da Sefaz/Portal Nacional (`NFeDistribuida`) já usavam `xml` (Text) no banco — fluxo seguro desde antes.
+
+**Pendências (itens B e C):**
+
+- **[B] Importar NFSe do ADN (Portal Nacional) para o banco:** as rotas `/adn-listar`, `/adn-xml/{chave}` e `/adn-danfse/{chave}` baixam XML/PDF sob demanda do Portal Nacional e **não persistem** no banco. Se o Portal Nacional estiver fora do ar, o download falha. Recomenda-se salvar `xml_text` (e metadados) da NFSe no banco ao listar/sincronizar pelo ADN, tornando o histórico independente do Portal.
+- **[C] PDF próprio da NFSe (pós 01/09/2026):** hoje o DANFSe vem do ADN/Betha. Em 01/09/2026 a Betha é descontinuada e o Portal Nacional **não emite PDF** — o `gerar_pdf_nfse` (DANFSe local, já implementado) passa a ser o caminho definitivo. Já é a fonte preferencial na rota `/pdf` (passo 0), mas precisa de validação visual antes da data de corte.
+
 ### Como Testar
 
 Servidor: `run_server.bat` (uvicorn, porta 3000, `--reload`). Login admin padrão: `admin@controle.com` / `admin123` (senha de teste — alterar em produção).
