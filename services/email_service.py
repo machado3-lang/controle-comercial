@@ -76,6 +76,215 @@ def render_email_template(template_name: str, context: dict) -> str:
     return template.render(**context)
 
 
+def _fmt_valor(valor):
+    try:
+        return f"R$ {valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    except Exception:
+        return "-"
+
+
+def _whats_link_para(celular: str) -> str:
+    if not celular:
+        return ""
+    digits = "".join(filter(str.isdigit, celular))
+    if digits:
+        return f"https://wa.me/55{digits}"
+    return ""
+
+
+def _xml_nfe_bytes(nfe) -> Optional[bytes]:
+    if nfe is None:
+        return None
+    if getattr(nfe, "xml_text", None):
+        return nfe.xml_text.encode("utf-8")
+    if nfe.xml_path and os.path.exists(f".{nfe.xml_path}"):
+        try:
+            with open(f".{nfe.xml_path}", "r", encoding="utf-8") as f:
+                return f.read().encode("utf-8")
+        except Exception:
+            return None
+    return None
+
+
+def _xml_nfse_bytes(nfse) -> Optional[bytes]:
+    if nfse is None:
+        return None
+    if getattr(nfse, "xml_text", None):
+        return nfse.xml_text.encode("utf-8")
+    if nfse.xml_path and os.path.exists(f".{nfse.xml_path}"):
+        try:
+            with open(f".{nfse.xml_path}", "r", encoding="utf-8") as f:
+                return f.read().encode("utf-8")
+        except Exception:
+            return None
+    return None
+
+
+def _pdf_nfse_bytes(nfse, db) -> Optional[bytes]:
+    if nfse is None:
+        return None
+    # Tenta PDF ja existente em disco
+    if nfse.pdf_path and os.path.exists(f".{nfse.pdf_path}"):
+        try:
+            with open(f".{nfse.pdf_path}", "rb") as f:
+                return f.read()
+        except Exception:
+            pass
+    # Gera sob demanda a partir do XML persistido no banco
+    if getattr(nfse, "xml_text", None):
+        try:
+            from services.nfse_pdf import gerar_pdf_nfse
+            from routers.nfse import STATUS_LABELS
+            empresa = db.query(Empresa).first()
+            cliente = nfse.cliente
+            if empresa and cliente:
+                import tempfile, os as _os
+                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+                try:
+                    pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
+                    local = f".{pdf_url}"
+                    if os.path.exists(local):
+                        with open(local, "rb") as f:
+                            return f.read()
+                except Exception:
+                    pass
+                finally:
+                    try:
+                        _os.unlink(tmp.name)
+                    except Exception:
+                        pass
+        except Exception:
+            pass
+    return None
+
+
+def _pdf_nfe_bytes(nfe, db) -> Optional[bytes]:
+    if nfe is None:
+        return None
+    if nfe.pdf_path and os.path.exists(f".{nfe.pdf_path}"):
+        try:
+            with open(f".{nfe.pdf_path}", "rb") as f:
+                return f.read()
+        except Exception:
+            pass
+    xml = _xml_nfe_bytes(nfe)
+    if xml:
+        try:
+            import tempfile, os as _os
+            from services.nfe_danfe import gerar_danfe_pdf
+            tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
+            gerar_danfe_pdf(xml.decode("utf-8"), tmp.name)
+            with open(tmp.name, "rb") as f:
+                data = f.read()
+            _os.unlink(tmp.name)
+            return data
+        except Exception:
+            return None
+    return None
+
+
+def _pdf_boleto_bytes(conta, db) -> Optional[bytes]:
+    if conta is None or not conta.boleto_emitido or not conta.api_nosso_numero:
+        return None
+    try:
+        from routers.sicoob import obter_pdf_boleto_bytes
+        boleto_bytes, _ = obter_pdf_boleto_bytes(conta.api_nosso_numero, db)
+        return boleto_bytes
+    except Exception:
+        return None
+
+
+def enviar_documentos_cliente(
+    db,
+    cliente,
+    nfses=None,
+    nfes=None,
+    contas=None,
+    incluir_xml: bool = False,
+) -> dict:
+    """Envia um unico e-mail para o cliente com os documentos selecionados.
+    Todos os anexos derivam dos objetos passados (nunca cruzados), garantindo
+    que NF/boleto de um cliente nao sejam misturados.
+    """
+    nfses = nfses or []
+    nfes = nfes or []
+    contas = contas or []
+
+    from models_nfe import NFSe
+
+    if not cliente or not cliente.email:
+        return {"success": False, "error": "Cliente sem e-mail"}
+
+    empresa = db.query(Empresa).first()
+    if not empresa:
+        return {"success": False, "error": "Empresa nao configurada"}
+
+    anexos = []
+    itens_resumo = []
+
+    for nfse in nfses:
+        if nfse.cliente_id and cliente.id and nfse.cliente_id != cliente.id:
+            continue
+        pdf = _pdf_nfse_bytes(nfse, db)
+        if pdf:
+            anexos.append((f"NFSe_{nfse.numero or nfse.id}.pdf", pdf, "application/pdf"))
+        if incluir_xml:
+            xml = _xml_nfse_bytes(nfse)
+            if xml:
+                anexos.append((f"NFSe_{nfse.numero or nfse.id}.xml", xml, "application/xml"))
+        itens_resumo.append(f"NFSe Nº {nfse.numero or nfse.id}")
+
+    for nfe in nfes:
+        if nfe.cliente_id and cliente.id and nfe.cliente_id != cliente.id:
+            continue
+        pdf = _pdf_nfe_bytes(nfe, db)
+        if pdf:
+            anexos.append((f"NFe_{nfe.numero}.pdf", pdf, "application/pdf"))
+        if incluir_xml:
+            xml = _xml_nfe_bytes(nfe)
+            if xml:
+                anexos.append((f"NFe_{nfe.numero}.xml", xml, "application/xml"))
+        itens_resumo.append(f"NFe Nº {nfe.numero}")
+
+    for conta in contas:
+        if conta.cliente_id and cliente.id and conta.cliente_id != cliente.id:
+            continue
+        pdf = _pdf_boleto_bytes(conta, db)
+        if pdf:
+            anexos.append((f"Boleto_{conta.api_nosso_numero}.pdf", pdf, "application/pdf"))
+        nfse = None
+        if conta.nfse_id:
+            nfse = db.query(NFSe).filter(NFSe.id == conta.nfse_id).first()
+            if nfse:
+                pdf = _pdf_nfse_bytes(nfse, db)
+                if pdf:
+                    anexos.append((f"NFSe_{nfse.numero or nfse.id}.pdf", pdf, "application/pdf"))
+                if incluir_xml:
+                    xml = _xml_nfse_bytes(nfse)
+                    if xml:
+                        anexos.append((f"NFSe_{nfse.numero or nfse.id}.xml", xml, "application/xml"))
+                itens_resumo.append(f"NFSe Nº {nfse.numero or nfse.id} (conta)")
+        itens_resumo.append(f"Boleto {conta.numero_documento or conta.nosso_numero or ''}".strip())
+
+    if not anexos:
+        return {"success": False, "error": "Nenhum documento disponível para envio"}
+
+    whats_link = _whats_link_para(getattr(cliente, "celular", ""))
+    context = {
+        "empresa_nome": empresa.nome_fantasia or empresa.razao_social or "",
+        "cliente_nome": getattr(cliente, "nome", "") or "",
+        "itens_resumo": itens_resumo,
+        "incluir_xml": incluir_xml,
+        "whats_link": whats_link,
+        "ano": datetime.now().year,
+    }
+    corpo = render_email_template("documentos.html", context)
+    assunto = f"{empresa.nome_fantasia or empresa.razao_social or ''} - Documentos fiscais e boletos"
+
+    result = enviar_email(cliente.email, assunto, corpo, anexos, db)
+    return result
+
+
 def enviar_notificacao_conta(conta_id: int):
     db = SessionLocal()
     try:
@@ -99,33 +308,30 @@ def enviar_notificacao_conta(conta_id: int):
         if conta.nfse_id:
             nfse = db.query(NFSe).filter(NFSe.id == conta.nfse_id).first()
 
+        # Só envia apos autorizacao: NFSe vinculada precisa estar autorizada e
+        # com PDF disponivel (evita enviar documento incompleto em processamento).
+        if nfse and nfse.status != "autorizada":
+            return
+
         anexos = []
 
-        if nfse and nfse.pdf_path:
-            pdf_path_local = f".{nfse.pdf_path}"
-            if os.path.exists(pdf_path_local):
-                with open(pdf_path_local, 'rb') as f:
-                    content = f.read()
-                anexos.append((f"NFSe_{nfse.numero or nfse.id}.pdf", content, 'application/pdf'))
+        if nfse:
+            pdf = _pdf_nfse_bytes(nfse, db)
+            if pdf:
+                anexos.append((f"NFSe_{nfse.numero or nfse.id}.pdf", pdf, "application/pdf"))
 
         if conta.boleto_emitido and conta.api_nosso_numero:
-            try:
-                from routers.sicoob import obter_pdf_boleto_bytes
-                boleto_bytes, boleto_err = obter_pdf_boleto_bytes(conta.api_nosso_numero, db)
-                if boleto_bytes:
-                    anexos.append((f"Boleto_{conta.api_nosso_numero}.pdf", boleto_bytes, 'application/pdf'))
-            except Exception:
-                pass
+            boleto_bytes = _pdf_boleto_bytes(conta, db)
+            if boleto_bytes:
+                anexos.append((f"Boleto_{conta.api_nosso_numero}.pdf", boleto_bytes, "application/pdf"))
 
-        valor_fmt = f"R$ {conta.valor:,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+        if not anexos:
+            return
+
+        valor_fmt = _fmt_valor(conta.valor)
         vencimento_fmt = conta.data_vencimento.strftime("%d/%m/%Y") if conta.data_vencimento else "-"
 
-        celular = conta.cliente.celular or ""
-        whats_link = ""
-        if celular:
-            digits = "".join(filter(str.isdigit, celular))
-            if digits:
-                whats_link = f"https://wa.me/55{digits}"
+        whats_link = _whats_link_para(conta.cliente.celular or "")
 
         context = {
             "empresa_nome": empresa.nome_fantasia or empresa.razao_social or "",

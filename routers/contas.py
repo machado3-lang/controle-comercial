@@ -895,3 +895,67 @@ def exportar_contas_receber(
         media_type="text/csv",
         headers={"Content-Disposition": "attachment; filename=contas_receber.csv"}
     )
+
+
+@router.post("/enviar-documentos")
+async def enviar_documentos_selecionados(
+    request: Request, db: Session = Depends(get_db),
+    nfse_ids: list = Form([]), nfe_ids: list = Form([]), conta_ids: list = Form([]),
+    incluir_xml: bool = Form(False),
+):
+    """Envia por e-mail os documentos selecionados (NFSe, NFe, boletos),
+    agrupados por cliente em um único e-mail por cliente. O pareamento é
+    seguro: cada anexo deriva do objeto selecionado, nunca cruzado."""
+    from models_nfe import NFSe, NFe
+    from services.email_service import enviar_documentos_cliente
+
+    nfse_ids = [int(x) for x in nfse_ids if str(x).strip()]
+    nfe_ids = [int(x) for x in nfe_ids if str(x).strip()]
+    conta_ids = [int(x) for x in conta_ids if str(x).strip()]
+
+    if not (nfse_ids or nfe_ids or conta_ids):
+        request.session["error"] = "Nenhum documento selecionado para envio."
+        return RedirectResponse(url=request.headers.get("Referer", "/contas/receber"), status_code=303)
+
+    nfses = db.query(NFSe).filter(NFSe.id.in_(nfse_ids)).all() if nfse_ids else []
+    nfes = db.query(NFe).filter(NFe.id.in_(nfe_ids)).all() if nfe_ids else []
+    contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(ContaReceber.id.in_(conta_ids)).all() if conta_ids else []
+
+    por_cliente = {}
+    for obj, tipo in [(n, "nfse") for n in nfses] + [(n, "nfe") for n in nfes] + [(c, "conta") for c in contas]:
+        cid = getattr(obj, "cliente_id", None)
+        por_cliente.setdefault(cid, {"nfses": [], "nfes": [], "contas": []})
+        por_cliente[cid][{"nfse": "nfses", "nfe": "nfes", "conta": "contas"}[tipo]].append(obj)
+
+    enviados = 0
+    falhas = []
+    for cid, grupos in por_cliente.items():
+        if not cid:
+            falhas.append("Documento sem cliente associado")
+            continue
+        cliente = db.query(Cliente).filter(Cliente.id == cid).first()
+        if not cliente or not cliente.email:
+            falhas.append(f"Cliente #{cid} sem e-mail")
+            continue
+        resultado = enviar_documentos_cliente(
+            db, cliente,
+            nfses=grupos["nfses"], nfes=grupos["nfes"], contas=grupos["contas"],
+            incluir_xml=bool(incluir_xml),
+        )
+        if resultado.get("success"):
+            enviados += 1
+            for conta in grupos["contas"]:
+                conta.email_enviado = True
+                conta.data_envio_email = datetime.now()
+            db.commit()
+        else:
+            falhas.append(f"Cliente {cliente.nome}: {resultado.get('error', 'erro desconhecido')}")
+
+    if enviados and not falhas:
+        request.session["message"] = f"{enviados} e-mail(s) enviado(s) com sucesso."
+    elif enviados and falhas:
+        request.session["message"] = f"{enviados} enviado(s). Falhas: {'; '.join(falhas)}"
+    else:
+        request.session["error"] = f"Falha no envio: {'; '.join(falhas)}"
+
+    return RedirectResponse(url=request.headers.get("Referer", "/contas/receber"), status_code=303)

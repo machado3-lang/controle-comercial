@@ -296,3 +296,18 @@ document.addEventListener('DOMContentLoaded', function () {
         if (el) el.addEventListener('input', calcularTotalReceber);
     });
 });
+
+function marcarTodos(master, name) {
+    document.querySelectorAll('input[name="' + name + '"]').forEach(function (cb) {
+        cb.checked = master.checked;
+    });
+}
+
+function validarEnvio(name) {
+    var selecionados = document.querySelectorAll('input[name="' + name + '"]:checked');
+    if (selecionados.length === 0) {
+        alert('Selecione ao menos um documento para enviar.');
+        return false;
+    }
+    return true;
+}

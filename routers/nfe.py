@@ -1686,6 +1686,13 @@ async def webhook_nfe(request: Request, db: Session = Depends(get_db)):
             empresa = db.query(Empresa).first()
             if empresa:
                 _salvar_xml_nfe(empresa, nfe, db)
+            # Dispara e-mail pos-autorizacao para o cliente da NFe (DANFE pronto)
+            try:
+                from services.email_service import enviar_documentos_cliente
+                if empresa and getattr(empresa, "email_auto_enviar", False) and nfe.cliente:
+                    enviar_documentos_cliente(db, nfe.cliente, nfes=[nfe], incluir_xml=False)
+            except Exception as e:
+                logger.warning(f"Erro ao disparar e-mail pos-autorizacao NFe: {e}")
         elif event in ("nfe.error", "nfce.error"):
             nfe.status = "error"
             nfe.mensagem_retorno = json.dumps(data)

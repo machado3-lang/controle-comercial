@@ -1017,10 +1017,9 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                 msg += " ISS retido foi marcado automaticamente."
             request.session["message"] = msg
             if background_tasks:
-                from services.email_service import enviar_notificacao_conta
-                cob = db.query(ContaReceber).filter(ContaReceber.nfse_id == nfse.id).first()
-                if cob:
-                    background_tasks.add_task(enviar_notificacao_conta, cob.id)
+                # Envio pos-autorizacao feito na sincronizacao (status autorizada),
+                # nao aqui, para nao enviar documento ainda em processamento.
+                pass
         elif sp == 'processando':
             nfse.status = "em_processamento"
             db.commit()
@@ -1056,10 +1055,8 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                     db.commit()
                     request.session["message"] = f"NFSe #{nfse.numero} já estava processada! Autorizada com sucesso."
                     if background_tasks:
-                        from services.email_service import enviar_notificacao_conta
-                        cob = db.query(ContaReceber).filter(ContaReceber.nfse_id == nfse.id).first()
-                        if cob:
-                            background_tasks.add_task(enviar_notificacao_conta, cob.id)
+                        # Envio pos-autorizacao feito na sincronizacao.
+                        pass
                 elif sp_sync == 'processando':
                     nfse.status = "em_processamento"
                     nfse.mensagem_retorno = "DPS já recebida, aguardando processamento."
@@ -1113,10 +1110,8 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                         db.commit()
                         request.session["message"] = f"NFSe #{nfse.numero} reemitida com novo número!"
                         if background_tasks:
-                            from services.email_service import enviar_notificacao_conta
-                            cob = db.query(ContaReceber).filter(ContaReceber.nfse_id == nfse.id).first()
-                            if cob:
-                                background_tasks.add_task(enviar_notificacao_conta, cob.id)
+                            # Envio pos-autorizacao feito na sincronizacao.
+                            pass
                     elif sp2 == 'processando':
                         nfse.status = "em_processamento"
                         nfse.mensagem_retorno = "Reenviado com novo número, aguardando processamento."
@@ -1251,6 +1246,18 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
                 request.session["message"] = f"NFSe #{nfse.numero} autorizada com DANFSe"
             else:
                 request.session["message"] = f"NFSe #{nfse.numero} autorizada"
+
+            # Dispara e-mail pos-autorizacao (evita enviar documento em processamento)
+            try:
+                from services.email_service import enviar_notificacao_conta
+                from models import ContaReceber
+                contas_vinculadas = db.query(ContaReceber).filter(
+                    ContaReceber.nfse_id == nfse.id
+                ).all()
+                for c in contas_vinculadas:
+                    enviar_notificacao_conta(c.id)
+            except Exception as e:
+                logger.warning(f"Erro ao disparar e-mail pos-autorizacao NFSe: {e}")
         elif sp == 'processando':
             db.commit()
             request.session["message"] = "NFSe ainda em processamento na prefeitura. Tente novamente em alguns segundos."

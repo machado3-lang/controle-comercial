@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="font-family: Arial, sans-serif; background: #f4f4f6; margin: 0; padding: 0;">
+<div style="max-width: 600px; margin: 20px auto; background: #fff; border-radius: 8px; overflow: hidden; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+<div style="background: linear-gradient(135deg, #06b6d4, #6366f1); padding: 24px; text-align: center;">
+<h1 style="color: #fff; margin: 0; font-size: 20px;">{{ empresa_nome }}</h1>
+<p style="color: rgba(255,255,255,0.8); margin: 8px 0 0; font-size: 14px;">Documentos fiscais e boletos</p>
+</div>
+
+<div style="padding: 24px;">
+<p style="color: #333; font-size: 14px; line-height: 1.6;">Ol&aacute; <strong>{{ cliente_nome }}</strong>,</p>
+<p style="color: #333; font-size: 14px; line-height: 1.6;">Seguem em anexo os documentos solicitados:</p>
+
+{% if itens_resumo %}
+<table style="width: 100%; border-collapse: collapse; margin: 16px 0; background: #f8fafc; border-radius: 6px;">
+{% for item in itens_resumo %}
+<tr><td style="padding: 10px 14px; border-bottom: 1px solid #e2e8f0; color: #333; font-size: 13px;">{{ item }}</td></tr>
+{% endfor %}
+</table>
+{% endif %}
+
+<p style="color: #333; font-size: 14px; line-height: 1.6;">Os arquivos em PDF est&atilde;o anexados a este e-mail.</p>
+
+{% if not incluir_xml %}
+<p style="color: #64748b; font-size: 13px; line-height: 1.6;">Os arquivos XML (NFe/NFSe) n&atilde;o foram anexados e permanecem dispon&iacute;veis para consulta no portal da {{ empresa_nome }}.</p>
+{% endif %}
+
+{% if whats_link %}
+<p style="color: #333; font-size: 14px; line-height: 1.6;">Se preferir, fale conosco pelo WhatsApp:</p>
+<p style="text-align: center; margin: 16px 0;">
+<a href="{{ whats_link }}" style="display: inline-block; background: #25D366; color: #fff; text-decoration: none; padding: 10px 24px; border-radius: 6px; font-size: 14px; font-weight: bold;">Abrir WhatsApp</a>
+</p>
+{% endif %}
+</div>
+
+<div style="background: #f1f5f9; padding: 16px 24px; text-align: center; border-top: 1px solid #e2e8f0;">
+<p style="color: #94a3b8; font-size: 11px; margin: 0;">&copy; {{ ano }} {{ empresa_nome }}. Todos os direitos reservados.</p>
+<p style="color: #94a3b8; font-size: 11px; margin: 4px 0 0;">Este e-mail foi enviado automaticamente pelo sistema.</p>
+</div>
+</div>
+</body>
+</html>
