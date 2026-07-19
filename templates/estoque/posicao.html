@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+{% block title %}Posição de Estoque{% endblock %}
+{% block content %}
+<div class="w-full mb-6">
+    <a href="/" class="text-cyan-400 text-sm"><i data-lucide="arrow-left" class="w-4 h-4 inline"></i> Voltar</a>
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold mt-2">
+        <i data-lucide="boxes" class="w-6 h-6 inline me-2"></i> Posição de Estoque
+    </h4>
+</div>
+
+<form method="get" class="glass-card mb-4">
+    <div class="p-4 flex flex-wrap items-end gap-3">
+        <div>
+            <label class="form-label text-slate-400 text-xs">Buscar</label>
+            <input type="text" name="busca" value="{{ busca }}" class="form-control bg-slate-900 border-slate-700 text-slate-100" placeholder="Nome do item">
+        </div>
+        <div>
+            <label class="form-label text-slate-400 text-xs">Categoria</label>
+            <select name="categoria_id" class="form-select bg-slate-900 border-slate-700 text-slate-100">
+                <option value="">Todas</option>
+                {% for c in categorias %}<option value="{{ c.id }}" {% if categoria_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}
+            </select>
+        </div>
+        <div>
+            <label class="form-label text-slate-400 text-xs">Tipo</label>
+            <select name="tipo" class="form-select bg-slate-900 border-slate-700 text-slate-100" onchange="this.form.submit()">
+                <option value="" {% if not tipo %}selected{% endif %}>Produtos</option>
+                <option value="kit" {% if tipo == 'kit' %}selected{% endif %}>Kits</option>
+            </select>
+        </div>
+        <div>
+            <label class="form-label text-slate-400 text-xs">Insumo</label>
+            <select name="insumo" class="form-select bg-slate-900 border-slate-700 text-slate-100" onchange="this.form.submit()">
+                <option value="" {% if not insumo %}selected{% endif %}>Todos</option>
+                <option value="sim" {% if insumo == 'sim' %}selected{% endif %}>Somente insumos</option>
+                <option value="nao" {% if insumo == 'nao' %}selected{% endif %}>Não insumos</option>
+            </select>
+        </div>
+        <div class="form-check form-switch mt-3">
+            <input class="form-check-input" type="checkbox" role="switch" name="abaixo_min" id="abaixo_min" value="true" {% if abaixo_min %}checked{% endif %} onchange="this.form.submit()">
+            <label class="form-check-label text-slate-300 text-sm" for="abaixo_min">Abaixo do mínimo</label>
+        </div>
+        <button type="submit" class="btn btn-sm text-cyan-400 border border-slate-700">Filtrar</button>
+        <a href="/estoque/posicao" class="btn btn-sm text-slate-400 border border-slate-700">Limpar</a>
+    </div>
+</form>
+
+<div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="glass-card p-4"><small class="text-slate-500">Itens</small><div class="text-2xl font-bold text-cyan-300">{{ total_itens }}</div></div>
+    <div class="glass-card p-4"><small class="text-slate-500">Custo em estoque</small><div class="text-2xl font-bold text-amber-300">R$ {{ "%.2f"|format(valor_total) }}</div></div>
+    <div class="glass-card p-4"><small class="text-slate-500">Venda potencial</small><div class="text-2xl font-bold text-emerald-300">R$ {{ "%.2f"|format(valor_venda) }}</div></div>
+    <div class="glass-card p-4"><small class="text-slate-500">Zerados / Abaixo mín.</small><div class="text-2xl font-bold text-rose-300">{{ qtd_zerados }} / {{ qtd_abaixo }}</div></div>
+</div>
+
+<div class="glass-card overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-slate-800/60 text-slate-400">
+            <tr>
+                <th class="px-4 py-3 text-left">Código</th>
+                <th class="px-4 py-3 text-left">Item</th>
+                <th class="px-4 py-3 text-left">Categoria</th>
+                <th class="px-4 py-3 text-center">Insumo</th>
+                <th class="px-4 py-3 text-right">Mín.</th>
+                <th class="px-4 py-3 text-right">Estoque</th>
+                <th class="px-4 py-3 text-right">Custo un.</th>
+                <th class="px-4 py-3 text-right">Total custo</th>
+                <th class="px-4 py-3 text-center">Situação</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for p in produtos %}
+            <tr class="border-t border-slate-800/60">
+                <td class="px-4 py-2 text-slate-400">{{ p.codigo or '-' }}</td>
+                <td class="px-4 py-2 text-slate-100">{{ p.nome }}</td>
+                <td class="px-4 py-2 text-slate-300">{{ p.categoria.nome if p.categoria else '-' }}</td>
+                <td class="px-4 py-2 text-center">{% if p.eh_insumo %}<span class="text-cyan-400">Sim</span>{% else %}-{% endif %}</td>
+                <td class="px-4 py-2 text-right text-slate-300">{{ "%.2f"|format(p.estoque_minimo or 0) }}</td>
+                <td class="px-4 py-2 text-right {% if (p.estoque or 0) <= 0 %}text-rose-400 font-bold{% elif (p.estoque or 0) < (p.estoque_minimo or 0) %}text-amber-400 font-bold{% else %}text-emerald-400{% endif %}">{{ "%.2f"|format(p.estoque or 0) }}</td>
+                <td class="px-4 py-2 text-right text-slate-300">R$ {{ "%.2f"|format(p.preco_custo or 0) }}</td>
+                <td class="px-4 py-2 text-right text-slate-300">R$ {{ "%.2f"|format((p.estoque or 0) * (p.preco_custo or 0)) }}</td>
+                <td class="px-4 py-2 text-center">
+                    {% if (p.estoque or 0) <= 0 %}<span class="text-rose-400 text-xs">ZERADO</span>
+                    {% elif (p.estoque or 0) < (p.estoque_minimo or 0) %}<span class="text-amber-400 text-xs">BAIXO</span>
+                    {% else %}<span class="text-emerald-400 text-xs">OK</span>{% endif %}
+                </td>
+            </tr>
+        {% else %}
+            <tr><td colspan="9" class="px-4 py-12 text-center text-slate-500">Nenhum item encontrado</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}
