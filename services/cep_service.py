@@ -22,7 +22,8 @@ def buscar_cep(cep):
     if len(cep_limpo) != 8:
         return None
     try:
-        r = requests.get(VIACEP_URL.format(cep=cep_limpo), timeout=_TIMEOUT)
+        r = requests.get(VIACEP_URL.format(cep=cep_limpo), timeout=_TIMEOUT,
+                         headers={"User-Agent": "ControleComercial/1.0"})
         r.raise_for_status()
         data = r.json()
         if data.get("erro"):

@@ -85,7 +85,7 @@ def buscar_cnpj(cnpj, max_tentativas=3):
         except Exception as e:
             logger.warning(f"cnpj.ws erro: {e}")
             return {"erro": "Falha ao consultar CNPJ"}
-    return {"erro": "Limite de requisições excedido (429). Tente novamente em instantes."}
+    return {"erro": "Limite de 3 consultas por minuto da API atingido. Aguarde cerca de 1 minuto e tente novamente."}
 
 
 def _mapear(data):

@@ -267,26 +267,23 @@ document.addEventListener('DOMContentLoaded', function() {
             fetch(`/api/consultas/cnpj?cnpj=${doc}`)
                 .then(r => r.json())
                 .then(d => {
-                    if (d.erro) { alert(d.erro); return; }
-                    if (d.razao_social) setVal('input[name="nome"]', d.razao_social);
-                    if (d.nome_fantasia) setVal('input[name="fantasia"]', d.nome_fantasia);
-                    if (d.inscricao_estadual) setVal('input[name="inscricao_estadual"]', d.inscricao_estadual);
-                    if (d.endereco) setVal('input[name="endereco"]', d.endereco);
-                    if (d.bairro) setVal('input[name="bairro"]', d.bairro);
-                    if (d.cidade) setVal('input[name="cidade"]', d.cidade);
-                    if (d.estado) setVal('select[name="estado"]', d.estado);
-                    if (d.cep) setVal('input[name="cep"]', d.cep);
-                    if (d.irregular) {
-                        alert('ATENÇÃO: CNPJ com situação cadastral "' + d.situacao_cadastral + '".\nNão emita notas para este cadastro sem regularização.');
-                    }
+                    if (d.erro) { mostrarRevisaoCNPJ(d, null); return; }
                     const ds = document.getElementById('dataSincronizacao');
                     if (ds) ds.value = new Date().toISOString().slice(0, 16).replace('T', ' ');
-                    if (d.razao_social) {
-                        const ok = confirm('Dados preenchidos a partir da Receita Federal.\n\nRevise os campos (especialmente Nome Fantasia) e confirme para salvar.\n\nContinuar?');
-                        if (!ok) {
+                    mostrarRevisaoCNPJ(d, function(confirmado) {
+                        if (confirmado) {
+                            if (d.razao_social) setVal('input[name="nome"]', d.razao_social);
+                            if (d.nome_fantasia) setVal('input[name="fantasia"]', d.nome_fantasia);
+                            if (d.inscricao_estadual) setVal('input[name="inscricao_estadual"]', d.inscricao_estadual);
+                            if (d.endereco) setVal('input[name="endereco"]', d.endereco);
+                            if (d.bairro) setVal('input[name="bairro"]', d.bairro);
+                            if (d.cidade) setVal('input[name="cidade"]', d.cidade);
+                            if (d.estado) setVal('select[name="estado"]', d.estado);
+                            if (d.cep) setVal('input[name="cep"]', d.cep);
+                        } else {
                             if (d.nome_fantasia) setVal('input[name="fantasia"]', '');
                         }
-                    }
+                    });
                 })
                 .catch(err => console.error('CNPJ fetch falhou:', err));
         });
@@ -308,6 +305,59 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 });
+
+// Modal de revisao de dados do CNPJ (estilizado, igual ao resto do sistema)
+function mostrarRevisaoCNPJ(dados, onConfirmar) {
+    const corpo = document.getElementById('revisaoCNPJCorpo');
+    if (corpo) {
+        let html = '';
+        if (dados.irregular) {
+            html += `<div class="alert alert-danger mb-3">ATENÇÃO: CNPJ com situação cadastral "<strong>${dados.situacao_cadastral}</strong>". Não emita notas para este cadastro sem regularização.</div>`;
+        }
+        if (dados.erro) {
+            html += `<div class="alert alert-warning mb-3">${dados.erro}</div>`;
+        } else {
+            html += `<p class="text-slate-300 text-sm mb-2">Dados preenchidos a partir da Receita Federal. Revise (especialmente o Nome Fantasia) e confirme:</p>`;
+            html += `<ul class="text-slate-200 text-sm mb-1">`;
+            html += `<li><strong>Razão Social:</strong> ${dados.razao_social || '-'}</li>`;
+            html += `<li><strong>Nome Fantasia:</strong> ${dados.nome_fantasia || '-'}</li>`;
+            html += `<li><strong>Inscrição Estadual:</strong> ${dados.inscricao_estadual || '-'}</li>`;
+            html += `<li><strong>Endereço:</strong> ${dados.endereco || ''} ${dados.cidade || ''}/${dados.estado || ''}</li>`;
+            html += `</ul>`;
+        }
+        corpo.innerHTML = html;
+    }
+    const modalEl = document.getElementById('modalRevisaoCNPJ');
+    const modal = new bootstrap.Modal(modalEl);
+    const btnConfirmar = document.getElementById('btnConfirmarCNPJ');
+    btnConfirmar.onclick = function() {
+        modal.hide();
+        if (onConfirmar) onConfirmar(true);
+    };
+    modalEl.querySelector('[data-bs-dismiss="modal"]').onclick = function() {
+        modal.hide();
+        if (onConfirmar) onConfirmar(false);
+    };
+    modal.show();
+}
 </script>
 {% endblock %}
+
+{% block modals %}
+<div class="modal fade" id="modalRevisaoCNPJ" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-slate-900 border border-slate-700">
+      <div class="modal-header border-slate-700">
+        <h5 class="modal-title text-slate-100">Revisar dados do CNPJ</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body" id="revisaoCNPJCorpo"></div>
+      <div class="modal-footer border-slate-700">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+        <button type="button" class="btn btn-cyan-400 text-cyan-400 border border-slate-700" id="btnConfirmarCNPJ">Confirmar e preencher</button>
+      </div>
+    </div>
+  </div>
+</div>
 {% endblock %}
+{% endblock %}}
