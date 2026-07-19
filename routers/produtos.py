@@ -145,9 +145,13 @@ def listar_produtos(
     except (ValueError, TypeError):
         logger.warning(f"Falha ao gerar próximo número de pedido a partir de: {proximo_pedido}")
         proximo_pedido = "1"
+    fornecedor_nome = None
+    if f_id:
+        f_obj = db.query(Fornecedor).filter(Fornecedor.id == f_id).first()
+        fornecedor_nome = f_obj.nome if f_obj else None
     return request.app.state.templates.TemplateResponse(request, 
         "produtos/listar.html",
-        {"request": request, "produtos": produtos, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "busca": busca, "situacao": situacao, "fornecedor_id": f_id, "categoria_id": c_id, "marca_id": m_id, "estoque_filtro": estoque_filtro, "tipo_filtro": tipo_filtro, "proximo_pedido": proximo_pedido, "page": page, "per_page": per_page, "total_pages": total_pages, "total_count": total_count}
+        {"request": request, "produtos": produtos, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "busca": busca, "situacao": situacao, "fornecedor_id": f_id, "fornecedor_nome": fornecedor_nome, "categoria_id": c_id, "marca_id": m_id, "estoque_filtro": estoque_filtro, "tipo_filtro": tipo_filtro, "proximo_pedido": proximo_pedido, "page": page, "per_page": per_page, "total_pages": total_pages, "total_count": total_count}
     )
 
 

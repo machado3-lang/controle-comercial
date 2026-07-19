@@ -12,10 +12,11 @@
                 <option value="todos" {% if situacao == 'todos' %}selected{% endif %}>Todos</option>
                 <option value="inativo" {% if situacao == 'inativo' %}selected{% endif %}>Inativos</option>
             </select>
-            <select class="w-32 h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="fornecedor_id" onchange="this.form.submit()">
-                <option value="">Fornecedor</option>
-                {% for f in fornecedores %}<option value="{{ f.id }}" {% if fornecedor_id == f.id %}selected{% endif %}>{{ f.nome }}</option>{% endfor %}
-            </select>
+            <div class="relative w-40">
+                <input type="text" id="fornecedorFiltro" autocomplete="off" placeholder="Fornecedor" value="{{ fornecedor_nome or '' }}" class="w-full h-9 text-sm px-3 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                <input type="hidden" name="fornecedor_id" id="fornecedorFiltroId" value="{{ fornecedor_id or '' }}">
+                <div id="fornecedorFiltroDropdown" class="absolute z-[1000] w-full mt-1 bg-slate-900/95 backdrop-blur-md border border-slate-700 rounded-xl max-h-60 overflow-y-auto hidden"></div>
+            </div>
             <select class="w-32 h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="categoria_id" onchange="this.form.submit()">
                 <option value="">Categoria</option>
                 {% for c in categorias %}<option value="{{ c.id }}" {% if categoria_id == c.id %}selected{% endif %}>{{ c.nome }}</option>{% endfor %}
@@ -89,7 +90,11 @@
                         <div class="flex items-center justify-center gap-1">
                             <a href="/produtos/{{ p.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>
                             <a href="/estoque/produto/{{ p.id }}/movimentacoes" class="inline-flex p-1.5 text-indigo-400 border border-slate-700 rounded hover:bg-indigo-950/30 transition" title="Movimentações"><i data-lucide="history" class="w-4 h-4"></i></a>
+                            {% if p.tipo == 'servico' %}
+                            <button type="button" class="inline-block p-1.5 text-slate-600 border border-slate-800 rounded opacity-40 cursor-not-allowed" title="Serviços não possuem estoque" disabled><i data-lucide="sliders-horizontal" class="w-4 h-4"></i></button>
+                            {% else %}
                             <button type="button" class="inline-block p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Ajustar estoque" onclick="abrirAjusteEstoque('{{ p.id }}', '{{ p.nome|e }}', {{ p.estoque or 0 }})"><i data-lucide="sliders-horizontal" class="w-4 h-4"></i></button>
+                            {% endif %}
                             <button type="button" class="inline-block p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir" onclick="confirmarExclusao('/produtos/{{ p.id }}/excluir')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                         </div>
                  </td>
@@ -124,6 +129,43 @@
 {% endblock %}
 {% block scripts %}
 <script>
+// Busca dinamica de fornecedor (filtro de listagem)
+(function() {
+    const input = document.getElementById('fornecedorFiltro');
+    const hidden = document.getElementById('fornecedorFiltroId');
+    const dropdown = document.getElementById('fornecedorFiltroDropdown');
+    if (!input) return;
+    let timer = null;
+    async function buscar(q) {
+        try {
+            const r = await fetch('/fornecedores/buscar?q=' + encodeURIComponent(q));
+            const d = await r.json();
+            return d.fornecedores || [];
+        } catch (e) { return []; }
+    }
+    input.addEventListener('input', function() {
+        const q = this.value.trim();
+        clearTimeout(timer);
+        if (q.length < 2) { dropdown.classList.add('hidden'); return; }
+        timer = setTimeout(async () => {
+            const lista = await buscar(q);
+            if (!lista.length) { dropdown.classList.add('hidden'); return; }
+            dropdown.innerHTML = lista.map(f => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer text-slate-100 text-sm" data-id="${f.id}">${f.nome}</div>`).join('');
+            dropdown.classList.remove('hidden');
+        }, 250);
+    });
+    dropdown.addEventListener('click', function(e) {
+        const item = e.target.closest('[data-id]');
+        if (!item) return;
+        input.value = item.textContent;
+        hidden.value = item.dataset.id;
+        dropdown.classList.add('hidden');
+        input.form.submit();
+    });
+    document.addEventListener('click', function(e) {
+        if (!dropdown.contains(e.target) && e.target !== input) dropdown.classList.add('hidden');
+    });
+})();
 document.getElementById('selectAll').addEventListener('change', function() {
     document.querySelectorAll('.row-select').forEach(cb => cb.checked = this.checked);
     togglePdfBtn();

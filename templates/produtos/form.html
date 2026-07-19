@@ -239,11 +239,26 @@ function toggleSections() {
         const isPrecoCusto = el.querySelector('#precoCusto, input[name="margem"]');
         el.classList.toggle('hidden', tipo === 'kit' || (isPrecoCusto && tipo === 'servico'));
     });
+    const ehServico = tipo === 'servico';
     document.querySelectorAll('.campos-fisicos').forEach(el => {
-        el.classList.toggle('hidden', tipo !== 'produto');
+        if (ehServico) {
+            el.classList.remove('hidden');
+            el.style.opacity = '0.5';
+        } else {
+            el.classList.toggle('hidden', tipo !== 'produto');
+            el.style.opacity = '1';
+        }
     });
+    const estoqueInput = document.getElementById('estoqueInput');
+    const estoqueMinInput = document.getElementById('estoqueMinInput');
+    [estoqueInput, estoqueMinInput].forEach(inp => { if (inp) inp.disabled = ehServico; });
     document.querySelectorAll('.estoque-principal').forEach(el => {
-        el.classList.toggle('hidden', tipo === 'kit');
+        if (ehServico) {
+            el.classList.remove('hidden');
+            el.style.opacity = '0.5';
+        } else {
+            el.classList.toggle('hidden', tipo === 'kit');
+        }
     });
     document.querySelectorAll('.campos-servico').forEach(function(c) {
         c.style.display = tipo === 'servico' ? 'block' : 'none';
