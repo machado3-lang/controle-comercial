@@ -7,6 +7,8 @@ from database import Base, engine
 
 # Import NFSe from models_nfe for PedidoVenda.nfse relationship
 from models_nfe import NFSe, NFe  # noqa: F401
+# Import estoque models for OrdemServico.os_pecas relationship
+from models_estoque import OSPeca  # noqa: F401
 
 
 class NFeDistribuida(Base):

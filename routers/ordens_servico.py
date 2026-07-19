@@ -14,6 +14,33 @@ from services.audit import registrar_auditoria
 router = APIRouter(prefix="/ordens-servico", tags=["Ordens de Serviço"])
 
 
+def _normalizar_status(valor):
+    """Converte o valor vindo do formulario para o membro StatusOS correto.
+    O form antigo envia 'CONCLUIDA' (legado) mas o Enum usa FINALIZADA; o
+    banco armazena em minusculas, entao atribuir a string maiuscula direto
+    quebra o INSERT/UPDATE (InvalidTextRepresentation)."""
+    ALIASES = {
+        "CONCLUIDA": "FINALIZADA", "CONCLUIDO": "FINALIZADA",
+        "FECHADA": "FINALIZADA", "FECHADO": "FINALIZADA",
+        "ABERTA": "ABERTA", "CANCELADA": "CANCELADA",
+        "EM_ANDAMENTO": "EM_ANDAMENTO", "FINALIZADA": "FINALIZADA",
+        "ANDAMENTO": "EM_ANDAMENTO",
+    }
+    if valor is None:
+        return StatusOS.ABERTA
+    if isinstance(valor, StatusOS):
+        return valor
+    chave = str(valor).strip().upper()
+    nome = ALIASES.get(chave, chave)
+    try:
+        return StatusOS[nome]
+    except KeyError:
+        try:
+            return StatusOS(valor)
+        except ValueError:
+            return StatusOS.ABERTA
+
+
 @router.get("/")
 def listar_ordens(
     request: Request, db: Session = Depends(get_db),
@@ -264,7 +291,7 @@ def atualizar_ordem(
     ordem.valor_total = valor_total
     ordem.data_entrada = date.fromisoformat(data_entrada) if data_entrada else ordem.data_entrada
     ordem.data_saida = date.fromisoformat(data_saida) if data_saida else None
-    ordem.status = status
+    ordem.status = _normalizar_status(status)
     ordem.tecnico = tecnico
     ordem.autorizado_por = autorizado_por
     ordem.numero_requisicao = numero_requisicao
