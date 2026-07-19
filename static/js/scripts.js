@@ -79,14 +79,18 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 function aplicarMascaraDoc(input, tipo) {
-    var val = input.value.replace(/\D/g, '');
+    // Mantem letras maiusculas (CNPJ alfanumerico - Lei 14.823/24).
+    var val = input.value.toUpperCase();
     if (tipo === 'juridica') {
-        val = val.replace(/^(\d{2})(\d)/, '$1.$2');
-        val = val.replace(/^(\d{2})\.(\d{3})(\d)/, '$1.$2.$3');
-        val = val.replace(/\.(\d{3})(\d)/, '.$1/$2');
-        val = val.replace(/(\d{4})(\d)/, '$1-$2');
+        // Remove tudo que nao for letra ou numero, preserva formatacao.
+        val = val.replace(/[^A-Z0-9]/g, '');
+        val = val.replace(/^([A-Z0-9]{2})([A-Z0-9])/, '$1.$2');
+        val = val.replace(/^([A-Z0-9]{2})\.([A-Z0-9]{3})([A-Z0-9])/, '$1.$2.$3');
+        val = val.replace(/\.([A-Z0-9]{3})([A-Z0-9])/, '.$1/$2');
+        val = val.replace(/([A-Z0-9]{4})([A-Z0-9]{1,2})$/, '$1-$2');
         val = val.substring(0, 18);
     } else {
+        val = val.replace(/[^A-Z0-9]/g, '');
         val = val.replace(/^(\d{3})(\d)/, '$1.$2');
         val = val.replace(/^(\d{3})\.(\d{3})(\d)/, '$1.$2.$3');
         val = val.replace(/\.(\d{3})(\d)/, '.$1-$2');

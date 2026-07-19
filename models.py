@@ -114,6 +114,7 @@ class Cliente(Base):
     situacao = Column(String(1), default="A")
     iss_retido = Column(Boolean, default=False)
     observacao = Column(Text, nullable=True)
+    data_sincronizacao = Column(DateTime, nullable=True)  # ultima consulta cnpj.ws
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -150,6 +151,7 @@ class Fornecedor(Base):
     codigo_ibge = Column(String(7), nullable=True)
     situacao = Column(String(1), default="A")
     observacao = Column(Text, nullable=True)
+    data_sincronizacao = Column(DateTime, nullable=True)  # ultima consulta cnpj.ws
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
@@ -306,6 +308,7 @@ class OrdemServico(Base):
     autorizado_por = Column(String(200), nullable=True)
     numero_requisicao = Column(String(100), nullable=True)
     observacao = Column(Text, nullable=True)
+    data_sincronizacao = Column(DateTime, nullable=True)  # ultima consulta cnpj.ws
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 

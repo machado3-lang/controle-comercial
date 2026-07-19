@@ -161,22 +161,42 @@ def validar_email(email: str) -> bool:
 # Validar documento genérico (CPF ou CNPJ)
 def validar_cpf_cnpj(doc: str) -> Tuple[bool, str]:
     """
-    Valida CPF ou CNPJ automaticamente.
+    Valida CPF ou CNPJ automaticamente. Suporta CNPJ alfanumérico
+    (Lei 14.823/24) usando base 36 no cálculo do dígito verificador.
     Returns: (is_valid, tipo) onde tipo é 'cpf', 'cnpj' ou 'invalido'
     """
     if not doc:
         return False, 'invalido'
-    doc = re.sub(r'\D', '', doc)
-    if len(doc) == 11 and validar_cpf(doc):
+    doc_norm = re.sub(r'[^A-Za-z0-9]', '', doc).upper()
+    if len(doc_norm) == 11 and validar_cpf(doc_norm):
         return True, 'cpf'
-    elif len(doc) == 14 and validar_cnpj(doc):
-        return True, 'cnpj'
+    elif len(doc_norm) == 14:
+        if _validar_dv_cnpj_alfa(doc_norm):
+            return True, 'cnpj'
     return False, 'invalido'
 
 
+def _validar_dv_cnpj_alfa(cnpj):
+    """Dígito verificador CNPJ (base 36 p/ alfanumérico, base 10 p/ numérico)."""
+    if len(set(cnpj)) == 1:
+        return False
+    pesos1 = [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    pesos2 = [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2]
+    try:
+        def v(ch):
+            return int(ch, 36)
+        s1 = sum(v(ch) * p for ch, p in zip(cnpj[:12], pesos1))
+        d1 = 0 if s1 % 11 < 2 else 11 - (s1 % 11)
+        s2 = sum(v(ch) * p for ch, p in zip(cnpj[:13], pesos2))
+        d2 = 0 if s2 % 11 < 2 else 11 - (s2 % 11)
+        return d1 == v(cnpj[12]) and d2 == v(cnpj[13])
+    except ValueError:
+        return False
+
+
 def formatar_cpf_cnpj(doc: str) -> str:
-    """Formata CPF ou CNPJ automaticamente."""
-    doc = re.sub(r'\D', '', doc or '')
+    """Formata CPF ou CNPJ automaticamente. Mantém letras (alfanumérico)."""
+    doc = re.sub(r'[^A-Za-z0-9]', '', doc or '').upper()
     if len(doc) == 11:
         return formatar_cpf(doc)
     elif len(doc) == 14:

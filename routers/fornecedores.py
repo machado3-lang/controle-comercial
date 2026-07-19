@@ -81,12 +81,13 @@ def novo_fornecedor(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/checar-cpf-cnpj")
 def checar_cpf_cnpj(q: str = Query(""), db: Session = Depends(get_db)):
-    """Retorna se já existe um fornecedor com o CPF/CNPJ informado."""
-    doc = "".join(filter(str.isdigit, q))
+    """Retorna se já existe um fornecedor com o CPF/CNPJ informado (alfanumerico)."""
+    import re
+    doc = re.sub(r"[^A-Za-z0-9]", "", q or "").upper()
     if not doc:
         return JSONResponse({"existe": False})
     for f in db.query(Fornecedor).filter(Fornecedor.cpf_cnpj.isnot(None), Fornecedor.cpf_cnpj != "").all():
-        if "".join(filter(str.isdigit, f.cpf_cnpj or "")) == doc:
+        if re.sub(r"[^A-Za-z0-9]", "", f.cpf_cnpj or "").upper() == doc:
             return JSONResponse({"existe": True, "nome": f.nome, "codigo": f.codigo})
     return JSONResponse({"existe": False})
 
@@ -114,13 +115,15 @@ def criar_fornecedor(
     situacao: str = Form("A"),
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
+    data_sincronizacao: str = Form(""),
     confirmar_duplicado: str = Form(""),
 ):
     # Checagem de CPF/CNPJ duplicado (permite cadastro só após confirmação)
-    doc = "".join(filter(str.isdigit, cpf_cnpj))
+    import re
+    doc = re.sub(r"[^A-Za-z0-9]", "", cpf_cnpj or "").upper()
     if doc:
         for f in db.query(Fornecedor).filter(Fornecedor.cpf_cnpj.isnot(None), Fornecedor.cpf_cnpj != "").all():
-            if "".join(filter(str.isdigit, f.cpf_cnpj or "")) == doc:
+            if re.sub(r"[^A-Za-z0-9]", "", f.cpf_cnpj or "").upper() == doc:
                 if not confirmar_duplicado:
                     request.session["message"] = {
                         "tipo": "warning",
@@ -158,7 +161,8 @@ def criar_fornecedor(
         estado=estado, cep=cep, contato=contato, fantasia=fantasia,
         inscricao_estadual=inscricao_estadual, inscricao_municipal=inscricao_municipal,
         situacao=situacao, observacao=observacao, created_at=created_at,
-        bling_pending_sync=True
+        bling_pending_sync=True,
+        data_sincronizacao=datetime.strptime(data_sincronizacao, "%Y-%m-%d %H:%M") if data_sincronizacao else None,
     )
     db.add(fornecedor)
     db.commit()
@@ -211,6 +215,7 @@ def atualizar_fornecedor(
     tipo_pessoa: str = Form(""),
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
+    data_sincronizacao: str = Form(""),
 ):
     fornecedor = db.query(Fornecedor).filter(Fornecedor.id == fornecedor_id).first()
     if not fornecedor:
@@ -234,6 +239,8 @@ def atualizar_fornecedor(
     if data_cadastro:
         fornecedor.created_at = datetime.strptime(data_cadastro, "%Y-%m-%d")
     fornecedor.observacao = observacao
+    if data_sincronizacao:
+        fornecedor.data_sincronizacao = datetime.strptime(data_sincronizacao, "%Y-%m-%d %H:%M")
     fornecedor.updated_at = datetime.now()
     fornecedor.bling_pending_sync = True
     db.commit()

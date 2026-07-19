@@ -53,6 +53,7 @@
             <div class="col-span-2">
                 <label class="form-label text-cyan-300">CPF/CNPJ</label>
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="cpf_cnpj" value="{{ fornecedor.cpf_cnpj if fornecedor else '' }}" maxlength="{{ '14' if not fornecedor or fornecedor.tipo_pessoa == 'fisica' else '18' }}">
+                <input type="hidden" name="data_sincronizacao" id="dataSincronizacao" value="{{ fornecedor.data_sincronizacao.strftime('%Y-%m-%d %H:%M') if fornecedor and fornecedor.data_sincronizacao else '' }}">
             </div>
             <div>
                 <label class="form-label text-cyan-300">Inscrição Estadual</label>
@@ -154,7 +155,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (form) {
         form.addEventListener('submit', function(e) {
             const docInput = form.querySelector('input[name="cpf_cnpj"]');
-            const doc = docInput ? docInput.value.replace(/\D/g, '') : '';
+            const doc = docInput ? docInput.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : '';
             if (doc.length < 11) return;
             e.preventDefault();
             fetch(`/fornecedores/checar-cpf-cnpj?q=${encodeURIComponent(doc)}`)
@@ -172,6 +173,73 @@ document.addEventListener('DOMContentLoaded', function() {
                 })
                 .catch(() => form.submit());
         });
+    }
+
+    // Auto-preenchimento de endereco por CEP (ViaCEP)
+    const cepInput = document.querySelector('input[name="cep"]');
+    if (cepInput) {
+        cepInput.addEventListener('blur', function() {
+            const cep = this.value.replace(/\D/g, '');
+            if (cep.length !== 8) return;
+            fetch(`/consultas/cep?cep=${cep}`)
+                .then(r => r.json())
+                .then(d => {
+                    if (d.erro) return;
+                    if (d.logradouro) setVal('input[name="endereco"]', d.logradouro);
+                    if (d.bairro) setVal('input[name="bairro"]', d.bairro);
+                    if (d.localidade) setVal('input[name="cidade"]', d.localidade);
+                    if (d.uf) setVal('select[name="estado"]', d.uf);
+                })
+                .catch(() => {});
+        });
+    }
+
+    // Auto-preenchimento por CNPJ (publica.cnpj.ws)
+    const cnpjInput = document.querySelector('input[name="cpf_cnpj"]');
+    if (cnpjInput) {
+        cnpjInput.addEventListener('blur', function() {
+            const doc = this.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+            if (doc.length !== 14) return;
+            fetch(`/consultas/cnpj?cnpj=${doc}`)
+                .then(r => r.json())
+                .then(d => {
+                    if (d.erro) { alert(d.erro); return; }
+                    if (d.razao_social) setVal('input[name="nome"]', d.razao_social);
+                    if (d.nome_fantasia) setVal('input[name="fantasia"]', d.nome_fantasia);
+                    if (d.inscricao_estadual) setVal('input[name="inscricao_estadual"]', d.inscricao_estadual);
+                    if (d.endereco) setVal('input[name="endereco"]', d.endereco);
+                    if (d.bairro) setVal('input[name="bairro"]', d.bairro);
+                    if (d.cidade) setVal('input[name="cidade"]', d.cidade);
+                    if (d.estado) setVal('select[name="estado"]', d.estado);
+                    if (d.cep) setVal('input[name="cep"]', d.cep);
+                    if (d.irregular) {
+                        alert('ATENÇÃO: CNPJ com situação cadastral "' + d.situacao_cadastral + '".\nNão emita notas para este cadastro sem regularização.');
+                    }
+                    const ds = document.getElementById('dataSincronizacao');
+                    if (ds) ds.value = new Date().toISOString().slice(0, 16).replace('T', ' ');
+                    if (d.razao_social) {
+                        const ok = confirm('Dados preenchidos a partir da Receita Federal.\n\nRevise os campos (especialmente Nome Fantasia) e confirme para salvar.\n\nContinuar?');
+                        if (!ok) {
+                            if (d.nome_fantasia) setVal('input[name="fantasia"]', '');
+                        }
+                    }
+                })
+                .catch(() => {});
+        });
+    }
+
+    function setVal(seletor, valor) {
+        const el = document.querySelector(seletor);
+        if (!el) return;
+        if (el.tagName === 'SELECT') {
+            for (const opt of el.options) {
+                if (opt.value.toUpperCase() === String(valor).toUpperCase()) { el.value = opt.value; break; }
+            }
+        } else if (!el.value) {
+            el.value = valor;
+        } else if (seletor.includes('endereco') || seletor.includes('estado') || seletor.includes('cidade') || seletor.includes('bairro')) {
+            el.value = valor;
+        }
     }
 });
 </script>

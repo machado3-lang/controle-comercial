@@ -81,18 +81,17 @@ def novo_cliente(request: Request, db: Session = Depends(get_db)):
 
 @router.get("/checar-cpf-cnpj")
 def checar_cpf_cnpj(q: str = Query(""), db: Session = Depends(get_db)):
-    """Retorna se já existe um cliente com o CPF/CNPJ informado."""
-    doc = "".join(filter(str.isdigit, q))
+    """Retorna se já existe um cliente com o CPF/CNPJ informado.
+
+    Normaliza removendo mascara e mantendo letras maiusculas (CNPJ
+    alfanumerico)."""
+    import re
+    doc = re.sub(r"[^A-Za-z0-9]", "", q or "").upper()
     if not doc:
         return JSONResponse({"existe": False})
-    existente = db.query(Cliente).filter(
-        Cliente.cpf_cnpj.isnot(None),
-        Cliente.cpf_cnpj != "",
-    ).first()
-    # Compara só os dígitos para ignorar máscara
     achou = None
     for c in db.query(Cliente).filter(Cliente.cpf_cnpj.isnot(None), Cliente.cpf_cnpj != "").all():
-        if "".join(filter(str.isdigit, c.cpf_cnpj or "")) == doc:
+        if re.sub(r"[^A-Za-z0-9]", "", c.cpf_cnpj or "").upper() == doc:
             achou = c
             break
     if achou:
@@ -131,13 +130,15 @@ def criar_cliente(
     situacao: str = Form("A"),
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
+    data_sincronizacao: str = Form(""),
     confirmar_duplicado: str = Form(""),
 ):
+    import re
     # Checagem de CPF/CNPJ duplicado (permite cadastro só após confirmação)
-    doc = "".join(filter(str.isdigit, cpf_cnpj))
+    doc = re.sub(r"[^A-Za-z0-9]", "", cpf_cnpj or "").upper()
     if doc:
         for c in db.query(Cliente).filter(Cliente.cpf_cnpj.isnot(None), Cliente.cpf_cnpj != "").all():
-            if "".join(filter(str.isdigit, c.cpf_cnpj or "")) == doc:
+            if re.sub(r"[^A-Za-z0-9]", "", c.cpf_cnpj or "").upper() == doc:
                 if not confirmar_duplicado:
                     request.session["message"] = {
                         "tipo": "warning",
@@ -178,7 +179,8 @@ def criar_cliente(
         codigo_ibge=codigo_ibge or None, isento_ie=(isento_ie == "1"),
         indicador_ie=indicador_ie, iss_retido=(iss_retido == "1"),
         situacao=situacao, observacao=observacao,
-        created_at=created_at, bling_pending_sync=True
+        created_at=created_at, bling_pending_sync=True,
+        data_sincronizacao=datetime.strptime(data_sincronizacao, "%Y-%m-%d %H:%M") if data_sincronizacao else None,
     )
     db.add(cliente)
     db.commit()
@@ -237,6 +239,7 @@ def atualizar_cliente(
     indicador_ie: str = Form("contribuidor"),
     iss_retido: str = Form(""),
     observacao: str = Form(""),
+    data_sincronizacao: str = Form(""),
 ):
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
     if not cliente:
@@ -264,6 +267,8 @@ def atualizar_cliente(
     if data_cadastro:
         cliente.created_at = datetime.strptime(data_cadastro, "%Y-%m-%d")
     cliente.observacao = observacao
+    if data_sincronizacao:
+        cliente.data_sincronizacao = datetime.strptime(data_sincronizacao, "%Y-%m-%d %H:%M")
     cliente.updated_at = datetime.now()
     cliente.bling_pending_sync = True
     db.commit()
