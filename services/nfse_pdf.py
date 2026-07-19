@@ -288,3 +288,141 @@ def gerar_pdf_contas(contas, empresa, tipo="receber", filtros=None) -> bytes:
     pdf.cell(0, 5, f"Emitido em {datetime.now().strftime('%d/%m/%Y %H:%M')}", align="C", new_x="LMARGIN", new_y="NEXT")
     out = pdf.output()
     return out if isinstance(out, bytes) else bytes(out)
+
+
+def gerar_pdf_estoque(produtos, empresa, titulo="Posição de Estoque",
+                      filtros=None, valor_total=0.0, valor_venda=0.0,
+                      qtd_zerados=0, qtd_abaixo=0) -> bytes:
+    """Gera PDF da posicao de estoque (tambem usado para abaixo do minimo)."""
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    empresa_nome = (empresa.razao_social or empresa.nome_fantasia or "Empresa") if empresa else "Empresa"
+    pdf.cell(0, 8, empresa_nome, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 7, titulo, align="C", new_x="LMARGIN", new_y="NEXT")
+    if filtros:
+        pdf.set_font("Helvetica", "", 8)
+        pdf.cell(0, 5, filtros, align="C", new_x="LMARGIN", new_y="NEXT")
+    if titulo == "Posição de Estoque":
+        pdf.set_font("Helvetica", "", 8)
+        resumo = (f"Itens: {len(produtos)}  |  Custo em estoque: R$ {valor_total:,.2f}  |  "
+                  f"Venda potencial: R$ {valor_venda:,.2f}  |  Zerados: {qtd_zerados}  |  Abaixo mín.: {qtd_abaixo}")
+        pdf.multi_cell(0, 5, resumo, align="C")
+    pdf.ln(3)
+
+    pdf.set_font("Helvetica", "B", 7)
+    col_w = [16, 80, 28, 18, 22, 22]
+    headers = ["Código", "Item", "Categoria", "Mín.", "Estoque", "Custo un."]
+    for i, h in enumerate(headers):
+        pdf.cell(col_w[i], 6, h, border=1, align="C")
+    pdf.ln()
+
+    pdf.set_font("Helvetica", "", 7)
+    linha_alt = 5
+    for p in produtos:
+        cat = p.categoria.nome if getattr(p, "categoria", None) else "-"
+        estoque = float(p.estoque or 0)
+        minimo = float(p.estoque_minimo or 0)
+        texto_cor = None
+        if estoque <= 0:
+            texto_cor = (200, 40, 40)
+        elif estoque < minimo:
+            texto_cor = (200, 140, 30)
+        textos = [
+            (p.codigo or "-")[:14],
+            (p.nome or "-")[:52],
+            cat[:18],
+            f"{minimo:.2f}",
+            f"{estoque:.2f}",
+            f"R$ {float(p.preco_custo or 0):.2f}",
+        ]
+        if pdf.get_y() + linha_alt > pdf.h - pdf.b_margin:
+            pdf.add_page()
+            pdf.set_font("Helvetica", "B", 7)
+            for i, h in enumerate(headers):
+                pdf.cell(col_w[i], 6, h, border=1, align="C")
+            pdf.ln()
+            pdf.set_font("Helvetica", "", 7)
+        x0 = pdf.get_x()
+        y0 = pdf.get_y()
+        for i, t in enumerate(textos):
+            pdf.set_xy(x0 + sum(col_w[:i]), y0)
+            if texto_cor and i in (3, 4):
+                pdf.set_text_color(*texto_cor)
+            else:
+                pdf.set_text_color(0, 0, 0)
+            pdf.cell(col_w[i], linha_alt, str(t), border=1, align="L" if i in (0, 1, 2) else "R")
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(linha_alt)
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.cell(0, 5, f"Emitido em {datetime.now().strftime('%d/%m/%Y %H:%M')}", align="C", new_x="LMARGIN", new_y="NEXT")
+    out = pdf.output()
+    return out if isinstance(out, bytes) else bytes(out)
+
+
+def gerar_pdf_movimentacoes(movs, empresa, filtros=None) -> bytes:
+    """Gera PDF do relatorio consolidado de movimentacoes de estoque."""
+    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=12)
+    pdf.add_page()
+    pdf.set_font("Helvetica", "B", 14)
+    empresa_nome = (empresa.razao_social or empresa.nome_fantasia or "Empresa") if empresa else "Empresa"
+    pdf.cell(0, 8, empresa_nome, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_font("Helvetica", "B", 12)
+    pdf.cell(0, 7, "Movimentações de Estoque", align="C", new_x="LMARGIN", new_y="NEXT")
+    if filtros:
+        pdf.set_font("Helvetica", "", 8)
+        pdf.cell(0, 5, filtros, align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.ln(3)
+
+    pdf.set_font("Helvetica", "B", 7)
+    col_w = [26, 50, 26, 18, 24, 30]
+    headers = ["Data", "Produto", "Tipo", "Qtd", "Saldo após", "Documento"]
+    for i, h in enumerate(headers):
+        pdf.cell(col_w[i], 6, h, border=1, align="C")
+    pdf.ln()
+
+    pdf.set_font("Helvetica", "", 7)
+    linha_alt = 5
+    for m in movs:
+        nome_prod = m.produto.nome if getattr(m, "produto", None) else "-"
+        doc = m.doc_tipo + (f" #{m.doc_id}" if m.doc_id else "")
+        textos = [
+            m.data.strftime('%d/%m/%Y %H:%M') if m.data else "-",
+            nome_prod[:34],
+            m.tipo,
+            f"{float(m.quantidade):.3f}",
+            f"{float(m.saldo_apos):.3f}" if m.saldo_apos is not None else "-",
+            doc[:20],
+        ]
+        if pdf.get_y() + linha_alt > pdf.h - pdf.b_margin:
+            pdf.add_page()
+            pdf.set_font("Helvetica", "B", 7)
+            for i, h in enumerate(headers):
+                pdf.cell(col_w[i], 6, h, border=1, align="C")
+            pdf.ln()
+            pdf.set_font("Helvetica", "", 7)
+        x0 = pdf.get_x()
+        y0 = pdf.get_y()
+        for i, t in enumerate(textos):
+            pdf.set_xy(x0 + sum(col_w[:i]), y0)
+            align = "L" if i in (0, 1, 2, 5) else "R"
+            if i == 3 and m.quantidade < 0:
+                pdf.set_text_color(200, 40, 40)
+            elif i == 3:
+                pdf.set_text_color(30, 150, 60)
+            else:
+                pdf.set_text_color(0, 0, 0)
+            pdf.cell(col_w[i], linha_alt, str(t), border=1, align=align)
+        pdf.set_text_color(0, 0, 0)
+        pdf.ln(linha_alt)
+
+    pdf.ln(4)
+    pdf.set_font("Helvetica", "", 8)
+    pdf.cell(0, 5, f"Emitido em {datetime.now().strftime('%d/%m/%Y %H:%M')}", align="C", new_x="LMARGIN", new_y="NEXT")
+    out = pdf.output()
+    return out if isinstance(out, bytes) else bytes(out)

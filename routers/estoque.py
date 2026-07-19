@@ -115,6 +115,126 @@ def relatorio_movimentacoes(
     )
 
 
+@router.get("/posicao/pdf")
+def relatorio_posicao_pdf(
+    request: Request, db: Session = Depends(get_db),
+    categoria_id: int = Query(None), insumo: str = Query(None),
+    abaixo_min: bool = Query(False), busca: str = Query(""),
+    tipo: str = Query(""),
+):
+    from models import Produto, CategoriaProduto, Empresa
+    from services.nfse_pdf import gerar_pdf_estoque
+    from fastapi.responses import Response
+
+    if not verificar_admin(request, db):
+        return RedirectResponse(url="/login", status_code=303)
+
+    query = db.query(Produto)
+    if tipo:
+        query = query.filter(Produto.tipo == tipo)
+    else:
+        query = query.filter(Produto.tipo == "produto")
+    if categoria_id:
+        query = query.filter(Produto.categoria_id == categoria_id)
+    if insumo == "sim":
+        query = query.filter(Produto.eh_insumo == True)
+    elif insumo == "nao":
+        query = query.filter(or_(Produto.eh_insumo == False, Produto.eh_insumo.is_(None)))
+    if abaixo_min:
+        query = query.filter(Produto.estoque < Produto.estoque_minimo)
+    if busca:
+        query = query.filter(Produto.nome.ilike(f"%{busca}%"))
+    produtos = query.order_by(Produto.nome).all()
+
+    valor_total = sum(float(p.estoque or 0) * float(p.preco_custo or 0) for p in produtos)
+    valor_venda = sum(float(p.estoque or 0) * float(p.preco or 0) for p in produtos)
+    qtd_zerados = sum(1 for p in produtos if (p.estoque or 0) <= 0)
+    qtd_abaixo = sum(1 for p in produtos if (p.estoque or 0) < (p.estoque_minimo or 0))
+
+    filtros = "Filtro: "
+    partes = []
+    if tipo: partes.append(f"tipo={tipo}")
+    if categoria_id: partes.append("categoria")
+    if insumo: partes.append(f"insumo={insumo}")
+    if abaixo_min: partes.append("abaixo do mínimo")
+    if busca: partes.append(f"busca='{busca}'")
+    filtros += ", ".join(partes) if partes else "todos"
+
+    empresa = db.query(Empresa).first()
+    pdf = gerar_pdf_estoque(produtos, empresa, titulo="Posição de Estoque",
+                            filtros=filtros, valor_total=valor_total,
+                            valor_venda=valor_venda, qtd_zerados=qtd_zerados,
+                            qtd_abaixo=qtd_abaixo)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": "inline; filename=posicao_estoque.pdf"})
+
+
+@router.get("/abaixo-minimo/pdf")
+def relatorio_abaixo_minimo_pdf(request: Request, db: Session = Depends(get_db)):
+    from models import Produto, Empresa
+    from services.nfse_pdf import gerar_pdf_estoque
+    from fastapi.responses import Response
+
+    if not verificar_admin(request, db):
+        return RedirectResponse(url="/login", status_code=303)
+
+    produtos = db.query(Produto).filter(
+        Produto.tipo == "produto",
+        Produto.estoque < Produto.estoque_minimo,
+    ).order_by(Produto.estoque_minimo.desc()).all()
+    empresa = db.query(Empresa).first()
+    pdf = gerar_pdf_estoque(produtos, empresa, titulo="Itens Abaixo do Mínimo",
+                            filtros="Filtro: abaixo do estoque mínimo")
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": "inline; filename=abaixo_minimo.pdf"})
+
+
+@router.get("/movimentacoes/pdf")
+def relatorio_movimentacoes_pdf(
+    request: Request, db: Session = Depends(get_db),
+    produto_id: int = Query(None), tipo: str = Query(""),
+    data_ini: str = Query(""), data_fim: str = Query(""),
+):
+    from models_estoque import MovimentacaoEstoque
+    from models import Empresa
+    from services.nfse_pdf import gerar_pdf_movimentacoes
+    from fastapi.responses import Response
+
+    if not verificar_admin(request, db):
+        return RedirectResponse(url="/login", status_code=303)
+
+    query = db.query(MovimentacaoEstoque)
+    if produto_id:
+        query = query.filter(MovimentacaoEstoque.produto_id == produto_id)
+    if tipo:
+        query = query.filter(MovimentacaoEstoque.tipo == tipo)
+    if data_ini:
+        try:
+            query = query.filter(MovimentacaoEstoque.data >= datetime.strptime(data_ini, "%Y-%m-%d"))
+        except ValueError:
+            pass
+    if data_fim:
+        try:
+            fim = datetime.strptime(data_fim, "%Y-%m-%d")
+            fim = fim.replace(hour=23, minute=59, second=59)
+            query = query.filter(MovimentacaoEstoque.data <= fim)
+        except ValueError:
+            pass
+    movs = query.order_by(MovimentacaoEstoque.data.desc()).limit(500).all()
+
+    filtros = "Filtro: "
+    partes = []
+    if produto_id: partes.append(f"produto #{produto_id}")
+    if tipo: partes.append(f"tipo={tipo}")
+    if data_ini: partes.append(f"de {data_ini}")
+    if data_fim: partes.append(f"até {data_fim}")
+    filtros += ", ".join(partes) if partes else "todos"
+    empresa = db.query(Empresa).first()
+    pdf = gerar_pdf_movimentacoes(movs, empresa, filtros=filtros)
+    return Response(content=pdf, media_type="application/pdf",
+                    headers={"Content-Disposition": "inline; filename=movimentacoes_estoque.pdf"})
+
+
 @router.post("/produto/{produto_id}/ajustar")
 def ajustar_estoque(
     request: Request, produto_id: int, db: Session = Depends(get_db),

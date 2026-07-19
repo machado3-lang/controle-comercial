@@ -42,6 +42,7 @@
         </div>
         <button type="submit" class="btn btn-sm text-cyan-400 border border-slate-700">Filtrar</button>
         <a href="/estoque/posicao" class="btn btn-sm text-slate-400 border border-slate-700">Limpar</a>
+        <a href="/estoque/posicao/pdf?busca={{ busca }}&categoria_id={{ categoria_id or '' }}&insumo={{ insumo }}&abaixo_min={{ 'true' if abaixo_min else '' }}&tipo={{ tipo }}" class="btn btn-sm text-rose-400 border border-slate-700" target="_blank"><i data-lucide="file-text" class="w-4 h-4 inline"></i> PDF</a>
     </div>
 </form>
 
