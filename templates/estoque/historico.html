@@ -1,0 +1,43 @@
+{% extends "base.html" %}
+{% block title %}Movimentações de Estoque{% endblock %}
+{% block content %}
+<div class="w-full mb-6">
+    <a href="/produtos" class="text-cyan-400 text-sm"><i data-lucide="arrow-left" class="w-4 h-4 inline"></i> Voltar</a>
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold mt-2">
+        <i data-lucide="history" class="w-6 h-6 inline me-2"></i> Movimentações - {{ produto.nome if produto else 'Produto' }}
+    </h4>
+    {% if produto %}<p class="text-slate-400 text-sm">Estoque atual: <strong class="text-emerald-400">{{ produto.estoque or 0 }}</strong></p>{% endif %}
+</div>
+
+<div class="bg-slate-900/60 border border-slate-800/80 rounded-2xl overflow-hidden">
+    <table class="w-full text-sm">
+        <thead class="bg-slate-800/60 text-slate-400">
+            <tr>
+                <th class="px-4 py-3 text-left">Data</th>
+                <th class="px-4 py-3 text-left">Tipo</th>
+                <th class="px-4 py-3 text-right">Qtd</th>
+                <th class="px-4 py-3 text-right">Saldo após</th>
+                <th class="px-4 py-3 text-left">Documento</th>
+                <th class="px-4 py-3 text-left">Motivo</th>
+            </tr>
+        </thead>
+        <tbody>
+        {% for m in movs %}
+            <tr class="border-t border-slate-800/60">
+                <td class="px-4 py-2 text-slate-300">{{ m.data.strftime('%d/%m/%Y %H:%M') if m.data else '-' }}</td>
+                <td class="px-4 py-2">
+                    {% set cor = 'text-rose-400' if m.tipo.startswith('SAIDA') else 'text-emerald-400' %}
+                    <span class="{{ cor }}">{{ m.tipo }}</span>
+                </td>
+                <td class="px-4 py-2 text-right {{ 'text-rose-400' if m.quantidade < 0 else 'text-emerald-400' }}">{{ '%.3f'|format(m.quantidade) }}</td>
+                <td class="px-4 py-2 text-right text-slate-300">{{ '%.3f'|format(m.saldo_apos) if m.saldo_apos is not none else '-' }}</td>
+                <td class="px-4 py-2 text-slate-300">{{ m.doc_tipo }}{% if m.doc_id %} #{{ m.doc_id }}{% endif %}</td>
+                <td class="px-4 py-2 text-slate-400">{{ m.motivo or '-' }}</td>
+            </tr>
+        {% else %}
+            <tr><td colspan="6" class="px-4 py-12 text-center text-slate-500">Nenhuma movimentação registrada</td></tr>
+        {% endfor %}
+        </tbody>
+    </table>
+</div>
+{% endblock %}

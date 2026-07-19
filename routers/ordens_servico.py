@@ -142,7 +142,8 @@ def detalhe_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)
         {"request": request, "ordem": ordem, "clientes": clientes, "marcas": marcas,
          "servicos": servicos, "pecas": pecas, "StatusOS": StatusOS,
          "clientes_json": clientes_json, "marcas_json": marcas_json,
-         "servicos_json": servicos_json, "pecas_json": pecas_json}
+         "servicos_json": servicos_json, "pecas_json": pecas_json,
+         "os_pecas": ordem.os_pecas if hasattr(ordem, "os_pecas") else []}
     )
 
 

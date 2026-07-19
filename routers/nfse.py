@@ -1258,6 +1258,13 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
                     enviar_notificacao_conta(c.id)
             except Exception as e:
                 logger.warning(f"Erro ao disparar e-mail pos-autorizacao NFSe: {e}")
+
+            # Baixa de estoque: insumos consumidos na NFSe (SAIDA_INSUMO)
+            try:
+                from services.estoque_service import baixar_nfse
+                baixar_nfse(db, nfse)
+            except Exception as e:
+                logger.warning(f"Erro ao baixar estoque NFSe: {e}")
         elif sp == 'processando':
             db.commit()
             request.session["message"] = "NFSe ainda em processamento na prefeitura. Tente novamente em alguns segundos."

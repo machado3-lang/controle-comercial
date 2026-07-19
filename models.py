@@ -293,6 +293,7 @@ class OrdemServico(Base):
     defeito_relatado = Column(Text, nullable=True)
     servicos_executados = Column(Text, nullable=True)
     pecas_utilizadas = Column(Text, nullable=True)
+    os_pecas = relationship("OSPeca", back_populates="os", cascade="all, delete-orphan", order_by="OSPeca.id")
     valor_servico = Column(Numeric(12, 2), default=0)
     valor_pecas = Column(Numeric(12, 2), default=0)
     valor_total = Column(Numeric(12, 2), default=0)
@@ -365,6 +366,7 @@ class Produto(Base):
     variacoes = relationship("ProdutoVariacao", back_populates="produto", cascade="all, delete-orphan")
     composicoes = relationship("ProdutoComposicao", foreign_keys="[ProdutoComposicao.produto_pai_id]", back_populates="produto_pai", cascade="all, delete-orphan")
     tipo = Column(String(20), default="produto")  # "produto", "servico" ou "kit"
+    eh_insumo = Column(Boolean, default=False)  # True: consumido em servicos (baixa como SAIDA_INSUMO na NFSe)
     codigo_lc116 = Column(String(10), nullable=True)
     codigo_tributacao_municipal = Column(String(20), nullable=True)
 

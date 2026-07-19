@@ -1422,6 +1422,14 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         nfe.status = "queued"
         db.commit()
 
+        # Baixa de estoque: venda de mercadoria (SAIDA_VENDA). Idempotente:
+        # se o webhook issued chamar de novo, nao duplica.
+        try:
+            from services.estoque_service import baixar_nfe
+            baixar_nfe(db, nfe)
+        except Exception as e:
+            logger.warning(f"Erro ao baixar estoque NFe: {e}")
+
         request.session["message"] = f"NFe #{nfe.numero} transmitida com sucesso!"
         return RedirectResponse(url=f"/nfe/{nfe.id}", status_code=303)
     except Exception as e:
@@ -1693,6 +1701,12 @@ async def webhook_nfe(request: Request, db: Session = Depends(get_db)):
                     enviar_documentos_cliente(db, nfe.cliente, nfes=[nfe], incluir_xml=False)
             except Exception as e:
                 logger.warning(f"Erro ao disparar e-mail pos-autorizacao NFe: {e}")
+            # Baixa de estoque: venda de mercadoria (SAIDA_VENDA)
+            try:
+                from services.estoque_service import baixar_nfe
+                baixar_nfe(db, nfe)
+            except Exception as e:
+                logger.warning(f"Erro ao baixar estoque NFe: {e}")
         elif event in ("nfe.error", "nfce.error"):
             nfe.status = "error"
             nfe.mensagem_retorno = json.dumps(data)

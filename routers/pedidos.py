@@ -461,6 +461,14 @@ def finalizar_pedido(
             )
             db.add(cr)
         db.commit()
+        # Baixa de estoque na finalizacao (venda sem nota). Se o pedido ja
+        # gerou NFSe/NFe, a baixa ocorre na nota (evita duplicar).
+        try:
+            if not pedido.nfse and not pedido.nfes:
+                from services.estoque_service import baixar_pedido
+                baixar_pedido(db, pedido)
+        except Exception as e:
+            logger.warning(f"Erro ao baixar estoque do pedido: {e}")
     return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
 
 

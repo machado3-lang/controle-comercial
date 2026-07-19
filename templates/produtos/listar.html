@@ -86,10 +86,12 @@
                  <td class="px-4 py-3 text-right text-sm{% if p.preco_custo %} text-emerald-400{% else %} text-slate-600{% endif %}">{% if p.preco_custo %}R$ {{ "%.2f"|format(p.preco - p.preco_custo) }}{% else %} -{% endif %}</td>
                  <td class="px-4 py-3 text-right text-sm font-medium{% if (p.estoque or 0) <= 0 %} text-rose-400{% elif (p.estoque or 0) < (p.estoque_minimo or 0) and (p.estoque_minimo or 0) > 0 %} text-amber-400{% else %} text-cyan-300{% endif %}">{{ p.estoque or 0 }}</td>
                  <td class="px-4 py-3 text-center align-middle" style="min-width: 7rem;">
-                     <div class="flex items-center justify-center gap-1">
-                         <a href="/produtos/{{ p.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>
-                         <button type="button" class="inline-block p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir" onclick="confirmarExclusao('/produtos/{{ p.id }}/excluir')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                     </div>
+                        <div class="flex items-center justify-center gap-1">
+                            <a href="/produtos/{{ p.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>
+                            <a href="/estoque/produto/{{ p.id }}/movimentacoes" class="inline-flex p-1.5 text-indigo-400 border border-slate-700 rounded hover:bg-indigo-950/30 transition" title="Movimentações"><i data-lucide="history" class="w-4 h-4"></i></a>
+                            <button type="button" class="inline-block p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Ajustar estoque" onclick="abrirAjusteEstoque('{{ p.id }}', '{{ p.nome|e }}', {{ p.estoque or 0 }})"><i data-lucide="sliders-horizontal" class="w-4 h-4"></i></button>
+                            <button type="button" class="inline-block p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir" onclick="confirmarExclusao('/produtos/{{ p.id }}/excluir')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </div>
                  </td>
              </tr>
              {% else %}
@@ -161,5 +163,40 @@ function salvarPdf() {
     iframe.contentWindow.focus();
     iframe.contentWindow.print();
 }
+function abrirAjusteEstoque(id, nome, estoqueAtual) {
+    document.getElementById('ajuste_produto_id').value = id;
+    document.getElementById('ajuste_produto_nome').textContent = nome;
+    document.getElementById('ajuste_estoque_atual').textContent = estoqueAtual;
+    document.getElementById('ajuste_quantidade_fisica').value = estoqueAtual;
+    new bootstrap.Modal(document.getElementById('modalAjusteEstoque')).show();
+}
 </script>
+{% endblock %}
+
+{% block modals %}
+<div class="modal fade" id="modalAjusteEstoque" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-slate-900 border border-slate-700">
+      <div class="modal-header border-slate-700">
+        <h5 class="modal-title text-slate-100">Ajuste de Inventário</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <form method="post" action="/estoque/produto/__PID__/ajustar" onsubmit="this.action=this.action.replace('__PID__', document.getElementById('ajuste_produto_id').value);">
+        <div class="modal-body text-slate-200">
+          <p>Produto: <strong id="ajuste_produto_nome"></strong></p>
+          <p>Estoque atual: <strong id="ajuste_estoque_atual"></strong></p>
+          <input type="hidden" id="ajuste_produto_id" name="produto_id">
+          <label class="form-label">Quantidade física real</label>
+          <input type="number" step="0.001" class="form-control bg-slate-800 border-slate-700 text-slate-100" name="quantidade_fisica" id="ajuste_quantidade_fisica" required>
+          <label class="form-label mt-3">Motivo</label>
+          <input type="text" class="form-control bg-slate-800 border-slate-700 text-slate-100" name="motivo" placeholder="Ex.: Contagem física, quebra, etc.">
+        </div>
+        <div class="modal-footer border-slate-700">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
+          <button type="submit" class="btn btn-warning">Ajustar</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 {% endblock %}

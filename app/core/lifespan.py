@@ -16,6 +16,7 @@ from sqlalchemy.orm import sessionmaker, Session, joinedload
 from database import engine, Base, SessionLocal, get_db
 from models import TipoDocumento, PlanoDeContas, Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda
 import models_nfe  # registra modelos NFe/NFSe no Base.metadata para migração automática
+import models_estoque  # registra modelos de estoque (movimentacoes, os_pecas)
 
 from datetime import date as date_func, timedelta
 from app.core.config import settings
@@ -603,9 +604,10 @@ def create_app() -> FastAPI:
 
     # Include routers
     from routers import (
-        clientes, fornecedores, nfse, contas, assinaturas, 
-        ordens_servico, configuracoes, bling, sicoob, produtos, 
-        pedidos, auth, nfe, tipos_documento, planocontas, consolidacoes
+        clientes, fornecedores, nfse, contas, assinaturas,
+        ordens_servico, configuracoes, bling, sicoob, produtos,
+        pedidos, auth, nfe, tipos_documento, planocontas, consolidacoes,
+        estoque
     )
 
     app.include_router(auth.router)
@@ -624,5 +626,6 @@ def create_app() -> FastAPI:
     app.include_router(tipos_documento.router)
     app.include_router(planocontas.router)
     app.include_router(consolidacoes.router)
+    app.include_router(estoque.router)
 
     return app
