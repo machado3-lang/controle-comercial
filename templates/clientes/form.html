@@ -245,7 +245,7 @@ document.addEventListener('DOMContentLoaded', function() {
         cepInput.addEventListener('blur', function() {
             const cep = this.value.replace(/\D/g, '');
             if (cep.length !== 8) return;
-            fetch(`/consultas/cep?cep=${cep}`)
+            fetch(`/api/consultas/cep?cep=${cep}`)
                 .then(r => r.json())
                 .then(d => {
                     if (d.erro) return;
@@ -254,7 +254,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (d.localidade) setVal('input[name="cidade"]', d.localidade);
                     if (d.uf) setVal('select[name="estado"]', d.uf);
                 })
-                .catch(() => {});
+                .catch(err => console.error('CEP fetch falhou:', err));
         });
     }
 
@@ -264,7 +264,7 @@ document.addEventListener('DOMContentLoaded', function() {
         cnpjInput.addEventListener('blur', function() {
             const doc = this.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase();
             if (doc.length !== 14) return;
-            fetch(`/consultas/cnpj?cnpj=${doc}`)
+            fetch(`/api/consultas/cnpj?cnpj=${doc}`)
                 .then(r => r.json())
                 .then(d => {
                     if (d.erro) { alert(d.erro); return; }
@@ -288,7 +288,7 @@ document.addEventListener('DOMContentLoaded', function() {
                         }
                     }
                 })
-                .catch(() => {});
+                .catch(err => console.error('CNPJ fetch falhou:', err));
         });
     }
 

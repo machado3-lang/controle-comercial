@@ -7,7 +7,7 @@ from app.core.security import verificar_admin
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(prefix="/consultas", tags=["consultas"])
+router = APIRouter(prefix="/api/consultas", tags=["consultas"])
 
 
 @router.get("/cep")
