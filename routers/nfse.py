@@ -4,7 +4,7 @@ import logging
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date
 from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException, BackgroundTasks
-from fastapi.responses import RedirectResponse, JSONResponse
+from fastapi.responses import RedirectResponse, JSONResponse, Response, FileResponse
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc, asc
 from database import get_db
@@ -322,6 +322,7 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db))
                 with open(xml_path, 'w', encoding='utf-8') as f:
                     f.write(dps_xml)
                 nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
+                nfse.xml_text = dps_xml
         except Exception:
             pass
 
@@ -781,6 +782,20 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe não encontrada")
 
+    # 0. Gera PDF local a partir do XML persistido no banco (sobrevive a redeploys)
+    if nfse.xml_text:
+        empresa = db.query(Empresa).first()
+        cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
+        if empresa and cliente:
+            try:
+                pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
+                nfse.pdf_path = pdf_url
+                db.commit()
+                return FileResponse(f".{pdf_url}", media_type="application/pdf",
+                                   filename=f"nfse_{nfse.numero or nfse.id}.pdf")
+            except Exception as e:
+                logger.warning(f"Erro ao gerar PDF local NFSe do XML banco: {e}")
+
     # 1. Tenta baixar DANFSe oficial (ADN + Betha)
     if nfse.status == 'autorizada' and nfse.codigo_verificacao:
         try:
@@ -839,6 +854,10 @@ def baixar_xml_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe não encontrada")
+
+    if nfse.xml_text:
+        return Response(content=nfse.xml_text, media_type="application/xml",
+                        headers={"Content-Disposition": f"attachment; filename=\"nfse_{nfse.numero or nfse.id}.xml\""})
 
     if nfse.xml_path and os.path.exists(f".{nfse.xml_path}"):
         from fastapi.responses import FileResponse
@@ -984,6 +1003,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                 with open(xml_path, 'w', encoding='utf-8') as f:
                     f.write(dps_xml)
                 nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
+                nfse.xml_text = dps_xml
             # Regenera PDF com dados oficiais
             from services.nfse_pdf import gerar_pdf_nfse
             empresa = db.query(Empresa).first()
@@ -1026,6 +1046,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                         with open(xml_path, 'w', encoding='utf-8') as f:
                             f.write(dps_xml)
                         nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
+                        nfse.xml_text = dps_xml
                     from services.nfse_pdf import gerar_pdf_nfse
                     empresa = db.query(Empresa).first()
                     cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
@@ -1083,6 +1104,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                             with open(xml_path, 'w', encoding='utf-8') as f:
                                 f.write(dps_xml)
                             nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
+                            nfse.xml_text = dps_xml
                         from services.nfse_pdf import gerar_pdf_nfse
                         cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
                         if empresa and cliente:
@@ -1170,6 +1192,7 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
                 with open(xml_path, 'w', encoding='utf-8') as f:
                     f.write(xml_oficial)
                 nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
+                nfse.xml_text = xml_oficial
             else:
                 numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
                 dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero)
@@ -1180,6 +1203,7 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
                     with open(xml_path, 'w', encoding='utf-8') as f:
                         f.write(dps_xml)
                     nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
+                    nfse.xml_text = dps_xml
 
             # Tenta baixar PDF — 1º ADN, 2º Betha, 3º fallback local
             try:

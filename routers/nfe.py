@@ -62,6 +62,7 @@ def _salvar_xml_nfe(empresa, nfe, db):
         with open(xml_path, 'w', encoding='utf-8') as f:
             f.write(xml_text)
         nfe.xml_path = f"/{xml_path.replace(os.sep, '/')}"
+        nfe.xml_text = xml_text
         db.commit()
     except Exception as e:
         logger.warning(f"Erro ao salvar XML NFe #{nfe.id}: {e}")
@@ -1500,12 +1501,22 @@ def baixar_pdf_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         return Response(content=open(pdf_path, 'rb').read(), media_type="application/pdf",
                         headers={"Content-Disposition": f"inline; filename={pdf_filename}"})
 
+    # 0) Tenta XML persistido no banco (sobrevive a redeploys no Railway)
+    if nfe.xml_text:
+        try:
+            return _gerar_danfe(nfe.xml_text)
+        except Exception as e:
+            logger.warning(f"Erro DANFE XML banco: {e}")
+
     # 1) Tenta XML local
     xml_path = _local_xml_path()
     if xml_path:
         try:
             with open(xml_path, 'r', encoding='utf-8') as f:
-                return _gerar_danfe(f.read())
+                xml_text = f.read()
+                nfe.xml_text = xml_text
+                db.commit()
+                return _gerar_danfe(xml_text)
         except Exception as e:
             logger.warning(f"Erro DANFE XML local: {e}")
 
@@ -1517,6 +1528,7 @@ def baixar_pdf_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         with open(xml_path, 'w', encoding='utf-8') as f:
             f.write(xml_text)
         nfe.xml_path = f"/{xml_path.replace(os.sep, '/')}"
+        nfe.xml_text = xml_text
         db.commit()
         return _gerar_danfe(xml_text)
     except Exception as e:
@@ -1537,8 +1549,13 @@ def baixar_xml_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
     nfe = db.query(NFe).filter(NFe.id == nfe_id).first()
     if not nfe or not nfe.invoice_id:
         raise HTTPException(status_code=404, detail="NFe não encontrada")
+    if nfe.xml_text:
+        return Response(content=nfe.xml_text, media_type="application/xml",
+                        headers={"Content-Disposition": f"attachment; filename=nfe_{nfe.numero}.xml"})
     try:
         xml_text = baixar_xml(empresa, nfe.invoice_id)
+        nfe.xml_text = xml_text
+        db.commit()
         return Response(content=xml_text, media_type="application/xml",
                         headers={"Content-Disposition": f"attachment; filename=nfe_{nfe.numero}.xml"})
     except Exception as e:

@@ -69,8 +69,8 @@ def _add_missing_columns():
     )
 
     _TYPE_MAP = {
-        String: lambda c: f"VARCHAR({c.type.length or 255})",
         Text: lambda c: "TEXT",
+        String: lambda c: f"VARCHAR({c.type.length or 255})",
         Integer: lambda c: "INTEGER",
         BigInteger: lambda c: "BIGINT",
         Boolean: lambda c: "BOOLEAN",
@@ -116,6 +116,13 @@ def _add_missing_columns():
             except Exception as e:
                 print(f"[MIGRATION] Could not add {table_name}.{col.name}: {e}")
 
+    # Corrige colunas Text que possam ter sido criadas como VARCHAR devido a
+    # ordem do _TYPE_MAP (Text eh subclasse de String no SQLAlchemy).
+    try:
+        _fix_text_columns()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not fix text columns: {e}")
+
     # Create audit_log table if it doesn't exist
     if "audit_log" not in existing_tables:
         try:
@@ -139,6 +146,37 @@ def _add_missing_columns():
                 print("[MIGRATION] Created audit_log table")
         except Exception as e:
             print(f"[MIGRATION] Could not create audit_log table: {e}")
+
+
+def _fix_text_columns():
+    """Converte colunas declaradas como Text no modelo, mas criadas como
+    VARCHAR no banco, para TEXT (evita truncamento de XML/notas longas)."""
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+    from sqlalchemy.types import Text
+
+    inspector = sa_inspect(engine)
+    for table_name, table in Base.metadata.tables.items():
+        if table_name not in set(inspector.get_table_names()):
+            continue
+        for col in table.columns:
+            if not isinstance(col.type, Text):
+                continue
+            try:
+                cols = {c["name"]: c for c in inspector.get_columns(table_name)}
+                db_col = cols.get(col.name)
+                if not db_col:
+                    continue
+                udt = str(db_col["type"]).upper()
+                if "VARCHAR" in udt or "CHAR" in udt:
+                    with engine.connect() as conn:
+                        conn.execute(sa_text(
+                            f"ALTER TABLE {table_name} ALTER COLUMN {col.name} TYPE TEXT"
+                        ))
+                        conn.commit()
+                        print(f"[MIGRATION] Converted {table_name}.{col.name} to TEXT")
+            except Exception as e:
+                print(f"[MIGRATION] Could not convert {table_name}.{col.name}: {e}")
 
 
 def create_app() -> FastAPI:
