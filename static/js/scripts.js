@@ -123,7 +123,11 @@ function csrfFetch(url, options) {
     } else if (options.body instanceof FormData) {
         if (!options.body.has('csrf_token')) options.body.append('csrf_token', tok);
     } else if (typeof options.body === 'string' && options.body.indexOf('csrf_token') === -1) {
-        options.body += (options.body ? '&' : '') + 'csrf_token=' + encodeURIComponent(tok);
+        // Não poluir o body se for JSON (application/json): o token já vai na query string.
+        var looksJson = (options.body.trim().charAt(0) === '{' || options.body.trim().charAt(0) === '[');
+        if (!looksJson && !(options.headers && options.headers['Content-Type'] && options.headers['Content-Type'].indexOf('application/json') !== -1)) {
+            options.body += (options.body ? '&' : '') + 'csrf_token=' + encodeURIComponent(tok);
+        }
     } else if (options.body !== undefined && options.body !== null && typeof options.body === 'object' && !Array.isArray(options.body) && !(options.body instanceof Blob)) {
         // JSON object (application/json): o middleware não lê token do corpo JSON,
         // então enviamos na query string.
