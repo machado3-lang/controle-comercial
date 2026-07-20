@@ -32,21 +32,14 @@
     </div>
 </div>
 
-<!-- Import by Access Key / XML Upload -->
+<!-- Import own issued NFe XML -->
 <div class="flex items-center flex-wrap gap-2 mb-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
-    <i data-lucide="upload" class="w-4 h-4 text-emerald-400"></i>
-    <span class="text-xs font-medium text-emerald-400 mr-1">Importar NFe:</span>
-    <form action="/nfe/importar-chave" method="post" class="flex items-center gap-2">
-        <input type="text" name="chave_acesso" placeholder="Chave de acesso (44 dígitos)" maxlength="44" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100 w-72" pattern="[0-9]{44}" title="Digite os 44 dígitos da chave de acesso">
-        <button type="submit" class="flex items-center h-8 px-3 text-xs bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-lg font-medium transition-all shadow-lg shadow-emerald-500/10">
-            <i data-lucide="key" class="w-3.5 h-3.5 me-1"></i> Por Chave
-        </button>
-    </form>
-    <span class="text-xs text-slate-500">|</span>
+    <i data-lucide="upload" class="w-4 h-4 text-amber-400"></i>
+    <span class="text-xs font-medium text-amber-400 mr-1">Importar XML da NFe emitida:</span>
     <form action="/nfe/importar-xml" method="post" enctype="multipart/form-data" class="flex items-center gap-2">
         <input type="file" name="xml_file" accept=".xml" required class="h-8 text-xs w-48 text-slate-300 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600">
         <button type="submit" class="flex items-center h-8 px-3 text-xs bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-lg font-medium transition-all shadow-lg shadow-amber-500/10">
-            <i data-lucide="file-up" class="w-3.5 h-3.5 me-1"></i> XML
+            <i data-lucide="file-up" class="w-3.5 h-3.5 me-1"></i> Importar XML
         </button>
     </form>
 </div>

@@ -987,7 +987,10 @@ def nfe_distribuicao(
 
     from models import NFeDistribuida
     try:
-        if reiniciar:
+        if reiniciar or tipo == 'emitida':
+            # A consulta de emitidas precisa do histórico completo: o cursor
+            # ultNSU é somente para frente e pode ter pulado NFe emitidas mais
+            # antigas (ex.: emitidas por outros ambientes). Reinicia o NSU.
             empresa.nfe_ultnsu = None
             db.commit()
 
@@ -1118,9 +1121,14 @@ def nfe_distribuicao(
             db.add(nf)
         db.commit()
 
-        msg = f"SEFAZ: {len(notas_local)} NFe ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"
-        # Emitidas SEFAZ agora ficam unificadas na listagem principal (/nfe);
+        # Emitidas SEFAZ ficam unificadas na listagem principal (/nfe);
         # recebidas têm página dedicada (/nfe/recebidas)
+        if tipo == 'emitida':
+            msg = f"SEFAZ: {len(emitidas)} NFe emitidas sincronizadas na listagem principal"
+        elif tipo == 'recebida':
+            msg = f"SEFAZ: {len(recebidas)} NFe recebidas importadas"
+        else:
+            msg = f"SEFAZ: {len(emitidas)} emitidas e {len(recebidas)} recebidas"
         if tipo == 'recebida' or retorno == 'recebidas':
             request.session["message"] = msg
             return RedirectResponse(url=f"/nfe/recebidas?data_inicio={data_inicio}&data_fim={data_fim}", status_code=303)
