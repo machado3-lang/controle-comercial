@@ -873,33 +873,36 @@ async def importar_boleto(request: Request, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
 
-    body = await request.json()
-    nosso_numero = str(body.get("nossoNumero", ""))
-    cliente_nome = body.get("cliente", "")
-    cpf_cnpj_raw = body.get("cpfCnpj", "")
-    valor = float(body.get("valor", 0))
-    data_vencimento_str = body.get("dataVencimento", "")
-    data_emissao_str = body.get("dataEmissao", "")
-    linha_digitavel = body.get("linhaDigitavel", "")
-    seu_numero = str(body.get("seuNumero", ""))
-    situacao = str(body.get("situacao", ""))
-
-    if not nosso_numero:
-        return {"success": False, "error": "nossoNumero é obrigatório"}
-
-    from sqlalchemy import or_
-
-    filters = [
-        ContaReceber.api_nosso_numero == nosso_numero,
-        ContaReceber.nosso_numero == nosso_numero,
-    ]
-    if seu_numero:
-        filters.append(ContaReceber.api_nosso_numero == seu_numero)
-        filters.append(ContaReceber.nosso_numero == seu_numero)
-
-    existente = db.query(ContaReceber).filter(or_(*filters)).first()
-
     try:
+        body = await request.json()
+        nosso_numero = str(body.get("nossoNumero", ""))
+        cliente_nome = body.get("cliente", "")
+        cpf_cnpj_raw = body.get("cpfCnpj", "")
+        try:
+            valor = float(str(body.get("valor", 0)).replace(",", ".").replace("R$", "").strip() or 0)
+        except (ValueError, TypeError):
+            valor = 0.0
+        data_vencimento_str = body.get("dataVencimento", "")
+        data_emissao_str = body.get("dataEmissao", "")
+        linha_digitavel = body.get("linhaDigitavel", "")
+        seu_numero = str(body.get("seuNumero", ""))
+        situacao = str(body.get("situacao", ""))
+
+        if not nosso_numero:
+            return {"success": False, "error": "nossoNumero é obrigatório"}
+
+        from sqlalchemy import or_
+
+        filters = [
+            ContaReceber.api_nosso_numero == nosso_numero,
+            ContaReceber.nosso_numero == nosso_numero,
+        ]
+        if seu_numero:
+            filters.append(ContaReceber.api_nosso_numero == seu_numero)
+            filters.append(ContaReceber.nosso_numero == seu_numero)
+
+        existente = db.query(ContaReceber).filter(or_(*filters)).first()
+
         cpf_cnpj_limp = ''.join(filter(str.isdigit, cpf_cnpj_raw))
         cliente = None
         if cpf_cnpj_limp:

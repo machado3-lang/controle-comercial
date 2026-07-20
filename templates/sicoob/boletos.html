@@ -617,7 +617,14 @@ function postImportarBoleto(boletoData) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(boletoData)
-    }).then(r => r.json());
+    }).then(async r => {
+        const ct = r.headers.get('content-type') || '';
+        if (!r.ok || ct.indexOf('application/json') === -1) {
+            const txt = await r.text();
+            throw new Error('Resposta inválida do servidor (HTTP ' + r.status + '): ' + txt.substring(0, 200));
+        }
+        return r.json();
+    });
 }
 
 function importarBoleto(nossoNumero) {
