@@ -98,7 +98,15 @@ def listar_nfse(
         ).first()
         if not cob:
             nfse_ids_sem_cobranca.add(n.id)
-    
+
+    # NFSe recebidas (somos o tomador) no período selecionado, p/ exibição no rodapé
+    q_rec = db.query(NFSeRecebida)
+    if data_inicio:
+        q_rec = q_rec.filter(NFSeRecebida.data_emissao >= datetime.strptime(data_inicio, "%Y-%m-%d"))
+    if data_fim:
+        q_rec = q_rec.filter(NFSeRecebida.data_emissao <= datetime.strptime(data_fim + " 23:59:59", "%Y-%m-%d %H:%M:%S"))
+    nfse_recebidas = q_rec.order_by(desc(NFSeRecebida.data_emissao)).all()
+
     return request.app.state.templates.TemplateResponse(request, 
         "nfse/lista.html",
         {"request": request, "nfse": nfse_list, "status": status, "busca": busca,
@@ -107,7 +115,8 @@ def listar_nfse(
          "sort": sort, "ordem": ordem,
          "messages": _get_messages(request), "empresa": empresa,
          "STATUS_LABELS": STATUS_LABELS,
-         "nfse_ids_sem_cobranca": nfse_ids_sem_cobranca}
+         "nfse_ids_sem_cobranca": nfse_ids_sem_cobranca,
+         "nfse_recebidas": nfse_recebidas}
     )
 
 
@@ -1296,11 +1305,37 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
 
+def _confirmar_cancelamentos_adn(emitidas):
+    """Tarefa em background: confirma cancelamento via SEFIN (tipoEvento 101101)
+    para cada NFSe emitida, atualizando o banco. Evita estourar o timeout do
+    proxy durante a listagem do ADN."""
+    from database import SessionLocal as _SL
+    db_bg = _SL()
+    try:
+        empresa = db_bg.query(Empresa).first()
+        svc = BethaNfseService(empresa=empresa)
+        for n in emitidas:
+            chave = n.get('chaveAcesso')
+            if not chave:
+                continue
+            try:
+                sit = svc.consultar_situacao_nfse(n.get('numero') or '', chave)
+                if sit.get('situacao') == 'cancelada':
+                    nf = db_bg.query(NFSe).filter(NFSe.chave_acesso == chave).first()
+                    if nf and nf.status != 'cancelada':
+                        nf.status = 'cancelada'
+                        db_bg.commit()
+            except Exception as e:
+                logger.warning(f"ADN bg: falha ao confirmar cancelamento da NFSe {n.get('numero')}: {e}")
+    finally:
+        db_bg.close()
+
+
 @router.get("/adn-listar")
 def listar_nfse_adn(
     request: Request, db: Session = Depends(get_db),
     data_inicio: str = Query(""), data_fim: str = Query(""),
-    tipo: str = Query(""),
+    tipo: str = Query(""), background_tasks: BackgroundTasks = None,
 ):
     """Lista NFS-e do ADN (Ambiente de Dados Nacional) por período"""
     empresa = db.query(Empresa).first()
@@ -1402,6 +1437,10 @@ def listar_nfse_adn(
         if salvos_rec or atualizados_rec:
             db.commit()
 
+        # Confirma cancelamentos via SEFIN em background (não bloqueia a resposta)
+        if background_tasks is not None and emitidas:
+            background_tasks.add_task(_confirmar_cancelamentos_adn, emitidas)
+
         msg = f"ADN: {len(notas)} NFS-e encontradas"
         if salvos or atualizados:
             msg += f" ({salvos} emitidas salvas, {atualizados} atualizadas)"
@@ -1419,8 +1458,8 @@ def listar_nfse_adn(
              "messages": [{"tipo": "success", "texto": msg}],
              "empresa": empresa, "STATUS_LABELS": STATUS_LABELS,
              "nfse_ids_sem_cobranca": set(),
-             "adn_notas": notas, "adn_emitidas": emitidas, "adn_recebidas": recebidas}
-        )
+             "adn_notas": notas, "adn_emitidas": emitidas, "adn_recebidas": recebidas},
+            background=background_tasks)
     except NFSeBethaError as e:
         request.session["error"] = f"Erro ADN: {str(e)}"
         return RedirectResponse(url="/nfse", status_code=303)

@@ -463,17 +463,11 @@ class BethaNfseService:
                 break
 
         # Marca como canceladas as notas cujo evento de cancelamento foi encontrado
-        # no DFe e confirma via SEFIN (eventos tipoEvento 101101) para maior precisão.
+        # no DFe (rápido, para exibição imediata). A confirmação autoritativa via
+        # SEFIN (tipoEvento 101101) é feita em background pela rota, para não
+        # estourar o timeout do proxy em períodos com muitas notas.
         for n in notas_brutas:
-            cancelada = n['chaveAcesso'] in cancelamentos
-            if not cancelada and n.get('tipo') == 'emitida' and n.get('chaveAcesso'):
-                try:
-                    sit = self.consultar_situacao_nfse(n.get('numero') or '', n['chaveAcesso'])
-                    if sit.get('situacao') == 'cancelada':
-                        cancelada = True
-                except Exception as e:
-                    logger.warning(f"ADN: falha ao consultar situação da NFSe {n.get('numero')}: {e}")
-            n['cancelada'] = cancelada
+            n['cancelada'] = n['chaveAcesso'] in cancelamentos
             resultados.append(n)
 
         logger.info(f"ADN retornou {len(resultados)} NFS-e no período ({len(cancelamentos)} canceladas)")
