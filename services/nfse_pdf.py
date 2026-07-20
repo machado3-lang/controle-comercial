@@ -172,9 +172,9 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
 
     # Tributos (Lei 12.741/2012)
-    ali_fed = getattr(nfse, 'aliquota_federal', None) or 0.0
-    ali_est = getattr(nfse, 'aliquota_estadual', None) or 0.0
-    ali_mun = getattr(nfse, 'aliquota_municipal', None) or 0.0
+    ali_fed = float(getattr(nfse, 'aliquota_federal', 0) or 0)
+    ali_est = float(getattr(nfse, 'aliquota_estadual', 0) or 0)
+    ali_mun = float(getattr(nfse, 'aliquota_municipal', 0) or 0)
     if ali_fed > 0 or ali_est > 0 or ali_mun > 0:
         pdf.ln(3)
         pdf.set_font("Helvetica", "", 8)

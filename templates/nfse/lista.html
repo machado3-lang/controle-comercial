@@ -40,13 +40,11 @@
 </form>
 
 <div class="overflow-x-auto w-full">
-    <form method="post" action="/contas/enviar-documentos" id="formEnviarNFSe">
-    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="flex flex-wrap items-center gap-3 mb-3 px-1">
         <label class="inline-flex items-center gap-2 text-xs text-slate-300">
-            <input type="checkbox" name="incluir_xml" value="true" class="rounded border-slate-600 bg-slate-800 text-cyan-500"> Incluir XML
+            <input type="checkbox" id="incluir_xml_nfse" name="incluir_xml" value="true" class="rounded border-slate-600 bg-slate-800 text-cyan-500"> Incluir XML
         </label>
-        <button type="submit" class="inline-flex items-center px-3 py-1.5 text-sm text-white bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 rounded-lg font-medium transition" onclick="return validarEnvio('nfse_ids')">
+        <button type="button" class="inline-flex items-center px-3 py-1.5 text-sm text-white bg-gradient-to-r from-cyan-500 to-indigo-600 hover:from-cyan-600 hover:to-indigo-700 rounded-lg font-medium transition" onclick="enviarDocumentosSelecionados('nfse_ids', document.getElementById('incluir_xml_nfse').checked)">
             <i data-lucide="send" class="w-4 h-4 me-1"></i> Enviar por e-mail
         </button>
         <span class="text-xs text-slate-500">Selecione as notas abaixo</span>
@@ -162,7 +160,6 @@
         </tbody>
     </table>
     </div>
-    </form>
 </div>
 
 {% include "partials/paginacao.html" %}

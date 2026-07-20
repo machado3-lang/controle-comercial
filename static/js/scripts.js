@@ -319,3 +319,31 @@ function validarEnvio(name) {
     }
     return true;
 }
+
+function enviarDocumentosSelecionados(name, incluirXml) {
+    var selecionados = document.querySelectorAll('input[name="' + name + '"]:checked');
+    if (selecionados.length === 0) {
+        alert('Selecione ao menos um documento para enviar.');
+        return;
+    }
+    var params = new URLSearchParams();
+    selecionados.forEach(function (cb) {
+        params.append(name, cb.value);
+    });
+    if (incluirXml) {
+        params.append('incluir_xml', 'true');
+    }
+    csrfFetch('/contas/enviar-documentos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
+    }).then(function (resp) {
+        if (resp.redirected) {
+            window.location.href = resp.url;
+        } else {
+            window.location.reload();
+        }
+    }).catch(function (err) {
+        alert('Erro ao enviar: ' + err);
+    });
+}
