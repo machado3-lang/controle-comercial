@@ -9,8 +9,8 @@ from fastapi.responses import RedirectResponse, JSONResponse, Response, FileResp
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc, asc
 from database import get_db
-from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ContaReceber, StatusConta, OrdemServico, Assinatura
-from models_nfe import NFSe, NFSeItem
+from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ContaReceber, StatusConta, OrdemServico, Assinatura, Fornecedor
+from models_nfe import NFSe, NFSeItem, NFSeRecebida
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
 from services.nfse_pdf import gerar_pdf_nfse
 from services.nfe_notaas import explodir_itens_consolidacao
@@ -1358,9 +1358,55 @@ def listar_nfse_adn(
         if salvos or atualizados:
             db.commit()
 
+        # Salva as NFSe recebidas (somos o tomador) em tabela própria
+        salvos_rec = 0
+        atualizados_rec = 0
+        for n in recebidas:
+            chave = n.get('chaveAcesso')
+            if not chave:
+                continue
+            existente = db.query(NFSeRecebida).filter(NFSeRecebida.chave_acesso == chave).first()
+            if existente:
+                if n.get('cancelada') and existente.status != 'cancelada':
+                    existente.status = 'cancelada'
+                    atualizados_rec += 1
+                continue
+            rec = NFSeRecebida()
+            rec.chave_acesso = chave
+            rec.numero = str(n.get('numero')) if n.get('numero') else None
+            rec.codigo_verificacao = chave
+            dh = n.get('dhEmi')
+            if dh:
+                for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+                    try:
+                        rec.data_emissao = datetime.strptime(dh[:19], fmt)
+                        break
+                    except Exception:
+                        continue
+            rec.valor_total = float(n.get('valor') or 0)
+            rec.status = 'cancelada' if n.get('cancelada') else 'autorizada'
+            rec.xml_text = n.get('xml')
+            rec.emitente_nome = n.get('emitente_nome')
+            rec.emitente_cnpj = n.get('emitente_cnpj')
+            rec.origem = 'adn'
+            doc = n.get('emitente_cnpj') or ''
+            doc_clean = re.sub(r'\D', '', doc)
+            if doc_clean:
+                forn = db.query(Fornecedor).filter(
+                    Fornecedor.cpf_cnpj != None, Fornecedor.cpf_cnpj.like(f"%{doc_clean}%")
+                ).first()
+                if forn:
+                    rec.fornecedor_id = forn.id
+            db.add(rec)
+            salvos_rec += 1
+        if salvos_rec or atualizados_rec:
+            db.commit()
+
         msg = f"ADN: {len(notas)} NFS-e encontradas"
         if salvos or atualizados:
-            msg += f" ({salvos} salvas no banco, {atualizados} atualizadas)"
+            msg += f" ({salvos} emitidas salvas, {atualizados} atualizadas)"
+        if salvos_rec or atualizados_rec:
+            msg += f"; {salvos_rec} recebidas salvas, {atualizados_rec} atualizadas"
         if not tipo:
             msg += f" ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"
         elif tipo == 'emitida':

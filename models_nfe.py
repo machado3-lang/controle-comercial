@@ -111,3 +111,26 @@ class NFSeItem(Base):
     
     nfse = relationship("NFSe", back_populates="itens")
     produto = relationship("Produto")
+
+
+class NFSeRecebida(Base):
+    """NFSe recebida (somos o tomador/prestador de serviço contratado).
+    Mantida em tabela própria, separada das emitidas, para controle de
+    despesas/fornecedores e escrituração (SPED)."""
+    __tablename__ = "nfse_recebida"
+    id = Column(Integer, primary_key=True)
+    chave_acesso = Column(String(100), index=True)
+    numero = Column(String(50))
+    codigo_verificacao = Column(String(100))
+    data_emissao = Column(DateTime)
+    valor_total = Column(Numeric(12, 2))
+    status = Column(String(20), default="autorizada", index=True)
+    xml_text = Column(Text, nullable=True)
+    emitente_nome = Column(String(200))
+    emitente_cnpj = Column(String(20))
+    fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True, index=True)
+    origem = Column(String(20), default="adn")
+    cancelada = Column(Boolean, default=False)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    fornecedor = relationship("Fornecedor")
