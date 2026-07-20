@@ -76,8 +76,8 @@
 <td class="px-4 py-3 text-center align-middle">
                      <div class="flex items-center justify-center gap-1">
                          {% if c.status.name.lower() not in ['pago', 'cancelado', 'baixa_solicitada'] %}
-                          <button class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Receber" onclick="abrirRecebimento({{ c.id }}, '{{ c.descricao|e }}', '{{ c.cliente.nome if c.cliente else '---' }}', {{ c.valor }})"><i data-lucide="check-circle" class="w-4 h-4"></i></button>
-                          <button class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar" onclick="abrirEditarReceber({{ c.id }})"><i data-lucide="pencil" class="w-4 h-4"></i></button>
+                           <button type="button" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Receber" onclick="abrirRecebimento({{ c.id }}, '{{ c.descricao|e }}', '{{ c.cliente.nome if c.cliente else '---' }}', {{ c.valor }})"><i data-lucide="check-circle" class="w-4 h-4"></i></button>
+                           <button type="button" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar" onclick="abrirEditarReceber({{ c.id }})"><i data-lucide="pencil" class="w-4 h-4"></i></button>
                          {% endif %}
                          {% if c.status.name.lower() == 'pago' %}
                           <button type="button" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Estornar" onclick="confirmarEstorno('/contas/receber/{{ c.id }}/estornar')"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
@@ -85,7 +85,7 @@
                          {% if c.boleto_emitido and c.status.name.lower() not in ['cancelado', 'baixa_solicitada', 'pago'] %}
                           <a href="/sicoob/boleto-pdf/{{ c.api_nosso_numero or c.nosso_numero }}" target="_blank" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Ver Boleto"><i data-lucide="eye" class="w-4 h-4"></i></a>
                          {% elif c.status.name.lower() not in ['cancelado', 'baixa_solicitada', 'pago'] %}
-                          <button class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Emitir Boleto" onclick="abrirEmitir({{ c.id }}, {{ c.valor }})"><i data-lucide="credit-card" class="w-4 h-4"></i></button>
+                           <button type="button" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Emitir Boleto" onclick="abrirEmitir({{ c.id }}, {{ c.valor }})"><i data-lucide="credit-card" class="w-4 h-4"></i></button>
                          {% endif %}
                          <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarExclusao('/contas/receber/{{ c.id }}/excluir')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                      </div>
