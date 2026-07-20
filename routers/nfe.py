@@ -1079,22 +1079,53 @@ def nfe_distribuicao(
             notas_local.sort(key=lambda x: x.get('dhEmi') or '', reverse=rev)
         emitidas = [n for n in notas_local if n.get('tipo') == 'emitida']
         recebidas = [n for n in notas_local if n.get('tipo') == 'recebida']
+
+        # Sincroniza as emitidas para a tabela principal nfe (unifica a listagem, igual NFSe)
+        for n in emitidas:
+            chave = n.get('chaveAcesso')
+            if not chave:
+                continue
+            existente = db.query(NFe).filter(NFe.chave_acesso == chave).first()
+            if existente:
+                continue
+            nf = NFe()
+            nf.chave_acesso = chave
+            try:
+                nf.numero = int(n.get('numero') or 0)
+            except (ValueError, TypeError):
+                nf.numero = 0
+            nf.serie = 1
+            nf.status = 'cancelled' if n.get('cancelada') else 'issued'
+            nf.origem = 'sefaz'
+            nf.valor_total = float(n.get('valor') or 0)
+            nf.xml_text = n.get('xml')
+            dh = n.get('dhEmi')
+            if dh:
+                for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+                    try:
+                        nf.data_emissao = datetime.strptime(dh[:19], fmt)
+                        break
+                    except Exception:
+                        continue
+            doc = n.get('destinatario_cnpj') or ''
+            doc_clean = re.sub(r'\D', '', doc)
+            if doc_clean:
+                cliente = db.query(Cliente).filter(
+                    Cliente.cpf_cnpj != None, Cliente.cpf_cnpj.like(f"%{doc_clean}%")
+                ).first()
+                if cliente:
+                    nf.cliente_id = cliente.id
+            db.add(nf)
+        db.commit()
+
         msg = f"SEFAZ: {len(notas_local)} NFe ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"
-        # Busca de recebidas: salva no banco e redireciona para a página dedicada
+        # Emitidas SEFAZ agora ficam unificadas na listagem principal (/nfe);
+        # recebidas têm página dedicada (/nfe/recebidas)
         if tipo == 'recebida' or retorno == 'recebidas':
             request.session["message"] = msg
             return RedirectResponse(url=f"/nfe/recebidas?data_inicio={data_inicio}&data_fim={data_fim}", status_code=303)
-        return request.app.state.templates.TemplateResponse(request,
-            "nfe/lista.html",
-            {"request": request, "notas": [], "busca": "", "status": "",
-             "messages": [{"tipo": "success", "texto": msg}],
-             "empresa": empresa, "STATUS_LABELS": STATUS_LABELS,
-             "sort": sort, "ordem": ordem,
-             "page": 1, "per_page": 20, "total_pages": 1, "total_count": 0,
-             "page_sefaz": page_sefaz, "per_page_sefaz": per_page_sefaz,
-             "data_inicio": data_inicio, "data_fim": data_fim,
-             "dist_notas": emitidas, "dist_emitidas": emitidas, "dist_recebidas": []}
-        )
+        request.session["message"] = msg
+        return RedirectResponse(url="/nfe", status_code=303)
     except Exception as e:
         msg = str(e)
         if "Invalid password" in msg or "PKCS12" in msg:
@@ -1121,7 +1152,7 @@ def importar_nfe_por_chave(
         request.session["message"] = f"NFe {resultado.get('numero', '')} importada com sucesso!"
     except Exception as e:
         request.session["error"] = f"Erro ao importar: {str(e)}"
-    return RedirectResponse(url="/nfe", status_code=303)
+    return RedirectResponse(url="/nfe/recebidas", status_code=303)
 
 
 @router.post("/importar-xml")
