@@ -15,16 +15,27 @@
     <button class="flex items-center justify-center h-9 w-10 bg-slate-800 border border-white/10 rounded-r-md -ml-px text-cyan-400 transition" type="submit"><i data-lucide="search" class="w-4 h-4"></i></button>
 </form>
 
+{% macro sort_link(col, label, align='left') %}
+    {% set nd = 'asc' if (ordenar == col and direcao == 'desc') else 'desc' %}
+    <a href="?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}&busca={{ busca }}&ordenar={{ col }}&direcao={{ nd }}&page=1"
+       class="flex items-center gap-1 {% if align == 'right' %}justify-end{% endif %} hover:text-cyan-300 transition">
+        {{ label }}
+        {% if ordenar == col %}
+            <i data-lucide="{% if direcao == 'asc' %}arrow-up{% else %}arrow-down{% endif %}" class="w-3 h-3"></i>
+        {% endif %}
+    </a>
+{% endmacro %}
+
 <div class="overflow-x-auto w-full">
     <div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl shadow-xl overflow-hidden">
         <table class="w-full divide-y divide-slate-800/60">
             <thead class="bg-slate-950/50">
                 <tr>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">Fornecedor (Prestador)</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">Nº</th>
-                    <th class="px-4 py-3 text-right text-xs font-semibold text-indigo-400 uppercase">Valor</th>
-                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">Emissão</th>
-                    <th class="px-4 py-3 text-center text-xs font-semibold text-indigo-400 uppercase">Status</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('emitente_nome', 'Fornecedor (Prestador)') }}</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('numero', 'Nº') }}</th>
+                    <th class="px-4 py-3 text-right text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('valor_total', 'Valor', 'right') }}</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('data_emissao', 'Emissão') }}</th>
+                    <th class="px-4 py-3 text-center text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('status', 'Status', 'center') }}</th>
                     <th class="px-4 py-3 text-center text-xs font-semibold text-indigo-400 uppercase">Ações</th>
                 </tr>
             </thead>
@@ -60,4 +71,27 @@
         </table>
     </div>
 </div>
+
+{% if total_pages > 1 %}
+<div class="flex items-center justify-between mt-4 text-sm text-slate-400">
+    <span>Mostrando {{ ((page - 1) * per_page) + 1 }}-{{ ((page - 1) * per_page) + recebidas|length }} de {{ total }}</span>
+    <div class="flex items-center gap-1">
+        {% if page > 1 %}
+        <a href="?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}&busca={{ busca }}&ordenar={{ ordenar }}&direcao={{ direcao }}&page={{ page - 1 }}" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/10 hover:bg-slate-700/50 transition">Anterior</a>
+        {% endif %}
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}
+            <span class="px-3 py-1.5 rounded-lg bg-cyan-600 text-white">{{ p }}</span>
+            {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+            <a href="?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}&busca={{ busca }}&ordenar={{ ordenar }}&direcao={{ direcao }}&page={{ p }}" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/10 hover:bg-slate-700/50 transition">{{ p }}</a>
+            {% elif p == page - 3 or p == page + 3 %}
+            <span class="px-2 py-1.5 text-slate-600">…</span>
+            {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+        <a href="?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}&busca={{ busca }}&ordenar={{ ordenar }}&direcao={{ direcao }}&page={{ page + 1 }}" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/10 hover:bg-slate-700/50 transition">Próxima</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
 {% endblock %}

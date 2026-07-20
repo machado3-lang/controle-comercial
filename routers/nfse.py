@@ -124,9 +124,23 @@ def listar_nfse(
 def listar_nfse_recebidas(
     request: Request, db: Session = Depends(get_db),
     data_inicio: str = Query(""), data_fim: str = Query(""),
-    busca: str = Query(""),
+    busca: str = Query(""), page: int = Query(1),
+    ordenar: str = Query("data_emissao"), direcao: str = Query("desc"),
 ):
-    """Lista as NFSe recebidas (somos o tomador), filtráveis por período e nº."""
+    """Lista as NFSe recebidas (somos o tomador), filtráveis por período e nº, com ordenação e paginação."""
+    sort_map = {
+        "emitente_nome": NFSeRecebida.emitente_nome,
+        "numero": NFSeRecebida.numero,
+        "valor_total": NFSeRecebida.valor_total,
+        "data_emissao": NFSeRecebida.data_emissao,
+        "status": NFSeRecebida.status,
+    }
+    sort_col = sort_map.get(ordenar, NFSeRecebida.data_emissao)
+    if direcao == "asc":
+        order_expr = asc(sort_col)
+    else:
+        order_expr = desc(sort_col)
+
     q = db.query(NFSeRecebida)
     if busca:
         q = q.filter(NFSeRecebida.numero.ilike(f"%{busca}%"))
@@ -134,11 +148,19 @@ def listar_nfse_recebidas(
         q = q.filter(NFSeRecebida.data_emissao >= datetime.strptime(data_inicio, "%Y-%m-%d"))
     if data_fim:
         q = q.filter(NFSeRecebida.data_emissao <= datetime.strptime(data_fim + " 23:59:59", "%Y-%m-%d %H:%M:%S"))
-    recebidas = q.order_by(desc(NFSeRecebida.data_emissao)).all()
+
+    total = q.count()
+    per_page = 25
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    recebidas = q.order_by(order_expr).offset((page - 1) * per_page).limit(per_page).all()
+
     return request.app.state.templates.TemplateResponse(request,
         "nfse/recebidas.html",
         {"request": request, "recebidas": recebidas, "status": "", "busca": busca,
-         "data_inicio": data_inicio, "data_fim": data_fim,
+         "data_inicio": data_inicio, "data_fim": data_fim, "page": page,
+         "total_pages": total_pages, "total": total, "per_page": per_page,
+         "ordenar": ordenar, "direcao": direcao,
          "messages": _get_messages(request), "empresa": db.query(Empresa).first(),
          "STATUS_LABELS": STATUS_LABELS}
     )
