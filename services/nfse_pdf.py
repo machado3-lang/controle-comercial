@@ -179,7 +179,7 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
         pdf.ln(3)
         pdf.set_font("Helvetica", "", 8)
         pdf.set_text_color(100, 100, 100)
-        v_tot = nfse.valor_total or 0
+        v_tot = float(nfse.valor_total or 0)
         v_fed = v_tot * ali_fed / 100
         v_est = v_tot * ali_est / 100
         v_mun = v_tot * ali_mun / 100
@@ -194,11 +194,11 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
     pdf.set_text_color(14, 165, 233)
     pdf.set_x(145)
     pdf.cell(25, 8, "Valor Total:", align="R")
-    pdf.cell(30, 8, f"R$ {nfse.valor_total or 0:.2f}", align="R")
+    pdf.cell(30, 8, f"R$ {float(nfse.valor_total or 0):.2f}", align="R")
 
     if getattr(nfse, 'iss_retido', False):
         ali_iss = getattr(nfse, 'aliquota_iss', 0) or 0
-        vl_liquido = (nfse.valor_total or 0) - (nfse.valor_total or 0) * ali_iss / 100
+        vl_liquido = float(nfse.valor_total or 0) - float(nfse.valor_total or 0) * float(ali_iss) / 100
         pdf.ln(6)
         pdf.set_font("Helvetica", "B", 10)
         pdf.set_text_color(0, 150, 50)

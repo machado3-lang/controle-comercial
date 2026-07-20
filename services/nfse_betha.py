@@ -840,13 +840,13 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
     if not discriminacao:
         discriminacao = desc_serv
 
-    aliquota = empresa.aliquota_iss or 2.0
+    aliquota = float(empresa.aliquota_iss or 2.0)
     iss_retido = getattr(pedido.cliente, 'iss_retido', False) or False
     tp_ret = 2 if iss_retido else 1
 
-    ali_fed = empresa.aliquota_federal or 0.0
-    ali_est = empresa.aliquota_estadual or 0.0
-    ali_mun = empresa.aliquota_municipal or 0.0
+    ali_fed = float(empresa.aliquota_federal or 0.0)
+    ali_est = float(empresa.aliquota_estadual or 0.0)
+    ali_mun = float(empresa.aliquota_municipal or 0.0)
     p_tot_trib = ali_fed + ali_est + ali_mun
 
     desc_serv = discriminacao
@@ -991,13 +991,13 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str
     if not discriminacao:
         discriminacao = desc_serv
 
-    aliquota = empresa.aliquota_iss or 2.0
+    aliquota = float(empresa.aliquota_iss or 2.0)
     iss_retido = getattr(nfse, 'iss_retido', False) or False
     tp_ret = 2 if iss_retido else 1
 
-    ali_fed = nfse.aliquota_federal if nfse.aliquota_federal is not None else (empresa.aliquota_federal or 0.0)
-    ali_est = nfse.aliquota_estadual if nfse.aliquota_estadual is not None else (empresa.aliquota_estadual or 0.0)
-    ali_mun = nfse.aliquota_municipal if nfse.aliquota_municipal is not None else (empresa.aliquota_municipal or 0.0)
+    ali_fed = float(nfse.aliquota_federal if nfse.aliquota_federal is not None else (empresa.aliquota_federal or 0.0))
+    ali_est = float(nfse.aliquota_estadual if nfse.aliquota_estadual is not None else (empresa.aliquota_estadual or 0.0))
+    ali_mun = float(nfse.aliquota_municipal if nfse.aliquota_municipal is not None else (empresa.aliquota_municipal or 0.0))
     p_tot_trib = ali_fed + ali_est + ali_mun
 
     observacoes = getattr(nfse, 'observacoes', '') or ''
