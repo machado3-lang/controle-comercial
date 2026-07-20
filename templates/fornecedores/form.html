@@ -80,11 +80,11 @@
             </div>
             <div>
                 <label class="form-label text-cyan-300">Cód. IBGE</label>
-                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="codigo_ibge" value="{{ fornecedor.codigo_ibge if fornecedor else '' }}" maxlength="7" placeholder="Ex: 3550308">
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="codigo_ibge" value="{{ fornecedor.codigo_ibge if fornecedor and fornecedor.codigo_ibge else '' }}" maxlength="7" placeholder="Ex: 3550308">
             </div>
             <div>
                 <label class="form-label text-cyan-300">Número</label>
-                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="numero" value="{{ fornecedor.numero if fornecedor else '' }}" maxlength="20">
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="numero" value="{{ fornecedor.numero if fornecedor and fornecedor.numero else '' }}" maxlength="20">
             </div>
         </div>
         <div class="grid grid-cols-3 gap-3 mb-3">
@@ -94,7 +94,7 @@
             </div>
             <div>
                 <label class="form-label text-cyan-300">Complemento</label>
-                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="complemento" value="{{ fornecedor.complemento if fornecedor else '' }}" maxlength="200">
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="complemento" value="{{ fornecedor.complemento if fornecedor and fornecedor.complemento else '' }}" maxlength="200">
             </div>
         </div>
         <div class="grid grid-cols-4 gap-3 mb-3">
