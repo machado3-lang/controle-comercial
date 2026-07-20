@@ -174,7 +174,7 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
 
     body = {
         "seuNumero": nosso_numero,
-        "valor": conta.valor,
+        "valor": float(conta.valor),
         "dataVencimento": conta.data_vencimento.strftime("%Y-%m-%d"),
         "dataEmissao": data_emissao,
         "codigoModalidade": 1,
