@@ -829,6 +829,27 @@ def detalhe_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     )
 
 
+def _cliente_para_nfse(nfse: NFSe):
+    """Resolve o cliente da NFSe, com fallback para os dados do tomador vindos do ADN.
+
+    Quando a NFSe foi importada do ADN e nenhum Cliente foi vinculado (CNPJ/CPF
+    não cadastrado), usamos o nome/CNPJ do tomador extraído do XML para não
+    bloquear a geração do PDF.
+    """
+    from types import SimpleNamespace
+    if nfse.cliente:
+        return nfse.cliente
+    if nfse.pedido and nfse.pedido.cliente:
+        return nfse.pedido.cliente
+    if getattr(nfse, 'tomador_nome', None):
+        return SimpleNamespace(
+            nome=nfse.tomador_nome,
+            cpf_cnpj=getattr(nfse, 'tomador_cpf_cnpj', None) or '-',
+            endereco='', bairro='', cidade='', estado='', cep='', email='',
+        )
+    return None
+
+
 @router.get("/{nfse_id}/pdf")
 def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     nfse = db.query(NFSe).options(
@@ -841,7 +862,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     # 0. Gera PDF local a partir do XML persistido no banco (sobrevive a redeploys)
     if nfse.xml_text:
         empresa = db.query(Empresa).first()
-        cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
+        cliente = _cliente_para_nfse(nfse)
         if empresa and cliente:
             try:
                 pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
@@ -887,9 +908,9 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
 
     # 3. Gera PDF local novo
     empresa = db.query(Empresa).first()
-    cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
+    cliente = _cliente_para_nfse(nfse)
     if not cliente:
-        raise HTTPException(status_code=400, detail="Cliente não encontrado para gerar PDF")
+        raise HTTPException(status_code=400, detail="Cliente/Tomador não encontrado para gerar PDF")
     itens = nfse.itens
     try:
         pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, itens, STATUS_LABELS)
@@ -1410,6 +1431,27 @@ def listar_nfse_adn(
                 if n.get('cancelada') and existente.status != 'cancelada':
                     existente.status = 'cancelada'
                     atualizados += 1
+                # Backfill: NFSe importada antes de termos o tomador_nome/cliente
+                if not existente.cliente_id and not getattr(existente, 'tomador_nome', None):
+                    existente.tomador_nome = n.get('tomador_nome')
+                    existente.tomador_cpf_cnpj = n.get('tomador_cnpj')
+                    doc = n.get('tomador_cnpj') or ''
+                    doc_clean = re.sub(r'\D', '', doc)
+                    cli = None
+                    if doc_clean:
+                        cli = db.query(Cliente).filter(
+                            Cliente.cpf_cnpj != None, Cliente.cpf_cnpj.like(f"%{doc_clean}%")
+                        ).first()
+                    if not cli and n.get('tomador_nome'):
+                        nome_l = re.sub(r'\s+', ' ', n['tomador_nome'].strip().lower())
+                        for c in db.query(Cliente).filter(Cliente.nome != None).all():
+                            if re.sub(r'\s+', ' ', (c.nome or '').strip().lower()) == nome_l:
+                                cli = c
+                                break
+                    if cli:
+                        existente.cliente_id = cli.id
+                    if cli or existente.tomador_nome:
+                        atualizados += 1
                 continue
             nfse = NFSe()
             nfse.chave_acesso = chave
@@ -1427,14 +1469,24 @@ def listar_nfse_adn(
             nfse.status = 'cancelada' if n.get('cancelada') else 'autorizada'
             nfse.origem = 'adn'
             nfse.xml_text = n.get('xml')
+            nfse.tomador_nome = n.get('tomador_nome')
+            nfse.tomador_cpf_cnpj = n.get('tomador_cnpj')
             doc = n.get('tomador_cnpj') or ''
             doc_clean = re.sub(r'\D', '', doc)
+            cliente = None
             if doc_clean:
                 cliente = db.query(Cliente).filter(
                     Cliente.cpf_cnpj != None, Cliente.cpf_cnpj.like(f"%{doc_clean}%")
                 ).first()
-                if cliente:
-                    nfse.cliente_id = cliente.id
+            # Fallback: vincula pelo nome do tomador quando o CNPJ não bate
+            if not cliente and n.get('tomador_nome'):
+                nome_l = re.sub(r'\s+', ' ', n['tomador_nome'].strip().lower())
+                for c in db.query(Cliente).filter(Cliente.nome != None).all():
+                    if re.sub(r'\s+', ' ', (c.nome or '').strip().lower()) == nome_l:
+                        cliente = c
+                        break
+            if cliente:
+                nfse.cliente_id = cliente.id
             db.add(nfse)
             salvos += 1
         if salvos or atualizados:

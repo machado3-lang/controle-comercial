@@ -90,7 +90,9 @@ class NFSe(Base):
     aliquota_municipal = Column(Numeric(7, 4), default=0.0)
     observacoes = Column(Text, default="")
     origem = Column(String(20), default="avulsa", nullable=False)
-    
+    tomador_nome = Column(String(200), nullable=True)
+    tomador_cpf_cnpj = Column(String(20), nullable=True)
+
     pedido = relationship("PedidoVenda", back_populates="nfse")
     consolidacao = relationship("PedidoConsolidado", back_populates="nfse")
     cliente = relationship("Cliente")
