@@ -88,7 +88,7 @@ def checar_cpf_cnpj(q: str = Query(""), db: Session = Depends(get_db)):
         return JSONResponse({"existe": False})
     for f in db.query(Fornecedor).filter(Fornecedor.cpf_cnpj.isnot(None), Fornecedor.cpf_cnpj != "").all():
         if re.sub(r"[^A-Za-z0-9]", "", f.cpf_cnpj or "").upper() == doc:
-            return JSONResponse({"existe": True, "nome": f.nome, "codigo": f.codigo})
+            return JSONResponse({"existe": True, "id": f.id, "nome": f.nome, "codigo": f.codigo})
     return JSONResponse({"existe": False})
 
 

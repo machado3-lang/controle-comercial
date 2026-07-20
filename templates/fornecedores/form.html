@@ -8,6 +8,7 @@
 <form method="post" id="fornecedorForm" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="confirmar_duplicado" id="confirmarDuplicado" value="">
+    {% if fornecedor %}<input type="hidden" name="fornecedor_id" id="fornecedorId" value="{{ fornecedor.id }}">{% endif %}
     <div class="glass-card p-4">
         <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="user" class="w-4 h-4 inline me-1"></i> Dados Cadastrais</h5>
         <div class="grid grid-cols-4 gap-3 mb-3">
@@ -156,21 +157,19 @@
 <script>
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('fornecedorForm');
+    const meuId = form ? (form.querySelector('input[name="fornecedor_id"]')?.value || '') : '';
     if (form) {
         form.addEventListener('submit', function(e) {
             const docInput = form.querySelector('input[name="cpf_cnpj"]');
             const doc = docInput ? docInput.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase() : '';
             if (doc.length < 11) return;
+            if (document.getElementById('confirmarDuplicado').value === '1') return;
             e.preventDefault();
             fetch(`/fornecedores/checar-cpf-cnpj?q=${encodeURIComponent(doc)}`)
                 .then(r => r.json())
                 .then(d => {
-                    if (d.existe) {
-                        const msg = `Já existe um fornecedor com este CPF/CNPJ:\n\n${d.nome} (${d.codigo})\n\nDeseja realmente cadastrar um fornecedor duplicado?`;
-                        if (confirm(msg)) {
-                            document.getElementById('confirmarDuplicado').value = '1';
-                            form.submit();
-                        }
+                    if (d.existe && String(d.id) !== String(meuId)) {
+                        mostrarDuplicadoCNPJ(d);
                     } else {
                         form.submit();
                     }
@@ -287,6 +286,35 @@ document.addEventListener('DOMContentLoaded', function() {
         if (_modalRevisaoCNPJ) _modalRevisaoCNPJ.hide();
         if (cb && dados && !dados.erro) cb(false);
     }
+
+    // Modal de CPF/CNPJ duplicado (padrao do sistema)
+    let _modalDuplicado = null;
+    function mostrarDuplicadoCNPJ(dados) {
+        const corpo = document.getElementById('duplicadoCorpo');
+        if (corpo) {
+            corpo.innerHTML = `<p class="text-slate-300 text-sm mb-2">Já existe um fornecedor com este CPF/CNPJ:</p>` +
+                `<ul class="text-slate-200 text-sm mb-1">` +
+                `<li><strong>Nome:</strong> ${dados.nome || '-'}</li>` +
+                `<li><strong>Código:</strong> ${dados.codigo || '-'}</li>` +
+                `</ul><p class="text-slate-400 text-xs mt-2">O que deseja fazer?</p>`;
+        }
+        _dupId = dados.id;
+        const modalEl = document.getElementById('modalDuplicado');
+        if (!_modalDuplicado) {
+            _modalDuplicado = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+        }
+        _modalDuplicado.show();
+    }
+    let _dupId = null;
+    function atualizarDuplicado() {
+        if (_modalDuplicado) _modalDuplicado.hide();
+        if (_dupId) window.location.href = `/fornecedores/${_dupId}/editar`;
+    }
+    function cadastrarDuplicado() {
+        if (_modalDuplicado) _modalDuplicado.hide();
+        document.getElementById('confirmarDuplicado').value = '1';
+        document.getElementById('fornecedorForm').submit();
+    }
 });
 </script>
 {% endblock %}
@@ -303,6 +331,23 @@ document.addEventListener('DOMContentLoaded', function() {
       <div class="modal-footer border-slate-700">
         <button type="button" class="btn btn-secondary" onclick="cancelarRevisaoCNPJ()">Cancelar</button>
         <button type="button" class="btn btn-cyan-400 text-cyan-400 border border-slate-700" id="btnConfirmarCNPJ" onclick="confirmarRevisaoCNPJ()">Confirmar e preencher</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="modalDuplicado" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content bg-slate-900 border border-slate-700">
+      <div class="modal-header border-slate-700">
+        <h5 class="modal-title text-slate-100">CPF/CNPJ já cadastrado</h5>
+        <button type="button" class="btn-close btn-close-white" onclick="if(_modalDuplicado)_modalDuplicado.hide()"></button>
+      </div>
+      <div class="modal-body" id="duplicadoCorpo"></div>
+      <div class="modal-footer border-slate-700 flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <button type="button" class="btn btn-secondary w-full sm:w-auto" onclick="if(_modalDuplicado)_modalDuplicado.hide()">Cancelar</button>
+        <button type="button" class="btn btn-outline-light w-full sm:w-auto" onclick="cadastrarDuplicado()">Cadastrar mesmo assim</button>
+        <button type="button" class="btn btn-cyan-400 text-cyan-400 border border-slate-700 w-full sm:w-auto" onclick="atualizarDuplicado()">Atualizar cadastro existente</button>
       </div>
     </div>
   </div>

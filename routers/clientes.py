@@ -97,6 +97,7 @@ def checar_cpf_cnpj(q: str = Query(""), db: Session = Depends(get_db)):
     if achou:
         return JSONResponse({
             "existe": True,
+            "id": achou.id,
             "nome": achou.nome,
             "codigo": achou.codigo,
         })
