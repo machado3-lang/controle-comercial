@@ -403,11 +403,13 @@ class BethaNfseService:
                         m = re.search(r'<[^:>]*:?cStat[^>]*>(\d+)</', xml_nfse)
                         if m: c_stat = m.group(1)
 
-                    # Detecta evento de cancelamento (tpEvento 110111). No DFe, a
-                    # chave do envelope referencia a NFS-e cancelada.
+                    # Detecta evento de cancelamento. NFS-e (padrão nacional ADN)
+                    # usa tipoEvento 101101; NF-e usa 110111. No DFe, a chave do
+                    # envelope referencia a NFS-e cancelada.
                     is_cancel = False
                     if xml_nfse:
-                        if re.search(r'<tpEvento>\s*110111\s*</tpEvento>', xml_nfse) \
+                        if re.search(r'<tpEvento>\s*(110111|101101)\s*</tpEvento>', xml_nfse) \
+                           or re.search(r'<tipoEvento>[^<]*101101', xml_nfse) \
                            or re.search(r'<descEvento>[^<]*Cancel', xml_nfse, re.IGNORECASE) \
                            or re.search(r'<cDescEvento>[^<]*Cancel', xml_nfse, re.IGNORECASE):
                             is_cancel = True
@@ -461,8 +463,17 @@ class BethaNfseService:
                 break
 
         # Marca como canceladas as notas cujo evento de cancelamento foi encontrado
+        # no DFe e confirma via SEFIN (eventos tipoEvento 101101) para maior precisão.
         for n in notas_brutas:
-            n['cancelada'] = n['chaveAcesso'] in cancelamentos
+            cancelada = n['chaveAcesso'] in cancelamentos
+            if not cancelada and n.get('tipo') == 'emitida' and n.get('chaveAcesso'):
+                try:
+                    sit = self.consultar_situacao_nfse(n.get('numero') or '', n['chaveAcesso'])
+                    if sit.get('situacao') == 'cancelada':
+                        cancelada = True
+                except Exception as e:
+                    logger.warning(f"ADN: falha ao consultar situação da NFSe {n.get('numero')}: {e}")
+            n['cancelada'] = cancelada
             resultados.append(n)
 
         logger.info(f"ADN retornou {len(resultados)} NFS-e no período ({len(cancelamentos)} canceladas)")
