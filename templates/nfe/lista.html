@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}NFe{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between w-full mb-3 gap-4">
+<div class="flex flex-wrap items-center justify-between w-full mb-3 gap-4">
     <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="file-text" class="w-6 h-6 inline me-2"></i> Notas Fiscais Eletrônicas</h4>
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
         <form class="flex items-center flex-wrap gap-2">
             <input type="hidden" name="sort" value="{{ sort }}">
             <input type="hidden" name="ordem" value="{{ ordem }}">
@@ -21,29 +21,18 @@
                 <option value="cancelled" {{ 'selected' if status == 'cancelled' }}>Cancelada</option>
             </select>
         </form>
+        <form action="/nfe/distribuicao" method="get" class="flex items-center gap-1">
+            <i data-lucide="cloud" class="w-4 h-4 text-cyan-400"></i>
+            <input type="date" name="data_inicio" required class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" value="{{ data_inicio }}">
+            <input type="date" name="data_fim" required class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" value="{{ data_fim }}">
+            <input type="hidden" name="tipo" value="emitida">
+            <input type="hidden" name="retorno" value="lista">
+            <button type="submit" class="flex items-center h-9 px-3 text-xs bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="search" class="w-3.5 h-3.5 me-1"></i> Buscar SEFAZ</button>
+            <a href="/nfe/distribuicao?reiniciar=true" class="flex items-center h-8 px-3 text-xs bg-slate-700/60 text-slate-300 border border-slate-600/50 rounded-lg hover:bg-slate-700 transition" title="Reimportar todas as NFe do zero"><i data-lucide="refresh-ccw" class="w-3.5 h-3.5 me-1"></i> Reiniciar</a>
+        </form>
         <a href="/nfe/emitir/avulsa" class="flex items-center h-9 px-3 text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> NFe Avulsa</a>
     </div>
 </div>
-
-<!-- SEFAZ Distribution Form -->
-<form action="/nfe/distribuicao" method="get" class="flex items-center flex-wrap gap-2 mb-2 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
-    <i data-lucide="cloud" class="w-4 h-4 text-cyan-400"></i>
-    <span class="text-xs font-medium text-cyan-400 mr-1">SEFAZ:</span>
-    <input type="date" name="data_inicio" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100" value="{{ request.query_params.get('data_inicio', '') }}">
-    <span class="text-xs text-slate-500">até</span>
-    <input type="date" name="data_fim" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100" value="{{ request.query_params.get('data_fim', '') }}">
-    <select name="tipo" class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100">
-        <option value="">Todas</option>
-        <option value="emitida" {{ 'selected' if request.query_params.get('tipo') == 'emitida' }}>Emitidas</option>
-        <option value="recebida" {{ 'selected' if request.query_params.get('tipo') == 'recebida' }}>Recebidas</option>
-    </select>
-    <button type="submit" class="flex items-center h-8 px-3 text-xs bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-lg font-medium transition-all shadow-lg shadow-cyan-500/10">
-        <i data-lucide="search" class="w-3.5 h-3.5 me-1"></i> Buscar na SEFAZ
-    </button>
-    <a href="/nfe/distribuicao?reiniciar=true" class="flex items-center h-8 px-3 text-xs bg-slate-700/60 text-slate-300 border border-slate-600/50 rounded-lg hover:bg-slate-700 transition" title="Reimportar todas as NFe do zero">
-        <i data-lucide="refresh-ccw" class="w-3.5 h-3.5 me-1"></i> Reiniciar
-    </a>
-</form>
 
 <!-- Import by Access Key / XML Upload -->
 <div class="flex items-center flex-wrap gap-2 mb-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
@@ -212,8 +201,8 @@
 <div class="mt-4">
     <button onclick="toggleSefaz()" class="flex items-center gap-2 px-4 py-2 text-sm text-slate-400 bg-slate-800/40 border border-slate-700/50 rounded-xl hover:bg-slate-700/50 transition w-full">
         <i data-lucide="cloud" class="w-4 h-4 text-cyan-400"></i>
-        <span>NFe da SEFAZ</span>
-        <span class="text-xs text-slate-500">({{ (dist_emitidas|length) + (dist_recebidas|length) }} notas)</span>
+        <span>NFe Emitidas (SEFAZ)</span>
+        <span class="text-xs text-slate-500">({{ dist_emitidas|length }} notas)</span>
         <i data-lucide="chevron-down" class="w-4 h-4 ml-auto transition-transform" id="sefazArrow"></i>
     </button>
     <div id="sefazTables" class="sefaz-hidden">
@@ -241,27 +230,6 @@
     </div>
 </div>
 
-{% set _recv_len = dist_recebidas|length %}
-{% set _recv_pages = ((_recv_len + _pp - 1) // _pp) if _recv_len > 0 else 1 %}
-{% set _recv_start = (_ps - 1) * _pp %}
-{% set _recv_page = dist_recebidas[_recv_start:_recv_start + _pp] %}
-{{ dist_table(_recv_page, 'NFe Recebidas (SEFAZ)', 'text-amber-400', 'download') }}
-<div class="flex items-center justify-between px-4 py-3 border-t border-slate-800/60 mt-0">
-    <div class="text-sm text-slate-400">Página {{ _ps }} de {{ _recv_pages }} ({{ _recv_len }} itens)</div>
-    <div class="flex items-center gap-1">
-        {% if _recv_pages > 1 %}
-        {% if _ps > 1 %}<a href="#" onclick="irPagSefaz(1, {{ _pp }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&laquo;</a>{% endif %}
-        {% if _ps > 1 %}<a href="#" onclick="irPagSefaz({{ _ps-1 }}, {{ _pp }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&lsaquo;</a>{% endif %}
-        {% set _start_p = [1, _ps - 2]|max %}
-        {% set _end_p = [_recv_pages, _ps + 2]|min %}
-        {% for p in range(_start_p, _end_p + 1) %}
-        <a href="#" onclick="irPagSefaz({{ p }}, {{ _pp }}); return false;" class="px-2 py-1 text-sm border rounded-lg transition {% if p == _ps %}bg-cyan-500/20 text-cyan-400 border-cyan-500/50{% else %}border-slate-800/80 hover:bg-slate-800/50 text-slate-300{% endif %}">{{ p }}</a>
-        {% endfor %}
-        {% if _ps < _recv_pages %}<a href="#" onclick="irPagSefaz({{ _ps+1 }}, {{ _pp }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&rsaquo;</a>{% endif %}
-        {% if _ps < _recv_pages %}<a href="#" onclick="irPagSefaz({{ _recv_pages }}, {{ _pp }}); return false;" class="px-2 py-1 text-sm border border-slate-800/80 rounded-lg hover:bg-slate-800/50 text-slate-300 transition">&raquo;</a>{% endif %}
-        {% endif %}
-    </div>
-</div>
     </div>
 </div>
 

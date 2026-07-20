@@ -238,6 +238,60 @@ def listar_nfe(
     )
 
 
+@router.get("/recebidas")
+def listar_nfe_recebidas(
+    request: Request, db: Session = Depends(get_db),
+    data_inicio: str = Query(""), data_fim: str = Query(""),
+    busca: str = Query(""), page: int = Query(1),
+    ordenar: str = Query("dhEmi"), direcao: str = Query("desc"),
+):
+    """Lista as NFe recebidas (somos o destinatário) via SEFAZ, com filtros, ordenação e paginação."""
+    from models import NFeDistribuida
+    empresa = db.query(Empresa).first()
+    cnpj_clean = re.sub(r'\D', '', empresa.cnpj) if empresa and empresa.cnpj else ''
+    todas = db.query(NFeDistribuida).all()
+    recebidas = []
+    for n in todas:
+        dest_clean = re.sub(r'\D', '', n.destinatario_cnpj or '')
+        emit_clean = re.sub(r'\D', '', n.emitente_cnpj or '')
+        if dest_clean == cnpj_clean and emit_clean != cnpj_clean:
+            recebidas.append(n)
+    if busca:
+        busca_l = busca.lower()
+        recebidas = [n for n in recebidas if (n.numero or '').lower().find(busca_l) >= 0]
+    if data_inicio:
+        recebidas = [n for n in recebidas if (n.dh_emi or '')[:10] >= data_inicio]
+    if data_fim:
+        recebidas = [n for n in recebidas if (n.dh_emi or '')[:10] <= data_fim]
+
+    def _sort_key(item):
+        if ordenar == "emitente_nome":
+            return (item.emitente_nome or '').lower()
+        elif ordenar == "numero":
+            v = item.numero or ''
+            return int(v) if v.isdigit() else 0
+        elif ordenar == "valor":
+            return float(item.valor or 0)
+        return item.dh_emi or ''
+    recebidas.sort(key=_sort_key, reverse=(direcao == "desc"))
+
+    per_page = 25
+    total = len(recebidas)
+    total_pages = max(1, (total + per_page - 1) // per_page)
+    page = max(1, min(page, total_pages))
+    pagina = recebidas[(page - 1) * per_page: (page - 1) * per_page + per_page]
+
+    return request.app.state.templates.TemplateResponse(request,
+        "nfe/recebidas.html",
+        {"request": request, "recebidas": pagina, "busca": busca,
+         "data_inicio": data_inicio, "data_fim": data_fim, "page": page,
+         "total_pages": total_pages, "total": total, "per_page": per_page,
+         "ordenar": ordenar, "direcao": direcao,
+         "messages": _get_messages(request), "empresa": empresa,
+         "STATUS_LABELS": STATUS_LABELS}
+    )
+
+
 @router.get("/config")
 def config_nfe(request: Request, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
@@ -920,7 +974,7 @@ def _validar_rascunho(nfe, cliente, empresa) -> list:
 def nfe_distribuicao(
     request: Request, db: Session = Depends(get_db),
     data_inicio: str = Query(""), data_fim: str = Query(""),
-    tipo: str = Query(""), reiniciar: bool = Query(False),
+    tipo: str = Query(""), reiniciar: bool = Query(False), retorno: str = Query(""),
     sort: str = Query("dhEmi"), ordem: str = Query("desc"),
     page_sefaz: int = Query(1, ge=1), per_page_sefaz: int = Query(20, ge=5, le=100),
 ):
@@ -1025,15 +1079,21 @@ def nfe_distribuicao(
             notas_local.sort(key=lambda x: x.get('dhEmi') or '', reverse=rev)
         emitidas = [n for n in notas_local if n.get('tipo') == 'emitida']
         recebidas = [n for n in notas_local if n.get('tipo') == 'recebida']
-        return request.app.state.templates.TemplateResponse(request, 
+        msg = f"SEFAZ: {len(notas_local)} NFe ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"
+        # Busca de recebidas: salva no banco e redireciona para a página dedicada
+        if tipo == 'recebida' or retorno == 'recebidas':
+            request.session["message"] = msg
+            return RedirectResponse(url=f"/nfe/recebidas?data_inicio={data_inicio}&data_fim={data_fim}", status_code=303)
+        return request.app.state.templates.TemplateResponse(request,
             "nfe/lista.html",
             {"request": request, "notas": [], "busca": "", "status": "",
-             "messages": [{"tipo": "success", "texto": f"Arquivo local: {len(notas_local)} NFe ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"}],
+             "messages": [{"tipo": "success", "texto": msg}],
              "empresa": empresa, "STATUS_LABELS": STATUS_LABELS,
              "sort": sort, "ordem": ordem,
              "page": 1, "per_page": 20, "total_pages": 1, "total_count": 0,
              "page_sefaz": page_sefaz, "per_page_sefaz": per_page_sefaz,
-             "dist_notas": notas_local, "dist_emitidas": emitidas, "dist_recebidas": recebidas}
+             "data_inicio": data_inicio, "data_fim": data_fim,
+             "dist_notas": emitidas, "dist_emitidas": emitidas, "dist_recebidas": []}
         )
     except Exception as e:
         msg = str(e)

@@ -1,0 +1,101 @@
+{% extends "base.html" %}
+{% block title %}NFe Recebidas{% endblock %}
+{% block content %}
+<div class="flex flex-wrap items-center justify-between w-full mb-6 gap-4">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="inbox" class="w-6 h-6 inline me-2"></i> NFe Recebidas (somos destinatário)</h4>
+    <div class="flex flex-wrap items-center gap-2">
+        <form class="flex items-center flex-wrap gap-2">
+            <input type="date" class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" name="data_inicio" value="{{ data_inicio }}" onchange="this.form.submit()">
+            <input type="date" class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" name="data_fim" value="{{ data_fim }}" onchange="this.form.submit()">
+            <input type="text" class="w-40 h-9 text-sm px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-l-xl text-slate-100 focus:border-cyan-500/50" name="busca" placeholder="Buscar nº..." value="{{ busca }}">
+            <button class="flex items-center justify-center h-9 w-10 bg-slate-800 border border-white/10 rounded-r-md -ml-px text-cyan-400 transition" type="submit"><i data-lucide="search" class="w-4 h-4"></i></button>
+        </form>
+        <form action="/nfe/distribuicao" method="get" class="flex items-center gap-1">
+            <i data-lucide="cloud" class="w-4 h-4 text-amber-400"></i>
+            <input type="date" name="data_inicio" required class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" value="{{ data_inicio }}">
+            <input type="date" name="data_fim" required class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" value="{{ data_fim }}">
+            <input type="hidden" name="tipo" value="recebida">
+            <input type="hidden" name="retorno" value="recebidas">
+            <button type="submit" class="flex items-center h-9 px-3 text-xs bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10"><i data-lucide="search" class="w-3.5 h-3.5 me-1"></i> Buscar SEFAZ</button>
+        </form>
+        <a href="/nfe" class="flex items-center h-9 px-3 text-sm bg-slate-800 border border-white/10 rounded-xl text-cyan-400 transition hover:bg-slate-700/50">
+            <i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar
+        </a>
+    </div>
+</div>
+
+{% macro sort_link(col, label, align='left') %}
+    {% set nd = 'asc' if (ordenar == col and direcao == 'desc') else 'desc' %}
+    <a href="?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}&busca={{ busca }}&ordenar={{ col }}&direcao={{ nd }}&page=1"
+       class="flex items-center gap-1 {% if align == 'right' %}justify-end{% endif %} hover:text-cyan-300 transition">
+        {{ label }}
+        {% if ordenar == col %}
+            <i data-lucide="{% if direcao == 'asc' %}arrow-up{% else %}arrow-down{% endif %}" class="w-3 h-3"></i>
+        {% endif %}
+    </a>
+{% endmacro %}
+
+<div class="overflow-x-auto w-full">
+    <div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl shadow-xl overflow-hidden">
+        <table class="w-full divide-y divide-slate-800/60">
+            <thead class="bg-slate-950/50">
+                <tr>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('emitente_nome', 'Emitente (Fornecedor)') }}</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('numero', 'Nº') }}</th>
+                    <th class="px-4 py-3 text-right text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('valor', 'Valor', 'right') }}</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('dhEmi', 'Emissão') }}</th>
+                    <th class="px-4 py-3 text-center text-xs font-semibold text-indigo-400 uppercase">Arquivos</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-slate-800/60">
+                {% for n in recebidas %}
+                <tr class="hover:bg-slate-800/40 transition">
+                    <td class="px-4 py-3 text-sm text-amber-300 max-w-[280px] truncate" title="{{ n.emitente_nome or '' }}">
+                        {{ n.emitente_nome or '-' }}
+                        <span class="text-xs text-slate-500 block">{{ n.emitente_cnpj or '' }}</span>
+                    </td>
+                    <td class="px-4 py-3 text-sm text-slate-100">{{ n.numero or '-' }}</td>
+                    <td class="px-4 py-3 text-sm text-emerald-400 text-right">R$ {{ '%.2f'|format(n.valor or 0) }}</td>
+                    <td class="px-4 py-3 text-sm text-slate-300">{{ n.dh_emi[8:10] ~ '/' ~ n.dh_emi[5:7] ~ '/' ~ n.dh_emi[:4] if n.dh_emi and n.dh_emi[:10]|length == 10 else (n.dh_emi[:10] if n.dh_emi else '-') }}</td>
+                    <td class="px-4 py-3 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            {% if n.chave_acesso and n.xml %}
+                            <a href="/nfe/dist-pdf/{{ n.chave_acesso }}" class="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 transition" title="Visualizar DANFE (PDF)" target="_blank"><i data-lucide="file-text" class="w-4 h-4"></i></a>
+                            {% endif %}
+                            {% if n.chave_acesso %}
+                            <a href="/nfe/dist-xml/{{ n.chave_acesso }}" class="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-400 transition" title="Baixar XML" target="_blank"><i data-lucide="code" class="w-4 h-4"></i></a>
+                            {% endif %}
+                        </div>
+                    </td>
+                </tr>
+                {% else %}
+                <tr><td colspan="5" class="px-4 py-12 text-center text-slate-500">Nenhuma NFe recebida encontrada</td></tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+
+{% if total_pages > 1 %}
+<div class="flex items-center justify-between mt-4 text-sm text-slate-400">
+    <span>Mostrando {{ ((page - 1) * per_page) + 1 }}-{{ ((page - 1) * per_page) + recebidas|length }} de {{ total }}</span>
+    <div class="flex items-center gap-1">
+        {% if page > 1 %}
+        <a href="?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}&busca={{ busca }}&ordenar={{ ordenar }}&direcao={{ direcao }}&page={{ page - 1 }}" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/10 hover:bg-slate-700/50 transition">Anterior</a>
+        {% endif %}
+        {% for p in range(1, total_pages + 1) %}
+            {% if p == page %}
+            <span class="px-3 py-1.5 rounded-lg bg-cyan-600 text-white">{{ p }}</span>
+            {% elif p == 1 or p == total_pages or (p >= page - 2 and p <= page + 2) %}
+            <a href="?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}&busca={{ busca }}&ordenar={{ ordenar }}&direcao={{ direcao }}&page={{ p }}" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/10 hover:bg-slate-700/50 transition">{{ p }}</a>
+            {% elif p == page - 3 or p == page + 3 %}
+            <span class="px-2 py-1.5 text-slate-600">…</span>
+            {% endif %}
+        {% endfor %}
+        {% if page < total_pages %}
+        <a href="?data_inicio={{ data_inicio }}&data_fim={{ data_fim }}&busca={{ busca }}&ordenar={{ ordenar }}&direcao={{ direcao }}&page={{ page + 1 }}" class="px-3 py-1.5 rounded-lg bg-slate-800 border border-white/10 hover:bg-slate-700/50 transition">Próxima</a>
+        {% endif %}
+    </div>
+</div>
+{% endif %}
+{% endblock %}
