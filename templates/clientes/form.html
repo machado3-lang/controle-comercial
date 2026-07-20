@@ -253,6 +253,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (d.bairro) setVal('input[name="bairro"]', d.bairro);
                     if (d.localidade) setVal('input[name="cidade"]', d.localidade);
                     if (d.uf) setVal('select[name="estado"]', d.uf);
+                    if (d.ibge) setVal('input[name="codigo_ibge"]', d.ibge);
                 })
                 .catch(err => console.error('CEP fetch falhou:', err));
         });
@@ -307,8 +308,12 @@ document.addEventListener('DOMContentLoaded', function() {
 });
 
 // Modal de revisao de dados do CNPJ (estilizado, igual ao resto do sistema)
+let _modalRevisaoCNPJ = null;
+let _ultimoDadosCNPJ = null;
 function mostrarRevisaoCNPJ(dados, onConfirmar) {
     const corpo = document.getElementById('revisaoCNPJCorpo');
+    _ultimoDadosCNPJ = dados;
+    _onConfirmarCNPJ = onConfirmar;
     if (corpo) {
         let html = '';
         if (dados.irregular) {
@@ -328,17 +333,24 @@ function mostrarRevisaoCNPJ(dados, onConfirmar) {
         corpo.innerHTML = html;
     }
     const modalEl = document.getElementById('modalRevisaoCNPJ');
-    const modal = new bootstrap.Modal(modalEl);
-    const btnConfirmar = document.getElementById('btnConfirmarCNPJ');
-    btnConfirmar.onclick = function() {
-        modal.hide();
-        if (onConfirmar) onConfirmar(true);
-    };
-    modalEl.querySelector('[data-bs-dismiss="modal"]').onclick = function() {
-        modal.hide();
-        if (onConfirmar) onConfirmar(false);
-    };
-    modal.show();
+    if (!_modalRevisaoCNPJ) {
+        _modalRevisaoCNPJ = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+    }
+    _modalRevisaoCNPJ.show();
+}
+
+let _onConfirmarCNPJ = null;
+function confirmarRevisaoCNPJ() {
+    const dados = _ultimoDadosCNPJ;
+    const cb = _onConfirmarCNPJ;
+    if (_modalRevisaoCNPJ) _modalRevisaoCNPJ.hide();
+    if (cb && dados && !dados.erro) cb(true);
+}
+function cancelarRevisaoCNPJ() {
+    const dados = _ultimoDadosCNPJ;
+    const cb = _onConfirmarCNPJ;
+    if (_modalRevisaoCNPJ) _modalRevisaoCNPJ.hide();
+    if (cb && dados && !dados.erro) cb(false);
 }
 </script>
 {% endblock %}
@@ -353,8 +365,8 @@ function mostrarRevisaoCNPJ(dados, onConfirmar) {
       </div>
       <div class="modal-body" id="revisaoCNPJCorpo"></div>
       <div class="modal-footer border-slate-700">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-cyan-400 text-cyan-400 border border-slate-700" id="btnConfirmarCNPJ">Confirmar e preencher</button>
+        <button type="button" class="btn btn-secondary" onclick="cancelarRevisaoCNPJ()">Cancelar</button>
+        <button type="button" class="btn btn-cyan-400 text-cyan-400 border border-slate-700" id="btnConfirmarCNPJ" onclick="confirmarRevisaoCNPJ()">Confirmar e preencher</button>
       </div>
     </div>
   </div>

@@ -16,7 +16,7 @@ def _somente_digitos(cep):
 def buscar_cep(cep):
     """Retorna dict com endereco ou None em caso de erro/nao encontrado.
 
-    Campos: cep, logradouro, complemento, bairro, localidade, uf.
+    Campos: cep, logradouro, complemento, bairro, localidade, uf, ibge.
     """
     cep_limpo = _somente_digitos(cep)
     if len(cep_limpo) != 8:
@@ -35,6 +35,7 @@ def buscar_cep(cep):
             "bairro": data.get("bairro", ""),
             "localidade": data.get("localidade", ""),
             "uf": data.get("uf", ""),
+            "ibge": data.get("ibge", ""),
         }
     except Exception as e:
         logger.warning(f"ViaCEP erro para {cep}: {e}")

@@ -77,6 +77,10 @@
                 <label class="form-label text-cyan-300">CEP</label>
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cep" value="{{ fornecedor.cep if fornecedor else '' }}" maxlength="9">
             </div>
+            <div>
+                <label class="form-label text-cyan-300">Cód. IBGE</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="codigo_ibge" value="{{ fornecedor.codigo_ibge if fornecedor else '' }}" maxlength="7" placeholder="Ex: 3550308">
+            </div>
             <div class="col-span-2">
                 <label class="form-label text-cyan-300">Endereço</label>
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="endereco" value="{{ fornecedor.endereco if fornecedor else '' }}">
@@ -189,6 +193,7 @@ document.addEventListener('DOMContentLoaded', function() {
                     if (d.bairro) setVal('input[name="bairro"]', d.bairro);
                     if (d.localidade) setVal('input[name="cidade"]', d.localidade);
                     if (d.uf) setVal('select[name="estado"]', d.uf);
+                    if (d.ibge) setVal('input[name="codigo_ibge"]', d.ibge);
                 })
                 .catch(err => console.error('CEP fetch falhou:', err));
         });
@@ -239,8 +244,13 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     }
 
+    let _modalRevisaoCNPJ = null;
+    let _ultimoDadosCNPJ = null;
+    let _onConfirmarCNPJ = null;
     function mostrarRevisaoCNPJ(dados, onConfirmar) {
         const corpo = document.getElementById('revisaoCNPJCorpo');
+        _ultimoDadosCNPJ = dados;
+        _onConfirmarCNPJ = onConfirmar;
         if (corpo) {
             let html = '';
             if (dados.irregular) {
@@ -260,17 +270,22 @@ document.addEventListener('DOMContentLoaded', function() {
             corpo.innerHTML = html;
         }
         const modalEl = document.getElementById('modalRevisaoCNPJ');
-        const modal = new bootstrap.Modal(modalEl);
-        const btnConfirmar = document.getElementById('btnConfirmarCNPJ');
-        btnConfirmar.onclick = function() {
-            modal.hide();
-            if (onConfirmar) onConfirmar(true);
-        };
-        modalEl.querySelector('[data-bs-dismiss="modal"]').onclick = function() {
-            modal.hide();
-            if (onConfirmar) onConfirmar(false);
-        };
-        modal.show();
+        if (!_modalRevisaoCNPJ) {
+            _modalRevisaoCNPJ = new bootstrap.Modal(modalEl, { backdrop: 'static', keyboard: false });
+        }
+        _modalRevisaoCNPJ.show();
+    }
+    function confirmarRevisaoCNPJ() {
+        const dados = _ultimoDadosCNPJ;
+        const cb = _onConfirmarCNPJ;
+        if (_modalRevisaoCNPJ) _modalRevisaoCNPJ.hide();
+        if (cb && dados && !dados.erro) cb(true);
+    }
+    function cancelarRevisaoCNPJ() {
+        const dados = _ultimoDadosCNPJ;
+        const cb = _onConfirmarCNPJ;
+        if (_modalRevisaoCNPJ) _modalRevisaoCNPJ.hide();
+        if (cb && dados && !dados.erro) cb(false);
     }
 });
 </script>
@@ -286,8 +301,8 @@ document.addEventListener('DOMContentLoaded', function() {
       </div>
       <div class="modal-body" id="revisaoCNPJCorpo"></div>
       <div class="modal-footer border-slate-700">
-        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancelar</button>
-        <button type="button" class="btn btn-cyan-400 text-cyan-400 border border-slate-700" id="btnConfirmarCNPJ">Confirmar e preencher</button>
+        <button type="button" class="btn btn-secondary" onclick="cancelarRevisaoCNPJ()">Cancelar</button>
+        <button type="button" class="btn btn-cyan-400 text-cyan-400 border border-slate-700" id="btnConfirmarCNPJ" onclick="confirmarRevisaoCNPJ()">Confirmar e preencher</button>
       </div>
     </div>
   </div>
