@@ -206,6 +206,7 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
             client_args["cert"] = cert_config["cert"]
         
         resp = None
+        last_exc = None
         for tentativa in range(3):
             try:
                 with httpx.Client(**client_args) as client:
@@ -233,15 +234,20 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
                     break
             except httpx.HTTPStatusError as e:
                 resp = e.response
+                last_exc = e
                 if e.response.status_code in (429, 502, 503, 504) and tentativa < 2:
                     time.sleep(2 ** tentativa)
                     continue
                 break
-            except Exception:
+            except Exception as e:
+                last_exc = e
+                logger.warning(f"Erro de conexao ao emitir boleto Sicoob (tentativa {tentativa+1}/3): {e}")
                 if tentativa < 2:
                     time.sleep(2 ** tentativa)
                     continue
                 break
+        if resp is None:
+            return {"success": False, "error": f"Falha de conexao com Sicoob: {last_exc}"}
         if resp.status_code in (200, 201):
             data = resp.json()
             resultado = data.get("resultado", data)
