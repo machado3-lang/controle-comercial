@@ -37,6 +37,7 @@
             <button class="px-4 py-3 text-sm font-medium text-cyan-400 border-b-2 border-cyan-500" data-tab="contas-tab">Contas a Receber</button>
             <button class="px-4 py-3 text-sm font-medium text-slate-400 hover:text-slate-300" data-tab="assinaturas-tab">Assinaturas</button>
             <button class="px-4 py-3 text-sm font-medium text-slate-400 hover:text-slate-300" data-tab="ordens-tab">Ordens de Serviço</button>
+            <button class="px-4 py-3 text-sm font-medium text-slate-400 hover:text-slate-300" data-tab="historico-tab">Histórico</button>
         </div>
     </div>
     
@@ -117,6 +118,36 @@
                     {% endfor %}
                 </tbody>
             </table>
+        </div>
+        <div id="historico-tab" class="tab-content hidden">
+            {% if historicos %}
+            <div class="overflow-x-auto">
+                <table class="w-full divide-y divide-slate-800/60">
+                    <thead class="bg-slate-950/50">
+                        <tr>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Data</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Campo</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">De</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Para</th>
+                            <th class="px-4 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Usuário</th>
+                        </tr>
+                    </thead>
+                    <tbody class="divide-y divide-slate-800/60">
+                        {% for h in historicos %}
+                        <tr>
+                            <td class="px-4 py-2 text-sm text-slate-300">{{ h.data.strftime('%d/%m/%Y %H:%M') if h.data else '-' }}</td>
+                            <td class="px-4 py-2 text-sm text-slate-100">{{ h.rotulo or h.campo }}</td>
+                            <td class="px-4 py-2 text-sm text-rose-400">{{ h.valor_antigo or '(vazio)' }}</td>
+                            <td class="px-4 py-2 text-sm text-emerald-400">{{ h.valor_novo or '(vazio)' }}</td>
+                            <td class="px-4 py-2 text-sm text-slate-300">{{ h.usuario.nome if h.usuario else '-' }}</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+            {% else %}
+            <p class="text-slate-500 text-sm py-8 text-center">Nenhuma alteração registrada ainda.</p>
+            {% endif %}
         </div>
     </div>
 </div>

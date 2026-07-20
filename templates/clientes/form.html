@@ -98,7 +98,17 @@
                 <label class="form-label text-cyan-300">CEP</label>
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cep" value="{{ cliente.cep if cliente else '' }}" maxlength="9">
             </div>
-            <div class="col-span-2">
+            <div>
+                <label class="form-label text-cyan-300">Número</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="numero" value="{{ cliente.numero if cliente else '' }}" maxlength="20">
+            </div>
+            <div>
+                <label class="form-label text-cyan-300">Complemento</label>
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="complemento" value="{{ cliente.complemento if cliente else '' }}" maxlength="200">
+            </div>
+        </div>
+        <div class="grid grid-cols-3 gap-3 mb-3">
+            <div class="col-span-3">
                 <label class="form-label text-cyan-300">Endereço</label>
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="endereco" value="{{ cliente.endereco if cliente else '' }}">
             </div>
@@ -249,6 +259,7 @@ document.addEventListener('DOMContentLoaded', function() {
                 .then(d => {
                     if (d.erro) return;
                     if (d.logradouro) setVal('input[name="endereco"]', d.logradouro);
+                    if (d.complemento) setVal('input[name="complemento"]', d.complemento);
                     if (d.bairro) setVal('input[name="bairro"]', d.bairro);
                     if (d.localidade) setVal('input[name="cidade"]', d.localidade);
                     if (d.uf) setVal('select[name="estado"]', d.uf);
@@ -276,6 +287,8 @@ document.addEventListener('DOMContentLoaded', function() {
                             if (d.nome_fantasia) setVal('input[name="fantasia"]', d.nome_fantasia);
                             if (d.inscricao_estadual) setVal('input[name="inscricao_estadual"]', d.inscricao_estadual);
                             if (d.endereco) setVal('input[name="endereco"]', d.endereco);
+                            if (d.numero) setVal('input[name="numero"]', d.numero);
+                            if (d.complemento) setVal('input[name="complemento"]', d.complemento);
                             if (d.bairro) setVal('input[name="bairro"]', d.bairro);
                             if (d.cidade) setVal('input[name="cidade"]', d.cidade);
                             if (d.estado) setVal('select[name="estado"]', d.estado);

@@ -100,6 +100,8 @@ class Cliente(Base):
     telefone = Column(String(20), nullable=True)
     celular = Column(String(20), nullable=True)
     endereco = Column(String(300), nullable=True)
+    numero = Column(String(20), nullable=True)
+    complemento = Column(String(200), nullable=True)
     bairro = Column(String(100), nullable=True)
     cidade = Column(String(100), nullable=True)
     estado = Column(String(2), nullable=True)
@@ -138,6 +140,8 @@ class Fornecedor(Base):
     telefone = Column(String(20), nullable=True)
     celular = Column(String(20), nullable=True)
     endereco = Column(String(300), nullable=True)
+    numero = Column(String(20), nullable=True)
+    complemento = Column(String(200), nullable=True)
     bairro = Column(String(100), nullable=True)
     cidade = Column(String(100), nullable=True)
     estado = Column(String(2), nullable=True)
@@ -689,3 +693,19 @@ class CfopNatureza(Base):
     cfop = Column(String(4), nullable=False, index=True)
     natureza = Column(String(200), nullable=False)
     created_at = Column(DateTime, default=datetime.now)
+
+
+class HistoricoCadastro(Base):
+    __tablename__ = "historico_cadastro"
+
+    id = Column(Integer, primary_key=True)
+    entidade_tipo = Column(String(20), nullable=False, index=True)  # cliente, fornecedor
+    entidade_id = Column(Integer, nullable=False, index=True)
+    campo = Column(String(50), nullable=False)
+    rotulo = Column(String(80), nullable=True)
+    valor_antigo = Column(Text, nullable=True)
+    valor_novo = Column(Text, nullable=True)
+    usuario_id = Column(Integer, nullable=True)
+    data = Column(DateTime, default=datetime.now, index=True)
+
+    usuario = relationship("Usuario", primaryjoin="HistoricoCadastro.usuario_id == Usuario.id", foreign_keys=[usuario_id])

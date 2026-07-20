@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from datetime import datetime, date
 
 from database import get_db
-from models import Cliente, ContaReceber, Assinatura, OrdemServico, Empresa
+from models import Cliente, ContaReceber, Assinatura, OrdemServico, Empresa, HistoricoCadastro
 from services.validators import validar_cliente_fornecedor
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
@@ -116,6 +116,8 @@ def criar_cliente(
     telefone: str = Form(""),
     celular: str = Form(""),
     endereco: str = Form(""),
+    numero: str = Form(""),
+    complemento: str = Form(""),
     bairro: str = Form(""),
     cidade: str = Form(""),
     estado: str = Form(""),
@@ -174,7 +176,8 @@ def criar_cliente(
         codigo=codigo,
         nome=nome, cpf_cnpj=cpf_cnpj, tipo_pessoa=tipo_pessoa,
         email=email, telefone=telefone,
-        celular=celular, endereco=endereco, bairro=bairro, cidade=cidade,
+        celular=celular, endereco=endereco, numero=numero or None, complemento=complemento or None,
+        bairro=bairro, cidade=cidade,
         estado=estado, cep=cep, contato=contato, fantasia=fantasia,
         inscricao_estadual=inscricao_estadual, inscricao_municipal=inscricao_municipal,
         codigo_ibge=codigo_ibge or None, isento_ie=(isento_ie == "1"),
@@ -196,9 +199,12 @@ def detalhe_cliente(request: Request, cliente_id: int, db: Session = Depends(get
     contas = db.query(ContaReceber).filter(ContaReceber.cliente_id == cliente_id).order_by(ContaReceber.data_vencimento.desc()).all()
     assinaturas = db.query(Assinatura).filter(Assinatura.cliente_id == cliente_id).all()
     ordens = db.query(OrdemServico).filter(OrdemServico.cliente_id == cliente_id).order_by(OrdemServico.data_entrada.desc()).all()
+    historicos = db.query(HistoricoCadastro).filter(
+        HistoricoCadastro.entidade_tipo == "cliente", HistoricoCadastro.entidade_id == cliente_id
+    ).order_by(HistoricoCadastro.data.desc()).all()
     return request.app.state.templates.TemplateResponse(request, 
         "clientes/detalhe.html",
-        {"request": request, "cliente": cliente, "contas": contas, "assinaturas": assinaturas, "ordens": ordens}
+        {"request": request, "cliente": cliente, "contas": contas, "assinaturas": assinaturas, "ordens": ordens, "historicos": historicos}
     )
 
 
@@ -224,6 +230,8 @@ def atualizar_cliente(
     telefone: str = Form(""),
     celular: str = Form(""),
     endereco: str = Form(""),
+    numero: str = Form(""),
+    complemento: str = Form(""),
     bairro: str = Form(""),
     cidade: str = Form(""),
     estado: str = Form(""),
@@ -250,8 +258,21 @@ def atualizar_cliente(
     cliente.tipo_pessoa = tipo_pessoa
     cliente.email = email
     cliente.telefone = telefone
+    campos_antigos = {
+        "nome": cliente.nome, "fantasia": cliente.fantasia, "cpf_cnpj": cliente.cpf_cnpj,
+        "tipo_pessoa": cliente.tipo_pessoa, "email": cliente.email, "telefone": cliente.telefone,
+        "celular": cliente.celular, "contato": cliente.contato, "endereco": cliente.endereco,
+        "numero": cliente.numero, "complemento": cliente.complemento, "bairro": cliente.bairro,
+        "cidade": cliente.cidade, "estado": cliente.estado, "cep": cliente.cep,
+        "codigo_ibge": cliente.codigo_ibge, "inscricao_estadual": cliente.inscricao_estadual,
+        "inscricao_municipal": cliente.inscricao_municipal, "isento_ie": cliente.isento_ie,
+        "indicador_ie": cliente.indicador_ie, "iss_retido": cliente.iss_retido,
+        "situacao": cliente.situacao, "observacao": cliente.observacao,
+    }
     cliente.celular = celular
     cliente.endereco = endereco
+    cliente.numero = numero or None
+    cliente.complemento = complemento or None
     cliente.bairro = bairro
     cliente.cidade = cidade
     cliente.estado = estado
@@ -272,6 +293,21 @@ def atualizar_cliente(
         cliente.data_sincronizacao = datetime.strptime(data_sincronizacao, "%Y-%m-%d %H:%M")
     cliente.updated_at = datetime.now()
     cliente.bling_pending_sync = True
+    campos_novos = {
+        "nome": nome, "fantasia": fantasia, "cpf_cnpj": cpf_cnpj,
+        "tipo_pessoa": tipo_pessoa, "email": email, "telefone": telefone,
+        "celular": celular, "contato": contato, "endereco": endereco,
+        "numero": numero, "complemento": complemento, "bairro": bairro,
+        "cidade": cidade, "estado": estado, "cep": cep,
+        "codigo_ibge": codigo_ibge, "inscricao_estadual": inscricao_estadual,
+        "inscricao_municipal": inscricao_municipal, "isento_ie": (isento_ie == "1"),
+        "indicador_ie": indicador_ie, "iss_retido": (iss_retido == "1"),
+        "situacao": situacao, "observacao": observacao,
+    }
+    from services.historico_cadastro import registrar_historico
+    registrar_historico(db, "cliente", cliente.id,
+                        {c: (campos_antigos[c], campos_novos[c]) for c in campos_antigos},
+                        usuario_id=request.session.get("user_id"))
     db.commit()
     return RedirectResponse(url=f"/clientes/{cliente_id}", status_code=303)
 

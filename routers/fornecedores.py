@@ -3,7 +3,7 @@ from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime
 from database import get_db
-from models import Fornecedor, ContaPagar, Empresa
+from models import Fornecedor, ContaPagar, Empresa, HistoricoCadastro
 from services.validators import validar_cliente_fornecedor
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
@@ -104,6 +104,8 @@ def criar_fornecedor(
     telefone: str = Form(""),
     celular: str = Form(""),
     endereco: str = Form(""),
+    numero: str = Form(""),
+    complemento: str = Form(""),
     bairro: str = Form(""),
     cidade: str = Form(""),
     estado: str = Form(""),
@@ -157,7 +159,8 @@ def criar_fornecedor(
         codigo=codigo,
         nome=nome, cpf_cnpj=cpf_cnpj, tipo_pessoa=tipo_pessoa,
         email=email, telefone=telefone,
-        celular=celular, endereco=endereco, bairro=bairro, cidade=cidade,
+        celular=celular, endereco=endereco, numero=numero or None, complemento=complemento or None,
+        bairro=bairro, cidade=cidade,
         estado=estado, cep=cep, contato=contato, fantasia=fantasia,
         inscricao_estadual=inscricao_estadual, inscricao_municipal=inscricao_municipal,
         situacao=situacao, observacao=observacao, created_at=created_at,
@@ -175,9 +178,12 @@ def detalhe_fornecedor(request: Request, fornecedor_id: int, db: Session = Depen
     if not fornecedor:
         return RedirectResponse(url="/fornecedores", status_code=303)
     contas = db.query(ContaPagar).filter(ContaPagar.fornecedor_id == fornecedor_id).order_by(ContaPagar.data_vencimento.desc()).all()
+    historicos = db.query(HistoricoCadastro).filter(
+        HistoricoCadastro.entidade_tipo == "fornecedor", HistoricoCadastro.entidade_id == fornecedor_id
+    ).order_by(HistoricoCadastro.data.desc()).all()
     return request.app.state.templates.TemplateResponse(request, 
         "fornecedores/detalhe.html",
-        {"request": request, "fornecedor": fornecedor, "contas": contas}
+        {"request": request, "fornecedor": fornecedor, "contas": contas, "historicos": historicos}
     )
 
 
@@ -203,6 +209,8 @@ def atualizar_fornecedor(
     telefone: str = Form(""),
     celular: str = Form(""),
     endereco: str = Form(""),
+    numero: str = Form(""),
+    complemento: str = Form(""),
     bairro: str = Form(""),
     cidade: str = Form(""),
     estado: str = Form(""),
@@ -220,6 +228,15 @@ def atualizar_fornecedor(
     fornecedor = db.query(Fornecedor).filter(Fornecedor.id == fornecedor_id).first()
     if not fornecedor:
         return RedirectResponse(url="/fornecedores", status_code=303)
+    campos_antigos = {
+        "nome": fornecedor.nome, "fantasia": fornecedor.fantasia, "cpf_cnpj": fornecedor.cpf_cnpj,
+        "tipo_pessoa": fornecedor.tipo_pessoa, "email": fornecedor.email, "telefone": fornecedor.telefone,
+        "celular": fornecedor.celular, "contato": fornecedor.contato, "endereco": fornecedor.endereco,
+        "numero": fornecedor.numero, "complemento": fornecedor.complemento, "bairro": fornecedor.bairro,
+        "cidade": fornecedor.cidade, "estado": fornecedor.estado, "cep": fornecedor.cep,
+        "inscricao_estadual": fornecedor.inscricao_estadual, "inscricao_municipal": fornecedor.inscricao_municipal,
+        "situacao": fornecedor.situacao, "observacao": fornecedor.observacao,
+    }
     fornecedor.nome = nome
     fornecedor.cpf_cnpj = cpf_cnpj
     fornecedor.tipo_pessoa = tipo_pessoa
@@ -227,6 +244,8 @@ def atualizar_fornecedor(
     fornecedor.telefone = telefone
     fornecedor.celular = celular
     fornecedor.endereco = endereco
+    fornecedor.numero = numero or None
+    fornecedor.complemento = complemento or None
     fornecedor.bairro = bairro
     fornecedor.cidade = cidade
     fornecedor.estado = estado
@@ -243,6 +262,19 @@ def atualizar_fornecedor(
         fornecedor.data_sincronizacao = datetime.strptime(data_sincronizacao, "%Y-%m-%d %H:%M")
     fornecedor.updated_at = datetime.now()
     fornecedor.bling_pending_sync = True
+    campos_novos = {
+        "nome": nome, "fantasia": fantasia, "cpf_cnpj": cpf_cnpj,
+        "tipo_pessoa": tipo_pessoa, "email": email, "telefone": telefone,
+        "celular": celular, "contato": contato, "endereco": endereco,
+        "numero": numero, "complemento": complemento, "bairro": bairro,
+        "cidade": cidade, "estado": estado, "cep": cep,
+        "inscricao_estadual": inscricao_estadual, "inscricao_municipal": inscricao_municipal,
+        "situacao": situacao, "observacao": observacao,
+    }
+    from services.historico_cadastro import registrar_historico
+    registrar_historico(db, "fornecedor", fornecedor.id,
+                        {c: (campos_antigos[c], campos_novos[c]) for c in campos_antigos},
+                        usuario_id=request.session.get("user_id"))
     db.commit()
     return RedirectResponse(url=f"/fornecedores/{fornecedor_id}", status_code=303)
 
