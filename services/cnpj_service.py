@@ -124,6 +124,6 @@ def _mapear(data):
         "estado": (est.get("estado") or {}).get("sigla") or "",
         "cep": est.get("cep") or "",
         "email": est.get("email") or "",
-        "telefone": "",
+        "telefone": "".join(filter(None, [str(est.get("ddd1") or "").strip(), str(est.get("telefone1") or "").strip()])).strip(),
         "atualizado_em": data.get("atualizado_em") or est.get("atualizado_em") or "",
     }
