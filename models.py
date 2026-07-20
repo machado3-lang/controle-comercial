@@ -254,12 +254,14 @@ class Assinatura(Base):
     numero_contrato = Column(String(50), nullable=True)
     observacao = Column(Text, nullable=True)
     produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True)
+    nfse_id = Column(Integer, ForeignKey("nfse.id"), nullable=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     cliente = relationship("Cliente", back_populates="assinaturas")
     fornecedor = relationship("Fornecedor", back_populates="assinaturas")
     produto = relationship("Produto")
+    nfse = relationship("NFSe")
     historico = relationship("AssinaturaHistorico", back_populates="assinatura", cascade="all, delete-orphan",
                              order_by="AssinaturaHistorico.data_alteracao.desc()")
 

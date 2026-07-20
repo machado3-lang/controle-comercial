@@ -8,7 +8,7 @@ from fastapi.responses import RedirectResponse, JSONResponse, Response, FileResp
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc, asc
 from database import get_db
-from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ContaReceber, StatusConta, OrdemServico
+from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ContaReceber, StatusConta, OrdemServico, Assinatura
 from models_nfe import NFSe, NFSeItem
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
 from services.nfse_pdf import gerar_pdf_nfse
@@ -946,9 +946,20 @@ def excluir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     if nfse.status != "rascunho":
         request.session["error"] = "Só é possível excluir NFSe em rascunho"
         return RedirectResponse(url="/nfse", status_code=303)
-    db.delete(nfse)
-    db.commit()
-    request.session["message"] = f"NFSe #{nfse.numero} excluída"
+    try:
+        db.query(ContaReceber).filter(ContaReceber.nfse_id == nfse.id).delete(
+            synchronize_session=False
+        )
+        db.query(Assinatura).filter(Assinatura.nfse_id == nfse.id).delete(
+            synchronize_session=False
+        )
+        db.delete(nfse)
+        db.commit()
+        request.session["message"] = f"NFSe #{nfse.numero} excluída"
+    except Exception:
+        db.rollback()
+        logger.exception("Erro ao excluir NFSe %s", nfse_id)
+        request.session["error"] = "Erro ao excluir a NFSe. Verifique se há contas ou assinaturas vinculadas."
     return RedirectResponse(url="/nfse", status_code=303)
 
 
