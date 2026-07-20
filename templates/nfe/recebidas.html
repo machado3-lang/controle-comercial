@@ -19,6 +19,7 @@
             <button type="submit" class="flex items-center h-9 px-3 text-xs bg-gradient-to-r from-amber-500 to-orange-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10"><i data-lucide="search" class="w-3.5 h-3.5 me-1"></i> Buscar SEFAZ</button>
         </form>
         <form action="/nfe/importar-chave" method="post" class="flex items-center gap-1" title="Importar NFe recebida antiga (mais de 90 dias) pela chave de acesso via SEFAZ">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <input type="text" name="chave_acesso" placeholder="Chave (44 díg.)" maxlength="44" required class="h-9 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-xl text-slate-100 w-44" pattern="[0-9]{44}" title="Digite os 44 dígitos da chave de acesso">
             <button type="submit" class="flex items-center h-9 px-3 text-xs bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10"><i data-lucide="key" class="w-3.5 h-3.5 me-1"></i> Por Chave</button>
         </form>
