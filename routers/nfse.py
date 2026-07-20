@@ -120,6 +120,30 @@ def listar_nfse(
     )
 
 
+@router.get("/recebidas")
+def listar_nfse_recebidas(
+    request: Request, db: Session = Depends(get_db),
+    data_inicio: str = Query(""), data_fim: str = Query(""),
+    busca: str = Query(""),
+):
+    """Lista as NFSe recebidas (somos o tomador), filtráveis por período e nº."""
+    q = db.query(NFSeRecebida)
+    if busca:
+        q = q.filter(NFSeRecebida.numero.ilike(f"%{busca}%"))
+    if data_inicio:
+        q = q.filter(NFSeRecebida.data_emissao >= datetime.strptime(data_inicio, "%Y-%m-%d"))
+    if data_fim:
+        q = q.filter(NFSeRecebida.data_emissao <= datetime.strptime(data_fim + " 23:59:59", "%Y-%m-%d %H:%M:%S"))
+    recebidas = q.order_by(desc(NFSeRecebida.data_emissao)).all()
+    return request.app.state.templates.TemplateResponse(request,
+        "nfse/recebidas.html",
+        {"request": request, "recebidas": recebidas, "status": "", "busca": busca,
+         "data_inicio": data_inicio, "data_fim": data_fim,
+         "messages": _get_messages(request), "empresa": db.query(Empresa).first(),
+         "STATUS_LABELS": STATUS_LABELS}
+    )
+
+
 @router.get("/emitir/avulsa")
 def emitir_avulsa_form(request: Request, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
