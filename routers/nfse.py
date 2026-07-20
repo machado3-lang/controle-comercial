@@ -1381,7 +1381,8 @@ def _confirmar_cancelamentos_adn(emitidas):
 def listar_nfse_adn(
     request: Request, db: Session = Depends(get_db),
     data_inicio: str = Query(""), data_fim: str = Query(""),
-    tipo: str = Query(""), background_tasks: BackgroundTasks = None,
+    tipo: str = Query(""), retorno: str = Query(""),
+    background_tasks: BackgroundTasks = None,
 ):
     """Lista NFS-e do ADN (Ambiente de Dados Nacional) por período"""
     empresa = db.query(Empresa).first()
@@ -1498,13 +1499,22 @@ def listar_nfse_adn(
             msg = f"ADN: {len(notas)} NFS-e emitidas encontradas"
         elif tipo == 'recebida':
             msg = f"ADN: {len(notas)} NFS-e recebidas encontradas"
-        return request.app.state.templates.TemplateResponse(request, 
+
+        # Busca de recebidas: salva no banco e redireciona para a página dedicada
+        if tipo == 'recebida' or retorno == 'recebidas':
+            request.session["message"] = msg
+            return RedirectResponse(
+                url=f"/nfse/recebidas?data_inicio={data_inicio}&data_fim={data_fim}",
+                status_code=303)
+
+        return request.app.state.templates.TemplateResponse(request,
             "nfse/lista.html",
             {"request": request, "nfse": [], "status": "", "busca": "",
+             "data_inicio": data_inicio, "data_fim": data_fim,
              "messages": [{"tipo": "success", "texto": msg}],
              "empresa": empresa, "STATUS_LABELS": STATUS_LABELS,
              "nfse_ids_sem_cobranca": set(),
-             "adn_notas": notas, "adn_emitidas": emitidas, "adn_recebidas": recebidas},
+             "adn_notas": notas, "adn_emitidas": emitidas, "adn_recebidas": []},
             background=background_tasks)
     except NFSeBethaError as e:
         request.session["error"] = f"Erro ADN: {str(e)}"

@@ -1,9 +1,9 @@
 {% extends "base.html" %}
 {% block title %}NFSe{% endblock %}
 {% block content %}
-<div class="flex items-center justify-between w-full mb-6 gap-4">
+<div class="flex flex-wrap items-center justify-between w-full mb-6 gap-4">
     <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="file-text" class="w-6 h-6 inline me-2"></i> Notas Fiscais de Serviço</h4>
-    <div class="flex items-center gap-2">
+    <div class="flex flex-wrap items-center gap-2">
         <form class="flex items-center flex-wrap gap-2">
             <input type="date" class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" name="data_inicio" value="{{ data_inicio }}" onchange="this.form.submit()">
             <input type="date" class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" name="data_fim" value="{{ data_fim }}" onchange="this.form.submit()">
@@ -18,26 +18,17 @@
                 <option value="cancelada" {{ 'selected' if status == 'cancelada' }}>Cancelada</option>
             </select>
         </form>
+        <form action="/nfse/adn-listar" method="get" class="flex items-center gap-1">
+            <i data-lucide="cloud" class="w-4 h-4 text-indigo-400"></i>
+            <input type="date" name="data_inicio" required class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" value="{{ data_inicio }}">
+            <input type="date" name="data_fim" required class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" value="{{ data_fim }}">
+            <input type="hidden" name="tipo" value="emitida">
+            <input type="hidden" name="retorno" value="lista">
+            <button type="submit" class="flex items-center h-9 px-3 text-xs bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/10"><i data-lucide="search" class="w-3.5 h-3.5 me-1"></i> Buscar ADN</button>
+        </form>
         <a href="/nfse/emitir/avulsa" class="flex items-center h-9 px-3 text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> NFSe Avulsa</a>
     </div>
 </div>
-
-<!-- ADN Sync Form -->
-<form action="/nfse/adn-listar" method="get" class="flex items-center flex-wrap gap-2 mb-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
-    <i data-lucide="cloud" class="w-4 h-4 text-indigo-400"></i>
-    <span class="text-xs font-medium text-indigo-400 mr-1">ADN:</span>
-    <input type="date" name="data_inicio" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100" value="{{ request.query_params.get('data_inicio', '') }}">
-    <span class="text-xs text-slate-500">até</span>
-    <input type="date" name="data_fim" required class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100" value="{{ request.query_params.get('data_fim', '') }}">
-    <select name="tipo" class="h-8 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-lg text-slate-100">
-        <option value="">Todas</option>
-        <option value="emitida" {{ 'selected' if request.query_params.get('tipo') == 'emitida' }}>Emitidas</option>
-        <option value="recebida" {{ 'selected' if request.query_params.get('tipo') == 'recebida' }}>Recebidas</option>
-    </select>
-    <button type="submit" class="flex items-center h-8 px-3 text-xs bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-lg font-medium transition-all shadow-lg shadow-indigo-500/10">
-        <i data-lucide="search" class="w-3.5 h-3.5 me-1"></i> Buscar no ADN
-    </button>
-</form>
 
 <div class="overflow-x-auto w-full">
     <div class="flex flex-wrap items-center gap-3 mb-3 px-1">
@@ -243,8 +234,7 @@
 {% endif %}
 {% endmacro %}
 
-{{ adn_table(adn_emitidas, 'NFS-e Emitidas', 'text-cyan-400', 'upload') }}
-{{ adn_table(adn_recebidas, 'NFS-e Recebidas', 'text-amber-400', 'download') }}
+{{ adn_table(adn_emitidas, 'NFS-e Emitidas (ADN)', 'text-cyan-400', 'upload') }}
 
 {% set recebidas_banco = nfse_recebidas|default([]) %}
 {% if recebidas_banco %}
