@@ -994,6 +994,7 @@ def nfe_distribuicao(
             dh_emi = n.data_emissao.strftime('%Y-%m-%dT%H:%M:%S') if n.data_emissao else ''
             notas_local.append({
                 'chaveAcesso': n.chave_acesso,
+                'id': n.id,
                 'numero': str(n.numero),
                 'dhEmi': dh_emi,
                 'valor': n.valor_total,
@@ -1035,7 +1036,11 @@ def nfe_distribuicao(
              "dist_notas": notas_local, "dist_emitidas": emitidas, "dist_recebidas": recebidas}
         )
     except Exception as e:
-        request.session["error"] = f"Erro SEFAZ: {str(e)}"
+        msg = str(e)
+        if "Invalid password" in msg or "PKCS12" in msg:
+            request.session["error"] = "Erro SEFAZ: Certificado digital inválido (senha incorreta ou arquivo corrompido). Verifique a senha do certificado A1 nas Configurações."
+        else:
+            request.session["error"] = f"Erro SEFAZ: {msg}"
         return RedirectResponse(url="/nfe", status_code=303)
 
 

@@ -96,14 +96,23 @@
                     <td class="px-4 py-3 text-center">
                         <div class="flex items-center justify-center gap-1">
                         {% if n.chaveAcesso %}
-                        {% if n.xml %}
-                        <a href="/nfe/dist-pdf/{{ n.chaveAcesso }}" class="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 transition" title="Visualizar PDF" target="_blank">
-                            <i data-lucide="file-text" class="w-4 h-4"></i>
-                        </a>
-                        {% endif %}
-                        <a href="/nfe/dist-xml/{{ n.chaveAcesso }}" class="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-400 transition" title="Baixar XML" target="_blank">
-                            <i data-lucide="code" class="w-4 h-4"></i>
-                        </a>
+                            {% if n.id %}
+                                <a href="/nfe/{{ n.id }}/pdf" class="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 transition" title="Visualizar PDF (DANFE)" target="_blank">
+                                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                                </a>
+                                <a href="/nfe/{{ n.id }}/xml" class="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-400 transition" title="Baixar XML" target="_blank">
+                                    <i data-lucide="code" class="w-4 h-4"></i>
+                                </a>
+                            {% else %}
+                                {% if n.xml %}
+                                <a href="/nfe/dist-pdf/{{ n.chaveAcesso }}" class="p-1.5 rounded-lg hover:bg-rose-500/20 text-rose-400 transition" title="Visualizar PDF (DANFE)" target="_blank">
+                                    <i data-lucide="file-text" class="w-4 h-4"></i>
+                                </a>
+                                {% endif %}
+                                <a href="/nfe/dist-xml/{{ n.chaveAcesso }}" class="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-400 transition" title="Baixar XML" target="_blank">
+                                    <i data-lucide="code" class="w-4 h-4"></i>
+                                </a>
+                            {% endif %}
                         {% endif %}
                         </div>
                     </td>
