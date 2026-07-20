@@ -217,7 +217,9 @@
                         {% endif %}
                         <span class="text-xs text-slate-500 block">{{ n.tomador_cnpj or n.emitente_cnpj or '' }}</span>
                     </td>
-                    <td class="px-4 py-3 text-sm text-slate-100">{{ n.numero or '-' }}</td>
+                    <td class="px-4 py-3 text-sm text-slate-100">{{ n.numero or '-' }}
+                        {% if n.cancelada %}<span class="ms-1 px-1.5 py-0.5 text-xs font-medium bg-slate-800/60 text-slate-400 border border-slate-700/50 rounded-full">Cancelada</span>{% endif %}
+                    </td>
                     <td class="px-4 py-3 text-sm text-emerald-400 text-right">R$ {{ '%.2f'|format(n.valor or 0) }}</td>
                     <td class="px-4 py-3 text-sm text-slate-300">{{ n.dhEmi[:10] if n.dhEmi else '-' }}</td>
                     <td class="px-4 py-3 text-center">

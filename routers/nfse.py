@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import logging
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date
@@ -1314,7 +1315,52 @@ def listar_nfse_adn(
             notas = [n for n in notas if n.get('tipo') == tipo]
         emitidas = [n for n in notas if n.get('tipo') == 'emitida']
         recebidas = [n for n in notas if n.get('tipo') == 'recebida']
+
+        # Salva/atualiza as NFSe emitidas por nós no banco (upsert por chaveAcesso)
+        salvos = 0
+        atualizados = 0
+        for n in emitidas:
+            chave = n.get('chaveAcesso')
+            if not chave:
+                continue
+            existente = db.query(NFSe).filter(NFSe.chave_acesso == chave).first()
+            if existente:
+                if n.get('cancelada') and existente.status != 'cancelada':
+                    existente.status = 'cancelada'
+                    atualizados += 1
+                continue
+            nfse = NFSe()
+            nfse.chave_acesso = chave
+            nfse.numero = str(n.get('numero')) if n.get('numero') else None
+            nfse.codigo_verificacao = chave
+            dh = n.get('dhEmi')
+            if dh:
+                for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+                    try:
+                        nfse.data_emissao = datetime.strptime(dh[:19], fmt)
+                        break
+                    except Exception:
+                        continue
+            nfse.valor_total = float(n.get('valor') or 0)
+            nfse.status = 'cancelada' if n.get('cancelada') else 'autorizada'
+            nfse.origem = 'adn'
+            nfse.xml_text = n.get('xml')
+            doc = n.get('tomador_cnpj') or ''
+            doc_clean = re.sub(r'\D', '', doc)
+            if doc_clean:
+                cliente = db.query(Cliente).filter(
+                    Cliente.cpf_cnpj != None, Cliente.cpf_cnpj.like(f"%{doc_clean}%")
+                ).first()
+                if cliente:
+                    nfse.cliente_id = cliente.id
+            db.add(nfse)
+            salvos += 1
+        if salvos or atualizados:
+            db.commit()
+
         msg = f"ADN: {len(notas)} NFS-e encontradas"
+        if salvos or atualizados:
+            msg += f" ({salvos} salvas no banco, {atualizados} atualizadas)"
         if not tipo:
             msg += f" ({len(emitidas)} emitidas, {len(recebidas)} recebidas)"
         elif tipo == 'emitida':

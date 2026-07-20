@@ -308,6 +308,8 @@ class BethaNfseService:
         import base64, gzip, re, time
         session = self._get_adn_session()
         resultados = []
+        notas_brutas = []
+        cancelamentos = set()
         ultNSU = 0
         pagina = 0
         logger.info(f"Listando NFS-e do ADN de {data_inicio} a {data_fim}...")
@@ -401,6 +403,18 @@ class BethaNfseService:
                         m = re.search(r'<[^:>]*:?cStat[^>]*>(\d+)</', xml_nfse)
                         if m: c_stat = m.group(1)
 
+                    # Detecta evento de cancelamento (tpEvento 110111). No DFe, a
+                    # chave do envelope referencia a NFS-e cancelada.
+                    is_cancel = False
+                    if xml_nfse:
+                        if re.search(r'<tpEvento>\s*110111\s*</tpEvento>', xml_nfse) \
+                           or re.search(r'<descEvento>[^<]*Cancel', xml_nfse, re.IGNORECASE) \
+                           or re.search(r'<cDescEvento>[^<]*Cancel', xml_nfse, re.IGNORECASE):
+                            is_cancel = True
+                    if is_cancel:
+                        cancelamentos.add(chave)
+                        continue
+
                     # Filtro por data
                     if data_inicio or data_fim:
                         data_doc = dh_emi[:10] if dh_emi else ''
@@ -420,7 +434,7 @@ class BethaNfseService:
                     else:
                         tipo = 'outra'
 
-                    resultados.append({
+                    notas_brutas.append({
                         'chaveAcesso': chave,
                         'numero': numero_nfse,
                         'dhEmi': dh_emi,
@@ -446,7 +460,12 @@ class BethaNfseService:
                 logger.error(traceback.format_exc())
                 break
 
-        logger.info(f"ADN retornou {len(resultados)} NFS-e no período")
+        # Marca como canceladas as notas cujo evento de cancelamento foi encontrado
+        for n in notas_brutas:
+            n['cancelada'] = n['chaveAcesso'] in cancelamentos
+            resultados.append(n)
+
+        logger.info(f"ADN retornou {len(resultados)} NFS-e no período ({len(cancelamentos)} canceladas)")
         return resultados
 
     def baixar_danfse_adn(self, chave_acesso: str) -> bytes | None:
