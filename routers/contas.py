@@ -178,7 +178,6 @@ def criar_conta_pagar(
         valor=to_decimal(valor),
         data_vencimento=data_vencimento,
         fornecedor_id=to_int(fornecedor_id),
-        fornecedor_id=fornecedor_id,
         observacao=observacao,
         numero_documento=numero_documento,
         tipo_documento_id=to_int(tipo_documento_id),
