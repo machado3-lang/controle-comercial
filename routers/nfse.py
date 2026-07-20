@@ -72,7 +72,7 @@ def listar_nfse(
         query = query.filter(NFSe.status == status)
     if busca:
         query = query.filter(
-            NFSe.numero.cast(str).ilike(f"%{busca}%")
+            NFSe.numero.ilike(f"%{busca}%")
         )
     if data_inicio:
         query = query.filter(NFSe.data_emissao >= datetime.strptime(data_inicio, "%Y-%m-%d"))

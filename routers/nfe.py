@@ -8,7 +8,7 @@ from datetime import datetime, date
 from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse, Response, JSONResponse
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc
+from sqlalchemy import desc, String
 
 from database import get_db
 from models import (Cliente, Empresa, PedidoVenda, PedidoVendaItem,
@@ -155,7 +155,7 @@ def listar_nfe(
         query = query.filter(NFe.status == status)
     if busca:
         query = query.filter(
-            NFe.numero.cast(str).ilike(f"%{busca}%")
+            NFe.numero.cast(String).ilike(f"%{busca}%")
         )
     from sqlalchemy import asc as sql_asc
     order_func = desc if ordem == "desc" else sql_asc
