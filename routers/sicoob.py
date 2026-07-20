@@ -275,7 +275,7 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
 def pagina_sicoob(request: Request, db: Session = Depends(get_db)):
     empresa = get_empresa(db)
     messages = []
-    msg = request.session.pop("message", None)
+    msg = request.session.get("message", None)
     if msg:
         messages.append(msg)
     return request.app.state.templates.TemplateResponse(request, 

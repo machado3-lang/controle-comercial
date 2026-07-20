@@ -39,13 +39,13 @@ def _proximo_numero(empresa: Empresa, db: Session) -> int:
 
 def _get_messages(request):
     messages = []
-    msg = request.session.pop("message", None)
+    msg = request.session.get("message", None)
     if msg:
         if isinstance(msg, dict):
             messages.append(msg)
         else:
             messages.append({"tipo": "success", "texto": msg})
-    err = request.session.pop("error", None)
+    err = request.session.get("error", None)
     if err:
         messages.append({"tipo": "danger", "texto": err})
     return messages

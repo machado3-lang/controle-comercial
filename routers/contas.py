@@ -35,13 +35,13 @@ router = APIRouter(prefix="/contas", tags=["Contas"])
 def get_messages(request: Request) -> list:
     messages = []
     if "message" in request.session:
-        raw = request.session.pop("message")
+        raw = request.session["message"]
         if isinstance(raw, dict):
             messages.append({"type": raw.get("tipo", "success"), "text": raw.get("texto", str(raw))})
         else:
             messages.append({"type": "success", "text": raw})
     if "error" in request.session:
-        raw = request.session.pop("error")
+        raw = request.session["error"]
         if isinstance(raw, dict):
             messages.append({"type": "error", "text": raw.get("texto", str(raw))})
         else:

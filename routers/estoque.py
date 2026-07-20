@@ -326,5 +326,5 @@ def _get_messages(request):
     msgs = []
     for key in ("message", "error"):
         if request.session.get(key):
-            msgs.append({"tipo": "success" if key == "message" else "danger", "texto": request.session.pop(key)})
+            msgs.append({"tipo": "success" if key == "message" else "danger", "texto": request.session.get(key)})
     return msgs

@@ -331,7 +331,7 @@ def _validar_contato(entity) -> list:
 def pagina_bling(request: Request, db: Session = Depends(get_db)):
     empresa = get_empresa(db)
     messages = []
-    msg = request.session.pop("message", None)
+    msg = request.session.get("message", None)
     if msg:
         messages.append(msg)
 

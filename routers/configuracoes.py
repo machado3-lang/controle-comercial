@@ -21,7 +21,7 @@ def configuracoes(request: Request, db: Session = Depends(get_db), aba: str = "e
     from sqlalchemy import func
     empresa = db.query(Empresa).first()
     messages = []
-    msg = request.session.pop("message", None)
+    msg = request.session.get("message", None)
     if msg:
         messages.append(msg)
     return request.app.state.templates.TemplateResponse(request, 
