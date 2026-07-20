@@ -160,7 +160,7 @@ def criar_conta_pagar(
     descricao: str = Form(...),
     valor: str = Form(...),
     data_vencimento: date = Form(...),
-    fornecedor_id: Optional[int] = Form(None),
+    fornecedor_id: Optional[str] = Form(""),
     observacao: Optional[str] = Form(None),
     numero_documento: Optional[str] = Form(None),
     tipo_documento_id: Optional[str] = Form(None),
@@ -169,7 +169,7 @@ def criar_conta_pagar(
 ):
     from sqlalchemy import func
     def to_int(v):
-        try: return int(v) if v and v.strip() else None
+        try: return int(v) if v and str(v).strip() else None
         except (ValueError, TypeError, AttributeError):
             logger.debug(f"Falha ao converter para int: {v}")
             return None
@@ -177,6 +177,7 @@ def criar_conta_pagar(
         descricao=descricao,
         valor=to_decimal(valor),
         data_vencimento=data_vencimento,
+        fornecedor_id=to_int(fornecedor_id),
         fornecedor_id=fornecedor_id,
         observacao=observacao,
         numero_documento=numero_documento,
@@ -218,7 +219,7 @@ def atualizar_conta_pagar(
     descricao: str = Form(...),
     valor: str = Form(...),
     data_vencimento: date = Form(...),
-    fornecedor_id: Optional[int] = Form(None),
+    fornecedor_id: Optional[str] = Form(""),
     observacao: Optional[str] = Form(None),
     status: StatusConta = Form(...),
     numero_documento: Optional[str] = Form(None),
@@ -227,7 +228,7 @@ def atualizar_conta_pagar(
     forma_pagamento: Optional[str] = Form(None)
 ):
     def to_int(v):
-        try: return int(v) if v and v.strip() else None
+        try: return int(v) if v and str(v).strip() else None
         except (ValueError, TypeError, AttributeError):
             logger.debug(f"Falha ao converter para int: {v}")
             return None
@@ -238,7 +239,7 @@ def atualizar_conta_pagar(
     conta.descricao = descricao
     conta.valor = to_decimal(valor)
     conta.data_vencimento = data_vencimento
-    conta.fornecedor_id = fornecedor_id
+    conta.fornecedor_id = to_int(fornecedor_id)
     conta.observacao = observacao
     conta.status = status
     conta.numero_documento = numero_documento
@@ -371,7 +372,7 @@ def criar_conta_receber(
     descricao: str = Form(...),
     valor: str = Form(...),
     data_vencimento: date = Form(...),
-    cliente_id: Optional[int] = Form(None),
+    cliente_id: Optional[str] = Form(""),
     observacao: Optional[str] = Form(None),
     numero_documento: Optional[str] = Form(None),
     tipo_documento_id: Optional[str] = Form(None),
@@ -380,7 +381,7 @@ def criar_conta_receber(
 ):
     from sqlalchemy import func
     def to_int(v):
-        try: return int(v) if v and v.strip() else None
+        try: return int(v) if v and str(v).strip() else None
         except (ValueError, TypeError, AttributeError):
             logger.debug(f"Falha ao converter para int: {v}")
             return None
@@ -388,7 +389,7 @@ def criar_conta_receber(
         descricao=descricao,
         valor=to_decimal(valor),
         data_vencimento=data_vencimento,
-        cliente_id=cliente_id,
+        cliente_id=to_int(cliente_id),
         observacao=observacao,
         numero_documento=numero_documento,
         tipo_documento_id=to_int(tipo_documento_id),
@@ -429,7 +430,7 @@ def atualizar_conta_receber(
     descricao: str = Form(...),
     valor: str = Form(...),
     data_vencimento: date = Form(...),
-    cliente_id: Optional[int] = Form(None),
+    cliente_id: Optional[str] = Form(""),
     observacao: Optional[str] = Form(None),
     status: StatusConta = Form(...),
     numero_documento: Optional[str] = Form(None),
@@ -438,7 +439,7 @@ def atualizar_conta_receber(
     forma_pagamento: Optional[str] = Form(None)
 ):
     def to_int(v):
-        try: return int(v) if v and v.strip() else None
+        try: return int(v) if v and str(v).strip() else None
         except (ValueError, TypeError, AttributeError):
             logger.debug(f"Falha ao converter para int: {v}")
             return None
@@ -449,7 +450,7 @@ def atualizar_conta_receber(
     conta.descricao = descricao
     conta.valor = to_decimal(valor)
     conta.data_vencimento = data_vencimento
-    conta.cliente_id = cliente_id
+    conta.cliente_id = to_int(cliente_id)
     conta.observacao = observacao
     conta.status = status
     conta.numero_documento = numero_documento
