@@ -249,7 +249,7 @@
 {% set recebidas_banco = nfse_recebidas|default([]) %}
 {% if recebidas_banco %}
 <div class="mt-8">
-    <button class="flex items-center gap-2 text-sm font-semibold text-slate-200 hover:text-cyan-400 transition" type="button" data-bs-toggle="collapse" data-bs-target="#recebidasCollapse" aria-expanded="false" aria-controls="recebidasCollapse">
+    <button class="flex items-center gap-2 text-sm font-semibold text-slate-200 hover:text-cyan-400 transition" type="button" aria-expanded="false" aria-controls="recebidasCollapse" onclick="var el=document.getElementById('recebidasCollapse'); el.classList.toggle('show'); this.setAttribute('aria-expanded', el.classList.contains('show'));">
         <i data-lucide="inbox" class="w-4 h-4"></i> NFSe Recebidas (somos tomador)
         <span class="px-1.5 py-0.5 text-xs rounded-full bg-slate-800 text-slate-400">{{ recebidas_banco|length }}</span>
         <i data-lucide="chevron-down" class="w-4 h-4"></i>
