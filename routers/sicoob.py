@@ -165,6 +165,9 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
         return {"success": False, "error": "Cliente não associado à conta"}
 
     nosso_numero = f"{date.today().strftime('%Y%m%d')}{conta.id:08d}"
+    # seuNumero: prioriza o numero do documento da conta; senao usa o nosso_numero automatico
+    seu_numero_doc = ''.join(filter(str.isdigit, str(conta.numero_documento or '')))
+    seu_numero = seu_numero_doc if seu_numero_doc else nosso_numero
     cpf_cnpj = ''.join(filter(str.isdigit, conta.cliente.cpf_cnpj or ''))
 
     beneficiario = int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820
@@ -173,7 +176,7 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
     data_emissao = date.today().strftime("%Y-%m-%d")
 
     body = {
-        "seuNumero": nosso_numero,
+        "seuNumero": seu_numero,
         "valor": float(conta.valor),
         "dataVencimento": conta.data_vencimento.strftime("%Y-%m-%d"),
         "dataEmissao": data_emissao,

@@ -85,7 +85,7 @@
                          {% if c.boleto_emitido and c.status.name.lower() not in ['cancelado', 'baixa_solicitada', 'pago'] %}
                           <a href="/sicoob/boleto-pdf/{{ c.api_nosso_numero or c.nosso_numero }}" target="_blank" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Ver Boleto"><i data-lucide="eye" class="w-4 h-4"></i></a>
                          {% elif c.status.name.lower() not in ['cancelado', 'baixa_solicitada', 'pago'] %}
-                           <button type="button" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Emitir Boleto" onclick="abrirEmitir({{ c.id }}, {{ c.valor }})"><i data-lucide="credit-card" class="w-4 h-4"></i></button>
+                           <button type="button" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Emitir Boleto" onclick="abrirEmitir({{ c.id }}, {{ c.valor }}, '{{ (c.numero_documento or '')|e }}')"><i data-lucide="credit-card" class="w-4 h-4"></i></button>
                          {% endif %}
                          <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarExclusao('/contas/receber/{{ c.id }}/excluir')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                      </div>
@@ -262,10 +262,10 @@
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
             <div class="modal-body">
-                <p class="text-slate-300 mb-3">Número do documento (deixe vazio para gerar automático)</p>
+                <p class="text-slate-300 mb-3">Número do documento (já traz o da conta; deixe vazio para gerar automático)</p>
                 <div class="mb-3">
                     <label class="form-label text-cyan-300">Número do Documento</label>
-                    <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_documento" placeholder="Automático se vazio" pattern="\d*">
+                    <input type="text" id="emitir-numero" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_documento" placeholder="Automático se vazio" pattern="\d*">
                 </div>
             </div>
             <div class="modal-footer border-t border-slate-800/50">
@@ -350,8 +350,10 @@ function abrirRecebimento(id, descricao, cliente, valor) {
     modal.show();
 }
 
-function abrirEmitir(id, valor) {
+function abrirEmitir(id, valor, numeroDoc) {
     document.getElementById('emitir-valor').value = valor;
+    const numInput = document.getElementById('emitir-numero');
+    if (numInput) numInput.value = numeroDoc || '';
     document.getElementById('formEmitir').action = '/sicoob/emitir-boleto/' + id;
     const modal = new bootstrap.Modal(document.getElementById('modalEmitir'));
     modal.show();
