@@ -23,9 +23,17 @@
         <table class="w-full divide-y divide-slate-800/60">
         <thead class="bg-slate-950/50">
             <tr>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-24">Código</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase tracking-wider">Nome</th>
-                <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-28">Fantasia</th>
+                {% macro sort_th(col, label, cls='') %}
+                <th class="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider w-24 {{ 'text-cyan-400' if sort == col else 'text-slate-400' }} {{ cls }}">
+                    <a href="?busca={{ busca }}&situacao={{ filtro_situacao }}&sort={{ col }}&ordem={{ 'desc' if sort == col and ordem == 'asc' else 'asc' }}&page=1" class="flex items-center gap-1 hover:text-cyan-300 transition">
+                        {{ label }}
+                        {% if sort == col %}<i data-lucide="{{ 'arrow-down' if ordem == 'desc' else 'arrow-up' }}" class="w-3 h-3"></i>{% endif %}
+                    </a>
+                </th>
+                {% endmacro %}
+                {{ sort_th('codigo', 'Código') }}
+                {{ sort_th('nome', 'Nome') }}
+                {{ sort_th('fantasia', 'Fantasia') }}
                 <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-28">CPF/CNPJ</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-emerald-400 uppercase tracking-wider w-24">Telefone</th>
                 <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase tracking-wider w-20">Contato</th>

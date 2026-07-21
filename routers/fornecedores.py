@@ -10,28 +10,23 @@ from services.audit import registrar_auditoria
 
 
 def _proximo_codigo_fornecedor(db: Session) -> str:
-    empresa = db.query(Empresa).with_for_update().first()
-    if empresa:
-        empresa.ultimo_codigo_fornecedor = (empresa.ultimo_codigo_fornecedor or 0) + 1
-        return f"FOR-{empresa.ultimo_codigo_fornecedor:04d}"
+    """Próximo código de fornecedor disponível.
+
+    Varre os códigos já existentes e retorna o primeiro número livre
+    (FOR-0001, FOR-0002, ...), pulando qualquer um já utilizado, evitando
+    códigos duplicados.
+    """
     codigos = db.query(Fornecedor.codigo).filter(Fornecedor.codigo.isnot(None)).all()
-    codigos = [c[0] for c in codigos if c[0]]
-    
     usados = set()
     for c in codigos:
         try:
-            num = int(c.split("-")[1])
-            usados.add(num)
+            usados.add(int(str(c[0]).split("-")[1]))
         except (IndexError, ValueError):
             continue
-    
-    max_num = max(usados) if usados else 0
-    
-    for i in range(1, max_num + 2):
+    for i in range(1, (max(usados) if usados else 0) + 2):
         if i not in usados:
             return f"FOR-{i:04d}"
-    
-    return f"FOR-{max_num + 1:04d}"
+    return "FOR-0001"
 
 
 router = APIRouter(prefix="/fornecedores", tags=["Fornecedores"])

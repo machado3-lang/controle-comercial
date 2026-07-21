@@ -53,7 +53,7 @@
         <div class="grid grid-cols-4 gap-3 mb-3">
             <div class="col-span-2">
                 <label class="form-label text-cyan-300">CPF/CNPJ</label>
-                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="cpf_cnpj" value="{{ cliente.cpf_cnpj if cliente else '' }}" maxlength="{{ '14' if not cliente or cliente.tipo_pessoa == 'fisica' else '18' }}">
+                <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="cpf_cnpj" value="{{ cliente.cpf_cnpj if cliente else '' }}" maxlength="{{ '14' if (cliente and cliente.tipo_pessoa == 'fisica') else '18' }}">
                 <input type="hidden" name="data_sincronizacao" id="dataSincronizacao" value="{{ cliente.data_sincronizacao.strftime('%Y-%m-%d %H:%M') if cliente and cliente.data_sincronizacao else '' }}">
             </div>
             <div>

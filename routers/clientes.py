@@ -11,28 +11,24 @@ from services.audit import registrar_auditoria
 
 
 def _proximo_codigo_cliente(db: Session) -> str:
-    empresa = db.query(Empresa).with_for_update().first()
-    if empresa:
-        empresa.ultimo_codigo_cliente = (empresa.ultimo_codigo_cliente or 0) + 1
-        return f"CLI-{empresa.ultimo_codigo_cliente:04d}"
+    """Próximo código de cliente disponível.
+
+    Varre os códigos já existentes e retorna o primeiro número livre
+    (CLI-0001, CLI-0002, ...), pulando qualquer um já utilizado. Assim,
+    se o CLI-0005 já existir, o gerador entrega CLI-0006 e segue, sem
+    produzir códigos duplicados.
+    """
     codigos = db.query(Cliente.codigo).filter(Cliente.codigo.isnot(None)).all()
-    codigos = [c[0] for c in codigos if c[0]]
-    
     usados = set()
     for c in codigos:
         try:
-            num = int(c.split("-")[1])
-            usados.add(num)
+            usados.add(int(str(c[0]).split("-")[1]))
         except (IndexError, ValueError):
             continue
-    
-    max_num = max(usados) if usados else 0
-    
-    for i in range(1, max_num + 2):
+    for i in range(1, (max(usados) if usados else 0) + 2):
         if i not in usados:
             return f"CLI-{i:04d}"
-    
-    return f"CLI-{max_num + 1:04d}"
+    return "CLI-0001"
 
 router = APIRouter(prefix="/clientes", tags=["Clientes"])
 
@@ -41,6 +37,7 @@ router = APIRouter(prefix="/clientes", tags=["Clientes"])
 def listar_clientes(
     request: Request, db: Session = Depends(get_db),
     busca: str = Query(""), situacao: str = Query(""),
+    sort: str = Query("nome"), ordem: str = Query("asc"),
     page: int = Query(1), per_page: int = Query(20),
 ):
     query = db.query(Cliente)
@@ -50,16 +47,26 @@ def listar_clientes(
         )
     if situacao:
         query = query.filter(Cliente.situacao == situacao)
+    sort_col = {
+        "codigo": Cliente.codigo,
+        "nome": Cliente.nome,
+        "fantasia": Cliente.fantasia,
+    }.get(sort, Cliente.nome)
+    if ordem == "desc":
+        query = query.order_by(sort_col.desc())
+    else:
+        query = query.order_by(sort_col.asc())
     total_count = query.count()
     total_pages = max(1, (total_count + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
     offset = (page - 1) * per_page
-    clientes = query.order_by(Cliente.nome).offset(offset).limit(per_page).all()
+    clientes = query.offset(offset).limit(per_page).all()
     return request.app.state.templates.TemplateResponse(request, 
         "clientes/listar.html",
         {"request": request, "clientes": clientes, "busca": busca,
          "filtro_situacao": situacao, "page": page, "per_page": per_page,
-         "total_pages": total_pages, "total_count": total_count}
+         "total_pages": total_pages, "total_count": total_count,
+         "sort": sort, "ordem": ordem}
     )
 
 
