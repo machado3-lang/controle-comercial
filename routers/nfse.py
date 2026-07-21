@@ -701,7 +701,8 @@ def editar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe não encontrada")
-    if nfse.status not in ("rascunho", "erro"):
+    st = (nfse.status or '').lower()
+    if st not in ("rascunho", "erro"):
         request.session["error"] = "Só é possível editar NFSe em rascunho ou erro"
         return RedirectResponse(url="/nfse", status_code=303)
 
@@ -742,7 +743,8 @@ def editar_nfse_salvar(
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe não encontrada")
-    if nfse.status not in ("rascunho", "erro"):
+    st = (nfse.status or '').lower()
+    if st not in ("rascunho", "erro"):
         request.session["error"] = "Só é possível editar NFSe em rascunho ou erro"
         return RedirectResponse(url="/nfse", status_code=303)
 
@@ -888,7 +890,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     xml_nacional = None
     if nfse.xml_text and is_xml_nfse_nacional(nfse.xml_text):
         xml_nacional = nfse.xml_text
-    elif nfse.status in ('autorizada', 'cancelada') and nfse.codigo_verificacao:
+    elif (nfse.status or '').lower() in ('autorizada', 'cancelada') and nfse.codigo_verificacao:
         xml_nacional = _buscar_xml_nacional_adn(nfse)
         if xml_nacional:
             nfse.xml_text = xml_nacional
@@ -900,7 +902,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
             os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
             gerar_danfse_pdf(
                 xml_nacional, pdf_path,
-                cancelada=(nfse.status == 'cancelada'),
+                cancelada=((nfse.status or '').lower() == 'cancelada'),
             )
             nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
             db.commit()
@@ -998,7 +1000,7 @@ def cancelar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db),
     nfse = db.query(NFSe).filter(NFSe.id == nfse_id).first()
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe não encontrada")
-    if nfse.status not in ("autorizada", "pendente"):
+    if (nfse.status or '').lower() not in ("autorizada", "pendente"):
         request.session["error"] = f"Não é possível cancelar NFSe com status {nfse.status}"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
@@ -1029,7 +1031,7 @@ def excluir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     nfse = db.query(NFSe).filter(NFSe.id == nfse_id).first()
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe não encontrada")
-    if nfse.status != "rascunho":
+    if (nfse.status or '').lower() != "rascunho":
         request.session["error"] = "Só é possível excluir NFSe em rascunho"
         return RedirectResponse(url="/nfse", status_code=303)
     try:
@@ -1057,7 +1059,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe não encontrada")
-    if nfse.status not in ("rascunho", "pendente", "erro"):
+    if (nfse.status or '').lower() not in ("rascunho", "pendente", "erro"):
         request.session["error"] = f"Não é possível transmitir NFSe com status {nfse.status}"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
     if not nfse.itens:
@@ -1250,7 +1252,7 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
     nfse = db.query(NFSe).options(selectinload(NFSe.itens)).filter(NFSe.id == nfse_id).first()
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe não encontrada")
-    if nfse.status not in ("em_processamento", "pendente", "erro", "autorizada", "cancelada"):
+    if (nfse.status or '').lower() not in ("em_processamento", "pendente", "erro", "autorizada", "cancelada"):
         request.session["error"] = "Só é possível sincronizar NFSe em processamento, pendente, erro, autorizada ou cancelada"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
     if not nfse.protocolo:
