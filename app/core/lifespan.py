@@ -77,6 +77,18 @@ def run_migrations():
     except Exception as e:
         print(f"[MIGRATION] Warning: could not add unique constraints: {e}")
 
+    # Auto-migrate: adiciona indexes faltantes em colunas FK
+    try:
+        _add_missing_indexes()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not add missing indexes: {e}")
+
+    # Limpeza de PDFs temporários antigos
+    try:
+        _cleanup_old_pdfs()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not cleanup old PDFs: {e}")
+
     # Backfill: corrige origem de NFe/NFSe já existentes (default 'avulsa')
     try:
         _backfill_origem()
@@ -345,6 +357,8 @@ def _add_unique_constraints():
     constraints = [
         ("nfse", "uq_nfse_chave_acesso", "chave_acesso"),
         ("nfse_recebida", "uq_nfse_recebida_chave_acesso", "chave_acesso"),
+        ("clientes", "uq_clientes_cpf_cnpj", "cpf_cnpj"),
+        ("fornecedores", "uq_fornecedores_cpf_cnpj", "cpf_cnpj"),
     ]
 
     inspector = sa_inspect(engine)
@@ -378,6 +392,67 @@ def _add_unique_constraints():
                 print(f"[MIGRATION] Added unique constraint {constraint_name} on {table}({column})")
             except Exception as e:
                 print(f"[MIGRATION] Could not add {constraint_name}: {e}")
+
+
+def _add_missing_indexes():
+    """Adiciona indexes em colunas FK que foram declaradas no model com
+    index=True mas cujo index ainda nao existe no banco."""
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+
+    for table_name, table in Base.metadata.tables.items():
+        if table_name not in existing_tables:
+            continue
+        existing_indexes = {idx["name"] for idx in inspector.get_indexes(table_name)}
+        for col in table.columns:
+            if not col.index:
+                continue
+            # Nome padrao que o SQLAlchemy usaria se criar a tabela do zero
+            idx_name = f"ix_{table_name}_{col.name}"
+            if idx_name in existing_indexes:
+                continue
+            # Pula primary keys (ja tem index implicito)
+            if col.primary_key:
+                continue
+            try:
+                with engine.connect() as conn:
+                    conn.execute(sa_text(
+                        f"CREATE INDEX IF NOT EXISTS {idx_name} ON {table_name} ({col.name})"
+                    ))
+                    conn.commit()
+                    print(f"[MIGRATION] Created index {idx_name} on {table_name}({col.name})")
+            except Exception as e:
+                print(f"[MIGRATION] Could not create index {idx_name}: {e}")
+
+
+def _cleanup_old_pdfs():
+    """Remove PDFs temporários com mais de 30 dias das pastas de upload.
+    Os DANFSe/DANFE serão regenerados sob demanda se necessário."""
+    import shutil
+    import time
+
+    dirs = ["static/uploads/nfse", "static/uploads/nfe"]
+    cutoff = time.time() - 30 * 86400
+    removed = 0
+    for d in dirs:
+        if not os.path.isdir(d):
+            continue
+        for fname in os.listdir(d):
+            if not fname.lower().endswith(".pdf"):
+                continue
+            fpath = os.path.join(d, fname)
+            try:
+                mtime = os.path.getmtime(fpath)
+                if mtime < cutoff:
+                    os.remove(fpath)
+                    removed += 1
+            except Exception:
+                pass
+    if removed:
+        print(f"[MIGRATION] Removed {removed} old PDF(s) (>30 days)")
 
 
 def create_app() -> FastAPI:

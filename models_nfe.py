@@ -7,8 +7,8 @@ from database import Base
 class NFe(Base):
     __tablename__ = "nfe"
     id = Column(Integer, primary_key=True)
-    pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True)
-    os_id = Column(Integer, ForeignKey("ordens_servico.id"), nullable=True)
+    pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
+    os_id = Column(Integer, ForeignKey("ordens_servico.id"), nullable=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True, index=True)
     origem = Column(String(20), default="avulsa", nullable=False)  # "pedido", "os", "consolidacao", "assinatura", "importada" ou "avulsa"
     numero = Column(Integer, nullable=False)
@@ -47,9 +47,9 @@ class NFe(Base):
 class NFeItem(Base):
     __tablename__ = "nfe_itens"
     id = Column(Integer, primary_key=True)
-    nfe_id = Column(Integer, ForeignKey("nfe.id"), nullable=False)
-    produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True)
-    item_pai_id = Column(Integer, ForeignKey("nfe_itens.id"), nullable=True)
+    nfe_id = Column(Integer, ForeignKey("nfe.id"), nullable=False, index=True)
+    produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True, index=True)
+    item_pai_id = Column(Integer, ForeignKey("nfe_itens.id"), nullable=True, index=True)
     descricao = Column(String(300), nullable=False)
     ncm = Column(String(10), nullable=True)
     cfop = Column(String(4), nullable=True)
@@ -65,7 +65,7 @@ class NFeItem(Base):
 class NFSe(Base):
     __tablename__ = "nfse"
     id = Column(Integer, primary_key=True)
-    pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True)
+    pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
     consolidacao_id = Column(Integer, ForeignKey("pedidos_consolidados.id"), nullable=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True, index=True)
     numero = Column(String(50))
@@ -104,8 +104,8 @@ class NFSe(Base):
 class NFSeItem(Base):
     __tablename__ = "nfse_itens"
     id = Column(Integer, primary_key=True)
-    nfse_id = Column(Integer, ForeignKey("nfse.id"))
-    produto_id = Column(Integer, ForeignKey("produtos.id"))
+    nfse_id = Column(Integer, ForeignKey("nfse.id"), index=True)
+    produto_id = Column(Integer, ForeignKey("produtos.id"), index=True)
     descricao = Column(String(300))
     quantidade = Column(Numeric(12, 2))
     valor_unitario = Column(Numeric(12, 2))

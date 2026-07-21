@@ -3,8 +3,9 @@ import xml.etree.ElementTree as ET
 from datetime import datetime
 from decimal import Decimal
 from fpdf import FPDF
+from app.core.config import settings
 
-UPLOAD_DIR = "static/uploads/nfse"
+UPLOAD_DIR = os.path.join(settings.UPLOAD_DIR, "nfse")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 # Namespace da NFS-e Nacional (Sefin Nacional / Portal ADN) esperado pelo

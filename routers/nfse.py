@@ -28,8 +28,11 @@ STATUS_LABELS = {
     "cancelada": "Cancelada",
 }
 
-UPLOAD_DIR = "static/uploads/nfse"
+from app.core.config import settings
+UPLOAD_DIR = os.path.join(settings.UPLOAD_DIR, "nfse")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+XML_DIR = os.path.join(settings.UPLOAD_DIR, "nfs")
+os.makedirs(XML_DIR, exist_ok=True)
 
 
 def _proximo_numero(empresa: Empresa, db: Session) -> int:
@@ -373,7 +376,7 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db))
             dps_xml = resultado.get('xml')
             if dps_xml:
                 xml_filename = f"nfse_{nfse.id}.xml"
-                xml_path = f"static/uploads/nfs/{xml_filename}"
+                xml_path = os.path.join(XML_DIR, xml_filename)
                 os.makedirs(os.path.dirname(xml_path), exist_ok=True)
                 with open(xml_path, 'w', encoding='utf-8') as f:
                     f.write(dps_xml)
@@ -1097,7 +1100,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
             dps_xml = resultado.get('xml')
             if dps_xml:
                 xml_filename = f"nfse_{nfse.id}.xml"
-                xml_path = f"static/uploads/nfs/{xml_filename}"
+                xml_path = os.path.join(XML_DIR, xml_filename)
                 os.makedirs(os.path.dirname(xml_path), exist_ok=True)
                 with open(xml_path, 'w', encoding='utf-8') as f:
                     f.write(dps_xml)
@@ -1139,7 +1142,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                     dps_xml = gerar_dps_xml_nfse(nfse, db, 1, num)
                     if dps_xml:
                         xml_filename = f"nfse_{nfse.id}.xml"
-                        xml_path = f"static/uploads/nfs/{xml_filename}"
+                        xml_path = os.path.join(XML_DIR, xml_filename)
                         os.makedirs(os.path.dirname(xml_path), exist_ok=True)
                         with open(xml_path, 'w', encoding='utf-8') as f:
                             f.write(dps_xml)
@@ -1194,7 +1197,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                         dps_xml = resultado2.get('xml')
                         if dps_xml:
                             xml_filename = f"nfse_{nfse.id}.xml"
-                            xml_path = f"static/uploads/nfs/{xml_filename}"
+                            xml_path = os.path.join(XML_DIR, xml_filename)
                             os.makedirs(os.path.dirname(xml_path), exist_ok=True)
                             with open(xml_path, 'w', encoding='utf-8') as f:
                                 f.write(dps_xml)
@@ -1281,7 +1284,7 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
             xml_oficial = resultado.get('xml_documento')
             if xml_oficial:
                 xml_filename = f"nfse_{nfse.id}.xml"
-                xml_path = f"static/uploads/nfs/{xml_filename}"
+                xml_path = os.path.join(XML_DIR, xml_filename)
                 os.makedirs(os.path.dirname(xml_path), exist_ok=True)
                 with open(xml_path, 'w', encoding='utf-8') as f:
                     f.write(xml_oficial)
@@ -1292,7 +1295,7 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
                 dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero)
                 if dps_xml:
                     xml_filename = f"nfse_{nfse.id}.xml"
-                    xml_path = f"static/uploads/nfs/{xml_filename}"
+                    xml_path = os.path.join(XML_DIR, xml_filename)
                     os.makedirs(os.path.dirname(xml_path), exist_ok=True)
                     with open(xml_path, 'w', encoding='utf-8') as f:
                         f.write(dps_xml)

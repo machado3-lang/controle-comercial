@@ -22,7 +22,7 @@ class MovimentacaoEstoque(Base):
     data = Column(DateTime, default=datetime.now)
     doc_tipo = Column(String(20), nullable=True)  # nfe, nfse, pedido, os, ajuste
     doc_id = Column(Integer, nullable=True)
-    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True, index=True)
     motivo = Column(String(200), nullable=True)
     deposito_id = Column(Integer, nullable=True)  # Fase 1: 1 deposito (null = principal)
     saldo_apos = Column(Float, nullable=True)
@@ -35,7 +35,7 @@ class OSPeca(Base):
 
     id = Column(Integer, primary_key=True)
     os_id = Column(Integer, ForeignKey("ordens_servico.id"), nullable=False, index=True)
-    produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=False)
+    produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=False, index=True)
     quantidade = Column(Float, nullable=False, default=1)
     valor_unitario = Column(Numeric(12, 2), nullable=True)
 

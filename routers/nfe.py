@@ -25,7 +25,8 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/nfe", tags=["NFe"])
 
-UPLOAD_DIR = "static/uploads/nfe"
+from app.core.config import settings
+UPLOAD_DIR = os.path.join(settings.UPLOAD_DIR, "nfe")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 
