@@ -987,10 +987,10 @@ def nfe_distribuicao(
 
     from models import NFeDistribuida
     try:
-        if reiniciar or tipo == 'emitida':
-            # A consulta de emitidas precisa do histórico completo: o cursor
-            # ultNSU é somente para frente e pode ter pulado NFe emitidas mais
-            # antigas (ex.: emitidas por outros ambientes). Reinicia o NSU.
+        if reiniciar:
+            # Reinicia o cursor para baixar todo o histórico da SEFAZ.
+            # Atenção: a SEFAZ bloqueia (cStat 656) re-downloads completos
+            # feitos em sequência; use apenas quando necessário (após ~1h).
             empresa.nfe_ultnsu = None
             db.commit()
 
@@ -1126,9 +1126,13 @@ def nfe_distribuicao(
         ambiente = "Homologação" if service.tpAmb == 2 else "Produção"
         detalhe = ""
         if (len(emitidas) + len(recebidas)) == 0:
+            dica = ""
+            if service.ultimo_cstat == '656':
+                dica = " | A SEFAZ bloqueia re-download completo: aguarde ~1h e use 'Reiniciar' (ou clique Buscar SEFAZ mais tarde para consulta incremental)"
             detalhe = (f" | SEFAZ cStat={service.ultimo_cstat or '-'} "
                        f"({service.ultimo_motivo or 'sem resposta'}) | Ambiente={ambiente} | "
-                       f"cUFAutor=50 (Mato Grosso) | ultNSU={empresa.nfe_ultnsu or '000000000000000'}")
+                       f"cUFAutor=50 (MS - Mato Grosso do Sul, correto) | "
+                       f"ultNSU={empresa.nfe_ultnsu or '000000000000000'}{dica}")
         if tipo == 'emitida':
             msg = f"SEFAZ: {len(emitidas)} NFe emitidas sincronizadas na listagem principal{detalhe}"
         elif tipo == 'recebida':
