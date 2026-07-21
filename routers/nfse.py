@@ -1577,10 +1577,11 @@ def listar_nfse_adn(
 
 @router.get("/adn-danfse/{chave_acesso}")
 def adn_danfse(request: Request, chave_acesso: str, db: Session = Depends(get_db)):
-    """Baixa DANFSe (gerado localmente) a partir da chave de acesso (ADN parado)"""
+    """Baixa DANFSe (gerado localmente) a partir da chave de acesso"""
     from fastapi.responses import Response, FileResponse
     from services.nfse_pdf import gerar_danfse_pdf, is_xml_nfse_nacional
     from services.nfse_betha import BethaNfseService
+    from models_nfe import NFSeRecebida
     import os
 
     nfse = db.query(NFSe).options(
@@ -1588,20 +1589,28 @@ def adn_danfse(request: Request, chave_acesso: str, db: Session = Depends(get_db
         selectinload(NFSe.pedido),
     ).filter(NFSe.codigo_verificacao == chave_acesso).first()
 
-    if not nfse:
-        return Response(status_code=404, content="NFSe nÃ£o encontrada")
-
-    xml_nacional = nfse.xml_text
-    if not xml_nacional:
-        try:
-            service = BethaNfseService(empresa=None)
-            sit = service.consultar_situacao_nfse(str(nfse.numero), chave_acesso)
-            xml_nacional = sit.get('xml') if isinstance(sit, dict) else None
-            if xml_nacional:
-                nfse.xml_text = xml_nacional
-                db.commit()
-        except Exception:
-            pass
+    cancelada = False
+    if nfse:
+        xml_nacional = nfse.xml_text
+        if not xml_nacional:
+            try:
+                service = BethaNfseService(empresa=None)
+                sit = service.consultar_situacao_nfse(str(nfse.numero), chave_acesso)
+                xml_nacional = sit.get('xml') if isinstance(sit, dict) else None
+                if xml_nacional:
+                    nfse.xml_text = xml_nacional
+                    db.commit()
+            except Exception:
+                pass
+        cancelada = ((nfse.status or '').lower() == 'cancelada')
+    else:
+        nfse_rec = db.query(NFSeRecebida).filter(
+            NFSeRecebida.chave_acesso == chave_acesso
+        ).first()
+        if not nfse_rec:
+            return Response(status_code=404, content="NFSe nÃ£o encontrada")
+        xml_nacional = nfse_rec.xml_text
+        cancelada = nfse_rec.cancelada or ((nfse_rec.status or '').lower() == 'cancelada')
 
     if not xml_nacional or not is_xml_nfse_nacional(xml_nacional):
         return Response(status_code=400, content="XML nacional nÃ£o disponÃ­vel para geraÃ§Ã£o do DANFSe")
@@ -1613,10 +1622,7 @@ def adn_danfse(request: Request, chave_acesso: str, db: Session = Depends(get_db
         pdf_filename = f"danfse_{chave_acesso}.pdf"
         pdf_path = os.path.join(pdf_dir, pdf_filename)
 
-        gerar_danfse_pdf(
-            xml_nacional, pdf_path,
-            cancelada=((nfse.status or '').lower() == 'cancelada'),
-        )
+        gerar_danfse_pdf(xml_nacional, pdf_path, cancelada=cancelada)
 
         if os.path.exists(pdf_path):
             return FileResponse(pdf_path, media_type="application/pdf",
