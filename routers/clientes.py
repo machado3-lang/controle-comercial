@@ -144,6 +144,74 @@ def diagnostico_codigos(request: Request, db: Session = Depends(get_db)):
     )
 
 
+def _corrigir_codigos_tabela(db: Session, Model, prefix: str) -> int:
+    """Preenche códigos vazios e renumera duplicados (mantém o mais antigo).
+    Retorna a quantidade de cadastros alterados. Não remove nada."""
+    from collections import defaultdict
+    rows = db.query(Model).all()
+
+    def num_of(code):
+        try:
+            return int(str(code).split("-")[1])
+        except (IndexError, ValueError, TypeError):
+            return None
+
+    def order_key(r):
+        return (getattr(r, "created_at", None) or datetime.min, r.id)
+
+    # Números já usados por códigos parseáveis (set = duplicado conta 1x)
+    usados = set()
+    for r in rows:
+        if r.codigo and str(r.codigo).strip():
+            n = num_of(r.codigo)
+            if n is not None:
+                usados.add(n)
+
+    # Agrupa por chave normalizada (número quando parseável, senão string)
+    grupos = defaultdict(list)
+    sem_codigo = []
+    for r in rows:
+        cod = str(r.codigo).strip() if r.codigo else ""
+        if not cod:
+            sem_codigo.append(r)
+            continue
+        n = num_of(cod)
+        chave = ("n", n) if n is not None else ("s", cod)
+        grupos[chave].append(r)
+
+    a_reatribuir = []
+    for chave, regs in grupos.items():
+        if len(regs) > 1:
+            regs_ordenados = sorted(regs, key=order_key)
+            a_reatribuir.extend(regs_ordenados[1:])  # mantém o mais antigo
+    a_reatribuir.extend(sem_codigo)
+
+    contador = 1
+    alterados = 0
+    for r in sorted(a_reatribuir, key=order_key):
+        while contador in usados:
+            contador += 1
+        r.codigo = f"{prefix}-{contador:04d}"
+        usados.add(contador)
+        alterados += 1
+    return alterados
+
+
+@router.post("/corrigir-codigos")
+def corrigir_codigos(request: Request, db: Session = Depends(get_db)):
+    """Correção automática: preenche vazios e renumera duplicados (clientes e
+    fornecedores), mantendo sempre o cadastro mais antigo com o código original."""
+    from models import Fornecedor
+    cli = _corrigir_codigos_tabela(db, Cliente, "CLI")
+    forn = _corrigir_codigos_tabela(db, Fornecedor, "FOR")
+    db.commit()
+    request.session["message"] = {
+        "tipo": "success",
+        "texto": f"Códigos corrigidos: {cli} cliente(s) e {forn} fornecedor(es) atualizados."
+    }
+    return RedirectResponse(url="/clientes/diagnostico-codigos", status_code=303)
+
+
 @router.post("/novo")
 def criar_cliente(
     request: Request,

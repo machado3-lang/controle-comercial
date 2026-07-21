@@ -6,6 +6,10 @@
     <div class="flex items-center gap-2">
         <a href="/clientes" class="flex items-center h-9 px-3 text-sm bg-slate-800 border border-white/10 rounded-xl text-cyan-400 transition hover:bg-slate-700/50"><i data-lucide="users" class="w-4 h-4 me-1"></i> Clientes</a>
         <a href="/fornecedores" class="flex items-center h-9 px-3 text-sm bg-slate-800 border border-white/10 rounded-xl text-cyan-400 transition hover:bg-slate-700/50"><i data-lucide="building-2" class="w-4 h-4 me-1"></i> Fornecedores</a>
+        <form method="post" action="/clientes/corrigir-codigos" onsubmit="return confirm('Isso vai preencher os cadastros sem código e renumerar os duplicados (mantendo o mais antigo com o código original). Nada é apagado. Deseja continuar?');">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <button type="submit" class="flex items-center h-9 px-3 text-sm bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10"><i data-lucide="wand-2" class="w-4 h-4 me-1"></i> Corrigir códigos</button>
+        </form>
     </div>
 </div>
 
