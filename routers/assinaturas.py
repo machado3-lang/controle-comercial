@@ -283,10 +283,17 @@ def _salvar_historico(db: Session, assinatura: Assinatura, valor, valor_revenda,
 
 
 @router.post("/{assinatura_id}/gerar-cobranca")
-def gerar_cobranca(request: Request, assinatura_id: int, db: Session = Depends(get_db)):
+def gerar_cobranca(request: Request, assinatura_id: int, db: Session = Depends(get_db), quantidade: int = Form(3)):
     assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
-    if assinatura:
-        _gerar_cobranca(db, assinatura)
+    if not assinatura:
+        request.session["error"] = "Assinatura não encontrada"
+    else:
+        try:
+            qtd = max(1, min(int(quantidade), 24))
+        except (ValueError, TypeError):
+            qtd = 3
+        _gerar_cobranca(db, assinatura, gerar_proximas=qtd)
+        request.session["message"] = f"{qtd} cobrança(s) gerada(s) para a assinatura #{assinatura_id}"
     return RedirectResponse(url="/assinaturas", status_code=303)
 
 

@@ -229,6 +229,17 @@ function confirmarExclusaoSimples(url) {
         .catch(() => window.location.reload());
 }
 
+function confirmarGerarCobranca(assinaturaId) {
+    const form = document.getElementById('formGerarCobranca');
+    if (!form) {
+        alert('Erro: formulário de cobrança não encontrado');
+        return;
+    }
+    form.action = '/assinaturas/' + assinaturaId + '/gerar-cobranca';
+    const modal = new bootstrap.Modal(document.getElementById('modalGerarCobranca'));
+    modal.show();
+}
+
 function excluirDireto(url) {
     csrfFetch(url, { method: 'POST' })
         .then(r => {
