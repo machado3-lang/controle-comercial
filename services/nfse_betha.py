@@ -34,7 +34,6 @@ BETHA_RECOVER_PDF_URL = os.getenv('BETHA_RECOVER_PDF_URL', 'https://e-gov.betha.
 
 # API do Ambiente de Dados Nacional (ADN) / SEFIN
 ADN_NFSE_URL = os.getenv('ADN_NFSE_URL', 'https://sefin.nfse.gov.br/SefinNacional')
-ADN_DANFSE_URL = os.getenv('ADN_DANFSE_URL', 'https://adn.nfse.gov.br/danfse')
 ADN_DFE_URL = os.getenv('ADN_DFE_URL', 'https://adn.nfse.gov.br/contribuintes/dfe')
 
 class BethaNfseService:
@@ -472,23 +471,6 @@ class BethaNfseService:
 
         logger.info(f"ADN retornou {len(resultados)} NFS-e no período ({len(cancelamentos)} canceladas)")
         return resultados
-
-    def baixar_danfse_adn(self, chave_acesso: str) -> bytes | None:
-        """Tenta baixar o DANFSe (PDF) do ADN: GET https://adn.nfse.gov.br/danfse/{chaveAcesso}"""
-        import logging as _lg
-        _lg.info(f"Baixando DANFSe ADN {chave_acesso[:10]}...")
-        session = self._get_adn_session()
-        try:
-            r = session.get(f"{ADN_DANFSE_URL}/{chave_acesso}", timeout=30)
-            ct = r.headers.get('content-type', '')
-            if r.status_code == 200 and 'application/pdf' in ct:
-                _lg.info(f"DANFSe baixado ({len(r.content)} bytes)")
-                return r.content
-            _lg.warning(f"DANFSe ADN HTTP {r.status_code} ct={ct}")
-            return None
-        except Exception as e:
-            _lg.warning(f"Erro baixar DANFSe ADN: {e}")
-            return None
 
     def consultar_situacao_nfse(self, numero_nfse: str, codigo_verificacao: str = None) -> dict:
         """Consulta situação real via ADN SEFIN — GET /nfse + GET /eventos"""

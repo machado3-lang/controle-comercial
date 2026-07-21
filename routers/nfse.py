@@ -1,4 +1,4 @@
-import os
+﻿import os
 import json
 import re
 import logging
@@ -12,7 +12,7 @@ from database import get_db
 from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ContaReceber, StatusConta, OrdemServico, Assinatura, Fornecedor
 from models_nfe import NFSe, NFSeItem, NFSeRecebida
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
-from services.nfse_pdf import gerar_pdf_nfse
+from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional
 from services.nfe_notaas import explodir_itens_consolidacao
 
 logger = logging.getLogger(__name__)
@@ -99,7 +99,7 @@ def listar_nfse(
         if not cob:
             nfse_ids_sem_cobranca.add(n.id)
 
-    # NFSe recebidas (somos o tomador) no período selecionado, p/ exibição no rodapé
+    # NFSe recebidas (somos o tomador) no perÃ­odo selecionado, p/ exibiÃ§Ã£o no rodapÃ©
     q_rec = db.query(NFSeRecebida)
     if data_inicio:
         q_rec = q_rec.filter(NFSeRecebida.data_emissao >= datetime.strptime(data_inicio, "%Y-%m-%d"))
@@ -127,7 +127,7 @@ def listar_nfse_recebidas(
     busca: str = Query(""), page: int = Query(1),
     ordenar: str = Query("data_emissao"), direcao: str = Query("desc"),
 ):
-    """Lista as NFSe recebidas (somos o tomador), filtráveis por período e nº, com ordenação e paginação."""
+    """Lista as NFSe recebidas (somos o tomador), filtrÃ¡veis por perÃ­odo e nÂº, com ordenaÃ§Ã£o e paginaÃ§Ã£o."""
     sort_map = {
         "emitente_nome": NFSeRecebida.emitente_nome,
         "numero": NFSeRecebida.numero,
@@ -203,24 +203,24 @@ def emitir_avulsa_salvar(
 ):
     empresa = db.query(Empresa).first()
     if not empresa:
-        return JSONResponse({"error": "Empresa não cadastrada"}, status_code=400)
+        return JSONResponse({"error": "Empresa nÃ£o cadastrada"}, status_code=400)
 
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
     if not cliente:
-        return JSONResponse({"error": "Cliente não encontrado"}, status_code=404)
+        return JSONResponse({"error": "Cliente nÃ£o encontrado"}, status_code=404)
 
     try:
         itens_data = json.loads(itens_json)
     except json.JSONDecodeError:
-        return JSONResponse({"error": "JSON de itens inválido"}, status_code=400)
+        return JSONResponse({"error": "JSON de itens invÃ¡lido"}, status_code=400)
 
     if not itens_data:
-        return JSONResponse({"error": "Adicione pelo menos um serviço"}, status_code=400)
+        return JSONResponse({"error": "Adicione pelo menos um serviÃ§o"}, status_code=400)
 
     codigos_lc116 = set(i.get("codigo_lc116", "") for i in itens_data if i.get("codigo_lc116"))
     if len(codigos_lc116) > 1:
         return JSONResponse({
-            "error": f"Itens com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura de Dourados-MS não aceita múltiplos códigos na mesma NFS-e."
+            "error": f"Itens com cÃ³digos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura de Dourados-MS nÃ£o aceita mÃºltiplos cÃ³digos na mesma NFS-e."
         }, status_code=400)
 
     # Aplica desconto proporcional aos itens
@@ -271,7 +271,7 @@ def emitir_avulsa_salvar(
 
     db.commit()
 
-    # Gera cobrança automaticamente (se solicitado)
+    # Gera cobranÃ§a automaticamente (se solicitado)
     if gerar_cobranca:
         try:
             cobranca = ContaReceber(
@@ -298,7 +298,7 @@ def pagina_emitir(request: Request, pedido_id: int, db: Session = Depends(get_db
         selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.produto)
     ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido não encontrado")
+        raise HTTPException(status_code=404, detail="Pedido nÃ£o encontrado")
     return request.app.state.templates.TemplateResponse(request, 
         "nfse/emissao.html",
         {"request": request, "pedido": pedido}
@@ -311,21 +311,21 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db))
         selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.produto)
     ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
-        raise HTTPException(status_code=404, detail="Pedido não encontrado")
+        raise HTTPException(status_code=404, detail="Pedido nÃ£o encontrado")
 
     itens_servico = [i for i in pedido.itens if i.produto and i.produto.tipo == 'servico']
     if not itens_servico:
-        return JSONResponse({"error": "Nenhum item de serviço no pedido"}, status_code=400)
+        return JSONResponse({"error": "Nenhum item de serviÃ§o no pedido"}, status_code=400)
 
     codigos_lc116 = set(i.produto.codigo_lc116 for i in itens_servico if i.produto.codigo_lc116)
     if len(codigos_lc116) > 1:
         return JSONResponse({
-            "error": f"Pedido possui itens de serviço com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura de Dourados-MS não aceita múltiplos códigos na mesma NFS-e. Remova ou separe os itens em pedidos diferentes."
+            "error": f"Pedido possui itens de serviÃ§o com cÃ³digos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura de Dourados-MS nÃ£o aceita mÃºltiplos cÃ³digos na mesma NFS-e. Remova ou separe os itens em pedidos diferentes."
         }, status_code=400)
 
     empresa = db.query(Empresa).first()
     if not empresa:
-        return JSONResponse({"error": "Empresa não cadastrada"}, status_code=400)
+        return JSONResponse({"error": "Empresa nÃ£o cadastrada"}, status_code=400)
     numero_nfse = _proximo_numero(empresa, db)
 
     try:
@@ -395,7 +395,7 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db))
         except Exception:
             pass
 
-        # Gera cobrança automaticamente
+        # Gera cobranÃ§a automaticamente
         try:
             cobranca = ContaReceber(
                 cliente_id=pedido.cliente_id,
@@ -439,11 +439,11 @@ def emitir_os_nfse_form(
         joinedload(OrdemServico.cliente)
     ).filter(OrdemServico.id == os_id).first()
     if not os:
-        request.session["error"] = "Ordem de Serviço não encontrada"
+        request.session["error"] = "Ordem de ServiÃ§o nÃ£o encontrada"
         return RedirectResponse(url="/ordens-servico", status_code=303)
 
     if not os.valor_servico or os.valor_servico <= 0:
-        request.session["error"] = "OS sem valor de serviço para emitir NFSe"
+        request.session["error"] = "OS sem valor de serviÃ§o para emitir NFSe"
         return RedirectResponse(url=f"/ordens-servico/{os_id}", status_code=303)
 
     return request.app.state.templates.TemplateResponse(request, 
@@ -461,16 +461,16 @@ def emitir_os_nfse_submit(
         joinedload(OrdemServico.cliente)
     ).filter(OrdemServico.id == os_id).first()
     if not os:
-        request.session["error"] = "Ordem de Serviço não encontrada"
+        request.session["error"] = "Ordem de ServiÃ§o nÃ£o encontrada"
         return RedirectResponse(url="/ordens-servico", status_code=303)
 
     if not os.valor_servico or os.valor_servico <= 0:
-        request.session["error"] = "OS sem valor de serviço para emitir NFSe"
+        request.session["error"] = "OS sem valor de serviÃ§o para emitir NFSe"
         return RedirectResponse(url=f"/ordens-servico/{os_id}", status_code=303)
 
     empresa = db.query(Empresa).first()
     if not empresa:
-        request.session["error"] = "Empresa não configurada"
+        request.session["error"] = "Empresa nÃ£o configurada"
         return RedirectResponse(url="/ordens-servico", status_code=303)
 
     try:
@@ -501,7 +501,7 @@ def emitir_os_nfse_submit(
         nfse_item = NFSeItem(
             nfse_id=nfse.id,
             produto_id=servico_produto.id if servico_produto else None,
-            descricao=os.servicos_executados or "Serviço prestado",
+            descricao=os.servicos_executados or "ServiÃ§o prestado",
             quantidade=1,
             valor_unitario=os.valor_servico,
             valor_total=os.valor_servico,
@@ -526,11 +526,11 @@ def pagina_emitir_consolidacao(request: Request, consolidacao_id: int, db: Sessi
         selectinload(PedidoConsolidado.cliente)
     ).filter(PedidoConsolidado.id == consolidacao_id).first()
     if not consolidacao:
-        raise HTTPException(status_code=404, detail="Consolidação não encontrada")
+        raise HTTPException(status_code=404, detail="ConsolidaÃ§Ã£o nÃ£o encontrada")
     if consolidacao.status != "concluido":
-        raise HTTPException(status_code=400, detail="Apenas consolidações finalizadas podem emitir NFSe")
+        raise HTTPException(status_code=400, detail="Apenas consolidaÃ§Ãµes finalizadas podem emitir NFSe")
     if consolidacao.nfse:
-        raise HTTPException(status_code=400, detail="Esta consolidação já possui NFSe emitida")
+        raise HTTPException(status_code=400, detail="Esta consolidaÃ§Ã£o jÃ¡ possui NFSe emitida")
     
     # Explode itens
     itens_nfe, itens_nfse = explodir_itens_consolidacao(consolidacao=consolidacao, db=db)
@@ -546,24 +546,24 @@ def pagina_emitir_consolidacao(request: Request, consolidacao_id: int, db: Sessi
 
 @router.post("/emitir/consolidacao/{consolidacao_id}")
 def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session = Depends(get_db)):
-    """Salva rascunho NFe + NFSe da consolidação"""
+    """Salva rascunho NFe + NFSe da consolidaÃ§Ã£o"""
     consolidacao = db.query(PedidoConsolidado).options(
         selectinload(PedidoConsolidado.itens).selectinload(PedidoConsolidadoItem.produto),
         selectinload(PedidoConsolidado.cliente)
     ).filter(PedidoConsolidado.id == consolidacao_id).first()
     if not consolidacao:
-        raise HTTPException(status_code=404, detail="Consolidação não encontrada")
+        raise HTTPException(status_code=404, detail="ConsolidaÃ§Ã£o nÃ£o encontrada")
     if consolidacao.status != "concluido":
-        request.session["error"] = "Apenas consolidações finalizadas podem emitir NFe/NFSe"
+        request.session["error"] = "Apenas consolidaÃ§Ãµes finalizadas podem emitir NFe/NFSe"
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
     if consolidacao.nfse:
-        request.session["error"] = "Esta consolidação já possui NFSe"
+        request.session["error"] = "Esta consolidaÃ§Ã£o jÃ¡ possui NFSe"
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
     itens_nfe, itens_nfse = explodir_itens_consolidacao(consolidacao=consolidacao, db=db)
     empresa = db.query(Empresa).first()
     if not empresa:
-        request.session["error"] = "Empresa não cadastrada"
+        request.session["error"] = "Empresa nÃ£o cadastrada"
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
     if not itens_nfe and not itens_nfse:
@@ -575,16 +575,16 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
     if itens_nfe:
         ie = _limpar_doc(cliente.inscricao_estadual) if hasattr(cliente, 'inscricao_estadual') else None
         if not ie and not cliente.isento_ie and cliente.indicador_ie != "nao_contribuinte":
-            request.session["error"] = f"Cliente '{cliente.nome}' não possui Inscrição Estadual e não está marcado como Isento IE ou Não contribuinte."
+            request.session["error"] = f"Cliente '{cliente.nome}' nÃ£o possui InscriÃ§Ã£o Estadual e nÃ£o estÃ¡ marcado como Isento IE ou NÃ£o contribuinte."
             return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
-    # Validar LC116 único para NFSe
+    # Validar LC116 Ãºnico para NFSe
     codigos_lc116 = set()
     for item in itens_nfse:
         if item.produto and item.produto.codigo_lc116:
             codigos_lc116.add(item.produto.codigo_lc116)
     if len(codigos_lc116) > 1:
-        request.session["error"] = f"Consolidação possui itens de serviço com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura não aceita múltiplos códigos na mesma NFS-e."
+        request.session["error"] = f"ConsolidaÃ§Ã£o possui itens de serviÃ§o com cÃ³digos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura nÃ£o aceita mÃºltiplos cÃ³digos na mesma NFS-e."
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
     try:
@@ -673,7 +673,7 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
 
         db.commit()
         
-        msg = f"Rascunhos salvos para Consolidação #{consolidacao.numero or consolidacao_id}!"
+        msg = f"Rascunhos salvos para ConsolidaÃ§Ã£o #{consolidacao.numero or consolidacao_id}!"
         if nfe:
             msg += f" NFe #{nfe.numero}"
         if nfse:
@@ -700,10 +700,10 @@ def editar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
         selectinload(NFSe.cliente),
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
-        raise HTTPException(status_code=404, detail="NFSe não encontrada")
+        raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
     st = (nfse.status or '').lower()
     if st not in ("rascunho", "erro"):
-        request.session["error"] = "Só é possível editar NFSe em rascunho ou erro"
+        request.session["error"] = "SÃ³ Ã© possÃ­vel editar NFSe em rascunho ou erro"
         return RedirectResponse(url="/nfse", status_code=303)
 
     empresa = db.query(Empresa).first()
@@ -742,29 +742,29 @@ def editar_nfse_salvar(
         selectinload(NFSe.itens),
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
-        raise HTTPException(status_code=404, detail="NFSe não encontrada")
+        raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
     st = (nfse.status or '').lower()
     if st not in ("rascunho", "erro"):
-        request.session["error"] = "Só é possível editar NFSe em rascunho ou erro"
+        request.session["error"] = "SÃ³ Ã© possÃ­vel editar NFSe em rascunho ou erro"
         return RedirectResponse(url="/nfse", status_code=303)
 
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
     if not cliente:
-        return JSONResponse({"error": "Cliente não encontrado"}, status_code=404)
+        return JSONResponse({"error": "Cliente nÃ£o encontrado"}, status_code=404)
 
     try:
         itens_data = json.loads(itens_json)
     except json.JSONDecodeError:
-        request.session["error"] = "JSON de itens inválido"
+        request.session["error"] = "JSON de itens invÃ¡lido"
         return RedirectResponse(url=f"/nfse/{nfse_id}/editar", status_code=303)
 
     if not itens_data:
-        request.session["error"] = "Adicione pelo menos um serviço"
+        request.session["error"] = "Adicione pelo menos um serviÃ§o"
         return RedirectResponse(url=f"/nfse/{nfse_id}/editar", status_code=303)
 
     codigos_lc116 = set(i.get("codigo_lc116", "") for i in itens_data if i.get("codigo_lc116"))
     if len(codigos_lc116) > 1:
-        request.session["error"] = f"Itens com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}"
+        request.session["error"] = f"Itens com cÃ³digos LC116 diferentes: {', '.join(sorted(codigos_lc116))}"
         return RedirectResponse(url=f"/nfse/{nfse_id}/editar", status_code=303)
 
     # Aplica desconto proporcional aos itens
@@ -819,7 +819,7 @@ def detalhe_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
         selectinload(NFSe.cliente),
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
-        raise HTTPException(status_code=404, detail="NFSe não encontrada")
+        raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
 
     cobranca = db.query(ContaReceber).filter(
         ContaReceber.observacao.like(f"%NFSe #{nfse.id}%")
@@ -835,8 +835,8 @@ def _cliente_para_nfse(nfse: NFSe):
     """Resolve o cliente da NFSe, com fallback para os dados do tomador vindos do ADN.
 
     Quando a NFSe foi importada do ADN e nenhum Cliente foi vinculado (CNPJ/CPF
-    não cadastrado), usamos o nome/CNPJ do tomador extraído do XML para não
-    bloquear a geração do PDF.
+    nÃ£o cadastrado), usamos o nome/CNPJ do tomador extraÃ­do do XML para nÃ£o
+    bloquear a geraÃ§Ã£o do PDF.
     """
     from types import SimpleNamespace
     if nfse.cliente:
@@ -880,7 +880,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         selectinload(NFSe.pedido),
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
-        raise HTTPException(status_code=404, detail="NFSe não encontrada")
+        raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
 
     # 0. DANFSe padronizado (NFS-e Nacional 2.0) a partir do XML completo.
     #    Prioriza o xml_text se ja estiver no formato nacional (infNFSe+DPS);
@@ -921,7 +921,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     empresa = db.query(Empresa).first()
     cliente = _cliente_para_nfse(nfse)
     if not cliente:
-        raise HTTPException(status_code=400, detail="Cliente/Tomador não encontrado para gerar PDF")
+        raise HTTPException(status_code=400, detail="Cliente/Tomador nÃ£o encontrado para gerar PDF")
     itens = nfse.itens
     try:
         pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, itens, STATUS_LABELS)
@@ -941,7 +941,7 @@ def baixar_xml_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         selectinload(NFSe.pedido),
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
-        raise HTTPException(status_code=404, detail="NFSe não encontrada")
+        raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
 
     if nfse.xml_text:
         return Response(content=nfse.xml_text, media_type="application/xml",
@@ -953,7 +953,7 @@ def baixar_xml_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                            filename=f"nfse_{nfse.numero or nfse.id}.xml",
                            headers={"Content-Disposition": f"attachment; filename=\"nfse_{nfse.numero or nfse.id}.xml\""})
 
-    raise HTTPException(status_code=404, detail="XML não disponível para esta NFSe")
+    raise HTTPException(status_code=404, detail="XML nÃ£o disponÃ­vel para esta NFSe")
 
 
 @router.post("/{nfse_id}/gerar-cobranca")
@@ -962,13 +962,13 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         selectinload(NFSe.pedido),
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
-        raise HTTPException(status_code=404, detail="NFSe não encontrada")
+        raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
 
     cobranca_existente = db.query(ContaReceber).filter(
         ContaReceber.observacao.like(f"%NFSe #{nfse.id}%")
     ).first()
     if cobranca_existente:
-        request.session["error"] = "Cobrança já existe para esta NFSe"
+        request.session["error"] = "CobranÃ§a jÃ¡ existe para esta NFSe"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
     cliente_id = None
@@ -976,7 +976,7 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         cliente_id = nfse.pedido.cliente_id
 
     if not cliente_id:
-        request.session["error"] = "Não foi possível identificar o cliente para gerar cobrança"
+        request.session["error"] = "NÃ£o foi possÃ­vel identificar o cliente para gerar cobranÃ§a"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
     cobranca = ContaReceber(
@@ -990,7 +990,7 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
     )
     db.add(cobranca)
     db.commit()
-    request.session["message"] = f"Cobrança gerada com sucesso para NFSe #{nfse.numero}!"
+    request.session["message"] = f"CobranÃ§a gerada com sucesso para NFSe #{nfse.numero}!"
     return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
 
@@ -999,9 +999,9 @@ def cancelar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db),
                   motivo: str = Form("Cancelamento solicitado")):
     nfse = db.query(NFSe).filter(NFSe.id == nfse_id).first()
     if not nfse:
-        raise HTTPException(status_code=404, detail="NFSe não encontrada")
+        raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
     if (nfse.status or '').lower() not in ("autorizada", "pendente"):
-        request.session["error"] = f"Não é possível cancelar NFSe com status {nfse.status}"
+        request.session["error"] = f"NÃ£o Ã© possÃ­vel cancelar NFSe com status {nfse.status}"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
     try:
@@ -1030,9 +1030,9 @@ def cancelar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db),
 def excluir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     nfse = db.query(NFSe).filter(NFSe.id == nfse_id).first()
     if not nfse:
-        raise HTTPException(status_code=404, detail="NFSe não encontrada")
+        raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
     if (nfse.status or '').lower() != "rascunho":
-        request.session["error"] = "Só é possível excluir NFSe em rascunho"
+        request.session["error"] = "SÃ³ Ã© possÃ­vel excluir NFSe em rascunho"
         return RedirectResponse(url="/nfse", status_code=303)
     try:
         db.query(ContaReceber).filter(ContaReceber.nfse_id == nfse.id).delete(
@@ -1043,11 +1043,11 @@ def excluir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
         )
         db.delete(nfse)
         db.commit()
-        request.session["message"] = f"NFSe #{nfse.numero} excluída"
+        request.session["message"] = f"NFSe #{nfse.numero} excluÃ­da"
     except Exception:
         db.rollback()
         logger.exception("Erro ao excluir NFSe %s", nfse_id)
-        request.session["error"] = "Erro ao excluir a NFSe. Verifique se há contas ou assinaturas vinculadas."
+        request.session["error"] = "Erro ao excluir a NFSe. Verifique se hÃ¡ contas ou assinaturas vinculadas."
     return RedirectResponse(url="/nfse", status_code=303)
 
 
@@ -1058,9 +1058,9 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         selectinload(NFSe.cliente),
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
-        raise HTTPException(status_code=404, detail="NFSe não encontrada")
+        raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
     if (nfse.status or '').lower() not in ("rascunho", "pendente", "erro"):
-        request.session["error"] = f"Não é possível transmitir NFSe com status {nfse.status}"
+        request.session["error"] = f"NÃ£o Ã© possÃ­vel transmitir NFSe com status {nfse.status}"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
     if not nfse.itens:
         request.session["error"] = "NFSe sem itens para transmitir"
@@ -1075,7 +1075,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         sp = resultado.get('status_processamento', 'erro')
         novo_protocolo = resultado.get('protocolo')
 
-        # Não sobrescreve protocolo se nova tentativa não retornou um
+        # NÃ£o sobrescreve protocolo se nova tentativa nÃ£o retornou um
         if novo_protocolo:
             nfse.protocolo = novo_protocolo
         nfse.data_emissao = resultado.get('data_emissao')
@@ -1085,9 +1085,9 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
             msg_erro = "; ".join(f"[{e.get('codigo','')}] {e.get('mensagem','')}" for e in erros)
             nfse.mensagem_retorno = msg_erro
 
-        # Se DPS já foi recepcionada e temos protocolo, tenta sync em vez de erro
+        # Se DPS jÃ¡ foi recepcionada e temos protocolo, tenta sync em vez de erro
         tem_protocolo = bool(nfse.protocolo)
-        dps_duplicada = any('já recepcionada' in (e.get('mensagem','') or '').lower() for e in erros)
+        dps_duplicada = any('jÃ¡ recepcionada' in (e.get('mensagem','') or '').lower() for e in erros)
 
         if sp == 'sucesso':
             nfse.codigo_verificacao = resultado.get('codigo_verificacao')
@@ -1104,7 +1104,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                 nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
                 nfse.xml_text = dps_xml
             # Regenera PDF com dados oficiais
-            from services.nfse_pdf import gerar_pdf_nfse
+            from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional
             empresa = db.query(Empresa).first()
             cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
             if empresa and cliente:
@@ -1123,9 +1123,9 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
             nfse.status = "em_processamento"
             db.commit()
             request.session["message"] = (f"NFSe #{nfse.numero} enviada! "
-                "Aguardando processamento na prefeitura. Use o botão Sincronizar para verificar o status.")
+                "Aguardando processamento na prefeitura. Use o botÃ£o Sincronizar para verificar o status.")
         elif dps_duplicada and tem_protocolo:
-            # DPS já recebida — tenta sincronizar com protocolo existente
+            # DPS jÃ¡ recebida â€” tenta sincronizar com protocolo existente
             try:
                 sync_result = sincronizar_nfse(nfse.protocolo, tpAmb=1)
                 sp_sync = sync_result.get('status_processamento')
@@ -1145,22 +1145,21 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                             f.write(dps_xml)
                         nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
                         nfse.xml_text = dps_xml
-                    from services.nfse_pdf import gerar_pdf_nfse
                     empresa = db.query(Empresa).first()
                     cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
                     if empresa and cliente:
                         pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
                         nfse.pdf_path = pdf_url
                     db.commit()
-                    request.session["message"] = f"NFSe #{nfse.numero} já estava processada! Autorizada com sucesso."
+                    request.session["message"] = f"NFSe #{nfse.numero} jÃ¡ estava processada! Autorizada com sucesso."
                     if background_tasks:
                         # Envio pos-autorizacao feito na sincronizacao.
                         pass
                 elif sp_sync == 'processando':
                     nfse.status = "em_processamento"
-                    nfse.mensagem_retorno = "DPS já recebida, aguardando processamento."
+                    nfse.mensagem_retorno = "DPS jÃ¡ recebida, aguardando processamento."
                     db.commit()
-                    request.session["message"] = "DPS já recepcionada anteriormente. NFSe ainda em processamento."
+                    request.session["message"] = "DPS jÃ¡ recepcionada anteriormente. NFSe ainda em processamento."
                 else:
                     nfse.status = "erro"
                     erros_sync = sync_result.get('erros', [])
@@ -1174,12 +1173,12 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                 db.commit()
                 request.session["error"] = str(e)
         elif dps_duplicada and not tem_protocolo:
-            # DPS já recebida sem protocolo — gera novo número e reenvia
+            # DPS jÃ¡ recebida sem protocolo â€” gera novo nÃºmero e reenvia
             empresa = db.query(Empresa).first()
             if empresa:
                 novo_numero = _proximo_numero(empresa, db)
                 nfse.numero = str(novo_numero)
-                # Recria resultado2 com novo número
+                # Recria resultado2 com novo nÃºmero
                 try:
                     resultado2 = emitir_rascunho(nfse, db, tpAmb=1)
                     sp2 = resultado2.get('status_processamento', 'erro')
@@ -1201,21 +1200,20 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                                 f.write(dps_xml)
                             nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
                             nfse.xml_text = dps_xml
-                        from services.nfse_pdf import gerar_pdf_nfse
                         cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
                         if empresa and cliente:
                             pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
                             nfse.pdf_path = pdf_url
                         db.commit()
-                        request.session["message"] = f"NFSe #{nfse.numero} reemitida com novo número!"
+                        request.session["message"] = f"NFSe #{nfse.numero} reemitida com novo nÃºmero!"
                         if background_tasks:
                             # Envio pos-autorizacao feito na sincronizacao.
                             pass
                     elif sp2 == 'processando':
                         nfse.status = "em_processamento"
-                        nfse.mensagem_retorno = "Reenviado com novo número, aguardando processamento."
+                        nfse.mensagem_retorno = "Reenviado com novo nÃºmero, aguardando processamento."
                         db.commit()
-                        request.session["message"] = f"DPS já recepcionada. NFSe reenviada com novo número #{novo_numero}."
+                        request.session["message"] = f"DPS jÃ¡ recepcionada. NFSe reenviada com novo nÃºmero #{novo_numero}."
                     else:
                         nfse.status = "erro"
                         msg_erro = "; ".join(f"[{e.get('codigo','')}] {e.get('mensagem','')}" for e in erros2)
@@ -1226,11 +1224,11 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                     nfse.status = "erro"
                     nfse.mensagem_retorno = str(e2)
                     db.commit()
-                    request.session["error"] = f"Erro ao reenviar com novo número: {e2}"
+                    request.session["error"] = f"Erro ao reenviar com novo nÃºmero: {e2}"
             else:
                 nfse.status = "erro"
                 db.commit()
-                request.session["error"] = "DPS já recepcionada e sem protocolo para consulta."
+                request.session["error"] = "DPS jÃ¡ recepcionada e sem protocolo para consulta."
         else:
             nfse.status = "erro"
             db.commit()
@@ -1251,12 +1249,12 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
 def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     nfse = db.query(NFSe).options(selectinload(NFSe.itens)).filter(NFSe.id == nfse_id).first()
     if not nfse:
-        raise HTTPException(status_code=404, detail="NFSe não encontrada")
+        raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
     if (nfse.status or '').lower() not in ("em_processamento", "pendente", "erro", "autorizada", "cancelada"):
-        request.session["error"] = "Só é possível sincronizar NFSe em processamento, pendente, erro, autorizada ou cancelada"
+        request.session["error"] = "SÃ³ Ã© possÃ­vel sincronizar NFSe em processamento, pendente, erro, autorizada ou cancelada"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
     if not nfse.protocolo:
-        request.session["error"] = "NFSe sem protocolo de transmissão"
+        request.session["error"] = "NFSe sem protocolo de transmissÃ£o"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
     from services.nfse_betha import sincronizar_nfse as sync_func
@@ -1299,41 +1297,25 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
                     nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
                     nfse.xml_text = dps_xml
 
-            # Tenta baixar PDF — 1º ADN, 2º Betha, 3º fallback local
+            # Gera DANFSe local via brazilfiscalreport (ADN descontinuado)
             try:
-                from services.nfse_betha import BethaNfseService
-                _empresa_pdf = db.query(Empresa).first()
-                service = BethaNfseService(empresa=_empresa_pdf)
-                chave = nfse.codigo_verificacao
-                pdf_bytes = None
-                # 1ª tentativa: ADN (DANFSe oficial)
-                if chave:
-                    pdf_bytes = service.baixar_danfse_adn(chave)
-                # 2ª tentativa: Betha (REST / recoverpdfservlet)
-                if not pdf_bytes:
-                    pdf_params = {k.replace('pdf_', ''): resultado[k] for k in resultado if k.startswith('pdf_')}
-                    danfse_url = resultado.get('url_danfse')
-                    if not danfse_url and pdf_params:
-                        danfse_url = service.obter_danfse_url(str(nfse.numero), chave, pdf_params)
-                    if danfse_url:
-                        import requests
-                        r = requests.get(danfse_url, timeout=30, verify=True)
-                        if r.status_code == 200 and 'application/pdf' in r.headers.get('content-type', ''):
-                            pdf_bytes = r.content
-                # Salva PDF se conseguiu
-                if pdf_bytes:
-                    pdf_filename = f"nfse_{nfse.numero or nfse.id}.pdf"
+                from services.nfse_pdf import gerar_danfse_pdf, is_xml_nfse_nacional
+                xml_nacional = nfse.xml_text
+                if xml_nacional and is_xml_nfse_nacional(xml_nacional):
+                    pdf_filename = f"danfse_{nfse.numero or nfse.id}.pdf"
                     pdf_path = f"static/uploads/nfse/{pdf_filename}"
                     os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-                    with open(pdf_path, 'wb') as f:
-                        f.write(pdf_bytes)
+                    gerar_danfse_pdf(
+                        xml_nacional, pdf_path,
+                        cancelada=((nfse.status or '').lower() == 'cancelada'),
+                    )
                     nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
             except Exception as e:
-                logger.warning(f"Erro ao baixar PDF: {e}")
+                logger.warning(f"Erro ao gerar DANFSe local: {e}")
 
-            # Fallback: gera PDF local
+            # Fallback: gera PDF local (leiaute proprietÃ¡rio FPDF)
             if not nfse.pdf_path:
-                from services.nfse_pdf import gerar_pdf_nfse
+                from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional
                 empresa = db.query(Empresa).first()
                 cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
                 if empresa and cliente:
@@ -1416,10 +1398,10 @@ def listar_nfse_adn(
     tipo: str = Query(""), retorno: str = Query(""),
     background_tasks: BackgroundTasks = None,
 ):
-    """Lista NFS-e do ADN (Ambiente de Dados Nacional) por período"""
+    """Lista NFS-e do ADN (Ambiente de Dados Nacional) por perÃ­odo"""
     empresa = db.query(Empresa).first()
     if not data_inicio or not data_fim:
-        request.session["error"] = "Informe data início e data fim"
+        request.session["error"] = "Informe data inÃ­cio e data fim"
         return RedirectResponse(url="/nfse", status_code=303)
 
     try:
@@ -1430,7 +1412,7 @@ def listar_nfse_adn(
         emitidas = [n for n in notas if n.get('tipo') == 'emitida']
         recebidas = [n for n in notas if n.get('tipo') == 'recebida']
 
-        # Salva/atualiza as NFSe emitidas por nós no banco (upsert por chaveAcesso)
+        # Salva/atualiza as NFSe emitidas por nÃ³s no banco (upsert por chaveAcesso)
         salvos = 0
         atualizados = 0
         for n in emitidas:
@@ -1489,7 +1471,7 @@ def listar_nfse_adn(
                 cliente = db.query(Cliente).filter(
                     Cliente.cpf_cnpj != None, Cliente.cpf_cnpj.like(f"%{doc_clean}%")
                 ).first()
-            # Fallback: vincula pelo nome do tomador quando o CNPJ não bate
+            # Fallback: vincula pelo nome do tomador quando o CNPJ nÃ£o bate
             if not cliente and n.get('tomador_nome'):
                 nome_l = re.sub(r'\s+', ' ', n['tomador_nome'].strip().lower())
                 for c in db.query(Cliente).filter(Cliente.nome != None).all():
@@ -1503,7 +1485,7 @@ def listar_nfse_adn(
         if salvos or atualizados:
             db.commit()
 
-        # Salva as NFSe recebidas (somos o tomador) em tabela própria
+        # Salva as NFSe recebidas (somos o tomador) em tabela prÃ³pria
         salvos_rec = 0
         atualizados_rec = 0
         for n in recebidas:
@@ -1547,7 +1529,7 @@ def listar_nfse_adn(
         if salvos_rec or atualizados_rec:
             db.commit()
 
-        # Confirma cancelamentos via SEFIN em background (não bloqueia a resposta)
+        # Confirma cancelamentos via SEFIN em background (nÃ£o bloqueia a resposta)
         if background_tasks is not None and emitidas:
             background_tasks.add_task(_confirmar_cancelamentos_adn, emitidas)
 
@@ -1563,7 +1545,7 @@ def listar_nfse_adn(
         elif tipo == 'recebida':
             msg = f"ADN: {len(notas)} NFS-e recebidas encontradas"
 
-        # Busca de recebidas: salva no banco e redireciona para a página dedicada
+        # Busca de recebidas: salva no banco e redireciona para a pÃ¡gina dedicada
         if tipo == 'recebida' or retorno == 'recebidas':
             request.session["message"] = msg
             return RedirectResponse(
@@ -1601,7 +1583,7 @@ def adn_danfse(request: Request, chave_acesso: str, db: Session = Depends(get_db
     ).filter(NFSe.codigo_verificacao == chave_acesso).first()
 
     if not nfse:
-        return Response(status_code=404, content="NFSe não encontrada")
+        return Response(status_code=404, content="NFSe nÃ£o encontrada")
 
     xml_nacional = nfse.xml_text
     if not xml_nacional:
@@ -1616,7 +1598,7 @@ def adn_danfse(request: Request, chave_acesso: str, db: Session = Depends(get_db
             pass
 
     if not xml_nacional or not is_xml_nfse_nacional(xml_nacional):
-        return Response(status_code=400, content="XML nacional não disponível para geração do DANFSe")
+        return Response(status_code=400, content="XML nacional nÃ£o disponÃ­vel para geraÃ§Ã£o do DANFSe")
 
     try:
         pdf_dir = "static/uploads/nfse"
@@ -1627,7 +1609,7 @@ def adn_danfse(request: Request, chave_acesso: str, db: Session = Depends(get_db
 
         gerar_danfse_pdf(
             xml_nacional, pdf_path,
-            cancelada=(nfse.status == 'cancelada'),
+            cancelada=((nfse.status or '').lower() == 'cancelada'),
         )
 
         if os.path.exists(pdf_path):
@@ -1658,6 +1640,6 @@ def adn_xml(request: Request, chave_acesso: str, db: Session = Depends(get_db)):
                 xml = gzip.decompress(base64.b64decode(xml_b64)).decode('utf-8')
                 return Response(content=xml, media_type="application/xml",
                                 headers={"Content-Disposition": f"attachment; filename=nfse_{chave_acesso}.xml"})
-        return Response(status_code=404, content="XML não encontrado no ADN")
+        return Response(status_code=404, content="XML nÃ£o encontrado no ADN")
     except Exception as e:
         return Response(status_code=500, content=str(e))
