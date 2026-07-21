@@ -66,8 +66,8 @@
                 <td class="px-4 py-3 text-sm text-slate-100">{{ c.descricao }}</td>
                 <td class="px-4 py-3 text-sm text-cyan-300">{{ c.cliente.nome if c.cliente else '-' }}</td>
                 <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(c.valor) }}</td>
-                <td class="px-4 py-3 text-sm{% if c.status.name.lower() in ['pendente', 'vencido'] and c.data_vencimento < now() %} text-rose-400{% else %} text-cyan-300{% endif %}">{{ c.data_vencimento }}</td>
-                <td class="px-4 py-3 text-sm{% if c.data_recebimento %} text-emerald-300{% else %} text-slate-600{% endif %}">{{ c.data_recebimento or '-' }}</td>
+                <td class="px-4 py-3 text-sm{% if c.status.name.lower() in ['pendente', 'vencido'] and c.data_vencimento < now() %} text-rose-400{% else %} text-cyan-300{% endif %}">{{ c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '-' }}</td>
+                <td class="px-4 py-3 text-sm{% if c.data_recebimento %} text-emerald-300{% else %} text-slate-600{% endif %}">{{ c.data_recebimento.strftime('%d/%m/%Y') if c.data_recebimento else '-' }}</td>
                 <td class="px-4 py-3 text-center">
                     {% set status_display = 'vencido' if c.status.name.lower() in ['pendente', 'vencido'] and c.data_vencimento < now() else c.status.name.lower() %}
                     {% set cor = 'emerald' if status_display == 'pago' else 'amber' if status_display == 'pendente' else 'rose' if status_display == 'vencido' else 'slate' %}

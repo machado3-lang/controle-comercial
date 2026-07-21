@@ -56,7 +56,7 @@
                     {% for c in contas %}
                     <tr><td class="px-4 py-2 text-sm text-slate-100">{{ c.descricao }}</td>
                         <td class="px-4 py-2 text-right text-sm text-emerald-400">R$ {{ "%.2f"|format(c.valor) }}</td>
-                        <td class="px-4 py-2 text-sm text-slate-300">{{ c.data_vencimento }}</td>
+                        <td class="px-4 py-2 text-sm text-slate-300">{{ c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '-' }}</td>
                         <td class="px-4 py-2 text-center"><span class="px-2 py-1 text-xs font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded">{{ c.status }}</span></td>
                     </tr>
                     {% else %}
