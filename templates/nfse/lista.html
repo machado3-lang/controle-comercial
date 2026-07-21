@@ -68,6 +68,10 @@
                     <span class="text-purple-400 flex items-center gap-1"><i data-lucide="repeat" class="w-3.5 h-3.5"></i> Assinatura</span>
                     {% elif n.origem == "os" %}
                     <span class="text-cyan-400 flex items-center gap-1"><i data-lucide="wrench" class="w-3.5 h-3.5"></i> OS</span>
+                    {% elif n.origem == "consolidacao" %}
+                    <span class="text-indigo-400 flex items-center gap-1"><i data-lucide="package" class="w-3.5 h-3.5"></i> Consolidação</span>
+                    {% elif n.origem in ("importada", "adn") %}
+                    <span class="text-teal-400 flex items-center gap-1"><i data-lucide="download" class="w-3.5 h-3.5"></i> Importada</span>
                     {% else %}
                     <span class="text-slate-400 flex items-center gap-1"><i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> Avulsa</span>
                     {% endif %}

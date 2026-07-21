@@ -390,7 +390,7 @@ def emitir_pedido_submit(
         now = datetime.now()
         nfe = NFe(
             pedido_id=pedido_id,
-            origem="pedido",
+            origem="assinatura" if pedido.assinatura_id else "pedido",
             cliente_id=cliente.id,
             numero=numero_nfe,
             serie=empresa.serie_nfe or 1,
@@ -1108,7 +1108,7 @@ def nfe_distribuicao(
                 nf.numero = 0
             nf.serie = 1
             nf.status = 'cancelled' if n.get('cancelada') else 'issued'
-            nf.origem = 'sefaz'
+            nf.origem = 'importada'
             nf.valor_total = float(n.get('valor') or 0)
             nf.xml_text = n.get('xml')
             nf.destinatario_nome = n.get('destinatario_nome')
@@ -1240,7 +1240,7 @@ def importar_nfe_xml(
                 nf.numero = 0
             nf.serie = 1
             nf.status = 'issued'
-            nf.origem = 'sefaz'
+            nf.origem = 'importada'
             nf.valor_total = float(resultado.get('valor') or 0)
             nf.xml_text = xml_str
             nf.destinatario_nome = dest_nome

@@ -312,6 +312,7 @@ def gerar_nfse_assinatura(request: Request, assinatura_id: int, db: Session = De
         nfse = NFSe(
             numero=numero_nfse,
             cliente_id=assinatura.cliente_id,
+            origem="assinatura",
             status="rascunho",
             valor_total=assinatura.valor,
             data_emissao=datetime.now(),

@@ -84,6 +84,14 @@
                     <a href="/pedidos/{{ n.pedido_id }}" class="text-amber-400 hover:text-amber-300 flex items-center gap-1">
                         <i data-lucide="receipt" class="w-3.5 h-3.5"></i> Pedido #{{ n.pedido.numero or n.pedido.id }}
                     </a>
+                    {% elif n.origem == 'assinatura' %}
+                    <span class="text-purple-400 flex items-center gap-1"><i data-lucide="repeat" class="w-3.5 h-3.5"></i> Assinatura</span>
+                    {% elif n.origem == 'os' %}
+                    <span class="text-sky-400 flex items-center gap-1"><i data-lucide="tool" class="w-3.5 h-3.5"></i> OS</span>
+                    {% elif n.origem == 'consolidacao' %}
+                    <span class="text-indigo-400 flex items-center gap-1"><i data-lucide="package" class="w-3.5 h-3.5"></i> Consolidação</span>
+                    {% elif n.origem == 'importada' %}
+                    <span class="text-teal-400 flex items-center gap-1"><i data-lucide="download" class="w-3.5 h-3.5"></i> Importada</span>
                     {% else %}
                     <span class="text-slate-400 flex items-center gap-1"><i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> Avulsa</span>
                     {% endif %}

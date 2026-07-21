@@ -10,7 +10,7 @@ class NFe(Base):
     pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True)
     os_id = Column(Integer, ForeignKey("ordens_servico.id"), nullable=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True, index=True)
-    origem = Column(String(10), default="avulsa", nullable=False)  # "pedido" ou "avulsa"
+    origem = Column(String(20), default="avulsa", nullable=False)  # "pedido", "os", "consolidacao", "assinatura", "importada" ou "avulsa"
     numero = Column(Integer, nullable=False)
     serie = Column(Integer, nullable=False, default=1)
     chave_acesso = Column(String(50), nullable=True)

@@ -56,6 +56,18 @@ def run_migrations():
     except Exception as e:
         print(f"[MIGRATION] Warning: could not auto-migrate columns: {e}")
 
+    # Auto-migrate: widen String columns when the model declares a larger length
+    try:
+        _widen_string_columns()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not widen columns: {e}")
+
+    # Backfill: corrige origem de NFe/NFSe já existentes (default 'avulsa')
+    try:
+        _backfill_origem()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not backfill origem: {e}")
+
 
 def _add_missing_columns():
     """Add missing columns to existing tables for schema evolution.
@@ -123,6 +135,83 @@ def _add_missing_columns():
         _fix_text_columns()
     except Exception as e:
         print(f"[MIGRATION] Warning: could not fix text columns: {e}")
+
+
+def _widen_string_columns():
+    """Widens existing VARCHAR columns when the model declares a larger length
+    (PostgreSQL only; increasing VARCHAR length is metadata-only and safe)."""
+    if engine.dialect.name != "postgresql":
+        return
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+    from sqlalchemy.types import String
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    for table_name, table in Base.metadata.tables.items():
+        if table_name not in existing_tables:
+            continue
+        try:
+            cols = inspector.get_columns(table_name)
+        except Exception:
+            continue
+        existing = {c["name"]: c for c in cols}
+        for col in table.columns:
+            if col.name not in existing:
+                continue
+            if not isinstance(col.type, String):
+                continue
+            model_len = col.type.length or 255
+            db_len = getattr(existing[col.name]["type"], "length", None)
+            if db_len and model_len > db_len:
+                try:
+                    with engine.connect() as conn:
+                        conn.execute(sa_text(
+                            f"ALTER TABLE {table_name} ALTER COLUMN {col.name} TYPE VARCHAR({model_len})"
+                        ))
+                        conn.commit()
+                        print(f"[MIGRATION] Widened {table_name}.{col.name} to VARCHAR({model_len})")
+                except Exception as e:
+                    print(f"[MIGRATION] Could not widen {table_name}.{col.name}: {e}")
+
+
+def _backfill_origem():
+    """Corrige a coluna origem de NFe/NFSe já existentes que ficaram com o
+    valor default 'avulsa'. Idempotente: só atualiza onde necessário."""
+    from sqlalchemy import text as sa_text
+
+    updates = [
+        # NFe importadas via SEFAZ/XML
+        "UPDATE nfe SET origem='importada' WHERE origem='sefaz'",
+        # NFe de assinatura (pedido vinculado a uma assinatura)
+        "UPDATE nfe SET origem='assinatura' WHERE pedido_id IN "
+        "(SELECT id FROM pedidos_venda WHERE assinatura_id IS NOT NULL) "
+        "AND origem IN ('pedido','avulsa')",
+        # NFe de pedido
+        "UPDATE nfe SET origem='pedido' WHERE pedido_id IS NOT NULL AND origem='avulsa'",
+        # NFe de ordem de servico
+        "UPDATE nfe SET origem='os' WHERE os_id IS NOT NULL AND origem='avulsa'",
+        # NFe importada via XML sem invoice_id
+        "UPDATE nfe SET origem='importada' WHERE xml_text IS NOT NULL "
+        "AND invoice_id IS NULL AND origem='avulsa'",
+        # NFSe importada via ADN
+        "UPDATE nfse SET origem='importada' WHERE origem='adn'",
+        # NFSe de assinatura
+        "UPDATE nfse SET origem='assinatura' WHERE pedido_id IN "
+        "(SELECT id FROM pedidos_venda WHERE assinatura_id IS NOT NULL) "
+        "AND origem IN ('pedido','avulsa')",
+        # NFSe de pedido
+        "UPDATE nfse SET origem='pedido' WHERE pedido_id IS NOT NULL AND origem='avulsa'",
+        # NFSe de consolidação
+        "UPDATE nfse SET origem='consolidacao' WHERE consolidacao_id IS NOT NULL AND origem='avulsa'",
+    ]
+    with engine.connect() as conn:
+        for sql in updates:
+            try:
+                conn.execute(sa_text(sql))
+            except Exception as e:
+                print(f"[MIGRATION] Backfill origem falhou ({sql[:40]}...): {e}")
+        conn.commit()
 
     # Create audit_log table if it doesn't exist
     if "audit_log" not in existing_tables:
