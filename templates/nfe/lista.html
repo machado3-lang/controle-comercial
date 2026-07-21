@@ -108,7 +108,7 @@
                         {% if n.invoice_id and n.status in ('queued', 'processing') %}
                         <a href="/nfe/invoices/{{ n.invoice_id }}/status?redirect=1" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Consultar Status"><i data-lucide="refresh-cw" class="w-4 h-4"></i></a>
                         {% endif %}
-                        {% if n.invoice_id and n.status == 'issued' %}
+                        {% if n.status == 'issued' and (n.invoice_id or n.xml_text) %}
                         <a href="/nfe/{{ n.id }}/pdf" target="_blank" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="DANFE"><i data-lucide="file-down" class="w-4 h-4"></i></a>
                         <a href="/nfe/{{ n.id }}/xml" target="_blank" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="XML"><i data-lucide="file-code" class="w-4 h-4"></i></a>
                         {% endif %}

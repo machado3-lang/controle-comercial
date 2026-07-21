@@ -21,6 +21,8 @@ class NFeDistribuicaoService:
         self.cert_password = None
         self.tpAmb = 1
         self.url = NFE_DIST_URL_PROD
+        self.ultimo_cstat = ""
+        self.ultimo_motivo = ""
         if empresa:
             self._load_cert(empresa)
             self.tpAmb = int(empresa.notaas_ambiente) if empresa.notaas_ambiente else 1
@@ -136,7 +138,7 @@ class NFeDistribuicaoService:
             raise NFeDistribuicaoError(f"SEFAZ HTTP {r.status_code}: {r.text[:300]}")
 
         xml_body = r.text
-        docs, _, cStat = self._parse_response(xml_body)
+        docs, _, cStat, xMotivo = self._parse_response(xml_body)
         if not docs:
             m = re.search(r'<xMotivo>([^<]+)</', xml_body)
             motivo = m.group(1) if m else 'NFe não encontrada'
@@ -186,10 +188,11 @@ class NFeDistribuicaoService:
                            destinatario_nome, destinatario_cnpj, '', 'NFe', xml_str)
         return resultado
 
-    def _parse_response(self, xml: str) -> tuple[list[dict], str, str]:
+    def _parse_response(self, xml: str) -> tuple[list[dict], str, str, str]:
         docs = []
         ultNSU = "000000000000000"
         cStat = ""
+        xMotivo = ""
         for m in re.finditer(r'<docZip[^>]*NSU="(\d+)"[^>]*schema="([^"]+)"[^>]*>(.*?)</docZip>', xml, re.DOTALL):
             nsu = m.group(1)
             schema = m.group(2)
@@ -206,7 +209,9 @@ class NFeDistribuicaoService:
         if m: ultNSU = m.group(1)
         m = re.search(r'<cStat>(\d+)</', xml)
         if m: cStat = m.group(1)
-        return docs, ultNSU, cStat
+        m = re.search(r'<xMotivo>([^<]+)</', xml)
+        if m: xMotivo = m.group(1)
+        return docs, ultNSU, cStat, xMotivo
 
     def listar_nfe(self, cnpj: str, max_paginas: int = 20) -> list[dict]:
         session = self._get_session()
@@ -228,8 +233,11 @@ class NFeDistribuicaoService:
                     logger.warning(f"SEFAZ NFe HTTP {r.status_code}: {r.text[:500]}")
                     break
                 xml_body = r.text
-                docs, novo_ultNSU, cStat = self._parse_response(xml_body)
-                logger.info(f"SEFAZ página {pagina+1}: {len(docs)} docs, cStat={cStat}, ultNSU={novo_ultNSU}")
+                docs, novo_ultNSU, cStat, xMotivo = self._parse_response(xml_body)
+                if cStat:
+                    self.ultimo_cstat = cStat
+                    self.ultimo_motivo = xMotivo
+                logger.info(f"SEFAZ página {pagina+1}: {len(docs)} docs, cStat={cStat}, xMotivo={xMotivo}, ultNSU={novo_ultNSU}")
 
                 if cStat in ('137',):
                     break

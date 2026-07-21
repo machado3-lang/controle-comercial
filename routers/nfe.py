@@ -1123,12 +1123,18 @@ def nfe_distribuicao(
 
         # Emitidas SEFAZ ficam unificadas na listagem principal (/nfe);
         # recebidas têm página dedicada (/nfe/recebidas)
+        ambiente = "Homologação" if service.tpAmb == 2 else "Produção"
+        detalhe = ""
+        if (len(emitidas) + len(recebidas)) == 0:
+            detalhe = (f" | SEFAZ cStat={service.ultimo_cstat or '-'} "
+                       f"({service.ultimo_motivo or 'sem resposta'}) | Ambiente={ambiente} | "
+                       f"cUFAutor=50 (Mato Grosso) | ultNSU={empresa.nfe_ultnsu or '000000000000000'}")
         if tipo == 'emitida':
-            msg = f"SEFAZ: {len(emitidas)} NFe emitidas sincronizadas na listagem principal"
+            msg = f"SEFAZ: {len(emitidas)} NFe emitidas sincronizadas na listagem principal{detalhe}"
         elif tipo == 'recebida':
-            msg = f"SEFAZ: {len(recebidas)} NFe recebidas importadas"
+            msg = f"SEFAZ: {len(recebidas)} NFe recebidas importadas{detalhe}"
         else:
-            msg = f"SEFAZ: {len(emitidas)} emitidas e {len(recebidas)} recebidas"
+            msg = f"SEFAZ: {len(emitidas)} emitidas e {len(recebidas)} recebidas{detalhe}"
         if tipo == 'recebida' or retorno == 'recebidas':
             request.session["message"] = msg
             return RedirectResponse(url=f"/nfe/recebidas?data_inicio={data_inicio}&data_fim={data_fim}", status_code=303)
@@ -1621,7 +1627,7 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
 def baixar_pdf_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
     nfe = db.query(NFe).filter(NFe.id == nfe_id).first()
-    if not nfe or not nfe.invoice_id:
+    if not nfe or not (nfe.xml_text or nfe.invoice_id):
         raise HTTPException(status_code=404, detail="NFe não encontrada")
 
     def _local_xml_path():
@@ -1698,7 +1704,7 @@ def baixar_pdf_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
 def baixar_xml_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
     nfe = db.query(NFe).filter(NFe.id == nfe_id).first()
-    if not nfe or not nfe.invoice_id:
+    if not nfe or not (nfe.xml_text or nfe.invoice_id):
         raise HTTPException(status_code=404, detail="NFe não encontrada")
     if nfe.xml_text:
         return Response(content=nfe.xml_text, media_type="application/xml",
