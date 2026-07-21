@@ -111,6 +111,39 @@ def checar_cpf_cnpj(q: str = Query(""), db: Session = Depends(get_db)):
     return JSONResponse({"existe": False})
 
 
+@router.get("/diagnostico-codigos")
+def diagnostico_codigos(request: Request, db: Session = Depends(get_db)):
+    """Relatório read-only: cadastros sem código e códigos duplicados
+    (clientes e fornecedores). Não altera nada."""
+    from models import Fornecedor
+    from collections import defaultdict
+
+    def analisar(rows):
+        sem_codigo = [r for r in rows if not (r.codigo and str(r.codigo).strip())]
+        grupos = defaultdict(list)
+        for r in rows:
+            cod = (str(r.codigo).strip() if r.codigo else "")
+            if cod:
+                grupos[cod].append(r)
+        duplicados = [(cod, regs) for cod, regs in grupos.items() if len(regs) > 1]
+        duplicados.sort(key=lambda x: x[0])
+        sem_codigo.sort(key=lambda r: (r.nome or "").lower())
+        return sem_codigo, duplicados
+
+    clientes = db.query(Cliente).all()
+    fornecedores = db.query(Fornecedor).all()
+    cli_sem, cli_dup = analisar(clientes)
+    for_sem, for_dup = analisar(fornecedores)
+    return request.app.state.templates.TemplateResponse(request,
+        "clientes/diagnostico_codigos.html",
+        {"request": request,
+         "cli_sem": cli_sem, "cli_dup": cli_dup,
+         "for_sem": for_sem, "for_dup": for_dup,
+         "cli_dup_total": sum(len(r) for _, r in cli_dup),
+         "for_dup_total": sum(len(r) for _, r in for_dup)}
+    )
+
+
 @router.post("/novo")
 def criar_cliente(
     request: Request,
