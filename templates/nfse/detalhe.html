@@ -61,7 +61,7 @@
         <div class="grid grid-cols-2 gap-4 mb-6">
             <div>
                 <strong class="text-cyan-300">Cliente:</strong>
-                <span class="text-slate-100">{{ nfse.cliente.nome if nfse.cliente else (nfse.pedido.cliente.nome if nfse.pedido and nfse.pedido.cliente else '-') }}</span>
+                <span class="text-slate-100">{{ nfse.cliente.nome if nfse.cliente else (nfse.pedido.cliente.nome if nfse.pedido and nfse.pedido.cliente else (nfse.tomador_nome or '-')) }}</span>
             </div>
             <div><strong class="text-emerald-300">Valor Total:</strong> <span class="text-slate-100">R$ {{ "%.2f"|format(nfse.valor_total or 0) }}</span>
                 {% if nfse.iss_retido %}

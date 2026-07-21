@@ -76,7 +76,7 @@
                     <span class="text-slate-400 flex items-center gap-1"><i data-lucide="plus-circle" class="w-3.5 h-3.5"></i> Avulsa</span>
                     {% endif %}
                 </td>
-                <td class="px-4 py-3 text-sm text-cyan-300">{{ n.cliente.nome if n.cliente else (n.pedido.cliente.nome if n.pedido else '-') }}</td>
+                <td class="px-4 py-3 text-sm text-cyan-300">{{ n.cliente.nome if n.cliente else (n.pedido.cliente.nome if n.pedido else (n.tomador_nome or '-')) }}</td>
                 <td class="px-4 py-3 text-right text-sm text-emerald-400">R$ {{ "%.2f"|format(n.valor_total or 0) }}</td>
                 <td class="px-4 py-3 text-sm text-slate-300">{{ n.data_emissao.strftime('%d/%m/%Y') if n.data_emissao else '-' }}</td>
                 <td class="px-4 py-3 text-center">
