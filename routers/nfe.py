@@ -1178,8 +1178,47 @@ def importar_nfe_xml(
         xml_str = xml_file.file.read().decode('utf-8')
         service = NFeDistribuicaoService(empresa, db=db)
         resultado = service.importar_xml(xml_str)
+
+        # Salva/atualiza na tabela principal 'nfe' para aparecer na listagem
+        chave = resultado.get('chaveAcesso')
+        nf = db.query(NFe).filter(NFe.chave_acesso == chave).first() if chave else None
+        if nf:
+            if not nf.xml_text:
+                nf.xml_text = xml_str
+            if nf.status not in ('issued', 'cancelled'):
+                nf.status = 'issued'
+        else:
+            nf = NFe()
+            nf.chave_acesso = chave
+            try:
+                nf.numero = int(re.sub(r'\D', '', str(resultado.get('numero') or '')) or 0)
+            except (ValueError, TypeError):
+                nf.numero = 0
+            nf.serie = 1
+            nf.status = 'issued'
+            nf.origem = 'sefaz'
+            nf.valor_total = float(resultado.get('valor') or 0)
+            nf.xml_text = xml_str
+            dh = resultado.get('dhEmi')
+            if dh:
+                for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
+                    try:
+                        nf.data_emissao = datetime.strptime(str(dh)[:19], fmt)
+                        break
+                    except Exception:
+                        continue
+            doc_clean = re.sub(r'\D', '', resultado.get('destinatario_cnpj') or '')
+            if doc_clean:
+                cliente = db.query(Cliente).filter(
+                    Cliente.cpf_cnpj != None, Cliente.cpf_cnpj.like(f"%{doc_clean}%")
+                ).first()
+                if cliente:
+                    nf.cliente_id = cliente.id
+            db.add(nf)
+        db.commit()
         request.session["message"] = f"NFe {resultado.get('numero', '')} importada do XML com sucesso!"
     except Exception as e:
+        db.rollback()
         request.session["error"] = f"Erro ao importar XML: {str(e)}"
     return RedirectResponse(url="/nfe", status_code=303)
 
