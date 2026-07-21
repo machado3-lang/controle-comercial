@@ -62,6 +62,15 @@ def run_migrations():
     except Exception as e:
         print(f"[MIGRATION] Warning: could not widen columns: {e}")
 
+    # Auto-migrate: adiciona valores ausentes em tipos ENUM nativos do PostgreSQL
+    # (ex.: EXCLUIDO em StatusConta). O create_all e o _add_missing_columns nao
+    # alteram ENUMs existentes, entao valores novos no modelo precisam ser
+    # acrescentados manualmente ao tipo do banco, caso contrario o commit falha.
+    try:
+        _add_missing_enum_values()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not migrate enum values: {e}")
+
     # Backfill: corrige origem de NFe/NFSe já existentes (default 'avulsa')
     try:
         _backfill_origem()
@@ -267,6 +276,55 @@ def _fix_text_columns():
                         print(f"[MIGRATION] Converted {table_name}.{col.name} to TEXT")
             except Exception as e:
                 print(f"[MIGRATION] Could not convert {table_name}.{col.name}: {e}")
+
+
+def _add_missing_enum_values():
+    """Adiciona valores ausentes em tipos ENUM nativos do PostgreSQL.
+
+    O create_all e o _add_missing_columns so criam tabelas/colunas, mas no
+    alteram ENUMs existentes. Valores novos adicionados ao modelo (ex.: o
+    EXCLUIDO de StatusConta) precisam ser acrescentados ao tipo do banco, senao
+    qualquer commit que os use falha com 'invalid input value for enum' (500).
+    """
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+    from sqlalchemy.types import Enum as SAEnum
+
+    if engine.dialect.name != "postgresql":
+        return
+
+    inspector = sa_inspect(engine)
+    existing_enums = {e["name"]: e for e in inspector.get_enums()}
+
+    with engine.connect() as raw:
+        # ALTER TYPE ADD VALUE nao pode rodar dentro de um bloco de transacao
+        # em versoes antigas do PostgreSQL; usamos autocommit por seguranca.
+        conn = raw.execution_options(isolation_level="AUTOCOMMIT")
+        for table in Base.metadata.tables.values():
+            for col in table.columns:
+                if not isinstance(col.type, SAEnum) or not getattr(col.type, "native_enum", False):
+                    continue
+                enum_class = getattr(col.type, "enum_class", None)
+                if not enum_class:
+                    continue
+                type_name = getattr(col.type, "name", None)
+                if not type_name or type_name not in existing_enums:
+                    continue
+                existing_labels = set(existing_enums[type_name].get("labels", []))
+                for member in enum_class:
+                    val = member.value if hasattr(member, "value") else str(member)
+                    if val in existing_labels:
+                        continue
+                    # Valor vem do modelo (controlado), mas sanitizamos por defesa.
+                    if not all(c.isalnum() or c == "_" for c in str(val)):
+                        continue
+                    try:
+                        conn.execute(
+                            sa_text(f"ALTER TYPE {type_name} ADD VALUE IF NOT EXISTS '{val}'")
+                        )
+                        print(f"[MIGRATION] Added enum value {type_name}.{val}")
+                    except Exception as e:
+                        print(f"[MIGRATION] Could not add enum value {type_name}.{val}: {e}")
 
 
 def create_app() -> FastAPI:
