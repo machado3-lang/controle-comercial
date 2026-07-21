@@ -229,6 +229,10 @@
                         <p class="text-xs text-slate-500 mt-1">Alíquota aproximada de tributos estaduais (ICMS) - Lei 12.741/2012 - Fonte IBPT</p>
                     </div>
                 </div>
+                <div class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-800/60">
+                    <input type="checkbox" class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500" name="sefaz_emitidas_desabilitado" value="1" id="sefazEmitidas" {{ 'checked' if empresa.sefaz_emitidas_desabilitado else '' }}>
+                    <label for="sefazEmitidas" class="text-sm text-slate-300">Ocultar botões "Buscar SEFAZ" e "Importar XML" nas NFe emitidas</label>
+                </div>
             </div>
         </div>
     </div>
@@ -347,6 +351,10 @@
                         <input type="number" step="0.01" min="0" max="100" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="aliquota_municipal" value="{{ empresa.aliquota_municipal or '0.00' }}">
                         <p class="text-xs text-slate-500 mt-1">Alíquota aproximada de tributos municipais (ISS) - Lei 12.741/2012</p>
                     </div>
+                </div>
+                <div class="flex items-center gap-2 mt-4 pt-4 border-t border-slate-800/60">
+                    <input type="checkbox" class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500" name="adn_emitidas_desabilitado" value="1" id="adnEmitidas" {{ 'checked' if empresa.adn_emitidas_desabilitado else '' }}>
+                    <label for="adnEmitidas" class="text-sm text-slate-300">Ocultar botão "Buscar ADN" nas NFS-e emitidas</label>
                 </div>
             </div>
         </div>

@@ -18,6 +18,7 @@
                 <option value="cancelada" {{ 'selected' if status == 'cancelada' }}>Cancelada</option>
             </select>
         </form>
+        {% if not empresa.adn_emitidas_desabilitado %}
         <form action="/nfse/adn-listar" method="get" class="flex items-center gap-1">
             <i data-lucide="cloud" class="w-4 h-4 text-indigo-400"></i>
             <input type="date" name="data_inicio" required class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" value="{{ data_inicio }}">
@@ -26,6 +27,7 @@
             <input type="hidden" name="retorno" value="lista">
             <button type="submit" class="flex items-center h-9 px-3 text-xs bg-gradient-to-r from-indigo-500 to-purple-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-indigo-500/10"><i data-lucide="search" class="w-3.5 h-3.5 me-1"></i> Buscar ADN</button>
         </form>
+        {% endif %}
         <a href="/nfse/emitir/avulsa" class="flex items-center h-9 px-3 text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> NFSe Avulsa</a>
     </div>
 </div>

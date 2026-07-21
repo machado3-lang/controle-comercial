@@ -66,6 +66,8 @@ async def salvar_configuracoes(
     bling_client_secret: str = Form(""),
     bling_api_key_v2: str = Form(""),
     bling_desabilitado: str = Form(""),
+    adn_emitidas_desabilitado: str = Form(""),
+    sefaz_emitidas_desabilitado: str = Form(""),
     sicoob_client_id: str = Form(""),
     sicoob_beneficiario: str = Form(""),
     sicoob_conta_corrente: str = Form(""),
@@ -137,6 +139,8 @@ async def salvar_configuracoes(
         empresa.bling_client_secret = bling_client_secret
         empresa.bling_api_key_v2 = bling_api_key_v2
         empresa.bling_desabilitado = (bling_desabilitado == "1")
+        empresa.adn_emitidas_desabilitado = (adn_emitidas_desabilitado == "1")
+        empresa.sefaz_emitidas_desabilitado = (sefaz_emitidas_desabilitado == "1")
         empresa.sicoob_client_id = sicoob_client_id
         empresa.sicoob_beneficiario = sicoob_beneficiario
         empresa.sicoob_conta_corrente = sicoob_conta_corrente
@@ -165,6 +169,8 @@ async def salvar_configuracoes(
             bling_client_secret=bling_client_secret,
             bling_api_key_v2=bling_api_key_v2,
             bling_desabilitado=(bling_desabilitado == "1"),
+            adn_emitidas_desabilitado=(adn_emitidas_desabilitado == "1"),
+            sefaz_emitidas_desabilitado=(sefaz_emitidas_desabilitado == "1"),
             sicoob_client_id=sicoob_client_id,
             sicoob_beneficiario=sicoob_beneficiario,
             sicoob_conta_corrente=sicoob_conta_corrente,

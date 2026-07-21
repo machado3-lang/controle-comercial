@@ -632,6 +632,8 @@ class Empresa(Base):
     serie_nfe = Column(Integer, nullable=False, default=1)
     ultimo_numero_nfe = Column(Integer, nullable=False, default=0)
     ultimo_numero_nfse = Column(Integer, nullable=False, default=0)
+    adn_emitidas_desabilitado = Column(Boolean, default=True)
+    sefaz_emitidas_desabilitado = Column(Boolean, default=True)
     ultimo_numero_pedido = Column(Integer, default=0)
     ultimo_codigo_cliente = Column(Integer, default=0)
     ultimo_codigo_fornecedor = Column(Integer, default=0)

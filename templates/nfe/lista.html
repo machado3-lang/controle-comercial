@@ -19,6 +19,7 @@
                 <option value="cancelled" {{ 'selected' if status == 'cancelled' }}>Cancelada</option>
             </select>
         </form>
+        {% if not empresa.sefaz_emitidas_desabilitado %}
         <form action="/nfe/distribuicao" method="get" class="flex items-center gap-1">
             <i data-lucide="cloud" class="w-4 h-4 text-cyan-400"></i>
             <input type="date" name="data_inicio" required class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" value="{{ data_inicio }}">
@@ -28,10 +29,12 @@
             <button type="submit" class="flex items-center h-9 px-3 text-xs bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="search" class="w-3.5 h-3.5 me-1"></i> Buscar SEFAZ</button>
             <a href="/nfe/distribuicao?reiniciar=true" class="flex items-center h-8 px-3 text-xs bg-slate-700/60 text-slate-300 border border-slate-600/50 rounded-lg hover:bg-slate-700 transition" title="Reimportar todas as NFe do zero"><i data-lucide="refresh-ccw" class="w-3.5 h-3.5 me-1"></i> Reiniciar</a>
         </form>
+        {% endif %}
         <a href="/nfe/emitir/avulsa" class="flex items-center h-9 px-3 text-sm bg-gradient-to-r from-cyan-500 to-blue-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> NFe Avulsa</a>
     </div>
 </div>
 
+{% if not empresa.sefaz_emitidas_desabilitado %}
 <!-- Import own issued NFe XML -->
 <div class="flex items-center flex-wrap gap-2 mb-4 p-3 bg-slate-800/40 rounded-xl border border-slate-700/50">
     <i data-lucide="upload" class="w-4 h-4 text-amber-400"></i>
@@ -44,6 +47,7 @@
         </button>
     </form>
 </div>
+{% endif %}
 
 <div class="overflow-x-auto w-full">
     <form method="post" action="/contas/enviar-documentos" id="formEnviarNFe">
