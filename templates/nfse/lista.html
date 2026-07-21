@@ -80,8 +80,8 @@
                 <td class="px-4 py-3 text-right text-sm text-emerald-400">R$ {{ "%.2f"|format(n.valor_total or 0) }}</td>
                 <td class="px-4 py-3 text-sm text-slate-300">{{ n.data_emissao.strftime('%d/%m/%Y') if n.data_emissao else '-' }}</td>
                 <td class="px-4 py-3 text-center">
-                    {% set cores = {'rascunho': 'amber', 'pendente': 'amber', 'autorizada': 'emerald', 'erro': 'rose', 'cancelada': 'slate'} %}
-                    {% set cor = cores.get(n.status, 'slate') %}
+                    {% set cores = {'rascunho': 'amber', 'pendente': 'amber', 'autorizada': 'emerald', 'erro': 'rose', 'cancelada': 'rose'} %}
+                    {% set cor = cores.get((n.status or '').lower(), 'slate') %}
                     <span class="px-2 py-1 text-xs font-medium bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 rounded-full">{{ STATUS_LABELS.get(n.status, n.status) }}</span>
                     {% if n.iss_retido %}
                     <span class="px-1.5 py-0.5 text-xs font-medium bg-amber-950/50 text-amber-400 border border-amber-800/50 rounded-full ms-1">ISS Retido</span>

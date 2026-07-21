@@ -850,6 +850,27 @@ def _cliente_para_nfse(nfse: NFSe):
     return None
 
 
+def _buscar_xml_nacional_adn(nfse: NFSe):
+    """Tenta obter o XML completo da NFS-e Nacional (infNFSe+DPS) no Portal ADN.
+
+    Notas emitidas por prefeituras proprietarias (ex.: Betha) costumam ter
+    apenas a DPS persistida; o XML nacional autorizado vive no Portal Nacional
+    e e a fonte correta para gerar o DANFSe padronizado.
+    """
+    if not nfse.codigo_verificacao:
+        return None
+    try:
+        from services.nfse_betha import BethaNfseService
+        service = BethaNfseService()
+        sit = service.consultar_situacao_nfse(str(nfse.numero), nfse.codigo_verificacao)
+        xml = sit.get('xml') if isinstance(sit, dict) else None
+        if xml and is_xml_nfse_nacional(xml):
+            return xml
+    except Exception as e:
+        logger.warning(f"Erro ao buscar XML nacional no ADN: {e}")
+    return None
+
+
 @router.get("/{nfse_id}/pdf")
 def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     nfse = db.query(NFSe).options(
@@ -859,54 +880,42 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe não encontrada")
 
-    # 0. Gera PDF local a partir do XML persistido no banco (sobrevive a redeploys)
-    if nfse.xml_text:
-        empresa = db.query(Empresa).first()
-        cliente = _cliente_para_nfse(nfse)
-        if empresa and cliente:
-            try:
-                pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
-                nfse.pdf_path = pdf_url
-                db.commit()
-                return FileResponse(f".{pdf_url}", media_type="application/pdf",
-                                   filename=f"nfse_{nfse.numero or nfse.id}.pdf")
-            except Exception as e:
-                logger.warning(f"Erro ao gerar PDF local NFSe do XML banco: {e}")
+    # 0. DANFSe padronizado (NFS-e Nacional 2.0) a partir do XML completo.
+    #    Prioriza o xml_text se ja estiver no formato nacional (infNFSe+DPS);
+    #    caso contrario (nota emitida por prefeitura proprietaria, ex. Betha,
+    #    que persiste apenas a DPS), busca o XML nacional no Portal ADN e o
+    #    persiste para as proximas geracoes.
+    xml_nacional = None
+    if nfse.xml_text and is_xml_nfse_nacional(nfse.xml_text):
+        xml_nacional = nfse.xml_text
+    elif nfse.status in ('autorizada', 'cancelada') and nfse.codigo_verificacao:
+        xml_nacional = _buscar_xml_nacional_adn(nfse)
+        if xml_nacional:
+            nfse.xml_text = xml_nacional
 
-    # 1. Tenta baixar DANFSe oficial (ADN + Betha)
-    if nfse.status == 'autorizada' and nfse.codigo_verificacao:
+    if xml_nacional:
         try:
-            from services.nfse_betha import BethaNfseService
-            service = BethaNfseService()
-            pdf_bytes = service.baixar_danfse_adn(nfse.codigo_verificacao)
-            if not pdf_bytes:
-                danfse_url = service.obter_danfse_url(str(nfse.numero), nfse.codigo_verificacao)
-                if danfse_url:
-                    import requests
-                    r = requests.get(danfse_url, timeout=30, verify=True)
-                    if r.status_code == 200 and 'application/pdf' in r.headers.get('content-type', ''):
-                        pdf_bytes = r.content
-            if pdf_bytes:
-                pdf_filename = f"nfse_{nfse.numero or nfse.id}.pdf"
-                pdf_path = f"static/uploads/nfse/{pdf_filename}"
-                os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-                with open(pdf_path, 'wb') as f:
-                    f.write(pdf_bytes)
-                nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
-                db.commit()
-                from fastapi.responses import FileResponse
-                return FileResponse(pdf_path, media_type="application/pdf",
-                                   filename=pdf_filename)
+            pdf_filename = f"danfse_{nfse.numero or nfse.id}.pdf"
+            pdf_path = f"static/uploads/nfse/{pdf_filename}"
+            os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+            gerar_danfse_pdf(
+                xml_nacional, pdf_path,
+                cancelada=(nfse.status == 'cancelada'),
+            )
+            nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
+            db.commit()
+            return FileResponse(pdf_path, media_type="application/pdf",
+                                filename=pdf_filename)
         except Exception as e:
-            logger.warning(f"Erro ao baixar DANFSe oficial: {e}")
+            logger.warning(f"Erro ao gerar DANFSe padronizado: {e}")
 
-    # 2. Fallback: PDF local já existente
+    # 1. Fallback: PDF local ja existente (gerado anteriormente)
     if nfse.pdf_path and os.path.exists(f".{nfse.pdf_path}"):
         from fastapi.responses import FileResponse
         return FileResponse(f".{nfse.pdf_path}", media_type="application/pdf",
-                           filename=f"nfse_{nfse.numero or nfse.id}.pdf")
+                            filename=f"nfse_{nfse.numero or nfse.id}.pdf")
 
-    # 3. Gera PDF local novo
+    # 2. Fallback: gera PDF local (leiaute proprietario) a partir dos dados do banco
     empresa = db.query(Empresa).first()
     cliente = _cliente_para_nfse(nfse)
     if not cliente:
@@ -918,7 +927,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         db.commit()
         from fastapi.responses import FileResponse
         return FileResponse(f".{pdf_url}", media_type="application/pdf",
-                           filename=f"nfse_{nfse.numero or nfse.id}.pdf")
+                            filename=f"nfse_{nfse.numero or nfse.id}.pdf")
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Erro ao gerar PDF: {str(e)}")
 
@@ -1578,18 +1587,54 @@ def listar_nfse_adn(
 
 @router.get("/adn-danfse/{chave_acesso}")
 def adn_danfse(request: Request, chave_acesso: str, db: Session = Depends(get_db)):
-    """Proxy para baixar DANFSe do ADN pelo servidor (com certificado)"""
-    from fastapi.responses import Response
+    """Baixa DANFSe (gerado localmente) a partir da chave de acesso (ADN parado)"""
+    from fastapi.responses import Response, FileResponse
+    from services.nfse_pdf import gerar_danfse_pdf, is_xml_nfse_nacional
+    from services.nfse_betha import BethaNfseService
+    import os
+
+    nfse = db.query(NFSe).options(
+        selectinload(NFSe.itens),
+        selectinload(NFSe.pedido),
+    ).filter(NFSe.codigo_verificacao == chave_acesso).first()
+
+    if not nfse:
+        return Response(status_code=404, content="NFSe não encontrada")
+
+    xml_nacional = nfse.xml_text
+    if not xml_nacional:
+        try:
+            service = BethaNfseService(empresa=None)
+            sit = service.consultar_situacao_nfse(str(nfse.numero), chave_acesso)
+            xml_nacional = sit.get('xml') if isinstance(sit, dict) else None
+            if xml_nacional:
+                nfse.xml_text = xml_nacional
+                db.commit()
+        except Exception:
+            pass
+
+    if not xml_nacional or not is_xml_nfse_nacional(xml_nacional):
+        return Response(status_code=400, content="XML nacional não disponível para geração do DANFSe")
+
     try:
-        empresa = db.query(Empresa).first()
-        service = BethaNfseService(empresa=empresa)
-        pdf = service.baixar_danfse_adn(chave_acesso)
-        if pdf:
-            return Response(content=pdf, media_type="application/pdf",
-                            headers={"Content-Disposition": f"inline; filename=danfse_{chave_acesso}.pdf"})
-        return Response(status_code=404, content="DANFSe não encontrado no ADN")
+        pdf_dir = "static/uploads/nfse"
+        os.makedirs(pdf_dir, exist_ok=True)
+
+        pdf_filename = f"danfse_{chave_acesso}.pdf"
+        pdf_path = os.path.join(pdf_dir, pdf_filename)
+
+        gerar_danfse_pdf(
+            xml_nacional, pdf_path,
+            cancelada=(nfse.status == 'cancelada'),
+        )
+
+        if os.path.exists(pdf_path):
+            return FileResponse(pdf_path, media_type="application/pdf",
+                              filename=pdf_filename)
+        else:
+            return Response(status_code=500, content="Erro ao gerar DANFSe")
     except Exception as e:
-        return Response(status_code=500, content=str(e))
+        return Response(status_code=500, content=f"Erro ao gerar DANFSe: {str(e)}")
 
 
 @router.get("/adn-xml/{chave_acesso}")

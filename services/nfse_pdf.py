@@ -1,10 +1,49 @@
 import os
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from decimal import Decimal
 from fpdf import FPDF
 
 UPLOAD_DIR = "static/uploads/nfse"
 os.makedirs(UPLOAD_DIR, exist_ok=True)
+
+# Namespace da NFS-e Nacional (Sefin Nacional / Portal ADN) esperado pelo
+# leiaute padronizado do DANFSe (NT 008/2026).
+NFSE_NACIONAL_NS = "http://www.sped.fazenda.gov.br/nfse"
+
+
+def is_xml_nfse_nacional(xml_string: str) -> bool:
+    """True se o XML e a NFS-e Nacional completa (grupos infNFSe + DPS).
+
+    O DANFSe padronizado (brazilfiscalreport) exige o XML autorizado com
+    NFSe/infNFSe e NFSe/infNFSe/DPS. A DPS enviada a prefeituras proprietarias
+    (ex.: Betha) nao contem o infNFSe e usa outro namespace.
+    """
+    if not xml_string:
+        return False
+    try:
+        root = ET.fromstring(xml_string)
+    except Exception:
+        return False
+    return (
+        root.find(f".//{{{NFSE_NACIONAL_NS}}}infNFSe") is not None
+        and root.find(f".//{{{NFSE_NACIONAL_NS}}}DPS") is not None
+    )
+
+
+def gerar_danfse_pdf(xml_string: str, output_path: str, cancelada: bool = False) -> str:
+    """Gera o DANFSe padronizado (NFS-e Nacional 2.0) a partir do XML completo.
+
+    Usa o brazilfiscalreport (mesmo pacote do DANFE da NFe). Exige o XML
+    autorizado no formato nacional; para notas canceladas, aplica a marca
+    d'agua "CANCELADA".
+    """
+    from brazilfiscalreport.danfse import Danfse, DanfseConfig
+
+    config = DanfseConfig(watermark_cancelled=bool(cancelada))
+    danfse = Danfse(xml=xml_string, config=config)
+    danfse.output(output_path)
+    return output_path
 
 
 def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:

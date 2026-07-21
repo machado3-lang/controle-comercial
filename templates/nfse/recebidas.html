@@ -59,7 +59,7 @@
                     <td class="px-4 py-3 text-sm text-slate-300">{{ r.data_emissao.strftime('%d/%m/%Y') if r.data_emissao else '-' }}</td>
                     <td class="px-4 py-3 text-center">
                         {% if r.status == 'cancelada' %}
-                        <span class="px-2 py-1 text-xs font-medium bg-slate-800/60 text-slate-400 border border-slate-700/50 rounded-full">Cancelada</span>
+                        <span class="px-2 py-1 text-xs font-medium bg-rose-950/50 text-rose-400 border border-rose-800/50 rounded-full">Cancelada</span>
                         {% else %}
                         <span class="px-2 py-1 text-xs font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded-full">Autorizada</span>
                         {% endif %}

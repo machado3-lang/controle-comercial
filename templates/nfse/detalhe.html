@@ -84,7 +84,7 @@
             <div><strong class="text-amber-300">Data Emissão:</strong> <span class="text-slate-100">{{ nfse.data_emissao.strftime('%d/%m/%Y %H:%M') if nfse.data_emissao else '-' }}</span></div>
             <div>
                 <strong class="text-rose-300">Status:</strong>
-                {% set cor = {'rascunho': 'amber', 'pendente': 'amber', 'autorizada': 'emerald', 'erro': 'rose', 'cancelada': 'slate'}.get(nfse.status, 'slate') %}
+                {% set cor = {'rascunho': 'amber', 'pendente': 'amber', 'autorizada': 'emerald', 'erro': 'rose', 'cancelada': 'rose'}.get((nfse.status or '').lower(), 'slate') %}
                 <span class="px-2 py-1 text-xs font-medium bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 rounded-full">{{ STATUS_LABELS.get(nfse.status, nfse.status) }}</span>
                 {% if nfse.iss_retido %}
                 <span class="px-2 py-1 text-xs font-medium bg-amber-950/50 text-amber-400 border border-amber-800/50 rounded-full ms-1">ISS Retido</span>
