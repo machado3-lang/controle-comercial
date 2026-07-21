@@ -1269,7 +1269,9 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
             request.session["message"] = f"NFSe #{nfse.numero} cancelada (sincronizado do portal)"
             return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
         elif sp == 'sucesso':
-            nfse.codigo_verificacao = resultado.get('codigo_verificacao')
+            cv = resultado.get('codigo_verificacao')
+            nfse.codigo_verificacao = cv
+            nfse.chave_acesso = cv
             nfse.numero = resultado.get('numero') or nfse.numero
             nfse.status = "autorizada"
             nfse.mensagem_retorno = None
@@ -1420,6 +1422,10 @@ def listar_nfse_adn(
             if not chave:
                 continue
             existente = db.query(NFSe).filter(NFSe.chave_acesso == chave).first()
+            if not existente:
+                existente = db.query(NFSe).filter(NFSe.codigo_verificacao == chave).first()
+                if existente and not existente.chave_acesso:
+                    existente.chave_acesso = chave
             if existente:
                 if n.get('cancelada') and existente.status != 'cancelada':
                     existente.status = 'cancelada'
