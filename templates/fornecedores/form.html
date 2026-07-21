@@ -69,6 +69,12 @@
             <label class="form-label text-cyan-300">Observação</label>
             <textarea class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="observacao" rows="3">{{ fornecedor.observacao if fornecedor else '' }}</textarea>
         </div>
+        <div class="flex items-end pb-2">
+            <label class="flex items-center gap-2 text-indigo-300 cursor-pointer">
+                <input type="checkbox" name="tambem_cliente" value="1" {{ 'checked' if fornecedor and fornecedor.tambem_cliente }} class="w-4 h-4 rounded bg-slate-900/60 border-slate-800/80 text-indigo-500">
+                <span class="text-sm">Também cadastrar como Cliente</span>
+            </label>
+        </div>
     </div>
 
     <div class="glass-card p-4">

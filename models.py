@@ -115,6 +115,7 @@ class Cliente(Base):
     codigo_ibge = Column(String(7), nullable=True)
     situacao = Column(String(1), default="A")
     iss_retido = Column(Boolean, default=False)
+    tambem_fornecedor = Column(Boolean, default=False)
     observacao = Column(Text, nullable=True)
     data_sincronizacao = Column(DateTime, nullable=True)  # ultima consulta cnpj.ws
     created_at = Column(DateTime, default=datetime.now)
@@ -154,6 +155,7 @@ class Fornecedor(Base):
     indicador_ie = Column(String(20), default="contribuidor")
     codigo_ibge = Column(String(7), nullable=True)
     situacao = Column(String(1), default="A")
+    tambem_cliente = Column(Boolean, default=False)
     observacao = Column(Text, nullable=True)
     data_sincronizacao = Column(DateTime, nullable=True)  # ultima consulta cnpj.ws
     created_at = Column(DateTime, default=datetime.now)

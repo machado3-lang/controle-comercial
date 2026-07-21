@@ -6,6 +6,7 @@ from datetime import datetime, date
 from database import get_db
 from models import Cliente, ContaReceber, Assinatura, OrdemServico, Empresa, HistoricoCadastro
 from services.validators import validar_cliente_fornecedor
+from services.sync_cliente_fornecedor import upsert_fornecedor_de_cliente
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
 
@@ -243,6 +244,7 @@ def criar_cliente(
     observacao: str = Form(""),
     data_sincronizacao: str = Form(""),
     confirmar_duplicado: str = Form(""),
+    tambem_fornecedor: str = Form(""),
 ):
     import re
     # Checagem de CPF/CNPJ duplicado (permite cadastro só após confirmação)
@@ -290,12 +292,15 @@ def criar_cliente(
         inscricao_estadual=inscricao_estadual, inscricao_municipal=inscricao_municipal,
         codigo_ibge=codigo_ibge or None, isento_ie=(isento_ie == "1"),
         indicador_ie=indicador_ie, iss_retido=(iss_retido == "1"),
+        tambem_fornecedor=(tambem_fornecedor == "1"),
         situacao=situacao, observacao=observacao,
         created_at=created_at, bling_pending_sync=True,
         data_sincronizacao=datetime.strptime(data_sincronizacao, "%Y-%m-%d %H:%M") if data_sincronizacao else None,
     )
     db.add(cliente)
     db.commit()
+    if tambem_fornecedor == "1":
+        upsert_fornecedor_de_cliente(db, cliente)
     return RedirectResponse(url="/clientes", status_code=303)
 
 
@@ -355,6 +360,7 @@ def atualizar_cliente(
     isento_ie: str = Form(""),
     indicador_ie: str = Form("contribuidor"),
     iss_retido: str = Form(""),
+    tambem_fornecedor: str = Form(""),
     observacao: str = Form(""),
     data_sincronizacao: str = Form(""),
 ):
@@ -393,6 +399,7 @@ def atualizar_cliente(
     cliente.isento_ie = (isento_ie == "1")
     cliente.indicador_ie = indicador_ie
     cliente.iss_retido = (iss_retido == "1")
+    cliente.tambem_fornecedor = (tambem_fornecedor == "1")
     cliente.situacao = situacao
     if data_cadastro:
         cliente.created_at = datetime.strptime(data_cadastro, "%Y-%m-%d")
@@ -417,6 +424,8 @@ def atualizar_cliente(
                         {c: (campos_antigos[c], campos_novos[c]) for c in campos_antigos},
                         usuario_id=request.session.get("user_id"))
     db.commit()
+    if tambem_fornecedor == "1":
+        upsert_fornecedor_de_cliente(db, cliente)
     return RedirectResponse(url=f"/clientes/{cliente_id}", status_code=303)
 
 

@@ -5,6 +5,7 @@ from datetime import datetime
 from database import get_db
 from models import Fornecedor, ContaPagar, Empresa, HistoricoCadastro
 from services.validators import validar_cliente_fornecedor
+from services.sync_cliente_fornecedor import upsert_cliente_de_fornecedor
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
 
@@ -114,6 +115,7 @@ def criar_fornecedor(
     observacao: str = Form(""),
     data_sincronizacao: str = Form(""),
     confirmar_duplicado: str = Form(""),
+    tambem_cliente: str = Form(""),
 ):
     # Checagem de CPF/CNPJ duplicado (permite cadastro só após confirmação)
     import re
@@ -158,12 +160,15 @@ def criar_fornecedor(
         bairro=bairro, cidade=cidade,
         estado=estado, cep=cep, contato=contato, fantasia=fantasia,
         inscricao_estadual=inscricao_estadual, inscricao_municipal=inscricao_municipal,
+        tambem_cliente=(tambem_cliente == "1"),
         situacao=situacao, observacao=observacao, created_at=created_at,
         bling_pending_sync=True,
         data_sincronizacao=datetime.strptime(data_sincronizacao, "%Y-%m-%d %H:%M") if data_sincronizacao else None,
     )
     db.add(fornecedor)
     db.commit()
+    if tambem_cliente == "1":
+        upsert_cliente_de_fornecedor(db, fornecedor)
     return RedirectResponse(url="/fornecedores", status_code=303)
 
 
@@ -219,6 +224,7 @@ def atualizar_fornecedor(
     data_cadastro: str = Form(""),
     observacao: str = Form(""),
     data_sincronizacao: str = Form(""),
+    tambem_cliente: str = Form(""),
 ):
     fornecedor = db.query(Fornecedor).filter(Fornecedor.id == fornecedor_id).first()
     if not fornecedor:
@@ -249,6 +255,7 @@ def atualizar_fornecedor(
     fornecedor.fantasia = fantasia
     fornecedor.inscricao_estadual = inscricao_estadual
     fornecedor.inscricao_municipal = inscricao_municipal
+    fornecedor.tambem_cliente = (tambem_cliente == "1")
     fornecedor.situacao = situacao
     if data_cadastro:
         fornecedor.created_at = datetime.strptime(data_cadastro, "%Y-%m-%d")
@@ -271,6 +278,8 @@ def atualizar_fornecedor(
                         {c: (campos_antigos[c], campos_novos[c]) for c in campos_antigos},
                         usuario_id=request.session.get("user_id"))
     db.commit()
+    if tambem_cliente == "1":
+        upsert_cliente_de_fornecedor(db, fornecedor)
     return RedirectResponse(url=f"/fornecedores/{fornecedor_id}", status_code=303)
 
 
