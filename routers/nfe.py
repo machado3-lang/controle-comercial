@@ -1210,6 +1210,24 @@ def importar_nfe_xml(
         return RedirectResponse(url="/nfe", status_code=303)
     try:
         xml_str = xml_file.file.read().decode('utf-8')
+
+        # Evento de cancelamento (procEventoNFe): marca a NFe existente como cancelada
+        if 'procEvento' in xml_str or 'infEvento' in xml_str:
+            m_chave = re.search(r'<chNFe>(\d+)</chNFe>', xml_str)
+            m_tipo = re.search(r'<tpEvento>(\d+)</tpEvento>', xml_str)
+            if m_chave and m_tipo and m_tipo.group(1) == '110111':
+                chave_cancel = m_chave.group(1)
+                nf_cancel = db.query(NFe).filter(NFe.chave_acesso == chave_cancel).first()
+                if nf_cancel:
+                    nf_cancel.status = 'cancelado'
+                    if not nf_cancel.origem:
+                        nf_cancel.origem = 'importada'
+                    db.commit()
+                    request.session["message"] = f"NFe {nf_cancel.numero} marcada como cancelada (evento de cancelamento importado)"
+                else:
+                    request.session["error"] = f"NFe com chave {chave_cancel} não encontrada para cancelar"
+                return RedirectResponse(url="/nfe", status_code=303)
+
         service = NFeDistribuicaoService(empresa, db=db)
         resultado = service.importar_xml(xml_str)
 
@@ -1227,6 +1245,7 @@ def importar_nfe_xml(
                 nf.destinatario_nome = dest_nome
             if not nf.destinatario_cpf_cnpj:
                 nf.destinatario_cpf_cnpj = dest_doc
+            nf.origem = 'importada'
             if not nf.cliente_id:
                 cli = _resolver_cliente_nfe(db, dest_doc, dest_nome)
                 if cli:
