@@ -330,6 +330,11 @@ document.addEventListener('DOMContentLoaded', function() {
         document.getElementById('confirmarDuplicado').value = '1';
         document.getElementById('fornecedorForm').submit();
     }
+    window.confirmarRevisaoCNPJ = confirmarRevisaoCNPJ;
+    window.cancelarRevisaoCNPJ = cancelarRevisaoCNPJ;
+    window.atualizarDuplicado = atualizarDuplicado;
+    window.cadastrarDuplicado = cadastrarDuplicado;
+    window.fecharDuplicado = function(){ if(_modalDuplicado)_modalDuplicado.hide(); };
 });
 </script>
 {% endblock %}
@@ -356,11 +361,11 @@ document.addEventListener('DOMContentLoaded', function() {
     <div class="modal-content bg-slate-900 border border-slate-700">
       <div class="modal-header border-slate-700">
         <h5 class="modal-title text-slate-100">CPF/CNPJ já cadastrado</h5>
-        <button type="button" class="btn-close btn-close-white" onclick="if(_modalDuplicado)_modalDuplicado.hide()"></button>
+        <button type="button" class="btn-close btn-close-white" onclick="fecharDuplicado()"></button>
       </div>
       <div class="modal-body" id="duplicadoCorpo"></div>
       <div class="modal-footer border-slate-700 flex flex-col gap-2 sm:flex-row sm:justify-end">
-        <button type="button" class="btn btn-secondary w-full sm:w-auto" onclick="if(_modalDuplicado)_modalDuplicado.hide()">Cancelar</button>
+        <button type="button" class="btn btn-secondary w-full sm:w-auto" onclick="fecharDuplicado()">Cancelar</button>
         <button type="button" class="btn btn-outline-light w-full sm:w-auto" onclick="cadastrarDuplicado()">Cadastrar mesmo assim</button>
         <button type="button" class="btn btn-cyan-400 text-cyan-400 border border-slate-700 w-full sm:w-auto" onclick="atualizarDuplicado()">Atualizar cadastro existente</button>
       </div>
