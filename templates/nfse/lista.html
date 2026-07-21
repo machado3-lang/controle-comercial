@@ -89,18 +89,19 @@
                 </td>
                 <td class="px-4 py-3 text-center">
                     <div class="flex items-center justify-center gap-1">
-                        {% if n.status == 'rascunho' %}
+                        {% set st = (n.status or '').lower() %}
+                        {% if st == 'rascunho' %}
                         <button type="button" onclick="confirmTransmitirLista({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Transmitir"><i data-lucide="send" class="w-4 h-4"></i></button>
                         <a href="/nfse/{{ n.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="edit" class="w-4 h-4"></i></a>
                         <a href="/nfse/detalhe/{{ n.id }}" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Detalhe"><i data-lucide="eye" class="w-4 h-4"></i></a>
                         <button type="button" onclick="confirmExcluir({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                        {% elif n.status == 'em_processamento' %}
+                        {% elif st == 'em_processamento' %}
                         <form method="post" action="/nfse/{{ n.id }}/sincronizar" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Sincronizar"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
                         </form>
                         <a href="/nfse/detalhe/{{ n.id }}" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Detalhe"><i data-lucide="eye" class="w-4 h-4"></i></a>
-                        {% elif n.status == 'autorizada' %}
+                        {% elif st == 'autorizada' %}
                         <form method="post" action="/nfse/{{ n.id }}/sincronizar" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="inline-flex p-1.5 text-sky-400 border border-slate-700 rounded hover:bg-sky-950/30 transition" title="Sincronizar status (detectar cancelamento)"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
@@ -110,7 +111,7 @@
                         <a href="/nfse/detalhe/{{ n.id }}" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Detalhe"><i data-lucide="eye" class="w-4 h-4"></i></a>
                         <button type="button" onclick="confirmCancelarLista({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Cancelar"><i data-lucide="x-circle" class="w-4 h-4"></i></button>
                         <a href="https://e-gov.betha.com.br/e-nota/contribuinte/pro_cancelarnota.faces" target="_blank" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Cancelar no Portal Betha"><i data-lucide="external-link" class="w-4 h-4"></i></a>
-                        {% elif n.status == 'pendente' %}
+                        {% elif st == 'pendente' %}
                         {% if n.protocolo %}
                         <form method="post" action="/nfse/{{ n.id }}/sincronizar" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -120,7 +121,7 @@
                         <button type="button" onclick="confirmReenviarLista({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Reenviar"><i data-lucide="send" class="w-4 h-4"></i></button>
                         {% endif %}
                         <a href="/nfse/detalhe/{{ n.id }}" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Detalhe"><i data-lucide="eye" class="w-4 h-4"></i></a>
-                        {% elif n.status == 'erro' %}
+                        {% elif st == 'erro' %}
                         {% if n.protocolo %}
                         <form method="post" action="/nfse/{{ n.id }}/sincronizar" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -131,7 +132,7 @@
                         <a href="/nfse/{{ n.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="edit" class="w-4 h-4"></i></a>
                         <a href="/nfse/detalhe/{{ n.id }}" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Detalhe"><i data-lucide="eye" class="w-4 h-4"></i></a>
                         <button type="button" onclick="confirmExcluir({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
-                        {% elif n.status == 'cancelada' %}
+                        {% elif st == 'cancelada' %}
                         <form method="post" action="/nfse/{{ n.id }}/sincronizar" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="inline-flex p-1.5 text-sky-400 border border-slate-700 rounded hover:bg-sky-950/30 transition" title="Sincronizar status"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
@@ -143,7 +144,7 @@
                         {% else %}
                         <a href="/nfse/detalhe/{{ n.id }}" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Detalhe"><i data-lucide="eye" class="w-4 h-4"></i></a>
                         {% endif %}
-                        {% if n.id in nfse_ids_sem_cobranca and n.status in ('rascunho', 'autorizada', 'pendente') %}
+                        {% if n.id in nfse_ids_sem_cobranca and st in ('rascunho', 'autorizada', 'pendente') %}
                         <button type="button" onclick="confirmGerarCobrancaLista({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Gerar Cobrança"><i data-lucide="banknote" class="w-4 h-4"></i></button>
                         {% endif %}
                     </div>

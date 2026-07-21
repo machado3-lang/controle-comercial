@@ -4,19 +4,20 @@
 <div class="max-w-4xl mx-auto">
     <div class="flex justify-between items-center mb-4">
         <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="file-text" class="w-6 h-6 inline me-2"></i> NFSe {{ nfse.numero or 'Pendente' }}</h4>
+        {% set st = (nfse.status or '').lower() %}
         <div class="flex gap-2">
-            {% if nfse.status == 'rascunho' %}
+            {% if st == 'rascunho' %}
             <button type="button" onclick="confirmTransmitir({{ nfse.id }}, '{{ nfse.numero }}')" class="flex items-center px-3 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10 text-sm"><i data-lucide="send" class="w-4 h-4 me-1"></i> Transmitir</button>
             <a href="/nfse/{{ nfse.id }}/editar" class="flex items-center px-3 py-2 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition text-sm"><i data-lucide="edit" class="w-4 h-4 me-1"></i> Editar</a>
             <button type="button" onclick="confirmExcluir({{ nfse.id }}, '{{ nfse.numero }}')" class="flex items-center px-3 py-2 text-rose-400 border border-rose-800/50 rounded-xl hover:bg-rose-950/30 transition text-sm"><i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Excluir</button>
             {% endif %}
-            {% if nfse.status == 'em_processamento' %}
+            {% if st == 'em_processamento' %}
             <form method="post" action="/nfse/{{ nfse.id }}/sincronizar" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="flex items-center px-3 py-2 bg-gradient-to-r from-amber-500 to-yellow-600 hover:from-amber-600 hover:to-yellow-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10 text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sincronizar</button>
             </form>
             {% endif %}
-            {% if nfse.status == 'pendente' %}
+            {% if st == 'pendente' %}
             {% if nfse.protocolo %}
             <form method="post" action="/nfse/{{ nfse.id }}/sincronizar" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
@@ -26,7 +27,7 @@
             <button type="button" onclick="confirmReenviar({{ nfse.id }}, '{{ nfse.numero }}')" class="flex items-center px-3 py-2 bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10 text-sm"><i data-lucide="send" class="w-4 h-4 me-1"></i> Reenviar</button>
             {% endif %}
             {% endif %}
-            {% if nfse.status == 'autorizada' %}
+            {% if st == 'autorizada' %}
             <form method="post" action="/nfse/{{ nfse.id }}/sincronizar" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="flex items-center px-3 py-2 text-sky-400 border border-sky-800/50 rounded-xl hover:bg-sky-950/30 transition text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sinc.</button>
@@ -36,13 +37,13 @@
             <a href="/nfse/{{ nfse.id }}/pdf" target="_blank" class="flex items-center px-3 py-2 text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition text-sm"><i data-lucide="file-text" class="w-4 h-4 me-1"></i> PDF</a>
             <a href="/nfse/{{ nfse.id }}/xml" target="_blank" class="flex items-center px-3 py-2 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition text-sm"><i data-lucide="file-code" class="w-4 h-4 me-1"></i> XML</a>
             {% endif %}
-            {% if nfse.status == 'cancelada' %}
+            {% if st == 'cancelada' %}
             <form method="post" action="/nfse/{{ nfse.id }}/sincronizar" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <button type="submit" class="flex items-center px-3 py-2 text-sky-400 border border-sky-800/50 rounded-xl hover:bg-sky-950/30 transition text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sinc.</button>
             </form>
             {% endif %}
-            {% if nfse.status == 'erro' %}
+            {% if st == 'erro' %}
             {% if nfse.protocolo %}
             <form method="post" action="/nfse/{{ nfse.id }}/sincronizar" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
