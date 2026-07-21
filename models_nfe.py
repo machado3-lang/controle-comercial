@@ -15,6 +15,8 @@ class NFe(Base):
     serie = Column(Integer, nullable=False, default=1)
     chave_acesso = Column(String(50), nullable=True)
     protocolo = Column(String(50), nullable=True)
+    destinatario_nome = Column(String(200), nullable=True)
+    destinatario_cpf_cnpj = Column(String(20), nullable=True)
     invoice_id = Column(String(50), nullable=True, unique=True)
     status = Column(String(20), default="pendente", index=True)
     modelo = Column(Integer, default=55)

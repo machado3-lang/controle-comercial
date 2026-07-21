@@ -1090,6 +1090,15 @@ def nfe_distribuicao(
                 continue
             existente = db.query(NFe).filter(NFe.chave_acesso == chave).first()
             if existente:
+                # Backfill: preenche destinatário e vincula cliente se ainda vazio
+                if not existente.destinatario_nome:
+                    existente.destinatario_nome = n.get('destinatario_nome')
+                if not existente.destinatario_cpf_cnpj:
+                    existente.destinatario_cpf_cnpj = n.get('destinatario_cnpj')
+                if not existente.cliente_id:
+                    cli = _resolver_cliente_nfe(db, n.get('destinatario_cnpj'), n.get('destinatario_nome'))
+                    if cli:
+                        existente.cliente_id = cli.id
                 continue
             nf = NFe()
             nf.chave_acesso = chave
@@ -1102,6 +1111,8 @@ def nfe_distribuicao(
             nf.origem = 'sefaz'
             nf.valor_total = float(n.get('valor') or 0)
             nf.xml_text = n.get('xml')
+            nf.destinatario_nome = n.get('destinatario_nome')
+            nf.destinatario_cpf_cnpj = n.get('destinatario_cnpj')
             dh = n.get('dhEmi')
             if dh:
                 for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
@@ -1110,14 +1121,9 @@ def nfe_distribuicao(
                         break
                     except Exception:
                         continue
-            doc = n.get('destinatario_cnpj') or ''
-            doc_clean = re.sub(r'\D', '', doc)
-            if doc_clean:
-                cliente = db.query(Cliente).filter(
-                    Cliente.cpf_cnpj != None, Cliente.cpf_cnpj.like(f"%{doc_clean}%")
-                ).first()
-                if cliente:
-                    nf.cliente_id = cliente.id
+            cli = _resolver_cliente_nfe(db, n.get('destinatario_cnpj'), n.get('destinatario_nome'))
+            if cli:
+                nf.cliente_id = cli.id
             db.add(nf)
         db.commit()
 
@@ -1173,6 +1179,24 @@ def importar_nfe_por_chave(
     return RedirectResponse(url="/nfe/recebidas", status_code=303)
 
 
+def _resolver_cliente_nfe(db, doc, nome):
+    """Vincula um Cliente à NFe pelo CNPJ/CPF, com fallback pelo nome
+    (caso o cadastro tenha divergência ou o cliente ainda não exista)."""
+    doc_clean = re.sub(r'\D', '', doc or '')
+    if doc_clean:
+        cliente = db.query(Cliente).filter(
+            Cliente.cpf_cnpj != None, Cliente.cpf_cnpj.like(f"%{doc_clean}%")
+        ).first()
+        if cliente:
+            return cliente
+    if nome:
+        nome_l = re.sub(r'\s+', ' ', str(nome).strip().lower())
+        for c in db.query(Cliente).filter(Cliente.nome != None).all():
+            if re.sub(r'\s+', ' ', (c.nome or '').strip().lower()) == nome_l:
+                return c
+    return None
+
+
 @router.post("/importar-xml")
 def importar_nfe_xml(
     request: Request, db: Session = Depends(get_db),
@@ -1191,12 +1215,22 @@ def importar_nfe_xml(
 
         # Salva/atualiza na tabela principal 'nfe' para aparecer na listagem
         chave = resultado.get('chaveAcesso')
+        dest_nome = resultado.get('destinatario_nome')
+        dest_doc = resultado.get('destinatario_cnpj')
         nf = db.query(NFe).filter(NFe.chave_acesso == chave).first() if chave else None
         if nf:
             if not nf.xml_text:
                 nf.xml_text = xml_str
             if nf.status not in ('issued', 'cancelled'):
                 nf.status = 'issued'
+            if not nf.destinatario_nome:
+                nf.destinatario_nome = dest_nome
+            if not nf.destinatario_cpf_cnpj:
+                nf.destinatario_cpf_cnpj = dest_doc
+            if not nf.cliente_id:
+                cli = _resolver_cliente_nfe(db, dest_doc, dest_nome)
+                if cli:
+                    nf.cliente_id = cli.id
         else:
             nf = NFe()
             nf.chave_acesso = chave
@@ -1209,6 +1243,8 @@ def importar_nfe_xml(
             nf.origem = 'sefaz'
             nf.valor_total = float(resultado.get('valor') or 0)
             nf.xml_text = xml_str
+            nf.destinatario_nome = dest_nome
+            nf.destinatario_cpf_cnpj = dest_doc
             dh = resultado.get('dhEmi')
             if dh:
                 for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d %H:%M:%S', '%Y-%m-%d'):
@@ -1217,13 +1253,9 @@ def importar_nfe_xml(
                         break
                     except Exception:
                         continue
-            doc_clean = re.sub(r'\D', '', resultado.get('destinatario_cnpj') or '')
-            if doc_clean:
-                cliente = db.query(Cliente).filter(
-                    Cliente.cpf_cnpj != None, Cliente.cpf_cnpj.like(f"%{doc_clean}%")
-                ).first()
-                if cliente:
-                    nf.cliente_id = cliente.id
+            cli = _resolver_cliente_nfe(db, dest_doc, dest_nome)
+            if cli:
+                nf.cliente_id = cli.id
             db.add(nf)
         db.commit()
         request.session["message"] = f"NFe {resultado.get('numero', '')} importada do XML com sucesso!"
