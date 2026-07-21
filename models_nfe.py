@@ -70,7 +70,7 @@ class NFSe(Base):
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True, index=True)
     numero = Column(String(50))
     codigo_verificacao = Column(String(100))
-    chave_acesso = Column(String(100), index=True)
+    chave_acesso = Column(String(100), unique=True)
     data_emissao = Column(DateTime)
     status = Column(String(20), default="pendente", index=True)
     xml_path = Column(String(500))
@@ -123,7 +123,7 @@ class NFSeRecebida(Base):
     despesas/fornecedores e escrituração (SPED)."""
     __tablename__ = "nfse_recebida"
     id = Column(Integer, primary_key=True)
-    chave_acesso = Column(String(100), index=True)
+    chave_acesso = Column(String(100), unique=True)
     numero = Column(String(50))
     codigo_verificacao = Column(String(100))
     data_emissao = Column(DateTime)

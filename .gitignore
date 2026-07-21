@@ -16,4 +16,6 @@ temp_*.pdf
 SICOOB API/
 "Códigos de resposta HTTP.txt"
 backup_*/
+backups/
+backup.json
 backup-rlw/

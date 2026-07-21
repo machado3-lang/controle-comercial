@@ -71,6 +71,12 @@ def run_migrations():
     except Exception as e:
         print(f"[MIGRATION] Warning: could not migrate enum values: {e}")
 
+    # Auto-migrate: adiciona unique constraints que faltam
+    try:
+        _add_unique_constraints()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not add unique constraints: {e}")
+
     # Backfill: corrige origem de NFe/NFSe já existentes (default 'avulsa')
     try:
         _backfill_origem()
@@ -325,6 +331,53 @@ def _add_missing_enum_values():
                         print(f"[MIGRATION] Added enum value {type_name}.{val}")
                     except Exception as e:
                         print(f"[MIGRATION] Could not add enum value {type_name}.{val}: {e}")
+
+
+def _add_unique_constraints():
+    """Adiciona unique constraints em colunas que devem ser únicas,
+    desde que não existam duplicatas no banco."""
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+
+    if engine.dialect.name != "postgresql":
+        return
+
+    constraints = [
+        ("nfse", "uq_nfse_chave_acesso", "chave_acesso"),
+        ("nfse_recebida", "uq_nfse_recebida_chave_acesso", "chave_acesso"),
+    ]
+
+    inspector = sa_inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    existing_constraints = set()
+    for table in existing_tables:
+        for idx in inspector.get_unique_constraints(table):
+            existing_constraints.add(idx["name"])
+
+    with engine.connect() as conn:
+        for table, constraint_name, column in constraints:
+            if table not in existing_tables:
+                continue
+            if constraint_name in existing_constraints:
+                continue
+            # Verifica se há duplicatas antes de adicionar a constraint
+            dup = conn.execute(sa_text(
+                f"SELECT COUNT(*) FROM (SELECT {column} FROM {table} "
+                f"WHERE {column} IS NOT NULL AND {column} != '' "
+                f"GROUP BY {column} HAVING COUNT(*) > 1) sub"
+            )).scalar()
+            if dup and dup > 0:
+                print(f"[MIGRATION] WARNING: {dup} {column} duplicados em {table}, "
+                      f"unique constraint não adicionada automaticamente")
+                continue
+            try:
+                conn.execute(sa_text(
+                    f"ALTER TABLE {table} ADD CONSTRAINT {constraint_name} UNIQUE ({column})"
+                ))
+                conn.commit()
+                print(f"[MIGRATION] Added unique constraint {constraint_name} on {table}({column})")
+            except Exception as e:
+                print(f"[MIGRATION] Could not add {constraint_name}: {e}")
 
 
 def create_app() -> FastAPI:
