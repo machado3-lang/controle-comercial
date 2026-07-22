@@ -480,7 +480,7 @@ class BethaNfseService:
             return {'situacao': None, 'aviso': 'sem chave'}
         chave = codigo_verificacao
         logger.info(f"Consultando NFSe {numero_nfse} no SEFIN ({chave[:10]}...)...")
-        session = self._get_session()
+        session = self._get_adn_session()
         
         situacao = 'normal'
 
