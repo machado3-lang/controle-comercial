@@ -1330,7 +1330,7 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
-    if nfe.status not in ("rascunho", "erro"):
+    if nfe.status not in ("rascunho", "error"):
         request.session["error"] = "NFe já foi transmitida"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 

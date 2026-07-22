@@ -91,8 +91,8 @@
         </div>
 
         <div class="flex items-center gap-2">
-            {% if nfe.status in ('rascunho', 'erro') %}
-            {% if nfe.status == 'erro' %}
+            {% if nfe.status in ('rascunho', 'error') %}
+            {% if nfe.status == 'error' %}
             <a href="/nfe/{{ nfe.id }}/previa" class="flex items-center px-4 py-2 text-sm bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
                 <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Reenviar
             </a>
