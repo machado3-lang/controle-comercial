@@ -114,12 +114,14 @@ class BethaNfseService:
             except Exception:
                 pass
 
-    def gerar_id_dps(self, cmun: str, cnpj: str, serie: str, ndps: str, id_suffix: str = '') -> str:
+    def gerar_id_dps(self, cmun: str, cnpj: str, serie: str, ndps: str) -> str:
         """Gera ID DPS no formato: DPS + cMun(7) + série(1) + CNPJ(14) + 0000 + série(1) + nDPS(15) = 45 chars.
-        Se id_suffix for informado (ex: '-r1'), concatena ao final para gerar ID unico por tentativa."""
+        Para retentativas, varia-se a série (mantendo nDPS inalterado) a fim de gerar um ID distinto
+        dentro dos 45 caracteres exigidos (evita E001 e E050 sem pular o número da nota)."""
+        serie = (serie or '1')[:1]
         p1 = f'{serie}{cnpj}'
         p2 = f'0000{serie}{ndps}'
-        return f'DPS{cmun}{p1}{p2}{id_suffix}'
+        return f'DPS{cmun}{p1}{p2}'
 
     def enviar_dps(self, dps_xml: str, tpAmb: int = 1) -> dict:
         from lxml import etree
@@ -836,8 +838,10 @@ def _limpar_codigo(valor) -> str:
     return "".join(c for c in str(valor) if c.isdigit())
 
 
-def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, id_suffix: str = '') -> str:
-    """Gera XML DPS Nacional - formato ID 45 chars - filtra apenas serviços"""
+def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1') -> str:
+    """Gera XML DPS Nacional - formato ID 45 chars - filtra apenas serviços.
+    O parâmetro `serie` (1 caractere) é variado nas retentativas para gerar um ID
+    distinto mantendo o nDPS (número da nota) inalterado."""
     from models import Empresa
     empresa = db.query(Empresa).first()
 
@@ -874,12 +878,12 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, id_suffix
         if cli_im:
             toma_doc += f'\n         <IM>{cli_im}</IM>'
 
-    serie = '1'
+    serie = (serie or '1')[:1]
     ndps_num = numero_nfse if numero_nfse is not None else pedido.id
     ndps = f"{ndps_num:015d}"
 
     service = BethaNfseService()
-    id_dps = service.gerar_id_dps(cmun, cnpj_prest, serie, ndps, id_suffix=id_suffix)
+    id_dps = service.gerar_id_dps(cmun, cnpj_prest, serie, ndps)
 
     total_vlr = sum(float(i.total or 0) for i in itens_servico)
     if total_vlr == 0:
@@ -983,7 +987,10 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, id_suffix
    </infDPS>
 </DPS>'''
 
-def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, id_suffix: str = '') -> str:
+def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1') -> str:
+    """Gera XML DPS Nacional a partir de uma NFSe já registrada.
+    O parâmetro `serie` (1 caractere) é variado nas retentativas para gerar um ID
+    distinto mantendo o nDPS (número da nota) inalterado."""
     from models import Empresa
     empresa = db.query(Empresa).first()
 
@@ -1019,12 +1026,12 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, id_suf
         if cli_im:
             toma_doc += f'\n         <IM>{cli_im}</IM>'
 
-    serie = '1'
+    serie = (serie or '1')[:1]
     ndps_num = numero_nfse if numero_nfse is not None else (int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else nfse.id)
     ndps = f"{ndps_num:015d}"
 
     service = BethaNfseService()
-    id_dps = service.gerar_id_dps(cmun, cnpj_prest, serie, ndps, id_suffix=id_suffix)
+    id_dps = service.gerar_id_dps(cmun, cnpj_prest, serie, ndps)
 
     total_vlr = sum(float(i.valor_total or 0) for i in itens)
     if total_vlr == 0:
@@ -1144,16 +1151,20 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
         service = BethaNfseService()
         numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
 
-        def _send_with_suffix(suffix: str):
-            dps_xml = gerar_dps_xml_nfse(nfse, db, tpAmb, numero, id_suffix=suffix)
+        def _send_with_serie(attempt: int):
+            # Varia a série (1 dígito) para gerar um ID DPS distinto nas retentativas,
+            # mantendo o nDPS (número da nota) inalterado. Evita E001 (ID com 48 chars)
+            # e E050 (DPS duplicada) sem pular o número da nota.
+            serie = str((1 + attempt) % 10)
+            dps_xml = gerar_dps_xml_nfse(nfse, db, tpAmb, numero, serie=serie)
             return service.enviar_dps(dps_xml, tpAmb), dps_xml
 
         # Primeira tentativa
-        resultado, dps_xml = _send_with_suffix(f'-r{attempt}' if attempt else '')
+        resultado, dps_xml = _send_with_serie(attempt)
 
         retry_iss_retido = False
 
-        # Se erro de ISS retido, corrige e reenvia com sufixo diferente
+        # Se erro de ISS retido, corrige e reenvia com série diferente
         if resultado.get('erros') and _erro_iss_retido(resultado['erros']):
             attempt += 1
             logger.info("Betha rejeitou por ISS retido — corrigindo e reenviando...")
@@ -1161,10 +1172,10 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
             if nfse.cliente:
                 nfse.cliente.iss_retido = True
             db.commit()
-            resultado, dps_xml = _send_with_suffix(f'-r{attempt}')
+            resultado, dps_xml = _send_with_serie(attempt)
             retry_iss_retido = True
 
-        # Se DPS duplicada (E050), reenvia com sufixo diferente mantendo mesmo nDPS
+        # Se DPS duplicada (E050), reenvia com série diferente mantendo mesmo nDPS
         if resultado.get('erros') and any(
             e.get('codigo') == 'E050'
             or 'jÃ¡ recepcionada' in (e.get('mensagem','') or '').lower()
@@ -1172,8 +1183,8 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
             for e in resultado['erros']
         ):
             attempt += 1
-            logger.info(f"DPS duplicada — reenviando com sufixo -r{attempt}...")
-            resultado, dps_xml = _send_with_suffix(f'-r{attempt}')
+            logger.info(f"DPS duplicada — reenviando com série variada (attempt {attempt})...")
+            resultado, dps_xml = _send_with_serie(attempt)
 
         protocolo = resultado.get('protocolo')
         erros = resultado.get('erros', [])
@@ -1238,6 +1249,18 @@ def sincronizar_nfse(protocolo: str, tpAmb: int = 1, numero_nfse: str = None) ->
         st = status.get('status', '')
         sit_raw = None
         adn_xml = None
+
+        # Cancelamento detectado via Betha (SOAP consultar_status) — fonte primária,
+        # independente do SEFIN (que está indisponível/403).
+        sit_nfse = (status.get('situacao_nfse') or '').strip().lower()
+        if sit_nfse in ('2', 'cancelada', 'cancelado') or 'cancel' in sit_nfse:
+            return {
+                'status_processamento': 'cancelada',
+                'numero': numero_nfse,
+                'codigo_verificacao': status.get('chave_acesso'),
+                'erros': [],
+            }
+
         if numero_nfse:
             sit_resp = service.consultar_situacao_nfse(numero_nfse, status.get('chave_acesso'))
             eventos = sit_resp.get('eventos')
@@ -1297,11 +1320,15 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
     try:
         service = BethaNfseService()
 
-        def _send_with_suffix(suffix: str):
-            dps_xml = gerar_dps_xml(pedido, db, tpAmb, numero_nfse, id_suffix=suffix)
+        def _send_with_serie(attempt: int):
+            # Varia a série (1 dígito) para gerar um ID DPS distinto nas retentativas,
+            # mantendo o nDPS (número da nota) inalterado. Evita E001 (ID com 48 chars)
+            # e E050 (DPS duplicada) sem pular o número da nota.
+            serie = str((1 + attempt) % 10)
+            dps_xml = gerar_dps_xml(pedido, db, tpAmb, numero_nfse, serie=serie)
             return service.enviar_dps(dps_xml, tpAmb), dps_xml
 
-        resultado, dps_xml = _send_with_suffix(f'-r{attempt}' if attempt else '')
+        resultado, dps_xml = _send_with_serie(attempt)
 
         retry_iss_retido = False
         if resultado.get('erros') and _erro_iss_retido(resultado['erros']):
@@ -1309,10 +1336,10 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
             logger.info("Betha rejeitou por ISS retido — corrigindo e reenviando...")
             pedido.cliente.iss_retido = True
             db.commit()
-            resultado, dps_xml = _send_with_suffix(f'-r{attempt}')
+            resultado, dps_xml = _send_with_serie(attempt)
             retry_iss_retido = True
 
-        # Se DPS duplicada, reenvia com sufixo diferente
+        # Se DPS duplicada, reenvia com série diferente mantendo mesmo nDPS
         if resultado.get('erros') and any(
             e.get('codigo') == 'E050'
             or 'jÃ¡ recepcionada' in (e.get('mensagem','') or '').lower()
@@ -1320,8 +1347,8 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
             for e in resultado['erros']
         ):
             attempt += 1
-            logger.info(f"DPS duplicada — reenviando com sufixo -r{attempt}...")
-            resultado, dps_xml = _send_with_suffix(f'-r{attempt}')
+            logger.info(f"DPS duplicada — reenviando com série variada (attempt {attempt})...")
+            resultado, dps_xml = _send_with_serie(attempt)
 
         protocolo = resultado.get('protocolo')
         erros = resultado.get('erros', [])

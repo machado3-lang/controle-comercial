@@ -1132,7 +1132,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
             nfse.mensagem_retorno = msg_erro
 
         # Se DPS jÃ¡ foi recepcionada, o prÃ³prio emitir_rascunho jÃ¡ retentou
-        # com id_suffix diferente. Se ainda hÃ¡ protocolo, tenta sync.
+        # com sÃ©rie diferente. Se ainda hÃ¡ protocolo, tenta sync.
         tem_protocolo = bool(nfse.protocolo)
 
         if sp == 'sucesso':
