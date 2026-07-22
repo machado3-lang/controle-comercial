@@ -178,7 +178,7 @@ def emitir_avulsa_form(request: Request, db: Session = Depends(get_db)):
     ).order_by(Produto.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "cpf_cnpj": c.cpf_cnpj,
                        "cidade": c.cidade, "estado": c.estado} for c in clientes]
-    servicos_json = [{"id": p.id, "nome": p.nome, "preco": p.preco,
+    servicos_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0),
                        "codigo_lc116": p.codigo_lc116 or "",
                        "codigo_tributacao_municipal": p.codigo_tributacao_municipal or "",
                        "unidade": p.unidade or "UN"} for p in servicos]
@@ -716,7 +716,7 @@ def editar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     ).order_by(Produto.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "cpf_cnpj": c.cpf_cnpj,
                        "cidade": c.cidade, "estado": c.estado} for c in clientes]
-    servicos_json = [{"id": p.id, "nome": p.nome, "preco": p.preco,
+    servicos_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0),
                        "codigo_lc116": p.codigo_lc116 or "",
                        "codigo_tributacao_municipal": p.codigo_tributacao_municipal or "",
                        "unidade": p.unidade or "UN"} for p in servicos]

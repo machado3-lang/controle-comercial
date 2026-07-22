@@ -82,7 +82,7 @@ def buscar_insumos(request: Request, db: Session = Depends(get_db), q: str = Que
     query = db.query(Produto).filter(or_(Produto.nome.ilike(f"%{q}%"), Produto.codigo.ilike(f"%{q}%")))
     query = query.filter(Produto.situacao == "A", Produto.tipo.in_(["produto", "servico"]))
     itens = query.order_by(Produto.nome).limit(20).all()
-    return {"itens": [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": v.preco_adicional} for v in i.variacoes]} for i in itens]}
+    return {"itens": [{"id": i.id, "nome": i.nome, "preco": float(i.preco or 0), "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": float(v.preco_adicional or 0)} for v in i.variacoes]} for i in itens]}
 
 @router.get("/buscar")
 def buscar_itens(request: Request, db: Session = Depends(get_db), q: str = Query("")):
@@ -92,7 +92,7 @@ def buscar_itens(request: Request, db: Session = Depends(get_db), q: str = Query
     query = db.query(Produto).filter(or_(Produto.nome.ilike(f"%{q}%"), Produto.codigo.ilike(f"%{q}%")))
     query = query.filter(Produto.situacao == "A", Produto.tipo.in_(["produto", "kit", "servico"]))
     itens = query.order_by(Produto.nome).limit(20).all()
-    return {"itens": [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": v.preco_adicional} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padrao} for c in i.composicoes]} for i in itens]}
+    return {"itens": [{"id": i.id, "nome": i.nome, "preco": float(i.preco or 0), "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": float(v.preco_adicional or 0)} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padrao} for c in i.composicoes]} for i in itens]}
 
 @router.get("/proximo-sku")
 def proximo_sku_endpoint(request: Request, db: Session = Depends(get_db)):
@@ -163,7 +163,7 @@ def novo_produto_form(request: Request, db: Session = Depends(get_db)):
     variacoes = db.query(ProdutoVariacao).options(selectinload(ProdutoVariacao.produto)).join(Produto).filter(Produto.tipo == 'produto').all()
     variacoes_json = [{"id": v.id, "nome_variacao": v.nome_variacao, "produto_nome": v.produto.nome, "categoria_id": v.produto.categoria_id, "marca_id": v.produto.marca_id} for v in variacoes]
     itens_disponiveis = db.query(Produto).options(selectinload(Produto.variacoes)).order_by(Produto.nome).all()
-    itens_json = [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome} for i in itens_disponiveis if i.tipo in ('produto', 'servico')]
+    itens_json = [{"id": i.id, "nome": i.nome, "preco": float(i.preco or 0), "tipo": i.tipo, "descricao": i.descricao or i.nome} for i in itens_disponiveis if i.tipo in ('produto', 'servico')]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     return request.app.state.templates.TemplateResponse(request, "produtos/form.html", {"request": request, "produto": None, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "editar": False, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "proximo_codigo": _proximo_codigo_produto(db), "fornecedores_json": fornecedores_json})
 
@@ -314,7 +314,7 @@ def editar_produto(request: Request, produto_id: int, db: Session = Depends(get_
     variacoes = db.query(ProdutoVariacao).options(selectinload(ProdutoVariacao.produto)).join(Produto).filter(Produto.tipo == 'produto').all()
     variacoes_json = [{"id": v.id, "nome_variacao": v.nome_variacao, "produto_nome": v.produto.nome, "categoria_id": v.produto.categoria_id, "marca_id": v.produto.marca_id} for v in variacoes]
     itens_disponiveis = db.query(Produto).options(selectinload(Produto.variacoes)).order_by(Produto.nome).all()
-    itens_json = [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome} for i in itens_disponiveis if i.tipo in ('produto', 'servico')]
+    itens_json = [{"id": i.id, "nome": i.nome, "preco": float(i.preco or 0), "tipo": i.tipo, "descricao": i.descricao or i.nome} for i in itens_disponiveis if i.tipo in ('produto', 'servico')]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     return request.app.state.templates.TemplateResponse(request, 
         "produtos/form.html",

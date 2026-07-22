@@ -77,6 +77,10 @@ class Usuario(Base):
     permissoes = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.now)
 
+    consolidacoes_finalizadas = relationship("PedidoConsolidado", foreign_keys="[PedidoConsolidado.finalizado_por]", back_populates="finalizador")
+    audit_logs = relationship("AuditLog", back_populates="usuario")
+    historico_cadastros = relationship("HistoricoCadastro", back_populates="usuario")
+
 
 class StatusOS(str, enum.Enum):
     ABERTA = "aberta"
@@ -124,6 +128,10 @@ class Cliente(Base):
     contas_receber = relationship("ContaReceber", back_populates="cliente")
     assinaturas = relationship("Assinatura", back_populates="cliente")
     ordens_servico = relationship("OrdemServico", back_populates="cliente")
+    pedidos_venda = relationship("PedidoVenda", back_populates="cliente")
+    consolidacoes = relationship("PedidoConsolidado", back_populates="cliente")
+    nfes = relationship("NFe", back_populates="cliente")
+    nfses = relationship("NFSe", back_populates="cliente")
 
 
 class Fornecedor(Base):
@@ -163,6 +171,9 @@ class Fornecedor(Base):
 
     contas_pagar = relationship("ContaPagar", back_populates="fornecedor")
     assinaturas = relationship("Assinatura", back_populates="fornecedor")
+    produtos = relationship("Produto", back_populates="fornecedor")
+    itens_venda = relationship("PedidoVendaItem", back_populates="fornecedor")
+    nfse_recebidas = relationship("NFSeRecebida", back_populates="fornecedor")
 
 
 class ContaPagar(Base):
@@ -191,8 +202,8 @@ class ContaPagar(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     fornecedor = relationship("Fornecedor", back_populates="contas_pagar")
-    tipo_documento = relationship("TipoDocumento")
-    plano_conta = relationship("PlanoDeContas")
+    tipo_documento = relationship("TipoDocumento", back_populates="contas_pagar")
+    plano_conta = relationship("PlanoDeContas", back_populates="contas_pagar")
 
 
 class ContaReceber(Base):
@@ -232,9 +243,9 @@ class ContaReceber(Base):
     consolidacao_id = Column(Integer, ForeignKey("pedidos_consolidados.id"), nullable=True, index=True)
 
     cliente = relationship("Cliente", back_populates="contas_receber")
-    tipo_documento = relationship("TipoDocumento")
-    plano_conta = relationship("PlanoDeContas")
-    nfse = relationship("NFSe")
+    tipo_documento = relationship("TipoDocumento", back_populates="contas_receber")
+    plano_conta = relationship("PlanoDeContas", back_populates="contas_receber")
+    nfse = relationship("NFSe", back_populates="contas_receber")
     consolidacao = relationship("PedidoConsolidado", back_populates="contas_receber")
 
 
@@ -266,8 +277,8 @@ class Assinatura(Base):
 
     cliente = relationship("Cliente", back_populates="assinaturas")
     fornecedor = relationship("Fornecedor", back_populates="assinaturas")
-    produto = relationship("Produto")
-    nfse = relationship("NFSe")
+    produto = relationship("Produto", back_populates="assinaturas")
+    nfse = relationship("NFSe", back_populates="assinaturas")
     historico = relationship("AssinaturaHistorico", back_populates="assinatura", cascade="all, delete-orphan",
                              order_by="AssinaturaHistorico.data_alteracao.desc()")
 
@@ -321,6 +332,7 @@ class OrdemServico(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     cliente = relationship("Cliente", back_populates="ordens_servico")
+    nfes = relationship("NFe", back_populates="os")
 
 
 class MarcaProduto(Base):
@@ -329,6 +341,8 @@ class MarcaProduto(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(100), nullable=False, unique=True)
     created_at = Column(DateTime, default=datetime.now)
+
+    produtos = relationship("Produto", back_populates="marca_rel")
 
 
 class CategoriaProduto(Base):
@@ -339,6 +353,7 @@ class CategoriaProduto(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     produtos = relationship("Produto", back_populates="categoria")
+    empresas = relationship("Empresa", back_populates="categoria_servico_padrao")
 
 
 class Produto(Base):
@@ -374,10 +389,16 @@ class Produto(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     categoria = relationship("CategoriaProduto", back_populates="produtos")
-    fornecedor = relationship("Fornecedor")
-    marca_rel = relationship("MarcaProduto")
+    fornecedor = relationship("Fornecedor", back_populates="produtos")
+    marca_rel = relationship("MarcaProduto", back_populates="produtos")
     variacoes = relationship("ProdutoVariacao", back_populates="produto", cascade="all, delete-orphan")
     composicoes = relationship("ProdutoComposicao", foreign_keys="[ProdutoComposicao.produto_pai_id]", back_populates="produto_pai", cascade="all, delete-orphan")
+    composicoes_insumo = relationship("ProdutoComposicao", foreign_keys="[ProdutoComposicao.insumo_id]", back_populates="insumo")
+    assinaturas = relationship("Assinatura", back_populates="produto")
+    itens_venda = relationship("PedidoVendaItem", back_populates="produto")
+    itens_consolidado = relationship("PedidoConsolidadoItem", back_populates="produto")
+    itens_nfe = relationship("NFeItem", back_populates="produto")
+    itens_nfse = relationship("NFSeItem", back_populates="produto")
     tipo = Column(String(20), default="produto")  # "produto", "servico" ou "kit"
     eh_insumo = Column(Boolean, default=False)  # True: consumido em servicos (baixa como SAIDA_INSUMO na NFSe)
     codigo_lc116 = Column(String(10), nullable=True)
@@ -407,6 +428,7 @@ class ProdutoVariacao(Base):
 
     produto = relationship("Produto", back_populates="variacoes")
     itens_pedido = relationship("PedidoVendaItem", foreign_keys="[PedidoVendaItem.variacao_id]", back_populates="variacao")
+    itens_consolidado = relationship("PedidoConsolidadoItem", back_populates="variacao")
 
 
 class ProdutoComposicao(Base):
@@ -419,7 +441,7 @@ class ProdutoComposicao(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     produto_pai = relationship("Produto", foreign_keys=[produto_pai_id], back_populates="composicoes")
-    insumo = relationship("Produto", foreign_keys=[insumo_id])
+    insumo = relationship("Produto", foreign_keys=[insumo_id], back_populates="composicoes_insumo")
 
 
 class StatusPedido(str, enum.Enum):
@@ -465,12 +487,14 @@ class PedidoVenda(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-    cliente = relationship("Cliente")
+    cliente = relationship("Cliente", back_populates="pedidos_venda")
     itens = relationship("PedidoVendaItem", back_populates="pedido", cascade="all, delete-orphan")
     nfse = relationship("NFSe", back_populates="pedido", uselist=False)
     nfes = relationship("NFe", back_populates="pedido")
     consolidacao = relationship("PedidoConsolidado", back_populates="pedidos_origem")
-    pedido_agrupado = relationship("PedidoVenda", remote_side=[id], backref="pedidos_origem_agrupamento")
+    pedido_agrupado = relationship("PedidoVenda", remote_side=[id], back_populates="pedidos_origem_agrupamento")
+    pedidos_origem_agrupamento = relationship("PedidoVenda", back_populates="pedido_agrupado")
+    itens_origem_consolidado = relationship("PedidoConsolidadoItemOrigem", foreign_keys="[PedidoConsolidadoItemOrigem.pedido_origem_id]", back_populates="pedido_origem")
 
 
 class PedidoVendaItem(Base):
@@ -489,11 +513,12 @@ class PedidoVendaItem(Base):
     fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True, index=True)
 
     pedido = relationship("PedidoVenda", back_populates="itens")
-    produto = relationship("Produto")
+    produto = relationship("Produto", back_populates="itens_venda")
     variacao = relationship("ProdutoVariacao", foreign_keys=[variacao_id], back_populates="itens_pedido")
-    fornecedor = relationship("Fornecedor")
+    fornecedor = relationship("Fornecedor", back_populates="itens_venda")
     pai = relationship("PedidoVendaItem", remote_side=[id], back_populates="filhos")
     filhos = relationship("PedidoVendaItem", back_populates="pai")
+    origens_consolidado = relationship("PedidoConsolidadoItemOrigem", foreign_keys="[PedidoConsolidadoItemOrigem.item_origem_id]", back_populates="item_origem")
 
 
 class PedidoConsolidado(Base):
@@ -518,12 +543,12 @@ class PedidoConsolidado(Base):
     finalizado_at = Column(DateTime, nullable=True)
     finalizado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True, index=True)
 
-    cliente = relationship("Cliente")
+    cliente = relationship("Cliente", back_populates="consolidacoes")
     pedidos_origem = relationship("PedidoVenda", back_populates="consolidacao")
     itens = relationship("PedidoConsolidadoItem", back_populates="consolidacao", cascade="all, delete-orphan")
     contas_receber = relationship("ContaReceber", back_populates="consolidacao")
     nfse = relationship("NFSe", back_populates="consolidacao", uselist=False)
-    finalizador = relationship("Usuario", foreign_keys=[finalizado_por])
+    finalizador = relationship("Usuario", foreign_keys=[finalizado_por], back_populates="consolidacoes_finalizadas")
 
     @property
     def qtd_pedidos_origem(self):
@@ -552,8 +577,8 @@ class PedidoConsolidadoItem(Base):
     created_at = Column(DateTime, default=datetime.now)
 
     consolidacao = relationship("PedidoConsolidado", back_populates="itens")
-    produto = relationship("Produto")
-    variacao = relationship("ProdutoVariacao")
+    produto = relationship("Produto", back_populates="itens_consolidado")
+    variacao = relationship("ProdutoVariacao", back_populates="itens_consolidado")
     itens_origem = relationship("PedidoConsolidadoItemOrigem", back_populates="item_consolidado", cascade="all, delete-orphan")
 
 
@@ -570,8 +595,8 @@ class PedidoConsolidadoItemOrigem(Base):
     total = Column(Numeric(12, 2), nullable=False, default=0)
 
     item_consolidado = relationship("PedidoConsolidadoItem", back_populates="itens_origem")
-    pedido_origem = relationship("PedidoVenda", foreign_keys=[pedido_origem_id])
-    item_origem = relationship("PedidoVendaItem", foreign_keys=[item_origem_id])
+    pedido_origem = relationship("PedidoVenda", foreign_keys=[pedido_origem_id], back_populates="itens_origem_consolidado")
+    item_origem = relationship("PedidoVendaItem", foreign_keys=[item_origem_id], back_populates="origens_consolidado")
 
 
 class Empresa(Base):
@@ -650,7 +675,7 @@ class Empresa(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
-    categoria_servico_padrao = relationship("CategoriaProduto")
+    categoria_servico_padrao = relationship("CategoriaProduto", back_populates="empresas")
 
 
 class TipoDocumento(Base):
@@ -659,6 +684,9 @@ class TipoDocumento(Base):
     id = Column(Integer, primary_key=True, index=True)
     nome = Column(String(100), nullable=False, unique=True)
     created_at = Column(DateTime, default=datetime.now)
+
+    contas_pagar = relationship("ContaPagar", back_populates="tipo_documento")
+    contas_receber = relationship("ContaReceber", back_populates="tipo_documento")
 
 
 class PlanoDeContas(Base):
@@ -673,7 +701,10 @@ class PlanoDeContas(Base):
     ativo = Column(Boolean, default=True)
     created_at = Column(DateTime, default=datetime.now)
 
-    children = relationship("PlanoDeContas", backref="parent", remote_side=[id])
+    parent = relationship("PlanoDeContas", back_populates="children", remote_side=[parent_id])
+    children = relationship("PlanoDeContas", back_populates="parent", remote_side=[id])
+    contas_pagar = relationship("ContaPagar", back_populates="plano_conta")
+    contas_receber = relationship("ContaReceber", back_populates="plano_conta")
 
 
 class AuditLog(Base):
@@ -688,7 +719,7 @@ class AuditLog(Base):
     ip = Column(String(50), nullable=True)
     created_at = Column(DateTime, default=datetime.now, index=True)
 
-    usuario = relationship("Usuario")
+    usuario = relationship("Usuario", back_populates="audit_logs")
 
 
 class CfopNatureza(Base):
@@ -712,4 +743,4 @@ class HistoricoCadastro(Base):
     usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     data = Column(DateTime, default=datetime.now, index=True)
 
-    usuario = relationship("Usuario", primaryjoin="HistoricoCadastro.usuario_id == Usuario.id", foreign_keys=[usuario_id])
+    usuario = relationship("Usuario", primaryjoin="HistoricoCadastro.usuario_id == Usuario.id", foreign_keys=[usuario_id], back_populates="historico_cadastros")

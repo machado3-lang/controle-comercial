@@ -753,7 +753,7 @@ def emitir_avulsa_form(
     ).order_by(Produto.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "cpf_cnpj": c.cpf_cnpj,
                        "cidade": c.cidade, "estado": c.estado} for c in clientes]
-    produtos_json = [{"id": p.id, "nome": p.nome, "preco": p.preco,
+    produtos_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0),
                        "ncm": p.ncm, "unidade": p.unidade or "UN",
                        "estoque": p.estoque or 0, "codigo": p.codigo or ""} for p in produtos]
 
@@ -918,7 +918,7 @@ def emitir_avulsa_submit(
             if item.get("produto_id"):
                 prod = db.query(Produto).filter(Produto.id == item["produto_id"]).first()
                 if prod:
-                    prod.estoque = (prod.estoque or 0) - item["quantidade"]
+                    prod.estoque = (prod.estoque or 0) - float(item["quantidade"])
 
         if gerar_cobranca:
             cobranca = ContaReceber(
@@ -1363,12 +1363,12 @@ def editar_nfe_form(request: Request, nfe_id: int, db: Session = Depends(get_db)
         "descricao": i.descricao,
         "ncm": i.ncm,
         "unidade": i.unidade,
-        "quantidade": i.quantidade,
-        "preco_unitario": i.preco_unitario,
+        "quantidade": float(i.quantidade) if i.quantidade else 0,
+        "preco_unitario": float(i.preco_unitario) if i.preco_unitario else 0,
     } for i in nfe.itens])
 
-    total_bruto = sum(i.preco_unitario * i.quantidade for i in nfe.itens)
-    desconto = round(max(total_bruto - nfe.valor_total, 0), 2)
+    total_bruto = float(sum(i.preco_unitario * i.quantidade for i in nfe.itens))
+    desconto = round(max(total_bruto - float(nfe.valor_total or 0), 0), 2)
 
     request.session["nfe_avulsa_cliente_id"] = nfe.cliente_id
     request.session["nfe_avulsa_cfop"] = nfe.cfop
@@ -1473,7 +1473,7 @@ def editar_nfe_submit(
             if old_item.produto_id:
                 prod_old = db.query(Produto).filter(Produto.id == old_item.produto_id).first()
                 if prod_old:
-                    prod_old.estoque = (prod_old.estoque or 0) + old_item.quantidade
+                    prod_old.estoque = (prod_old.estoque or 0) + float(old_item.quantidade)
             db.delete(old_item)
 
         nfe.cliente_id = cliente.id
@@ -1502,7 +1502,7 @@ def editar_nfe_submit(
             if item.get("produto_id"):
                 prod = db.query(Produto).filter(Produto.id == item["produto_id"]).first()
                 if prod:
-                    prod.estoque = (prod.estoque or 0) - item["quantidade"]
+                    prod.estoque = (prod.estoque or 0) - float(item["quantidade"])
 
         db.commit()
         request.session["message"] = f"Rascunho NFe #{nfe.numero} atualizado!"
@@ -1564,7 +1564,7 @@ def excluir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
         if item.produto_id:
             prod = db.query(Produto).filter(Produto.id == item.produto_id).first()
             if prod:
-                prod.estoque = (prod.estoque or 0) + item.quantidade
+                prod.estoque = (prod.estoque or 0) + float(item.quantidade)
 
     db.delete(nfe)
     db.commit()
@@ -1864,7 +1864,7 @@ def buscar_produtos_nfe(
     ).order_by(Produto.nome).limit(20).all()
     return JSONResponse({"results": [{
         "id": p.id, "nome": p.nome, "ncm": p.ncm or "99999999",
-        "unidade": p.unidade or "UN", "preco": p.preco or 0,
+        "unidade": p.unidade or "UN", "preco": float(p.preco or 0),
         "estoque": p.estoque or 0, "codigo": p.codigo or "",
     } for p in results]})
 

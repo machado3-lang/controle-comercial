@@ -133,7 +133,7 @@ def listar_assinaturas(
     
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
-    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": s.preco, "fornecedor_id": s.fornecedor_id} for s in servicos]
+    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": float(s.preco or 0), "fornecedor_id": s.fornecedor_id} for s in servicos]
     
     return request.app.state.templates.TemplateResponse(
         "assinaturas/listar.html",
@@ -378,7 +378,7 @@ def editar_assinatura(request: Request, assinatura_id: int, db: Session = Depend
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '',
-                  "preco": s.preco, "fornecedor_id": s.fornecedor_id} for s in servicos]
+                  "preco": float(s.preco or 0), "fornecedor_id": s.fornecedor_id} for s in servicos]
     
     return request.app.state.templates.TemplateResponse(
         "assinaturas/form.html",

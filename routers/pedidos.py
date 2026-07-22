@@ -171,7 +171,7 @@ def novo_pedido(request: Request, db: Session = Depends(get_db)):
         selectinload(Produto.variacoes),
         selectinload(Produto.composicoes)
     ).order_by(Produto.nome).all()
-    itens_json = [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": v.preco_adicional} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padrao} for c in i.composicoes]} for i in itens_disponiveis if i.tipo in ('produto', 'servico', 'kit')]
+    itens_json = [{"id": i.id, "nome": i.nome, "preco": float(i.preco or 0), "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": float(v.preco_adicional or 0)} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padrao} for c in i.composicoes]} for i in itens_disponiveis if i.tipo in ('produto', 'servico', 'kit')]
     clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
     hoje = date.today().isoformat()
     ultimo_numero = db.query(PedidoVenda.numero).order_by(PedidoVenda.numero.desc()).first()
@@ -272,8 +272,8 @@ def salvar_pedido(
                             item_pai_id=pai_id,
                             descricao=comp_prod.nome,
                             quantidade=comp.quantidade_padrao,
-                            preco_unitario=comp_prod.preco,
-                            total=comp.quantidade_padrao * comp_prod.preco,
+                            preco_unitario=float(comp_prod.preco or 0),
+                            total=comp.quantidade_padrao * float(comp_prod.preco or 0),
                             fornecedor_id=comp_prod.fornecedor_id
                         )
                         db.add(pi_filho)
@@ -411,7 +411,7 @@ def editar_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db
         selectinload(Produto.variacoes),
         selectinload(Produto.composicoes)
     ).order_by(Produto.nome).all()
-    itens_json = [{"id": i.id, "nome": i.nome, "preco": i.preco, "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": v.preco_adicional} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padra} for c in i.composicoes]} for i in itens_disponiveis if i.tipo in ('produto', 'servico', 'kit')]
+    itens_json = [{"id": i.id, "nome": i.nome, "preco": float(i.preco or 0), "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": float(v.preco_adicional or 0)} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padrao} for c in i.composicoes]} for i in itens_disponiveis if i.tipo in ('produto', 'servico', 'kit')]
     clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
     hoje = date.today().isoformat()
     # Carrega itens com produtos e variações para edição

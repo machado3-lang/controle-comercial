@@ -473,6 +473,7 @@ def _add_missing_indexes():
 def _cleanup_old_pdfs():
     """Remove PDFs temporários com mais de 30 dias das pastas de upload.
     Os DANFSe/DANFE serão regenerados sob demanda se necessário."""
+    import os
     import shutil
     import time
 

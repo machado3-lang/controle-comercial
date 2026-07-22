@@ -39,8 +39,8 @@ class NFe(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     
     pedido = relationship("PedidoVenda", back_populates="nfes")
-    os = relationship("OrdemServico")
-    cliente = relationship("Cliente")
+    os = relationship("OrdemServico", back_populates="nfes")
+    cliente = relationship("Cliente", back_populates="nfes")
     itens = relationship("NFeItem", back_populates="nfe", cascade="all, delete-orphan")
 
 
@@ -59,7 +59,7 @@ class NFeItem(Base):
     total = Column(Numeric(12, 2), nullable=False)
     
     nfe = relationship("NFe", back_populates="itens")
-    produto = relationship("Produto")
+    produto = relationship("Produto", back_populates="itens_nfe")
 
 
 class NFSe(Base):
@@ -97,8 +97,10 @@ class NFSe(Base):
 
     pedido = relationship("PedidoVenda", back_populates="nfse")
     consolidacao = relationship("PedidoConsolidado", back_populates="nfse")
-    cliente = relationship("Cliente")
+    cliente = relationship("Cliente", back_populates="nfses")
     itens = relationship("NFSeItem", back_populates="nfse", cascade="all, delete-orphan")
+    contas_receber = relationship("ContaReceber", back_populates="nfse")
+    assinaturas = relationship("Assinatura", back_populates="nfse")
 
 
 class NFSeItem(Base):
@@ -114,7 +116,7 @@ class NFSeItem(Base):
     tributacao_municipal = Column(String(20))
     
     nfse = relationship("NFSe", back_populates="itens")
-    produto = relationship("Produto")
+    produto = relationship("Produto", back_populates="itens_nfse")
 
 
 class NFSeRecebida(Base):
@@ -137,4 +139,4 @@ class NFSeRecebida(Base):
     cancelada = Column(Boolean, default=False)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    fornecedor = relationship("Fornecedor")
+    fornecedor = relationship("Fornecedor", back_populates="nfse_recebidas")

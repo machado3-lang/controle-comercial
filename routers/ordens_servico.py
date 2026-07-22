@@ -89,8 +89,8 @@ def listar_ordens(
     pecas = db.query(Produto).filter(Produto.tipo == 'produto').order_by(Produto.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
-    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": s.preco} for s in servicos]
-    pecas_json = [{"id": p.id, "nome": p.nome, "preco": p.preco} for p in pecas]
+    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": float(s.preco or 0)} for s in servicos]
+    pecas_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0)} for p in pecas]
     return request.app.state.templates.TemplateResponse(request, 
         "ordens_servico/listar.html",
         {"request": request, "ordens": ordens, "clientes": clientes, "marcas": marcas,
@@ -110,8 +110,8 @@ def nova_ordem(request: Request, db: Session = Depends(get_db)):
     pecas = db.query(Produto).filter(Produto.tipo == 'produto').order_by(Produto.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
-    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": s.preco} for s in servicos]
-    pecas_json = [{"id": p.id, "nome": p.nome, "preco": p.preco} for p in pecas]
+    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": float(s.preco or 0)} for s in servicos]
+    pecas_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0)} for p in pecas]
     return request.app.state.templates.TemplateResponse(request, 
         "ordens_servico/form.html",
         {"request": request, "ordem": None, "clientes": clientes, "marcas": marcas,
@@ -162,8 +162,8 @@ def detalhe_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)
     pecas = db.query(Produto).filter(Produto.tipo == 'produto').order_by(Produto.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
-    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": s.preco} for s in servicos]
-    pecas_json = [{"id": p.id, "nome": p.nome, "preco": p.preco} for p in pecas]
+    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": float(s.preco or 0)} for s in servicos]
+    pecas_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0)} for p in pecas]
     return request.app.state.templates.TemplateResponse(request, 
         "ordens_servico/detalhe.html",
         {"request": request, "ordem": ordem, "clientes": clientes, "marcas": marcas,
@@ -191,8 +191,8 @@ def editar_ordem_form(request: Request, ordem_id: int, db: Session = Depends(get
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
     categorias_json = [{"id": c.id, "nome": c.nome} for c in categorias]
-    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": s.preco, "categoria_id": s.categoria_id} for s in servicos]
-    pecas_json = [{"id": p.id, "nome": p.nome, "preco": p.preco, "categoria_id": p.categoria_id} for p in pecas]
+    servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": float(s.preco or 0), "categoria_id": s.categoria_id} for s in servicos]
+    pecas_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0), "categoria_id": p.categoria_id} for p in pecas]
 
     # Parse existing items data (JSON or fallback to text)
     servicos_existentes = []
