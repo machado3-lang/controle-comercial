@@ -1188,9 +1188,9 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                 xml_path = os.path.join(XML_DIR, xml_filename)
                 os.makedirs(os.path.dirname(xml_path), exist_ok=True)
                 with open(xml_path, 'w', encoding='utf-8') as f:
-                    f.write(dps_xml)
+                    f.write(xml_oficial)
                 nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
-                nfse.xml_text = dps_xml
+                nfse.xml_text = xml_oficial
             # Regenera PDF com dados oficiais
             from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional
             empresa = db.query(Empresa).first()

@@ -99,6 +99,7 @@ class BethaNfseService:
 
     def _get_session(self) -> Session:
         session = Session()
+        session.verify = False
         if os.path.exists(self.cert_path):
             pem_path = self._get_pem_combined()
             session.cert = pem_path
@@ -292,6 +293,7 @@ class BethaNfseService:
     def _get_adn_session(self) -> Session:
         """Session apenas com certificado (sem basic auth) para ADN"""
         session = Session()
+        session.verify = False
         
         if os.path.exists(self.cert_path):
             pem_path = self._get_pem_combined()
