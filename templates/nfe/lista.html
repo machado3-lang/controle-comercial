@@ -112,7 +112,7 @@
                 <td class="px-4 py-3 text-center">
                     <div class="flex items-center justify-center gap-1">
                         <a href="/nfe/{{ n.id }}/previa" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Revisar"><i data-lucide="eye" class="w-4 h-4"></i></a>
-                        {% if n.status in ('rascunho', 'error') %}
+                        {% if n.status in ('rascunho', 'queued', 'processing', 'error') %}
                         <button type="button" onclick="confirmTransmitir({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Transmitir"><i data-lucide="send" class="w-4 h-4"></i></button>
                         <a href="/nfe/{{ n.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="edit" class="w-4 h-4"></i></a>
                         <button type="button" onclick="confirmExcluir({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>

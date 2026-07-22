@@ -91,14 +91,14 @@
         </div>
 
         <div class="flex items-center gap-2">
-            {% if nfe.status in ('rascunho', 'error') %}
-            {% if nfe.status == 'error' %}
-            <a href="/nfe/{{ nfe.id }}/previa" class="flex items-center px-4 py-2 text-sm bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
-                <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Reenviar
-            </a>
-            {% else %}
+            {% if nfe.status in ('rascunho', 'queued', 'processing', 'error') %}
+            {% if nfe.status == 'rascunho' %}
             <a href="/nfe/{{ nfe.id }}/previa" class="flex items-center px-4 py-2 text-sm bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10">
                 <i data-lucide="eye" class="w-4 h-4 me-1"></i> Revisar e Transmitir
+            </a>
+            {% else %}
+            <a href="/nfe/{{ nfe.id }}/previa" class="flex items-center px-4 py-2 text-sm bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
+                <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Reenviar
             </a>
             {% endif %}
             <a href="/nfe/{{ nfe.id }}/editar" class="flex items-center px-3 py-2 text-sm text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition">
@@ -107,10 +107,12 @@
             <button type="button" onclick="confirmExcluir({{ nfe.id }}, '{{ nfe.numero }}')" class="flex items-center px-3 py-2 text-sm text-rose-400 border border-rose-800/50 rounded-xl hover:bg-rose-950/30 transition">
                 <i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Excluir
             </button>
-            {% elif nfe.invoice_id and (nfe.status == 'queued' or nfe.status == 'processing') %}
+            {% if nfe.invoice_id and nfe.status in ('queued', 'processing') %}
             <a href="/nfe/invoices/{{ nfe.invoice_id }}/status?redirect=1" class="flex items-center px-3 py-2 text-sm text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition">
                 <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Consultar Status
             </a>
+            {% endif %}
+            {% elif nfe.status == 'issued' %}
             {% endif %}
             {% if not cobranca and nfe.status in ('rascunho', 'issued') %}
             <form method="post" action="/nfe/{{ nfe.id }}/gerar-cobranca" class="inline">

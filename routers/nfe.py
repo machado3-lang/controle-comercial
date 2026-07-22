@@ -1330,7 +1330,7 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
-    if nfe.status not in ("rascunho", "error"):
+    if nfe.status in ("issued", "cancelled"):
         request.session["error"] = "NFe já foi transmitida"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
@@ -1355,7 +1355,7 @@ def editar_nfe_form(request: Request, nfe_id: int, db: Session = Depends(get_db)
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
-    if nfe.status != "rascunho":
+    if nfe.status in ("issued", "cancelled"):
         request.session["error"] = "NFe já foi transmitida"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
@@ -1557,7 +1557,7 @@ def excluir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
-    if nfe.status != "rascunho":
+    if nfe.status in ("issued", "cancelled"):
         request.session["error"] = "NFe já foi transmitida"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
@@ -1586,7 +1586,7 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
-    if nfe.status != "rascunho":
+    if nfe.status in ("issued", "cancelled"):
         request.session["error"] = "NFe já foi transmitida"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
