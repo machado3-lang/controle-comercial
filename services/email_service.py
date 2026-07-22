@@ -138,20 +138,11 @@ def _pdf_nfse_bytes(nfse, db) -> Optional[bytes]:
             empresa = db.query(Empresa).first()
             cliente = nfse.cliente
             if empresa and cliente:
-                import tempfile, os as _os
-                tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf")
-                try:
-                    pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
-                    local = f".{pdf_url}"
-                    if os.path.exists(local):
-                        with open(local, "rb") as f:
-                            return f.read()
-                except Exception:
-                    pass
-                finally:
-                    try:
-                        _os.unlink(tmp.name)
-                    except Exception:
+                pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
+                local = f".{pdf_url}"
+                if os.path.exists(local):
+                    with open(local, "rb") as f:
+                        return f.read()
                         pass
         except Exception:
             pass

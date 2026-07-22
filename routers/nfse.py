@@ -908,16 +908,23 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                 cancelada=((nfse.status or '').lower() == 'cancelada'),
             )
             nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
-            db.commit()
+            db.flush()
             return FileResponse(pdf_path, media_type="application/pdf",
                                 filename=pdf_filename)
         except Exception as e:
             logger.warning(f"Erro ao gerar DANFSe padronizado: {e}")
 
     # 1. Fallback: PDF local ja existente (gerado anteriormente)
+    cached = None
     if nfse.pdf_path and os.path.exists(f".{nfse.pdf_path}"):
+        cached = nfse.pdf_path
+    else:
+        pattern = f"static/uploads/nfse/danfse_{nfse.numero or nfse.id}.pdf"
+        if os.path.exists(pattern):
+            cached = f"/{pattern.replace(os.sep, '/')}"
+    if cached:
         from fastapi.responses import FileResponse
-        return FileResponse(f".{nfse.pdf_path}", media_type="application/pdf",
+        return FileResponse(f".{cached}", media_type="application/pdf",
                             filename=f"nfse_{nfse.numero or nfse.id}.pdf")
 
     # 2. Fallback: gera PDF local (leiaute proprietario) a partir dos dados do banco
@@ -929,7 +936,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     try:
         pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, itens, STATUS_LABELS)
         nfse.pdf_path = pdf_url
-        db.commit()
+        db.flush()
         from fastapi.responses import FileResponse
         return FileResponse(f".{pdf_url}", media_type="application/pdf",
                             filename=f"nfse_{nfse.numero or nfse.id}.pdf")

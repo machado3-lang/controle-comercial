@@ -258,7 +258,7 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
     pdf.cell(0, 3, f"NFSe {nfse.numero or ''} - Codigo de Verificacao: {nfse.codigo_verificacao or 'N/D'}", align="C", new_x="LMARGIN", new_y="NEXT")
     pdf.cell(0, 3, "Este documento e uma representacao visual da NFS-e. Consulte o XML para validade juridica.", align="C", new_x="LMARGIN", new_y="NEXT")
 
-    pdf_filename = f"nfse_{nfse.numero or nfse.id}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+    pdf_filename = f"nfse_{nfse.numero or nfse.id}.pdf"
     pdf_path = os.path.join(UPLOAD_DIR, pdf_filename)
     pdf.output(pdf_path)
     return f"/static/uploads/nfse/{pdf_filename}"

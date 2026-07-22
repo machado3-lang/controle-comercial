@@ -709,7 +709,7 @@ class HistoricoCadastro(Base):
     rotulo = Column(String(80), nullable=True)
     valor_antigo = Column(Text, nullable=True)
     valor_novo = Column(Text, nullable=True)
-    usuario_id = Column(Integer, nullable=True)
+    usuario_id = Column(Integer, ForeignKey("usuarios.id"), nullable=True)
     data = Column(DateTime, default=datetime.now, index=True)
 
     usuario = relationship("Usuario", primaryjoin="HistoricoCadastro.usuario_id == Usuario.id", foreign_keys=[usuario_id])
