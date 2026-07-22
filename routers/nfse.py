@@ -882,20 +882,23 @@ def _baixar_pdf_via_url(url: str) -> bytes | None:
     return None
 
 
-def _buscar_xml_nacional_adn(nfse: NFSe):
-    """Tenta obter o XML completo da NFS-e Nacional (infNFSe+DPS) no Portal ADN.
+def _buscar_xml_nacional_adn(nfse: NFSe, db: Session = None):
+    """Obtém o XML completo da NFS-e Nacional (infNFSe+DPS) no Ambiente Nacional
+    (https://adn.nfse.gov.br), via distribuição DF-e.
 
-    Notas emitidas por prefeituras proprietarias (ex.: Betha) costumam ter
-    apenas a DPS persistida; o XML nacional autorizado vive no Portal Nacional
-    e e a fonte correta para gerar o DANFSe padronizado.
+    Notas emitidas por prefeituras proprietárias (ex.: Betha) persistem apenas
+    a DPS no formato Betha; o XML nacional autorizado (fonte correta do DANFSe
+    padronizado) vive no Ambiente Nacional e é obtido pela chave de acesso.
+    Não busca nada da Betha nem do SEFIN.
     """
-    if not nfse.codigo_verificacao:
+    chave = nfse.chave_acesso or nfse.codigo_verificacao
+    if not chave:
         return None
     try:
         from services.nfse_betha import BethaNfseService
-        service = BethaNfseService()
-        sit = service.consultar_situacao_nfse(str(nfse.numero), nfse.codigo_verificacao)
-        xml = sit.get('xml') if isinstance(sit, dict) else None
+        empresa = db.query(Empresa).first() if db is not None else None
+        service = BethaNfseService(empresa=empresa)
+        xml = service.obter_xml_nacional_por_chave(chave)
         if xml and is_xml_nfse_nacional(xml):
             return xml
     except Exception as e:
@@ -913,8 +916,8 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
 
     # 0. DANFSe padronizado (NFS-e Nacional 2.0) a partir do XML completo.
-    from services.nfse_betha import sincronizar_nfse as sync_func, BethaNfseService
-
+    #    Fonte ÚNICA do XML: Ambiente Nacional (https://adn.nfse.gov.br).
+    #    Nunca busca XML nem PDF da Betha.
     xml_nacional = None
     autorizada = (nfse.status or '').lower() in ('autorizada', 'cancelada')
 
@@ -922,34 +925,13 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     if nfse.xml_text and is_xml_nfse_nacional(nfse.xml_text):
         xml_nacional = nfse.xml_text
 
-    # 0b. Tenta obter o XML nacional no Portal ADN (precisa do codigo_verificacao)
+    # 0b. Busca o XML nacional na distribuição DF-e do ADN (pela chave de acesso)
     if not xml_nacional and autorizada:
-        if nfse.codigo_verificacao:
-            xml_nacional = _buscar_xml_nacional_adn(nfse)
-        else:
-            # codigo_verificacao nao foi salvo na emissao (Betha pode nao retornar
-            # chaveAcesso no ConsultarStatusDpsEnvio). Auto-sincroniza para obter
-            # dados atualizados + chave de acesso, entao tenta ADN.
-            if nfse.protocolo:
-                try:
-                    sync_result = sync_func(nfse.protocolo, tpAmb=1, numero_nfse=nfse.numero)
-                    if sync_result.get('codigo_verificacao'):
-                        nfse.codigo_verificacao = sync_result['codigo_verificacao']
-                        nfse.chave_acesso = sync_result['codigo_verificacao']
-                    xml_oficial = sync_result.get('xml_documento')
-                    if xml_oficial:
-                        nfse.xml_text = xml_oficial
-                        if is_xml_nfse_nacional(xml_oficial):
-                            xml_nacional = xml_oficial
-                    # Se ainda nao tem nacional, tenta ADN com a chave recem-adquirida
-                    if not xml_nacional and nfse.codigo_verificacao:
-                        xml_nacional = _buscar_xml_nacional_adn(nfse)
-                except Exception as e:
-                    logger.warning(f"Auto-sync no PDF falhou: {e}")
-
+        xml_nacional = _buscar_xml_nacional_adn(nfse, db)
         if xml_nacional:
             nfse.xml_text = xml_nacional
             nfse.xml_path = _salvar_xml_arquivo(nfse, xml_nacional)
+            db.flush()
 
     # 0c. Gera o DANFSe padronizado se temos XML nacional
     if xml_nacional:
@@ -968,30 +950,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         except Exception as e:
             logger.warning(f"Erro ao gerar DANFSe padronizado: {e}")
 
-    # 1. Fallback: Tenta obter o PDF diretamente do portal Betha via URL do DANFSe
-    if autorizada:
-        try:
-            service = BethaNfseService()
-            danfse_url = service.obter_danfse_url(
-                str(nfse.numero), nfse.codigo_verificacao,
-                pdf_params=None,
-            )
-            if danfse_url:
-                pdf_filename = f"betha_danfse_{nfse.numero or nfse.id}.pdf"
-                pdf_path = os.path.join("static", "uploads", "nfse", pdf_filename)
-                os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-                pdf_data = _baixar_pdf_via_url(danfse_url)
-                if pdf_data:
-                    with open(pdf_path, 'wb') as f:
-                        f.write(pdf_data)
-                    nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
-                    db.flush()
-                    return FileResponse(pdf_path, media_type="application/pdf",
-                                        filename=pdf_filename)
-        except Exception as e:
-            logger.warning(f"Falha ao obter PDF da Betha: {e}")
-
-    # 2. Fallback: PDF local ja existente (gerado anteriormente)
+    # 1. Fallback: PDF local ja existente (gerado anteriormente)
     cached = None
     if nfse.pdf_path and os.path.exists(f".{nfse.pdf_path}"):
         cached = nfse.pdf_path
@@ -1306,18 +1265,31 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
             nfse.status = "autorizada"
             nfse.mensagem_retorno = None
 
-            from services.nfse_betha import gerar_dps_xml_nfse
-            # Tenta usar XML oficial da Betha se retornado
-            xml_oficial = resultado.get('xml_documento')
-            if xml_oficial:
+            from services.nfse_betha import gerar_dps_xml_nfse, BethaNfseService
+            # Fonte do XML para o DANFSe: Ambiente Nacional (adn.nfse.gov.br).
+            # Busca o XML nacional (infNFSe+DPS) pela chave de acesso e o persiste.
+            xml_nacional = None
+            chave = nfse.chave_acesso or nfse.codigo_verificacao
+            if chave:
+                try:
+                    empresa = db.query(Empresa).first()
+                    svc = BethaNfseService(empresa=empresa)
+                    xml_nacional = svc.obter_xml_nacional_por_chave(chave)
+                except Exception as e:
+                    logger.warning(f"Erro ao buscar XML nacional no ADN (sync): {e}")
+
+            if xml_nacional and is_xml_nfse_nacional(xml_nacional):
                 xml_filename = f"nfse_{nfse.id}.xml"
                 xml_path = os.path.join(XML_DIR, xml_filename)
                 os.makedirs(os.path.dirname(xml_path), exist_ok=True)
                 with open(xml_path, 'w', encoding='utf-8') as f:
-                    f.write(xml_oficial)
+                    f.write(xml_nacional)
                 nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
-                nfse.xml_text = xml_oficial
-            else:
+                nfse.xml_text = xml_nacional
+            elif not nfse.xml_text:
+                # Sem XML nacional ainda (pode não ter sido distribuído no ADN).
+                # Guarda a DPS local apenas como referência; o DANFSe só é gerado
+                # a partir do XML nacional.
                 numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
                 dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero)
                 if dps_xml:
@@ -1329,16 +1301,15 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
                     nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
                     nfse.xml_text = dps_xml
 
-            # Gera DANFSe local via brazilfiscalreport (ADN descontinuado)
+            # Gera DANFSe padronizado (brazilfiscalreport) a partir do XML nacional
             try:
-                from services.nfse_pdf import gerar_danfse_pdf, is_xml_nfse_nacional
-                xml_nacional = nfse.xml_text
-                if xml_nacional and is_xml_nfse_nacional(xml_nacional):
+                xml_para_danfse = nfse.xml_text
+                if xml_para_danfse and is_xml_nfse_nacional(xml_para_danfse):
                     pdf_filename = f"danfse_{nfse.numero or nfse.id}.pdf"
                     pdf_path = f"static/uploads/nfse/{pdf_filename}"
                     os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
                     gerar_danfse_pdf(
-                        xml_nacional, pdf_path,
+                        xml_para_danfse, pdf_path,
                         cancelada=((nfse.status or '').lower() == 'cancelada'),
                     )
                     nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
@@ -1347,7 +1318,7 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
 
             # Fallback: gera PDF local (leiaute proprietÃ¡rio FPDF)
             if not nfse.pdf_path:
-                from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional
+                from services.nfse_pdf import gerar_pdf_nfse
                 empresa = db.query(Empresa).first()
                 cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
                 if empresa and cliente:
@@ -1457,6 +1428,15 @@ def listar_nfse_adn(
                 if existente and not existente.chave_acesso:
                     existente.chave_acesso = chave
             if existente:
+                # Backfill do XML nacional: notas emitidas via Betha ficam só com
+                # a DPS (formato Betha). O XML padrão nacional (infNFSe+DPS) vem do
+                # ADN e é a fonte do DANFSe. Atualiza se ainda não for nacional.
+                if n.get('xml') and is_xml_nfse_nacional(n['xml']) and \
+                   (not existente.xml_text or not is_xml_nfse_nacional(existente.xml_text)):
+                    existente.xml_text = n['xml']
+                    if not existente.chave_acesso:
+                        existente.chave_acesso = chave
+                    atualizados += 1
                 if n.get('cancelada') and existente.status != 'cancelada':
                     existente.status = 'cancelada'
                     atualizados += 1
@@ -1622,12 +1602,12 @@ def adn_danfse(request: Request, chave_acesso: str, db: Session = Depends(get_db
     cancelada = False
     if nfse:
         xml_nacional = nfse.xml_text
-        if not xml_nacional:
+        if not xml_nacional or not is_xml_nfse_nacional(xml_nacional):
             try:
-                service = BethaNfseService(empresa=None)
-                sit = service.consultar_situacao_nfse(str(nfse.numero), chave_acesso)
-                xml_nacional = sit.get('xml') if isinstance(sit, dict) else None
-                if xml_nacional:
+                empresa = db.query(Empresa).first()
+                service = BethaNfseService(empresa=empresa)
+                xml_nacional = service.obter_xml_nacional_por_chave(chave_acesso)
+                if xml_nacional and is_xml_nfse_nacional(xml_nacional):
                     nfse.xml_text = xml_nacional
                     db.commit()
             except Exception:

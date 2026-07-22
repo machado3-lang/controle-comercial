@@ -475,6 +475,64 @@ class BethaNfseService:
         logger.info(f"ADN retornou {len(resultados)} NFS-e no período ({len(cancelamentos)} canceladas)")
         return resultados
 
+    def obter_xml_nacional_por_chave(self, chave: str, max_paginas: int = 80) -> Optional[str]:
+        """Obtém o XML da NFS-e Nacional (infNFSe+DPS) de UMA nota pela chave de
+        acesso, varrendo a distribuição DF-e do Ambiente Nacional
+        (https://adn.nfse.gov.br). Esta é a única fonte válida do XML padrão
+        nacional usado para gerar o DANFSe (brazilfiscalreport). Não usa Betha
+        nem SEFIN. Retorna o XML autorizado ou None se não localizado."""
+        import base64, gzip, time
+        if not chave:
+            return None
+        session = self._get_adn_session()
+        ultNSU = 0
+        logger.info(f"Buscando XML nacional no ADN (DF-e) para chave {chave[:20]}...")
+        for pagina in range(max_paginas):
+            try:
+                url = f"{ADN_DFE_URL}/{ultNSU}"
+                time.sleep(1)  # rate limit
+                r = session.get(url, timeout=60)
+                if r.status_code == 429:
+                    time.sleep(5)
+                    r = session.get(url, timeout=60)
+                if r.status_code != 200:
+                    logger.warning(f"ADN DF-e HTTP {r.status_code} ao buscar chave")
+                    break
+                data = r.json()
+                if data.get('StatusProcessamento') != 'DOCUMENTOS_LOCALIZADOS':
+                    break
+                lote = data.get('LoteDFe') or []
+                if not lote:
+                    break
+                nsu_max = max((int(df.get('NSU', 0)) for df in lote if df.get('NSU')),
+                              default=ultNSU)
+                for df in lote:
+                    if df.get('ChaveAcesso') != chave:
+                        continue
+                    xml_b64 = df.get('ArquivoXml')
+                    if not xml_b64:
+                        continue
+                    try:
+                        xml = gzip.decompress(base64.b64decode(xml_b64)).decode('utf-8')
+                    except Exception:
+                        try:
+                            xml = base64.b64decode(xml_b64).decode('utf-8')
+                        except Exception:
+                            continue
+                    # Só retorna o documento NFS-e autorizado (infNFSe); ignora
+                    # eventos (cancelamento etc.) que compartilham a mesma chave.
+                    if xml and 'infNFSe' in xml and 'sped.fazenda.gov.br/nfse' in xml:
+                        logger.info(f"XML nacional localizado no ADN (pág {pagina + 1})")
+                        return xml
+                if nsu_max == ultNSU:
+                    break
+                ultNSU = nsu_max
+            except Exception as e:
+                logger.warning(f"Erro ao buscar XML nacional no ADN: {e}")
+                break
+        logger.info("XML nacional não localizado na distribuição DF-e do ADN")
+        return None
+
     def consultar_situacao_nfse(self, numero_nfse: str, codigo_verificacao: str = None) -> dict:
         """Consulta situação real via ADN SEFIN — GET /nfse + GET /eventos"""
         import json, re, base64, gzip
