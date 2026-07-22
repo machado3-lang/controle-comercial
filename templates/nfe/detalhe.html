@@ -91,10 +91,16 @@
         </div>
 
         <div class="flex items-center gap-2">
-            {% if nfe.status == 'rascunho' %}
+            {% if nfe.status in ('rascunho', 'erro') %}
+            {% if nfe.status == 'erro' %}
+            <a href="/nfe/{{ nfe.id }}/previa" class="flex items-center px-4 py-2 text-sm bg-gradient-to-r from-emerald-500 to-green-600 hover:from-emerald-600 hover:to-green-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10">
+                <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Reenviar
+            </a>
+            {% else %}
             <a href="/nfe/{{ nfe.id }}/previa" class="flex items-center px-4 py-2 text-sm bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10">
                 <i data-lucide="eye" class="w-4 h-4 me-1"></i> Revisar e Transmitir
             </a>
+            {% endif %}
             <a href="/nfe/{{ nfe.id }}/editar" class="flex items-center px-3 py-2 text-sm text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition">
                 <i data-lucide="edit" class="w-4 h-4 me-1"></i> Editar
             </a>
