@@ -113,11 +113,12 @@ class BethaNfseService:
             except Exception:
                 pass
 
-    def gerar_id_dps(self, cmun: str, cnpj: str, serie: str, ndps: str) -> str:
-        """Gera ID DPS no formato: DPS + cMun(7) + série(1) + CNPJ(14) + 0000 + série(1) + nDPS(15) = 45 chars"""
+    def gerar_id_dps(self, cmun: str, cnpj: str, serie: str, ndps: str, id_suffix: str = '') -> str:
+        """Gera ID DPS no formato: DPS + cMun(7) + série(1) + CNPJ(14) + 0000 + série(1) + nDPS(15) = 45 chars.
+        Se id_suffix for informado (ex: '-r1'), concatena ao final para gerar ID unico por tentativa."""
         p1 = f'{serie}{cnpj}'
         p2 = f'0000{serie}{ndps}'
-        return f'DPS{cmun}{p1}{p2}'
+        return f'DPS{cmun}{p1}{p2}{id_suffix}'
 
     def enviar_dps(self, dps_xml: str, tpAmb: int = 1) -> dict:
         from lxml import etree
@@ -775,7 +776,7 @@ def _limpar_codigo(valor) -> str:
     return "".join(c for c in str(valor) if c.isdigit())
 
 
-def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
+def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, id_suffix: str = '') -> str:
     """Gera XML DPS Nacional - formato ID 45 chars - filtra apenas serviços"""
     from models import Empresa
     empresa = db.query(Empresa).first()
@@ -818,7 +819,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
     ndps = f"{ndps_num:015d}"
 
     service = BethaNfseService()
-    id_dps = service.gerar_id_dps(cmun, cnpj_prest, serie, ndps)
+    id_dps = service.gerar_id_dps(cmun, cnpj_prest, serie, ndps, id_suffix=id_suffix)
 
     total_vlr = sum(float(i.total or 0) for i in itens_servico)
     if total_vlr == 0:
@@ -922,7 +923,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
    </infDPS>
 </DPS>'''
 
-def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str:
+def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, id_suffix: str = '') -> str:
     from models import Empresa
     empresa = db.query(Empresa).first()
 
@@ -963,7 +964,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str
     ndps = f"{ndps_num:015d}"
 
     service = BethaNfseService()
-    id_dps = service.gerar_id_dps(cmun, cnpj_prest, serie, ndps)
+    id_dps = service.gerar_id_dps(cmun, cnpj_prest, serie, ndps, id_suffix=id_suffix)
 
     total_vlr = sum(float(i.valor_total or 0) for i in itens)
     if total_vlr == 0:
@@ -1077,24 +1078,42 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None) -> str
 </DPS>'''
 
 
-def emitir_rascunho(nfse, db, tpAmb: int = 1) -> dict:
+def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
     import time
     try:
         service = BethaNfseService()
         numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
-        dps_xml = gerar_dps_xml_nfse(nfse, db, tpAmb, numero)
-        resultado = service.enviar_dps(dps_xml, tpAmb)
+
+        def _send_with_suffix(suffix: str):
+            dps_xml = gerar_dps_xml_nfse(nfse, db, tpAmb, numero, id_suffix=suffix)
+            return service.enviar_dps(dps_xml, tpAmb), dps_xml
+
+        # Primeira tentativa
+        resultado, dps_xml = _send_with_suffix(f'-r{attempt}' if attempt else '')
 
         retry_iss_retido = False
+
+        # Se erro de ISS retido, corrige e reenvia com sufixo diferente
         if resultado.get('erros') and _erro_iss_retido(resultado['erros']):
+            attempt += 1
             logger.info("Betha rejeitou por ISS retido — corrigindo e reenviando...")
             nfse.iss_retido = True
             if nfse.cliente:
                 nfse.cliente.iss_retido = True
             db.commit()
-            dps_xml = gerar_dps_xml_nfse(nfse, db, tpAmb, numero)
-            resultado = service.enviar_dps(dps_xml, tpAmb)
+            resultado, dps_xml = _send_with_suffix(f'-r{attempt}')
             retry_iss_retido = True
+
+        # Se DPS duplicada (E050), reenvia com sufixo diferente mantendo mesmo nDPS
+        if resultado.get('erros') and any(
+            e.get('codigo') == 'E050'
+            or 'jÃ¡ recepcionada' in (e.get('mensagem','') or '').lower()
+            or ('dps' in (e.get('mensagem','') or '').lower() and 'recepcionad' in (e.get('mensagem','') or '').lower())
+            for e in resultado['erros']
+        ):
+            attempt += 1
+            logger.info(f"DPS duplicada — reenviando com sufixo -r{attempt}...")
+            resultado, dps_xml = _send_with_suffix(f'-r{attempt}')
 
         protocolo = resultado.get('protocolo')
         erros = resultado.get('erros', [])
@@ -1212,21 +1231,36 @@ def _erro_iss_retido(erros: list) -> bool:
     return 'iss' in msg and any(kw in msg for kw in ('retenção', 'retido', 'retencao', 'tomador'))
 
 
-def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None) -> dict:
+def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt: int = 0) -> dict:
     import time
     try:
         service = BethaNfseService()
-        dps_xml = gerar_dps_xml(pedido, db, tpAmb, numero_nfse)
-        resultado = service.enviar_dps(dps_xml, tpAmb)
+
+        def _send_with_suffix(suffix: str):
+            dps_xml = gerar_dps_xml(pedido, db, tpAmb, numero_nfse, id_suffix=suffix)
+            return service.enviar_dps(dps_xml, tpAmb), dps_xml
+
+        resultado, dps_xml = _send_with_suffix(f'-r{attempt}' if attempt else '')
 
         retry_iss_retido = False
         if resultado.get('erros') and _erro_iss_retido(resultado['erros']):
+            attempt += 1
             logger.info("Betha rejeitou por ISS retido — corrigindo e reenviando...")
             pedido.cliente.iss_retido = True
             db.commit()
-            dps_xml = gerar_dps_xml(pedido, db, tpAmb, numero_nfse)
-            resultado = service.enviar_dps(dps_xml, tpAmb)
+            resultado, dps_xml = _send_with_suffix(f'-r{attempt}')
             retry_iss_retido = True
+
+        # Se DPS duplicada, reenvia com sufixo diferente
+        if resultado.get('erros') and any(
+            e.get('codigo') == 'E050'
+            or 'jÃ¡ recepcionada' in (e.get('mensagem','') or '').lower()
+            or ('dps' in (e.get('mensagem','') or '').lower() and 'recepcionad' in (e.get('mensagem','') or '').lower())
+            for e in resultado['erros']
+        ):
+            attempt += 1
+            logger.info(f"DPS duplicada — reenviando com sufixo -r{attempt}...")
+            resultado, dps_xml = _send_with_suffix(f'-r{attempt}')
 
         protocolo = resultado.get('protocolo')
         erros = resultado.get('erros', [])
