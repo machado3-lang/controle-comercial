@@ -1097,7 +1097,13 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
 
         # Se DPS jÃ¡ foi recepcionada e temos protocolo, tenta sync em vez de erro
         tem_protocolo = bool(nfse.protocolo)
-        dps_duplicada = any('jÃ¡ recepcionada' in (e.get('mensagem','') or '').lower() for e in erros)
+        dps_duplicada = any(
+            e.get('codigo','') == 'E050'
+            or 'jÃ¡ recepcionada' in (e.get('mensagem','') or '').lower()
+            or 'jÃ¡ foi recepcionada' in (e.get('mensagem','') or '').lower()
+            or ('dps' in (e.get('mensagem','') or '').lower() and 'recepcionad' in (e.get('mensagem','') or '').lower())
+            for e in erros
+        )
 
         if sp == 'sucesso':
             nfse.codigo_verificacao = resultado.get('codigo_verificacao')
@@ -1134,74 +1140,21 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
             db.commit()
             request.session["message"] = (f"NFSe #{nfse.numero} enviada! "
                 "Aguardando processamento na prefeitura. Use o botÃ£o Sincronizar para verificar o status.")
-        elif dps_duplicada and tem_protocolo:
-            # DPS jÃ¡ recebida â€” tenta sincronizar com protocolo existente
-            try:
-                sync_result = sincronizar_nfse(nfse.protocolo, tpAmb=1)
-                sp_sync = sync_result.get('status_processamento')
-                if sp_sync == 'sucesso':
-                    nfse.codigo_verificacao = sync_result.get('codigo_verificacao')
-                    nfse.numero = sync_result.get('numero') or nfse.numero
-                    nfse.status = "autorizada"
-                    nfse.mensagem_retorno = None
-                    from services.nfse_betha import gerar_dps_xml_nfse
-                    num = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
-                    dps_xml = gerar_dps_xml_nfse(nfse, db, 1, num)
-                    if dps_xml:
-                        xml_filename = f"nfse_{nfse.id}.xml"
-                        xml_path = os.path.join(XML_DIR, xml_filename)
-                        os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-                        with open(xml_path, 'w', encoding='utf-8') as f:
-                            f.write(dps_xml)
-                        nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
-                        nfse.xml_text = dps_xml
-                    empresa = db.query(Empresa).first()
-                    cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
-                    if empresa and cliente:
-                        pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
-                        nfse.pdf_path = pdf_url
-                    db.commit()
-                    request.session["message"] = f"NFSe #{nfse.numero} jÃ¡ estava processada! Autorizada com sucesso."
-                    if background_tasks:
-                        # Envio pos-autorizacao feito na sincronizacao.
-                        pass
-                elif sp_sync == 'processando':
-                    nfse.status = "em_processamento"
-                    nfse.mensagem_retorno = "DPS jÃ¡ recebida, aguardando processamento."
-                    db.commit()
-                    request.session["message"] = "DPS jÃ¡ recepcionada anteriormente. NFSe ainda em processamento."
-                else:
-                    nfse.status = "erro"
-                    erros_sync = sync_result.get('erros', [])
-                    msg_erro_sync = "; ".join(f"[{e.get('codigo','')}] {e.get('mensagem','')}" for e in erros_sync)
-                    nfse.mensagem_retorno = msg_erro_sync
-                    db.commit()
-                    request.session["error"] = msg_erro_sync
-            except Exception as e:
-                nfse.status = "erro"
-                nfse.mensagem_retorno = str(e)
-                db.commit()
-                request.session["error"] = str(e)
-        elif dps_duplicada and not tem_protocolo:
-            # DPS jÃ¡ recebida sem protocolo â€” gera novo nÃºmero e reenvia
-            empresa = db.query(Empresa).first()
-            if empresa:
-                novo_numero = _proximo_numero(empresa, db)
-                nfse.numero = str(novo_numero)
-                # Recria resultado2 com novo nÃºmero
+        elif dps_duplicada:
+            # DPS jÃ¡ recebida â€” tenta sync se tiver protocolo, depois gera novo nÃºmero
+            sync_ok = False
+            if tem_protocolo:
                 try:
-                    resultado2 = emitir_rascunho(nfse, db, tpAmb=1)
-                    sp2 = resultado2.get('status_processamento', 'erro')
-                    novo_protocolo2 = resultado2.get('protocolo')
-                    if novo_protocolo2:
-                        nfse.protocolo = novo_protocolo2
-                    erros2 = resultado2.get('erros', [])
-                    if sp2 == 'sucesso':
-                        nfse.codigo_verificacao = resultado2.get('codigo_verificacao')
-                        nfse.numero = resultado2.get('numero') or nfse.numero
+                    sync_result = sincronizar_nfse(nfse.protocolo, tpAmb=1)
+                    sp_sync = sync_result.get('status_processamento')
+                    if sp_sync == 'sucesso':
+                        nfse.codigo_verificacao = sync_result.get('codigo_verificacao')
+                        nfse.numero = sync_result.get('numero') or nfse.numero
                         nfse.status = "autorizada"
                         nfse.mensagem_retorno = None
-                        dps_xml = resultado2.get('xml')
+                        from services.nfse_betha import gerar_dps_xml_nfse
+                        num = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
+                        dps_xml = gerar_dps_xml_nfse(nfse, db, 1, num)
                         if dps_xml:
                             xml_filename = f"nfse_{nfse.id}.xml"
                             xml_path = os.path.join(XML_DIR, xml_filename)
@@ -1210,35 +1163,78 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                                 f.write(dps_xml)
                             nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
                             nfse.xml_text = dps_xml
+                        empresa = db.query(Empresa).first()
                         cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
                         if empresa and cliente:
                             pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
                             nfse.pdf_path = pdf_url
                         db.commit()
-                        request.session["message"] = f"NFSe #{nfse.numero} reemitida com novo nÃºmero!"
-                        if background_tasks:
-                            # Envio pos-autorizacao feito na sincronizacao.
-                            pass
-                    elif sp2 == 'processando':
+                        request.session["message"] = f"NFSe #{nfse.numero} jÃ¡ estava processada! Autorizada com sucesso."
+                        sync_ok = True
+                    elif sp_sync == 'processando':
                         nfse.status = "em_processamento"
-                        nfse.mensagem_retorno = "Reenviado com novo nÃºmero, aguardando processamento."
+                        nfse.mensagem_retorno = "DPS jÃ¡ recebida, aguardando processamento."
                         db.commit()
-                        request.session["message"] = f"DPS jÃ¡ recepcionada. NFSe reenviada com novo nÃºmero #{novo_numero}."
-                    else:
+                        request.session["message"] = "DPS jÃ¡ recepcionada anteriormente. NFSe ainda em processamento."
+                        sync_ok = True
+                except Exception:
+                    pass
+            if not sync_ok:
+                # Gera novo nÃºmero e reenvia
+                empresa = db.query(Empresa).first()
+                if empresa:
+                    nfse.protocolo = None
+                    novo_numero = _proximo_numero(empresa, db)
+                    nfse.numero = str(novo_numero)
+                    try:
+                        resultado2 = emitir_rascunho(nfse, db, tpAmb=1)
+                        sp2 = resultado2.get('status_processamento', 'erro')
+                        novo_protocolo2 = resultado2.get('protocolo')
+                        if novo_protocolo2:
+                            nfse.protocolo = novo_protocolo2
+                        erros2 = resultado2.get('erros', [])
+                        if sp2 == 'sucesso':
+                            nfse.codigo_verificacao = resultado2.get('codigo_verificacao')
+                            nfse.numero = resultado2.get('numero') or nfse.numero
+                            nfse.status = "autorizada"
+                            nfse.mensagem_retorno = None
+                            dps_xml = resultado2.get('xml')
+                            if dps_xml:
+                                xml_filename = f"nfse_{nfse.id}.xml"
+                                xml_path = os.path.join(XML_DIR, xml_filename)
+                                os.makedirs(os.path.dirname(xml_path), exist_ok=True)
+                                with open(xml_path, 'w', encoding='utf-8') as f:
+                                    f.write(dps_xml)
+                                nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
+                                nfse.xml_text = dps_xml
+                            cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
+                            if empresa and cliente:
+                                pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
+                                nfse.pdf_path = pdf_url
+                            db.commit()
+                            request.session["message"] = f"NFSe #{nfse.numero} reemitida com novo nÃºmero!"
+                            if background_tasks:
+                                pass
+                        elif sp2 == 'processando':
+                            nfse.status = "em_processamento"
+                            nfse.mensagem_retorno = "Reenviado com novo nÃºmero, aguardando processamento."
+                            db.commit()
+                            request.session["message"] = f"DPS jÃ¡ recepcionada. NFSe reenviada com novo nÃºmero #{novo_numero}."
+                        else:
+                            nfse.status = "erro"
+                            msg_erro = "; ".join(f"[{e.get('codigo','')}] {e.get('mensagem','')}" for e in erros2)
+                            nfse.mensagem_retorno = msg_erro
+                            db.commit()
+                            request.session["error"] = msg_erro
+                    except Exception as e2:
                         nfse.status = "erro"
-                        msg_erro = "; ".join(f"[{e.get('codigo','')}] {e.get('mensagem','')}" for e in erros2)
-                        nfse.mensagem_retorno = msg_erro
+                        nfse.mensagem_retorno = str(e2)
                         db.commit()
-                        request.session["error"] = msg_erro
-                except Exception as e2:
+                        request.session["error"] = f"Erro ao reenviar com novo nÃºmero: {e2}"
+                else:
                     nfse.status = "erro"
-                    nfse.mensagem_retorno = str(e2)
                     db.commit()
-                    request.session["error"] = f"Erro ao reenviar com novo nÃºmero: {e2}"
-            else:
-                nfse.status = "erro"
-                db.commit()
-                request.session["error"] = "DPS jÃ¡ recepcionada e sem protocolo para consulta."
+                    request.session["error"] = "DPS jÃ¡ recepcionada e sem protocolo para consulta."
         else:
             nfse.status = "erro"
             db.commit()
