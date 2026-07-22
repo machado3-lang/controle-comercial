@@ -1612,6 +1612,8 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
 
         payload = montar_payload_nfe(
             empresa, cliente, itens_nfe,
+            numero_nfe=nfe.numero,
+            serie=nfe.serie or empresa.serie_nfe or 1,
             natureza_operacao=nfe.natureza_operacao,
             cfop=nfe.cfop,
             finalidade=nfe.finalidade if hasattr(nfe, 'finalidade') else "normal",

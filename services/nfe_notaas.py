@@ -124,6 +124,11 @@ def montar_payload_nfe(
 
     payload = {
         "modelo": modelo,
+        # nNF e série devem ser enviados explicitamente: a SEFAZ valida a
+        # sequência por série/CNPJ. Se omitidos, a NotaAS usa o próprio
+        # contador (dessincronizado da SEFAZ) e a emissão é rejeitada.
+        "serie": serie if serie is not None else (empresa.serie_nfe or 1),
+        "numero": numero_nfe,
         "finalidade": finalidade_map.get(finalidade, 1),
         "naturezaOperacao": natureza_operacao,
         "destinoOperacao": destino_operacao,
