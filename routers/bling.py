@@ -13,12 +13,13 @@ from sqlalchemy.orm import Session
 from database import get_db
 from models import Cliente, Fornecedor, Empresa, Assinatura, OrdemServico, StatusOS, Produto, CategoriaProduto, MarcaProduto
 from app.core.lifespan import limiter
+from app.core.config import settings
 
 router = APIRouter(prefix="/bling", tags=["Bling"])
 
-BLING_API = "https://api.bling.com.br/Api/v3"
-BLING_AUTH = "https://www.bling.com.br/Api/v3/oauth/authorize"
-BLING_TOKEN = "https://www.bling.com.br/Api/v3/oauth/token"
+BLING_API = settings.BLING_API_URL
+BLING_AUTH = settings.BLING_AUTH_URL
+BLING_TOKEN = settings.BLING_TOKEN_URL
 
 
 class BlingWebhookPayload(BaseModel):
@@ -1562,7 +1563,7 @@ def testar_conexao(request: Request, db: Session = Depends(get_db)):
         return JSONResponse({"success": False, "error": "Falha ao obter token"})
     with httpx.Client() as client:
         try:
-            r = client.get("https://api.bling.com.br/Api/v3/contatos?pagina=1&limite=1", headers={"Authorization": f"Bearer {token}"})
+            r = client.get(f"{BLING_API}/contatos?pagina=1&limite=1", headers={"Authorization": f"Bearer {token}"})
             if r.status_code == 200:
                 return JSONResponse({"success": True})
             return JSONResponse({"success": False, "error": f"HTTP {r.status_code}"})

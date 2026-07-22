@@ -89,6 +89,12 @@ def run_migrations():
     except Exception as e:
         print(f"[MIGRATION] Warning: could not cleanup old PDFs: {e}")
 
+    # Auto-migrate: converte colunas Float para Numeric quando o modelo mudar
+    try:
+        _fix_float_columns()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not fix float columns: {e}")
+
     # Backfill: corrige origem de NFe/NFSe já existentes (default 'avulsa')
     try:
         _backfill_origem()
@@ -292,6 +298,42 @@ def _fix_text_columns():
                         ))
                         conn.commit()
                         print(f"[MIGRATION] Converted {table_name}.{col.name} to TEXT")
+            except Exception as e:
+                print(f"[MIGRATION] Could not convert {table_name}.{col.name}: {e}")
+
+
+def _fix_float_columns():
+    """Converte colunas Float para Numeric quando o modelo muda de tipo.
+    Ex.: PedidoVendaItem.quantidade passou de Float para Numeric(12,3)."""
+    if engine.dialect.name != "postgresql":
+        return
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+    from sqlalchemy.types import Float, Numeric
+
+    inspector = sa_inspect(engine)
+    for table_name, table in Base.metadata.tables.items():
+        if table_name not in set(inspector.get_table_names()):
+            continue
+        for col in table.columns:
+            if not isinstance(col.type, Numeric):
+                continue
+            try:
+                cols = {c["name"]: c for c in inspector.get_columns(table_name)}
+                db_col = cols.get(col.name)
+                if not db_col:
+                    continue
+                db_type = str(db_col["type"]).upper()
+                if "DOUBLE" in db_type or "FLOAT" in db_type or "REAL" in db_type:
+                    p = getattr(col.type, "precision", 12) or 12
+                    s = getattr(col.type, "scale", 2) or 2
+                    with engine.connect() as conn:
+                        conn.execute(sa_text(
+                            f"ALTER TABLE {table_name} ALTER COLUMN {col.name} "
+                            f"TYPE NUMERIC({p},{s}) USING {col.name}::numeric"
+                        ))
+                        conn.commit()
+                        print(f"[MIGRATION] Converted {table_name}.{col.name} from {db_type} to NUMERIC({p},{s})")
             except Exception as e:
                 print(f"[MIGRATION] Could not convert {table_name}.{col.name}: {e}")
 

@@ -3,9 +3,10 @@ import time
 import httpx
 from typing import Optional
 from models import Empresa
+from app.core.config import settings
 
 
-API_BASE = "https://platform.notaas.com.br/api/v1"
+API_BASE = settings.NOTAAS_API_URL
 
 
 def _http_retry(method: str, url: str, empresa: Empresa, json_body: dict = None, params: dict = None, timeout: int = 30):

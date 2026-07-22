@@ -16,13 +16,14 @@ from models import Empresa, ContaReceber, StatusConta, Cliente
 from routers.contas import conta_vencida
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/sicoob", tags=["Sicoob"])
 
-SICOOO_AUTH = "https://auth.sicoob.com.br/auth/realms/cooperado/protocol/openid-connect/token"
-SICOOO_API = "https://api.sicoob.com.br/cobranca-bancaria/v3"
+SICOOO_AUTH = settings.SICOOB_AUTH_URL
+SICOOO_API = settings.SICOOB_API_URL
 
 
 def extrair_situacao(boleto: dict) -> str:

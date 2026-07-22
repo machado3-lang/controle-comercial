@@ -9,10 +9,11 @@ from sqlalchemy.orm import Session
 
 from models import Cliente, Fornecedor, Assinatura, OrdemServico, Produto, CategoriaProduto, MarcaProduto
 from database import get_db
+from app.core.config import settings
 
-BLING_API = "https://api.bling.com.br/Api/v3"
-BLING_AUTH = "https://www.bling.com.br/Api/v3/oauth/authorize"
-BLING_TOKEN = "https://www.bling.com.br/Api/v3/oauth/token"
+BLING_API = settings.BLING_API_URL
+BLING_AUTH = settings.BLING_AUTH_URL
+BLING_TOKEN = settings.BLING_TOKEN_URL
 
 _tipos_contato_cache = {"cliente": 1, "fornecedor": 2}
 

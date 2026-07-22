@@ -2,11 +2,12 @@ import os, re, base64, gzip, logging, time
 from typing import Optional
 from requests import Session
 from models import Empresa, NFeDistribuida
+from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-NFE_DIST_URL_PROD = 'https://www1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx'
-NFE_DIST_URL_HOMOL = 'https://hom1.nfe.fazenda.gov.br/NFeDistribuicaoDFe/NFeDistribuicaoDFe.asmx'
+NFE_DIST_URL_PROD = settings.NFE_DIST_URL_PROD
+NFE_DIST_URL_HOMOL = settings.NFE_DIST_URL_HOMOL
 
 
 class NFeDistribuicaoError(Exception):
