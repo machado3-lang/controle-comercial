@@ -477,22 +477,16 @@ class BethaNfseService:
         logger.info(f"ADN retornou {len(resultados)} NFS-e no período ({len(cancelamentos)} canceladas)")
         return resultados
 
-    def obter_xml_nacional_por_chave(self, chave: str, max_paginas: int = 80) -> Optional[str]:
-        """Obtém o XML da NFS-e Nacional (infNFSe+DPS) de UMA nota pela chave de
-        acesso, varrendo a distribuição DF-e do Ambiente Nacional
-        (https://adn.nfse.gov.br). Esta é a única fonte válida do XML padrão
-        nacional usado para gerar o DANFSe (brazilfiscalreport). Não usa Betha
-        nem SEFIN. Retorna o XML autorizado ou None se não localizado."""
+    def _varrer_dfe_adn(self, chave: str, max_paginas: int = 80) -> Optional[str]:
+        """Varre a distribuição DF-e do Ambiente Nacional (adn.nfse.gov.br) uma
+        vez, retornando o XML autorizado (infNFSe) da chave informada ou None."""
         import base64, gzip, time
-        if not chave:
-            return None
         session = self._get_adn_session()
         ultNSU = 0
-        logger.info(f"Buscando XML nacional no ADN (DF-e) para chave {chave[:20]}...")
         for pagina in range(max_paginas):
             try:
                 url = f"{ADN_DFE_URL}/{ultNSU}"
-                time.sleep(1)  # rate limit
+                time.sleep(0.3)  # rate limit
                 r = session.get(url, timeout=60)
                 if r.status_code == 429:
                     time.sleep(5)
@@ -532,6 +526,31 @@ class BethaNfseService:
             except Exception as e:
                 logger.warning(f"Erro ao buscar XML nacional no ADN: {e}")
                 break
+        return None
+
+    def obter_xml_nacional_por_chave(self, chave: str, max_paginas: int = 80,
+                                    tentativas: int = 1, intervalo: float = 0) -> Optional[str]:
+        """Obtém o XML da NFS-e Nacional (infNFSe+DPS) de UMA nota pela chave de
+        acesso, varrendo a distribuição DF-e do Ambiente Nacional
+        (https://adn.nfse.gov.br). Esta é a única fonte válida do XML padrão
+        nacional usado para gerar o DANFSe (brazilfiscalreport). Não usa Betha
+        nem SEFIN. Retorna o XML autorizado ou None se não localizado.
+
+        `tentativas`/`intervalo` permitem re-tentar enquanto o ADN ainda está
+        propagando o documento (ele costuma atrasar alguns segundos após a
+        autorização na prefeitura)."""
+        import time
+        if not chave:
+            return None
+        logger.info(f"Buscando XML nacional no ADN (DF-e) para chave {chave[:20]}...")
+        for tent in range(max(tentativas, 1)):
+            xml = self._varrer_dfe_adn(chave, max_paginas)
+            if xml:
+                return xml
+            if tent < max(tentativas, 1) - 1 and intervalo > 0:
+                logger.info(f"XML nacional não localizado na tentativa {tent + 1}; "
+                            f"aguardando {intervalo}s para nova tentativa...")
+                time.sleep(intervalo)
         logger.info("XML nacional não localizado na distribuição DF-e do ADN")
         return None
 

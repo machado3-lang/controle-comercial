@@ -869,6 +869,37 @@ def _salvar_xml_arquivo(nfse: NFSe, xml: str) -> str | None:
         return None
 
 
+def _salvar_xml_nacional_e_danfse(nfse: NFSe, db: Session, chave: str,
+                                  cancelada: bool = False) -> bool:
+    """Tenta obter o XML nacional (Ambiente Nacional) pela chave, armazena em
+    nfse.xml_text/xml_path e gera o DANFSe padronizado. Retorna True se obteve o
+    XML nacional (e o persiste); False caso contrário (ex.: ADN ainda não
+    propagou). Não faz commit — o chamador deve commitar."""
+    from services.nfse_pdf import gerar_danfse_pdf, is_xml_nfse_nacional
+    if not chave:
+        return False
+    try:
+        empresa = db.query(Empresa).first()
+        svc = BethaNfseService(empresa=empresa)
+        xml = svc.obter_xml_nacional_por_chave(chave, tentativas=3, intervalo=15)
+    except Exception as e:
+        logger.warning(f"Erro ao buscar XML nacional no ADN: {e}")
+        return False
+    if not (xml and is_xml_nfse_nacional(xml)):
+        return False
+    nfse.xml_text = xml
+    nfse.xml_path = _salvar_xml_arquivo(nfse, xml)
+    try:
+        pdf_filename = f"danfse_{nfse.numero or nfse.id}.pdf"
+        pdf_path = f"static/uploads/nfse/{pdf_filename}"
+        os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
+        gerar_danfse_pdf(xml, pdf_path, cancelada=bool(cancelada))
+        nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
+    except Exception as e:
+        logger.warning(f"Erro ao gerar DANFSe padronizado: {e}")
+    return True
+
+
 def _baixar_pdf_via_url(url: str) -> bytes | None:
     """Baixa um PDF de uma URL externa."""
     import requests as req
@@ -898,7 +929,7 @@ def _buscar_xml_nacional_adn(nfse: NFSe, db: Session = None):
         from services.nfse_betha import BethaNfseService
         empresa = db.query(Empresa).first() if db is not None else None
         service = BethaNfseService(empresa=empresa)
-        xml = service.obter_xml_nacional_por_chave(chave)
+        xml = service.obter_xml_nacional_por_chave(chave, tentativas=3, intervalo=15)
         if xml and is_xml_nfse_nacional(xml):
             return xml
     except Exception as e:
@@ -931,7 +962,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         if xml_nacional:
             nfse.xml_text = xml_nacional
             nfse.xml_path = _salvar_xml_arquivo(nfse, xml_nacional)
-            db.flush()
+            db.commit()
 
     # 0c. Gera o DANFSe padronizado se temos XML nacional
     if xml_nacional:
@@ -944,7 +975,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                 cancelada=((nfse.status or '').lower() == 'cancelada'),
             )
             nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
-            db.flush()
+            db.commit()
             return FileResponse(pdf_path, media_type="application/pdf",
                                 filename=pdf_filename)
         except Exception as e:
@@ -972,7 +1003,7 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
     try:
         pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, itens, STATUS_LABELS)
         nfse.pdf_path = pdf_url
-        db.flush()
+        db.commit()
         from fastapi.responses import FileResponse
         return FileResponse(f".{pdf_url}", media_type="application/pdf",
                             filename=f"nfse_{nfse.numero or nfse.id}.pdf")
@@ -1140,23 +1171,26 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
             nfse.numero = resultado.get('numero') or nfse.numero
             nfse.status = "autorizada"
             nfse.mensagem_retorno = None
-            # Prefere XML oficial do retorno (com infNFSe) ao DPS enviado
-            xml_oficial = resultado.get('xml_documento') or resultado.get('xml')
-            if xml_oficial:
-                xml_filename = f"nfse_{nfse.id}.xml"
-                xml_path = os.path.join(XML_DIR, xml_filename)
-                os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-                with open(xml_path, 'w', encoding='utf-8') as f:
-                    f.write(xml_oficial)
-                nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
-                nfse.xml_text = xml_oficial
-            # Regenera PDF com dados oficiais
-            from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional
-            empresa = db.query(Empresa).first()
-            cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
-            if empresa and cliente:
-                pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
-                nfse.pdf_path = pdf_url
+            # XML oficial deve ser o da NFS-e Nacional (Ambiente Nacional), fonte
+            # exclusiva do DANFSe padronizado. Nunca usamos o XML da Betha.
+            chave = (resultado.get('codigo_verificacao')
+                     or nfse.chave_acesso or nfse.codigo_verificacao)
+            if not _salvar_xml_nacional_e_danfse(nfse, db, chave):
+                # ADN ainda não propagou: mantém a DPS como referência e gera PDF
+                # proprietário temporário. O XML nacional poderá ser obtido depois
+                # pela sincronização ou rota /pdf (que persiste na base).
+                from services.nfse_betha import gerar_dps_xml_nfse
+                from services.nfse_pdf import gerar_pdf_nfse
+                numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
+                if not nfse.xml_text:
+                    dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero)
+                    if dps_xml:
+                        nfse.xml_path = _salvar_xml_arquivo(nfse, dps_xml)
+                        nfse.xml_text = dps_xml
+                empresa = db.query(Empresa).first()
+                cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
+                if empresa and cliente:
+                    nfse.pdf_path = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
             db.commit()
             msg = f"NFSe #{nfse.numero} emitida com sucesso!"
             if resultado.get('retry_iss_retido'):
@@ -1181,22 +1215,21 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                     nfse.numero = sync_result.get('numero') or nfse.numero
                     nfse.status = "autorizada"
                     nfse.mensagem_retorno = None
-                    from services.nfse_betha import gerar_dps_xml_nfse
-                    num = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
-                    dps_xml = gerar_dps_xml_nfse(nfse, db, 1, num)
-                    if dps_xml:
-                        xml_filename = f"nfse_{nfse.id}.xml"
-                        xml_path = os.path.join(XML_DIR, xml_filename)
-                        os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-                        with open(xml_path, 'w', encoding='utf-8') as f:
-                            f.write(dps_xml)
-                        nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
-                        nfse.xml_text = dps_xml
-                    empresa = db.query(Empresa).first()
-                    cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
-                    if empresa and cliente:
-                        pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
-                        nfse.pdf_path = pdf_url
+                    chave = (sync_result.get('codigo_verificacao')
+                             or nfse.chave_acesso or nfse.codigo_verificacao)
+                    if not _salvar_xml_nacional_e_danfse(nfse, db, chave):
+                        from services.nfse_betha import gerar_dps_xml_nfse
+                        from services.nfse_pdf import gerar_pdf_nfse
+                        numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
+                        if not nfse.xml_text:
+                            dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero)
+                            if dps_xml:
+                                nfse.xml_path = _salvar_xml_arquivo(nfse, dps_xml)
+                                nfse.xml_text = dps_xml
+                        empresa = db.query(Empresa).first()
+                        cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
+                        if empresa and cliente:
+                            nfse.pdf_path = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
                     db.commit()
                     request.session["message"] = f"NFSe #{nfse.numero} jÃ¡ estava processada! Autorizada com sucesso."
                     if background_tasks:
@@ -1265,65 +1298,22 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
             nfse.status = "autorizada"
             nfse.mensagem_retorno = None
 
-            from services.nfse_betha import gerar_dps_xml_nfse, BethaNfseService
-            # Fonte do XML para o DANFSe: Ambiente Nacional (adn.nfse.gov.br).
-            # Busca o XML nacional (infNFSe+DPS) pela chave de acesso e o persiste.
-            xml_nacional = None
             chave = nfse.chave_acesso or nfse.codigo_verificacao
-            if chave:
-                try:
-                    empresa = db.query(Empresa).first()
-                    svc = BethaNfseService(empresa=empresa)
-                    xml_nacional = svc.obter_xml_nacional_por_chave(chave)
-                except Exception as e:
-                    logger.warning(f"Erro ao buscar XML nacional no ADN (sync): {e}")
-
-            if xml_nacional and is_xml_nfse_nacional(xml_nacional):
-                xml_filename = f"nfse_{nfse.id}.xml"
-                xml_path = os.path.join(XML_DIR, xml_filename)
-                os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-                with open(xml_path, 'w', encoding='utf-8') as f:
-                    f.write(xml_nacional)
-                nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
-                nfse.xml_text = xml_nacional
-            elif not nfse.xml_text:
-                # Sem XML nacional ainda (pode não ter sido distribuído no ADN).
-                # Guarda a DPS local apenas como referência; o DANFSe só é gerado
-                # a partir do XML nacional.
-                numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
-                dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero)
-                if dps_xml:
-                    xml_filename = f"nfse_{nfse.id}.xml"
-                    xml_path = os.path.join(XML_DIR, xml_filename)
-                    os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-                    with open(xml_path, 'w', encoding='utf-8') as f:
-                        f.write(dps_xml)
-                    nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
-                    nfse.xml_text = dps_xml
-
-            # Gera DANFSe padronizado (brazilfiscalreport) a partir do XML nacional
-            try:
-                xml_para_danfse = nfse.xml_text
-                if xml_para_danfse and is_xml_nfse_nacional(xml_para_danfse):
-                    pdf_filename = f"danfse_{nfse.numero or nfse.id}.pdf"
-                    pdf_path = f"static/uploads/nfse/{pdf_filename}"
-                    os.makedirs(os.path.dirname(pdf_path), exist_ok=True)
-                    gerar_danfse_pdf(
-                        xml_para_danfse, pdf_path,
-                        cancelada=((nfse.status or '').lower() == 'cancelada'),
-                    )
-                    nfse.pdf_path = f"/{pdf_path.replace(os.sep, '/')}"
-            except Exception as e:
-                logger.warning(f"Erro ao gerar DANFSe local: {e}")
-
-            # Fallback: gera PDF local (leiaute proprietÃ¡rio FPDF)
-            if not nfse.pdf_path:
+            if not _salvar_xml_nacional_e_danfse(nfse, db, chave):
+                # ADN ainda não propagou: mantém DPS como referência e PDF proprietário.
+                from services.nfse_betha import gerar_dps_xml_nfse
                 from services.nfse_pdf import gerar_pdf_nfse
-                empresa = db.query(Empresa).first()
-                cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
-                if empresa and cliente:
-                    pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
-                    nfse.pdf_path = pdf_url
+                numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
+                if not nfse.xml_text:
+                    dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero)
+                    if dps_xml:
+                        nfse.xml_path = _salvar_xml_arquivo(nfse, dps_xml)
+                        nfse.xml_text = dps_xml
+                if not nfse.pdf_path:
+                    empresa = db.query(Empresa).first()
+                    cliente = nfse.cliente or (nfse.pedido.cliente if nfse.pedido else None)
+                    if empresa and cliente:
+                        nfse.pdf_path = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
 
             db.commit()
             if nfse.pdf_path:
