@@ -85,12 +85,13 @@ class BethaNfseService:
             self.cert_password = empresa.cert_password or os.getenv('CERT_PASSWORD', '')
 
     def _get_pem_combined(self) -> str:
-        from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
+        from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
+        from services.cert_store import load_pfx_robust
         with open(self.cert_path, 'rb') as f:
             pfx_data = f.read()
-        private_key, cert, _ = pkcs12.load_key_and_certificates(
-            pfx_data, 
-            password=self.cert_password.encode() if self.cert_password else None
+        private_key, cert, _ = load_pfx_robust(
+            pfx_data,
+            self.cert_password
         )
         combined = private_key.private_bytes(
             encoding=Encoding.PEM,

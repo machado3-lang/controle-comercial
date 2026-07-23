@@ -215,12 +215,20 @@ async def salvar_configuracoes(
         from cryptography.hazmat.primitives.serialization import pkcs12
         from datetime import date
         content = await cert_file.read()
+        cert_password_form = (cert_password_form or "").strip()
+        from services.cert_store import load_pfx_robust
+        try:
+            _, cert, _ = load_pfx_robust(content, cert_password_form)
+        except Exception as e:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Não foi possível abrir o certificado com a senha informada. "
+                       f"Verifique a senha do arquivo PFX. Erro: {e}"
+            )
         store_certificate("empresa", empresa.id, content, cert_password_form)
         empresa.cert_id = empresa.id
+        empresa.cert_password = cert_password_form
         try:
-            _, cert, _ = pkcs12.load_key_and_certificates(
-                content, password=cert_password_form.encode() if cert_password_form else None
-            )
             empresa.cert_validade = cert.not_valid_date_after.date() if hasattr(cert.not_valid_date_after, 'date') else cert.not_valid_date_after
         except Exception:
             empresa.cert_validade = None

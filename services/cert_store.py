@@ -70,6 +70,59 @@ def _get_empresa(db, cert_id: int):
     return db.query(Empresa).filter(Empresa.id == cert_id).first()
 
 
+def load_pfx_robust(pfx_data: bytes, password: str):
+    """
+    Abre um PFX tolerando cifras legadas (OpenSSL 3 rejeita PKCS12 antigo).
+    Tenta cryptography; se falhar, usa 'openssl pkcs12 -legacy'.
+    Retorna (private_key, cert, cas) ou levanta exceção.
+    """
+    pw = password.encode() if password else None
+    try:
+        return pkcs12.load_key_and_certificates(pfx_data, pw)
+    except Exception:
+        pass
+    # Fallback: openssl com -legacy (lê PFX antigo) e reempacota em memória
+    import subprocess, tempfile
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".pfx", delete=False) as f:
+            f.write(pfx_data)
+            src = f.name
+        pass_arg = f"pass:{password}" if password else "pass:"
+        proc = subprocess.run(
+            ["openssl", "pkcs12", "-legacy", "-in", src, "-nodes",
+             "-passin", pass_arg],
+            capture_output=True, text=True, timeout=30
+        )
+        if proc.returncode != 0:
+            raise RuntimeError(proc.stderr.strip() or "openssl falhou ao ler PFX legado")
+        # Reempacota em PFX moderno (BestAvailableEncryption) para abrir sempre
+        proc2 = subprocess.run(
+            ["openssl", "pkcs12", "-export", "-out", src + ".new",
+             "-passout", pass_arg],
+            input=proc.stdout, capture_output=True, text=True, timeout=30
+        )
+        if proc2.returncode != 0:
+            raise RuntimeError(proc2.stderr.strip() or "openssl falhou ao reempacotar PFX")
+        with open(src + ".new", "rb") as f:
+            modern = f.read()
+        os.unlink(src); os.unlink(src + ".new")
+        return pkcs12.load_key_and_certificates(modern, pw)
+    except FileNotFoundError:
+        raise RuntimeError("openssl não disponível para tratar PFX legado")
+    except Exception as e:
+        raise RuntimeError(f"Não foi possível abrir o PFX (senha incorreta ou cifra não suportada): {e}")
+
+
+def _normalize_pfx(pfx_data: bytes, password: str) -> bytes:
+    """Reempacota o PFX em formato moderno (BestAvailableEncryption) para
+    garantir que sempre abra com a senha informada, mesmo se o original
+    usava cifra legada."""
+    from cryptography.hazmat.primitives.serialization import BestAvailableEncryption
+    pk, cert, cas = load_pfx_robust(pfx_data, password)
+    enc = BestAvailableEncryption(password.encode() if password else b"")
+    return pkcs12.serialize_key_and_certificates(b"cert", pk, cert, cas, enc)
+
+
 def store_certificate(cert_type: str, cert_id: int, pfx_data: bytes, password: str) -> dict:
     """
     Store a certificate (PFX or PEM) encrypted in the database.
@@ -78,6 +131,14 @@ def store_certificate(cert_type: str, cert_id: int, pfx_data: bytes, password: s
     column = _CERT_COLUMN.get(cert_type)
     if not column:
         raise ValueError(f"Tipo de certificado desconhecido: {cert_type}")
+
+    # Para PFX (empresa), normaliza para cifra moderna para evitar problemas
+    # de "Invalid password or PKCS12 data" com OpenSSL 3 em produção.
+    if cert_type == "empresa":
+        try:
+            pfx_data = _normalize_pfx(pfx_data, password)
+        except Exception as e:
+            logger.warning(f"Não foi possível normalizar o PFX: {e}")
 
     try:
         private_key, cert, _ = pkcs12.load_key_and_certificates(
@@ -89,7 +150,6 @@ def store_certificate(cert_type: str, cert_id: int, pfx_data: bytes, password: s
         logger.warning(f"Could not parse certificate (pode ser PEM): {e}")
         not_after = None
         subject = ""
-
     nonce, encrypted = _encrypt(pfx_data)
     blob = base64.b64encode(nonce + encrypted).decode()
 
@@ -160,9 +220,7 @@ def get_certificate_path(cert_type: str, cert_id: int) -> Optional[str]:
 def extract_cert_info(pfx_data: bytes, password: str) -> dict:
     """Extract certificate metadata without storing."""
     try:
-        private_key, cert, _ = pkcs12.load_key_and_certificates(
-            pfx_data, password.encode() if password else None
-        )
+        private_key, cert, _ = load_pfx_robust(pfx_data, password)
         return {
             "valida": cert.not_valid_after,
             "subject": cert.subject.rfc4514_string(),
