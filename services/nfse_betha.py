@@ -1099,7 +1099,12 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     if total_vlr == 0:
         total_vlr = float(nfse.valor_total or 0)
 
-    FUSO_LOCAL = timezone(timedelta(hours=-4))
+    offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    sign = "+" if offset_fuso >= 0 else "-"
+    abs_off = abs(offset_fuso)
+    fuso_str = f"{sign}{abs_off:02d}:00"
+
     raw = nfse.data_emissao
     if raw:
         if raw.tzinfo is None:
@@ -1157,7 +1162,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
-      <dhEmi>{data_emissao.strftime('%Y-%m-%dT%H:%M:%S-04:00')}</dhEmi>
+      <dhEmi>{data_emissao.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')}</dhEmi>
       <verAplic>fly_WS_1.1.0</verAplic>
       <serie>{serie}</serie>
       <nDPS>{ndps}</nDPS>
@@ -1257,9 +1262,7 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                 'numero': None,
                 'codigo_verificacao': None,
                 'xml': dps_xml,
-                'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
+                'data_emissao': datetime.now(),
                 'erros': erros,
                 'retry_iss_retido': retry_iss_retido,
             }
@@ -1275,9 +1278,7 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                     'codigo_verificacao': status.get('chave_acesso'),
                     'xml': dps_xml,
                     'xml_documento': status.get('xml_documento'),
-                    'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
+                    'data_emissao': datetime.now(),
                     'erros': [],
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1288,9 +1289,7 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                     'numero': None,
                     'codigo_verificacao': None,
                     'xml': dps_xml,
-                    'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
+                    'data_emissao': datetime.now(),
                     'erros': status.get('erros', []),
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1428,9 +1427,7 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                 'numero': None,
                 'codigo_verificacao': None,
                 'xml': dps_xml,
-                'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
+                'data_emissao': datetime.now(),
                 'erros': erros,
                 'retry_iss_retido': retry_iss_retido,
             }
@@ -1446,9 +1443,7 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                     'codigo_verificacao': status.get('chave_acesso'),
                     'xml': dps_xml,
                     'xml_documento': status.get('xml_documento'),
-                    'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
+                    'data_emissao': datetime.now(),
                     'erros': [],
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1458,9 +1453,7 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                     'numero': None,
                     'codigo_verificacao': None,
                     'xml': dps_xml,
-                    'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
+                    'data_emissao': datetime.now(),
                     'erros': status.get('erros', []),
                     'retry_iss_retido': retry_iss_retido,
                 }
