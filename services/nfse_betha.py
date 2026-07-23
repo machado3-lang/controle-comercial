@@ -143,6 +143,10 @@ class BethaNfseService:
                 headers={'Content-Type': 'text/xml; charset=utf-8'},
                 timeout=60
             )
+            if response.status_code >= 400:
+                body_err = response.text[:1500]
+                logger.error(f"Erro HTTP {response.status_code} da Betha Cloud (enviar_dps): {body_err}")
+                raise NFSeBethaError(f"Erro HTTP {response.status_code} da Betha Cloud: {body_err}")
             response.raise_for_status()
             logger.info(f"HTTP {response.status_code}, raw:\n{response.text[:2000]}")
             root = etree.fromstring(response.content)
@@ -664,6 +668,10 @@ class BethaNfseService:
                 headers={'Content-Type': 'text/xml; charset=utf-8'},
                 timeout=60
             )
+            if response.status_code >= 400:
+                body_err = response.text[:1500]
+                logger.error(f"Erro HTTP {response.status_code} da Betha Cloud (enviar_dps): {body_err}")
+                raise NFSeBethaError(f"Erro HTTP {response.status_code} da Betha Cloud: {body_err}")
             response.raise_for_status()
             text = response.text
             logger.info(f"Cancelamento response: {text[:2000]}")
@@ -748,6 +756,10 @@ class BethaNfseService:
                 headers={'Content-Type': 'text/xml; charset=utf-8'},
                 timeout=60
             )
+            if response.status_code >= 400:
+                body_err = response.text[:1500]
+                logger.error(f"Erro HTTP {response.status_code} da Betha Cloud (enviar_dps): {body_err}")
+                raise NFSeBethaError(f"Erro HTTP {response.status_code} da Betha Cloud: {body_err}")
             response.raise_for_status()
             text = response.text
             logger.info(f"Cancelamento evento response: {text[:2000]}")
