@@ -144,7 +144,7 @@ class BethaNfseService:
                 BETHA_NFSE_URL,
                 data=soap_xml.encode('utf-8'),
                 headers={
-                    'Content-Type': 'application/xml; charset=utf-8',
+                    'Content-Type': 'text/xml; charset=utf-8',
                     'SOAPAction': 'RecepcionarDpsEnvio',
                 },
                 timeout=60
