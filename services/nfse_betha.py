@@ -1003,7 +1003,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
         <dhEmi>{data_emissao.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')}</dhEmi>
-       <verAplic>1.1.0</verAplic>
+       <verAplic>fly_WS_1.1.0</verAplic>
        <serie>{serie}</serie>
        <nDPS>{ndps}</nDPS>
        <dCompet>{data_emissao.strftime('%Y-%m-%d')}</dCompet>
@@ -1011,10 +1011,12 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
       <cLocEmi>{cmun}</cLocEmi>
       <prest>
          <CNPJ>{cnpj_prest}</CNPJ>
-         <IM>{_limpar_codigo(empresa.inscricao_municipal or '')}</IM>
          <fone>{_limpar_codigo(empresa.celular or empresa.telefone or '')}</fone>
          <email>{empresa.email or ''}</email>
-
+         <regTrib>
+            <opSimpNac>1</opSimpNac>
+            <regEspTrib>0</regEspTrib>
+         </regTrib>
       </prest>
        <toma>
           {toma_doc}
@@ -1163,7 +1165,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
         <dhEmi>{data_emissao.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')}</dhEmi>
-       <verAplic>1.1.0</verAplic>
+       <verAplic>fly_WS_1.1.0</verAplic>
        <serie>{serie}</serie>
        <nDPS>{ndps}</nDPS>
        <dCompet>{data_emissao.strftime('%Y-%m-%d')}</dCompet>
@@ -1171,7 +1173,6 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
       <cLocEmi>{cmun}</cLocEmi>
       <prest>
          <CNPJ>{cnpj_prest}</CNPJ>
-         <IM>{_limpar_codigo(empresa.inscricao_municipal or '')}</IM>
          <fone>{_limpar_codigo(empresa.celular or empresa.telefone or '')}</fone>
          <email>{empresa.email or ''}</email>
          <regTrib>
