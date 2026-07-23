@@ -128,10 +128,10 @@ class BethaNfseService:
         try:
             logger.info(f"Enviando DPS para Betha (tpAmb={tpAmb})...")
             session = self._get_session()
-            soap_xml = f'''<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+            soap_xml = f'''<soapenv:Envelope xmlns="http://www.betha.com.br/e-nota-dps" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
    <soapenv:Header/>
    <soapenv:Body>
-      <RecepcionarDpsEnvio xmlns="http://www.betha.com.br/e-nota-dps">
+      <RecepcionarDpsEnvio>
          {dps_xml}
       </RecepcionarDpsEnvio>
    </soapenv:Body>
@@ -145,7 +145,6 @@ class BethaNfseService:
                 data=soap_xml.encode('utf-8'),
                 headers={
                     'Content-Type': 'text/xml; charset=utf-8',
-                    'SOAPAction': 'RecepcionarDpsEnvio',
                 },
                 timeout=60
             )
@@ -192,10 +191,10 @@ class BethaNfseService:
         cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
         cnpj = os.getenv('BETHA_CNPJ', '13133714000110')
         
-        soap_xml = f'''<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+        soap_xml = f'''<soapenv:Envelope xmlns="http://www.betha.com.br/e-nota-dps" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
    <soapenv:Header/>
    <soapenv:Body>
-      <ConsultarStatusDpsEnvio xmlns="http://www.betha.com.br/e-nota-dps">
+      <ConsultarStatusDpsEnvio>
          <tpAmb>{tpAmb}</tpAmb>
          <codigoIbge>{cmun}</codigoIbge>
          <cpfCnpjPrestador>{cnpj}</cpfCnpjPrestador>
