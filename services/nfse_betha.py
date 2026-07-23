@@ -1163,7 +1163,9 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
         discriminacao = desc_serv
 
     aliquota = float(empresa.aliquota_iss or 2.0)
-    iss_retido = getattr(nfse, 'iss_retido', False) or False
+    # Considera a flag da NFSe OU do cliente (cliente pode ter sido marcado como
+    # ISS retido depois da criação da NFSe)
+    iss_retido = bool(getattr(nfse, 'iss_retido', False) or (cli and getattr(cli, 'iss_retido', False)))
     tp_ret = 2 if iss_retido else 1
 
     ali_fed = float(nfse.aliquota_federal if nfse.aliquota_federal is not None else (empresa.aliquota_federal or 0.0))
@@ -1322,6 +1324,20 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                     'retry_iss_retido': retry_iss_retido,
                 }
             elif st == 'Processado com erro':
+                erros_status = status.get('erros', [])
+                # Município exige ISS retido pelo tomador (erro pós-processamento):
+                # corrige a flag e reenvia automaticamente com série variada
+                if (_erro_iss_retido(erros_status)
+                        and not getattr(nfse, 'iss_retido', False)
+                        and attempt < 5):
+                    logger.info("Prefeitura rejeitou por ISS retido (pós-processamento) — corrigindo e reenviando...")
+                    nfse.iss_retido = True
+                    if nfse.cliente:
+                        nfse.cliente.iss_retido = True
+                    db.commit()
+                    novo = emitir_rascunho(nfse, db, tpAmb, attempt + 1)
+                    novo['retry_iss_retido'] = True
+                    return novo
                 return {
                     'status_processamento': 'erro',
                     'protocolo': protocolo,
@@ -1329,7 +1345,7 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                     'codigo_verificacao': None,
                     'xml': dps_xml,
                     'data_emissao': data_original,
-                    'erros': status.get('erros', []),
+                    'erros': erros_status,
                     'retry_iss_retido': retry_iss_retido,
                 }
         return {
@@ -1418,6 +1434,13 @@ def _erro_iss_retido(erros: list) -> bool:
     if not erros:
         return False
     msg = ' '.join((e.get('mensagem') or '').lower() for e in erros)
+    # Mensagem nova do município (não contém "iss"):
+    # "Tomador nomeado 'Substituto Tributário' pelo Município. Para correção,
+    #  altere a situação tributária para 'R - Retido pelo Tomador'."
+    if 'substituto tribut' in msg:
+        return True
+    if 'retido pelo tomador' in msg:
+        return True
     return 'iss' in msg and any(kw in msg for kw in ('retenção', 'retido', 'retencao', 'tomador'))
 
 
@@ -1486,13 +1509,25 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                     'retry_iss_retido': retry_iss_retido,
                 }
             elif st == 'Processado com erro':
+                erros_status = status.get('erros', [])
+                # Município exige ISS retido pelo tomador (erro pós-processamento):
+                # corrige a flag e reenvia automaticamente com série variada
+                if (_erro_iss_retido(erros_status)
+                        and not getattr(pedido.cliente, 'iss_retido', False)
+                        and attempt < 5):
+                    logger.info("Prefeitura rejeitou por ISS retido (pós-processamento) — corrigindo e reenviando...")
+                    pedido.cliente.iss_retido = True
+                    db.commit()
+                    novo = emitir_completa(pedido, db, tpAmb, numero_nfse, attempt + 1)
+                    novo['retry_iss_retido'] = True
+                    return novo
                 return {
                     'protocolo': protocolo,
                     'numero': None,
                     'codigo_verificacao': None,
                     'xml': dps_xml,
                     'data_emissao': data_original,
-                    'erros': status.get('erros', []),
+                    'erros': erros_status,
                     'retry_iss_retido': retry_iss_retido,
                 }
         return {
