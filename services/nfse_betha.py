@@ -923,6 +923,20 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
     if total_vlr == 0:
         total_vlr = float(pedido.total or 0)
 
+    offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    sign = "+" if offset_fuso >= 0 else "-"
+    abs_off = abs(offset_fuso)
+    fuso_str = f"{sign}{abs_off:02d}:00"
+
+    raw = pedido.data
+    if raw:
+        if raw.tzinfo is None:
+            raw = raw.replace(tzinfo=timezone.utc)
+        data_emissao = raw.astimezone(FUSO_LOCAL)
+    else:
+        data_emissao = datetime.now(FUSO_LOCAL)
+
     cod_serv = "010101"
     desc_serv = "Servicos"
     cod_nbs = ""
@@ -972,11 +986,11 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
-      <dhEmi>{pedido.data.strftime('%Y-%m-%dT%H:%M:%S')}</dhEmi>
+      <dhEmi>{data_emissao.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')}</dhEmi>
       <verAplic>fly_WS_1.1.0</verAplic>
       <serie>{serie}</serie>
       <nDPS>{ndps}</nDPS>
-      <dCompet>{pedido.data.strftime('%Y-%m-%d')}</dCompet>
+      <dCompet>{data_emissao.strftime('%Y-%m-%d')}</dCompet>
       <tpEmit>1</tpEmit>
       <cLocEmi>{cmun}</cLocEmi>
       <prest>
