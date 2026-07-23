@@ -1299,9 +1299,7 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
             'numero': None,
             'codigo_verificacao': None,
             'xml': None,
-            'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
+            'data_emissao': datetime.now(),
             'erros': [{'mensagem': 'NFSe enviada, aguardando processamento na prefeitura'}],
             'retry_iss_retido': retry_iss_retido,
         }
@@ -1462,9 +1460,7 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
             'numero': None,
             'codigo_verificacao': None,
             'xml': dps_xml,
-            'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
+            'data_emissao': datetime.now(),
             'erros': [{'mensagem': 'Tempo limite excedido aguardando processamento'}],
             'retry_iss_retido': retry_iss_retido,
         }
