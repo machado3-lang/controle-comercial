@@ -1325,16 +1325,17 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                 }
             elif st == 'Processado com erro':
                 erros_status = status.get('erros', [])
-                # Município exige ISS retido pelo tomador (erro pós-processamento):
-                # corrige a flag e reenvia automaticamente com série variada
-                if (_erro_iss_retido(erros_status)
-                        and not getattr(nfse, 'iss_retido', False)
-                        and attempt < 5):
-                    logger.info("Prefeitura rejeitou por ISS retido (pós-processamento) — corrigindo e reenviando...")
-                    nfse.iss_retido = True
-                    if nfse.cliente:
-                        nfse.cliente.iss_retido = True
-                    db.commit()
+                # Município exige ISS retido pelo tomador (erro pós-processamento).
+                # Reenvia com série variada (novo ID DPS) mesmo se a flag já estiver
+                # ativa: quando o ID DPS repete um envio anterior, a Betha devolve o
+                # resultado antigo armazenado em vez de reprocessar o novo XML.
+                if _erro_iss_retido(erros_status) and attempt < 3:
+                    if not getattr(nfse, 'iss_retido', False):
+                        nfse.iss_retido = True
+                        if nfse.cliente:
+                            nfse.cliente.iss_retido = True
+                        db.commit()
+                    logger.info(f"Prefeitura rejeitou por ISS retido (pós-processamento) — reenviando com novo ID DPS (attempt {attempt + 1})...")
                     novo = emitir_rascunho(nfse, db, tpAmb, attempt + 1)
                     novo['retry_iss_retido'] = True
                     return novo
@@ -1510,14 +1511,15 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                 }
             elif st == 'Processado com erro':
                 erros_status = status.get('erros', [])
-                # Município exige ISS retido pelo tomador (erro pós-processamento):
-                # corrige a flag e reenvia automaticamente com série variada
-                if (_erro_iss_retido(erros_status)
-                        and not getattr(pedido.cliente, 'iss_retido', False)
-                        and attempt < 5):
-                    logger.info("Prefeitura rejeitou por ISS retido (pós-processamento) — corrigindo e reenviando...")
-                    pedido.cliente.iss_retido = True
-                    db.commit()
+                # Município exige ISS retido pelo tomador (erro pós-processamento).
+                # Reenvia com série variada (novo ID DPS) mesmo se a flag já estiver
+                # ativa: quando o ID DPS repete um envio anterior, a Betha devolve o
+                # resultado antigo armazenado em vez de reprocessar o novo XML.
+                if _erro_iss_retido(erros_status) and attempt < 3:
+                    if not getattr(pedido.cliente, 'iss_retido', False):
+                        pedido.cliente.iss_retido = True
+                        db.commit()
+                    logger.info(f"Prefeitura rejeitou por ISS retido (pós-processamento) — reenviando com novo ID DPS (attempt {attempt + 1})...")
                     novo = emitir_completa(pedido, db, tpAmb, numero_nfse, attempt + 1)
                     novo['retry_iss_retido'] = True
                     return novo
