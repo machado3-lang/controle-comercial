@@ -170,6 +170,8 @@ class BethaNfseService:
                         logger.error(f"Erro DPS {cod.text}: {msg.text if msg is not None else 'N/A'}")
                 return {'protocolo': None, 'erros': erros}
             raise NFSeBethaError("Protocolo não retornado")
+        except NFSeBethaError:
+            raise
         except Exception as e:
             logger.error(f"Erro SOAP: {e}")
             raise NFSeBethaError(f"Erro SOAP: {e}")
