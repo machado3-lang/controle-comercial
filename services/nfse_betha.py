@@ -1003,7 +1003,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
         <dhEmi>{data_emissao.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')}</dhEmi>
-       <verAplic>fly_WS_1.1.0</verAplic>
+       <verAplic>1.1.0</verAplic>
        <serie>{serie}</serie>
        <nDPS>{ndps}</nDPS>
        <dCompet>{data_emissao.strftime('%Y-%m-%d')}</dCompet>
@@ -1011,12 +1011,10 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
       <cLocEmi>{cmun}</cLocEmi>
       <prest>
          <CNPJ>{cnpj_prest}</CNPJ>
+         <IM>{_limpar_codigo(empresa.inscricao_municipal or '')}</IM>
          <fone>{_limpar_codigo(empresa.celular or empresa.telefone or '')}</fone>
          <email>{empresa.email or ''}</email>
-         <regTrib>
-            <opSimpNac>1</opSimpNac>
-            <regEspTrib>0</regEspTrib>
-         </regTrib>
+
       </prest>
        <toma>
           {toma_doc}
@@ -1101,7 +1099,19 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     if total_vlr == 0:
         total_vlr = float(nfse.valor_total or 0)
 
-    data_emissao = nfse.data_emissao or datetime.now()
+    offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    sign = "+" if offset_fuso >= 0 else "-"
+    abs_off = abs(offset_fuso)
+    fuso_str = f"{sign}{abs_off:02d}:00"
+
+    raw = nfse.data_emissao
+    if raw:
+        if raw.tzinfo is None:
+            raw = raw.replace(tzinfo=timezone.utc)
+        data_emissao = raw.astimezone(FUSO_LOCAL)
+    else:
+        data_emissao = datetime.now(FUSO_LOCAL)
 
     cod_serv = "010101"
     desc_serv = "Servicos"
@@ -1152,8 +1162,8 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
-        <dhEmi>{data_emissao.strftime('%Y-%m-%dT%H:%M:%S')}</dhEmi>
-       <verAplic>fly_WS_1.1.0</verAplic>
+        <dhEmi>{data_emissao.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')}</dhEmi>
+       <verAplic>1.1.0</verAplic>
        <serie>{serie}</serie>
        <nDPS>{ndps}</nDPS>
        <dCompet>{data_emissao.strftime('%Y-%m-%d')}</dCompet>
@@ -1161,6 +1171,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
       <cLocEmi>{cmun}</cLocEmi>
       <prest>
          <CNPJ>{cnpj_prest}</CNPJ>
+         <IM>{_limpar_codigo(empresa.inscricao_municipal or '')}</IM>
          <fone>{_limpar_codigo(empresa.celular or empresa.telefone or '')}</fone>
          <email>{empresa.email or ''}</email>
          <regTrib>
