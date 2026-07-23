@@ -36,6 +36,11 @@ BETHA_RECOVER_PDF_URL = os.getenv('BETHA_RECOVER_PDF_URL', 'https://e-gov.betha.
 ADN_NFSE_URL = os.getenv('ADN_NFSE_URL', 'https://sefin.nfse.gov.br/SefinNacional')
 ADN_DFE_URL = os.getenv('ADN_DFE_URL', 'https://adn.nfse.gov.br/contribuintes/dfe')
 
+# Cache (por processo) do último NSU visto na distribuição DF-e do ADN.
+# Permite varredura incremental — notas recém-autorizadas têm NSU recente,
+# então não é preciso varrer desde o NSU 0 a cada busca.
+_ADN_NSU_CACHE: dict = {'ultNSU': 0}
+
 class BethaNfseService:
     def __init__(self, cert_path: str = None, cert_password: str = None, empresa=None):
         self.usuario = os.getenv('BETHA_USUARIO')
@@ -500,29 +505,46 @@ class BethaNfseService:
         logger.info(f"ADN retornou {len(resultados)} NFS-e no período ({len(cancelamentos)} canceladas)")
         return resultados
 
-    def _varrer_dfe_adn(self, chave: str, max_paginas: int = 80) -> Optional[str]:
-        """Varre a distribuição DF-e do Ambiente Nacional (adn.nfse.gov.br) uma
-        vez, retornando o XML autorizado (infNFSe) da chave informada ou None."""
+    def _varrer_dfe_adn(self, chave: str, max_paginas: int = 80,
+                        nsu_inicial: int = 0) -> Optional[str]:
+        """Varre a distribuição DF-e do Ambiente Nacional (adn.nfse.gov.br),
+        retornando o XML autorizado (infNFSe) da chave informada ou None.
+        `nsu_inicial` permite varredura incremental (a partir do último NSU já
+        visto), muito mais rápida para notas recém-autorizadas (NSU recente).
+        Erros transitórios (429/5xx) são retentados em vez de abortar."""
         import base64, gzip, time
         session = self._get_adn_session()
-        ultNSU = 0
-        for pagina in range(max_paginas):
+        ultNSU = int(nsu_inicial or 0)
+        erros_seguidos = 0
+        docs_vistos = 0
+        pagina = 0
+        while pagina < max_paginas:
+            pagina += 1
+            url = f"{ADN_DFE_URL}/{ultNSU}"
             try:
-                url = f"{ADN_DFE_URL}/{ultNSU}"
                 time.sleep(0.3)  # rate limit
                 r = session.get(url, timeout=60)
                 if r.status_code == 429:
+                    logger.info(f"ADN DF-e 429 (NSU {ultNSU}); aguardando 5s...")
                     time.sleep(5)
-                    r = session.get(url, timeout=60)
+                    continue
                 if r.status_code != 200:
-                    logger.warning(f"ADN DF-e HTTP {r.status_code} ao buscar chave")
-                    break
+                    erros_seguidos += 1
+                    logger.warning(f"ADN DF-e HTTP {r.status_code} (NSU {ultNSU}): {r.text[:200]}")
+                    if erros_seguidos >= 3:
+                        break
+                    time.sleep(2)
+                    continue
+                erros_seguidos = 0
                 data = r.json()
-                if data.get('StatusProcessamento') != 'DOCUMENTOS_LOCALIZADOS':
+                status_proc = data.get('StatusProcessamento')
+                if status_proc != 'DOCUMENTOS_LOCALIZADOS':
+                    logger.info(f"ADN DF-e status '{status_proc}' (NSU {ultNSU}, pág {pagina})")
                     break
                 lote = data.get('LoteDFe') or []
                 if not lote:
                     break
+                docs_vistos += len(lote)
                 nsu_max = max((int(df.get('NSU', 0)) for df in lote if df.get('NSU')),
                               default=ultNSU)
                 for df in lote:
@@ -541,14 +563,22 @@ class BethaNfseService:
                     # Só retorna o documento NFS-e autorizado (infNFSe); ignora
                     # eventos (cancelamento etc.) que compartilham a mesma chave.
                     if xml and 'infNFSe' in xml and 'sped.fazenda.gov.br/nfse' in xml:
-                        logger.info(f"XML nacional localizado no ADN (pág {pagina + 1})")
+                        logger.info(f"XML nacional localizado no ADN (pág {pagina}, NSU {df.get('NSU')})")
+                        _ADN_NSU_CACHE['ultNSU'] = max(_ADN_NSU_CACHE.get('ultNSU', 0), nsu_max)
                         return xml
+                # Atualiza cache do último NSU visto (para varreduras incrementais)
+                _ADN_NSU_CACHE['ultNSU'] = max(_ADN_NSU_CACHE.get('ultNSU', 0), nsu_max)
                 if nsu_max == ultNSU:
                     break
                 ultNSU = nsu_max
             except Exception as e:
-                logger.warning(f"Erro ao buscar XML nacional no ADN: {e}")
-                break
+                erros_seguidos += 1
+                logger.warning(f"Erro ADN DF-e pág {pagina} (NSU {ultNSU}): {e}")
+                if erros_seguidos >= 3:
+                    break
+                time.sleep(2)
+        logger.info(f"ADN DF-e: chave não localizada ({pagina} págs varridas, "
+                    f"{docs_vistos} docs, NSU inicial {nsu_inicial}, NSU final {ultNSU})")
         return None
 
     def _obter_xml_sefin(self, chave: str) -> Optional[str]:
@@ -582,9 +612,12 @@ class BethaNfseService:
     def obter_xml_nacional_por_chave(self, chave: str, max_paginas: int = 80,
                                     tentativas: int = 1, intervalo: float = 0) -> Optional[str]:
         """Obtém o XML da NFS-e Nacional (infNFSe+DPS) de UMA nota pela chave de
-        acesso. Estratégia:
-        1) SEFIN GET /nfse/{chave} — busca direta, rápida (fonte preferida);
-        2) Fallback: varredura da distribuição DF-e do ADN (adn.nfse.gov.br).
+        acesso. Fonte primária: distribuição DF-e do ADN (adn.nfse.gov.br).
+        Estratégia:
+        1) Varredura incremental do DF-e a partir do último NSU em cache
+           (rápida — notas novas têm NSU recente);
+        2) Varredura completa do DF-e desde o NSU 0;
+        3) SEFIN GET /nfse/{chave} (último recurso; historicamente retorna 403).
         Esta é a única fonte válida do XML padrão nacional usado para gerar o
         DANFSe (brazilfiscalreport). Não usa XML da Betha.
 
@@ -596,17 +629,25 @@ class BethaNfseService:
             return None
         logger.info(f"Buscando XML nacional para chave {chave[:20]}...")
         for tent in range(max(tentativas, 1)):
-            xml = self._obter_xml_sefin(chave)
+            # 1) Varredura incremental (a partir do último NSU visto neste processo)
+            nsu_cache = _ADN_NSU_CACHE.get('ultNSU', 0)
+            if nsu_cache > 0:
+                xml = self._varrer_dfe_adn(chave, max_paginas, nsu_inicial=nsu_cache)
+                if xml:
+                    return xml
+            # 2) Varredura completa desde o NSU 0
+            xml = self._varrer_dfe_adn(chave, max_paginas)
             if xml:
                 return xml
-            xml = self._varrer_dfe_adn(chave, max_paginas)
+            # 3) SEFIN direto por chave (último recurso)
+            xml = self._obter_xml_sefin(chave)
             if xml:
                 return xml
             if tent < max(tentativas, 1) - 1 and intervalo > 0:
                 logger.info(f"XML nacional não localizado na tentativa {tent + 1}; "
                             f"aguardando {intervalo}s para nova tentativa...")
                 time.sleep(intervalo)
-        logger.info("XML nacional não localizado (SEFIN e distribuição DF-e)")
+        logger.info("XML nacional não localizado (distribuição DF-e e SEFIN)")
         return None
 
     def consultar_situacao_nfse(self, numero_nfse: str, codigo_verificacao: str = None) -> dict:
