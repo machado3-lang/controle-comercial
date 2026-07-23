@@ -71,47 +71,82 @@ def _get_empresa(db, cert_id: int):
     return db.query(Empresa).filter(Empresa.id == cert_id).first()
 
 
-def load_pfx_robust(pfx_data: bytes, password: str):
-    """
-    Abre um PFX tolerando cifras legadas (OpenSSL 3 rejeita PKCS12 antigo).
-    Tenta cryptography; se falhar, usa 'openssl pkcs12 -legacy'.
-    Retorna (private_key, cert, cas) ou levanta exceção.
-    """
-    pw = password.encode() if password else None
-    try:
-        return pkcs12.load_key_and_certificates(pfx_data, pw)
-    except Exception:
-        pass
-    # Fallback: openssl com -legacy (lê PFX antigo) e reempacota em memória
+def _pw_candidates(password: str):
+    """Gera candidatos de bytes para a senha, testando codificações comuns
+    (UTF-8, latin-1, cp1252). Um PFX criado no Windows PT-BR pode usar cp1252."""
+    if not password:
+        return [None]
+    cands = []
+    for enc in ("utf-8", "latin-1", "cp1252"):
+        try:
+            cands.append(password.encode(enc))
+        except Exception:
+            pass
+    seen, out = set(), []
+    for c in cands:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
+
+
+def _load_pfx_openssl(pfx_data: bytes, pw_bytes, legacy: bool):
+    """Lê um PFX via openssl (moderno ou -legacy) usando bytes exatos da senha
+    e devolve (pk, cert, cas) já em formato moderno. Levanta em caso de falha."""
     import subprocess, tempfile
+    with tempfile.NamedTemporaryFile(suffix=".pfx", delete=False) as f:
+        f.write(pfx_data)
+        src = f.name
+    with tempfile.NamedTemporaryFile(suffix=".pw", delete=False) as pf:
+        if pw_bytes:
+            pf.write(pw_bytes)
+        pwfile = pf.name
+    cmd = ["openssl", "pkcs12", "-in", src, "-nodes", "-passin", f"file:{pwfile}"]
+    if legacy:
+        cmd.insert(2, "-legacy")
     try:
-        with tempfile.NamedTemporaryFile(suffix=".pfx", delete=False) as f:
-            f.write(pfx_data)
-            src = f.name
-        pass_arg = f"pass:{password}" if password else "pass:"
-        proc = subprocess.run(
-            ["openssl", "pkcs12", "-legacy", "-in", src, "-nodes",
-             "-passin", pass_arg],
-            capture_output=True, text=True, timeout=30
-        )
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
         if proc.returncode != 0:
-            raise RuntimeError(proc.stderr.strip() or "openssl falhou ao ler PFX legado")
-        # Reempacota em PFX moderno (BestAvailableEncryption) para abrir sempre
+            raise RuntimeError(proc.stderr.strip() or "openssl falhou ao ler PFX")
         proc2 = subprocess.run(
-            ["openssl", "pkcs12", "-export", "-out", src + ".new",
-             "-passout", pass_arg],
+            ["openssl", "pkcs12", "-export", "-out", src + ".new", "-passout", f"file:{pwfile}"],
             input=proc.stdout, capture_output=True, text=True, timeout=30
         )
         if proc2.returncode != 0:
             raise RuntimeError(proc2.stderr.strip() or "openssl falhou ao reempacotar PFX")
         with open(src + ".new", "rb") as f:
             modern = f.read()
-        os.unlink(src); os.unlink(src + ".new")
-        return pkcs12.load_key_and_certificates(modern, pw)
-    except FileNotFoundError:
-        raise RuntimeError("openssl não disponível para tratar PFX legado")
-    except Exception as e:
-        raise RuntimeError(f"Não foi possível abrir o PFX (senha incorreta ou cifra não suportada): {e}")
+        return pkcs12.load_key_and_certificates(modern, pw_bytes)
+    finally:
+        for p in (src, src + ".new", pwfile):
+            try:
+                os.unlink(p)
+            except Exception:
+                pass
+
+
+def load_pfx_robust(pfx_data: bytes, password: str):
+    """
+    Abre um PFX tolerando cifras legadas (OpenSSL 3 rejeita PKCS12 antigo) e
+    diferentes codificações de senha (UTF-8/latin-1/cp1252).
+    Tenta cryptography (várias codificações), openssl moderno e openssl -legacy.
+    Retorna (private_key, cert, cas) ou levanta exceção.
+    """
+    # 1) cryptography com candidatos de codificação da senha
+    for pw in _pw_candidates(password):
+        try:
+            return pkcs12.load_key_and_certificates(pfx_data, pw)
+        except Exception:
+            continue
+    # 2) openssl (moderno e -legacy) com bytes exatos da senha
+    last_err = None
+    for pw in _pw_candidates(password):
+        for legacy in (False, True):
+            try:
+                return _load_pfx_openssl(pfx_data, pw, legacy=legacy)
+            except Exception as e:
+                last_err = e
+    raise RuntimeError(f"Não foi possível abrir o PFX (senha incorreta ou cifra não suportada): {last_err}")
 
 
 def _normalize_pfx(pfx_data: bytes, password: str) -> bytes:
