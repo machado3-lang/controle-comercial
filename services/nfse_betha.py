@@ -1002,7 +1002,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
-       <dhEmi>{data_emissao.strftime('%Y-%m-%d')}</dhEmi>
+        <dhEmi>{data_emissao.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')}</dhEmi>
        <verAplic>fly_WS_1.1.0</verAplic>
        <serie>{serie}</serie>
        <nDPS>{ndps}</nDPS>
@@ -1050,6 +1050,8 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
       </valores>
    </infDPS>
 </DPS>'''
+
+def gerar_dps_xml_nfse
 
 def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1') -> str:
     """Gera XML DPS Nacional a partir de uma NFSe já registrada.
@@ -1164,7 +1166,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
-       <dhEmi>{data_emissao.strftime('%Y-%m-%d')}</dhEmi>
+        <dhEmi>{data_emissao.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')}</dhEmi>
        <verAplic>fly_WS_1.1.0</verAplic>
        <serie>{serie}</serie>
        <nDPS>{ndps}</nDPS>
