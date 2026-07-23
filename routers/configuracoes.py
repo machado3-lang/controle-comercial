@@ -96,6 +96,7 @@ async def salvar_configuracoes(
     nfe_aliquota_federal: float = Form(0.0),
     nfe_aliquota_estadual: float = Form(0.0),
     ultimo_numero_nfse: int = Form(0),
+    fuso_horario: int = Form(-4),
 ):
     # CSRF already validated by middleware
     if not verificar_admin(request, db):
@@ -156,6 +157,7 @@ async def salvar_configuracoes(
         empresa.nfe_aliquota_federal = nfe_aliquota_federal
         empresa.nfe_aliquota_estadual = nfe_aliquota_estadual
         empresa.ultimo_numero_nfse = ultimo_numero_nfse
+        empresa.fuso_horario = fuso_horario
     else:
         empresa = Empresa(
             razao_social=razao_social, nome_fantasia=nome_fantasia,
@@ -183,6 +185,7 @@ async def salvar_configuracoes(
             nfe_aliquota_federal=nfe_aliquota_federal,
             nfe_aliquota_estadual=nfe_aliquota_estadual,
             ultimo_numero_nfse=ultimo_numero_nfse,
+            fuso_horario=fuso_horario,
         )
         db.add(empresa)
 

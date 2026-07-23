@@ -86,6 +86,12 @@ def _extrair_erro_nfe(data):
     return " | ".join(partes) if partes else None
 
 
+def _agora_local(empresa) -> datetime:
+    from datetime import timezone, timedelta
+    offset = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    return datetime.now(timezone(timedelta(hours=offset))).replace(tzinfo=None)
+
+
 def _salvar_xml_nfe(empresa, nfe, db):
     if not nfe.invoice_id or nfe.xml_path:
         return
@@ -422,7 +428,7 @@ def emitir_pedido_submit(
     try:
         numero_nfe = _proximo_numero(empresa, db)
         total = sum(i.get("preco_unitario", 0) * i.get("quantidade", 0) for i in itens_nfe)
-        now = datetime.now()
+        now = _agora_local(empresa)
         nfe = NFe(
             pedido_id=pedido_id,
             origem="assinatura" if pedido.assinatura_id else "pedido",
@@ -575,7 +581,7 @@ def emitir_os_submit(
     try:
         numero_nfe = _proximo_numero(empresa, db)
         total = sum(i.get("preco_unitario", 0) * i.get("quantidade", 0) for i in itens_nfe)
-        now = datetime.now()
+        now = _agora_local(empresa)
         nfe = NFe(
             os_id=os_id,
             origem="os",
@@ -684,7 +690,7 @@ def emitir_consolidacao_submit(
     try:
         numero_nfe = _proximo_numero(empresa, db)
         total = sum(i.get("preco_unitario", 0) * i.get("quantidade", 0) for i in itens_nfe)
-        now = datetime.now()
+        now = _agora_local(empresa)
         nfe = NFe(
             consolidacao_id=consolidacao_id,
             origem="consolidacao",
@@ -1719,7 +1725,7 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
                 nfe.chave_acesso = status_data.get("chaveAcesso") or nfe.chave_acesso
                 nfe.protocolo = status_data.get("nProt") or nfe.protocolo
                 if novo_status == "issued":
-                    nfe.data_emissao = datetime.now()
+                    nfe.data_emissao = _agora_local(empresa)
                 db.commit()
         except Exception as e:
             logger.warning(f"Falha ao consultar status da NFe #{nfe_id}: {e}")
@@ -1874,7 +1880,7 @@ def poll_status(
                 nfe.chave_acesso = data.get("chaveAcesso") or nfe.chave_acesso
                 nfe.protocolo = data.get("nProt") or nfe.protocolo
                 if novo_status == "issued":
-                    nfe.data_emissao = datetime.now()
+                    nfe.data_emissao = _agora_local(empresa)
                     nfe.mensagem_retorno = None
                     _salvar_xml_nfe(empresa, nfe, db)
                 else:
@@ -1957,8 +1963,8 @@ async def webhook_nfe(request: Request, db: Session = Depends(get_db)):
             nfe.status = "issued"
             nfe.chave_acesso = data.get("chaveAcesso") or nfe.chave_acesso
             nfe.protocolo = data.get("nProt") or nfe.protocolo
-            nfe.data_emissao = datetime.now()
             empresa = db.query(Empresa).first()
+            nfe.data_emissao = _agora_local(empresa)
             if empresa:
                 _salvar_xml_nfe(empresa, nfe, db)
             # Dispara e-mail pos-autorizacao para o cliente da NFe (DANFE pronto)

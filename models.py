@@ -672,6 +672,7 @@ class Empresa(Base):
     cert_validade = Column(Date, nullable=True)  # Data de validade do certificado
     nfe_ultnsu = Column(String(20), nullable=True)  # Último NSU consultado na SEFAZ
     cfop_padrao = Column(String(4), nullable=False, default="5102")
+    fuso_horario = Column(Integer, nullable=False, default=-4)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
