@@ -115,13 +115,16 @@ class BethaNfseService:
                 pass
 
     def gerar_id_dps(self, cmun: str, cnpj: str, serie: str, ndps: str) -> str:
-        """Gera ID DPS no formato: DPS + cMun(7) + série(1) + CNPJ(14) + 0000 + série(1) + nDPS(15) = 45 chars.
-        Para retentativas, varia-se a série (mantendo nDPS inalterado) a fim de gerar um ID distinto
-        dentro dos 45 caracteres exigidos (evita E001 e E050 sem pular o número da nota)."""
+        """Gera ID DPS no layout nacional (45 chars):
+        DPS + cMun(7) + tipoInscrição(1) + inscrição(14) + série(5) + nDPS(15).
+        Tipo de inscrição: 1=CPF, 2=CNPJ (a Betha valida que seja 1 ou 2 — E001).
+        Para retentativas, varia-se apenas o campo série (mantendo nDPS inalterado)
+        a fim de gerar um ID distinto (evita E050 sem pular o número da nota)."""
         serie = (serie or '1')[:1]
-        p1 = f'{serie}{cnpj}'
-        p2 = f'0000{serie}{ndps}'
-        return f'DPS{cmun}{p1}{p2}'
+        doc = "".join(c for c in str(cnpj or '') if c.isdigit())
+        tipo_insc = '1' if len(doc) == 11 else '2'
+        doc = doc.zfill(14)
+        return f'DPS{cmun}{tipo_insc}{doc}0000{serie}{ndps}'
 
     def enviar_dps(self, dps_xml: str, tpAmb: int = 1) -> dict:
         from lxml import etree
