@@ -229,7 +229,8 @@ async def salvar_configuracoes(
         empresa.cert_id = empresa.id
         empresa.cert_password = cert_password_form
         try:
-            empresa.cert_validade = cert.not_valid_date_after.date() if hasattr(cert.not_valid_date_after, 'date') else cert.not_valid_date_after
+            from services.cert_store import cert_not_after_dt
+            empresa.cert_validade = cert_not_after_dt(cert)
         except Exception:
             empresa.cert_validade = None
 

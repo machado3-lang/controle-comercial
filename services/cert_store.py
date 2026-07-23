@@ -8,6 +8,7 @@ Persisting in the DB keeps certificates available across Railway redeploys
 """
 import os
 import base64
+import datetime
 import logging
 from typing import Optional, Tuple
 
@@ -123,7 +124,14 @@ def _normalize_pfx(pfx_data: bytes, password: str) -> bytes:
     return pkcs12.serialize_key_and_certificates(b"cert", pk, cert, cas, enc)
 
 
-def store_certificate(cert_type: str, cert_id: int, pfx_data: bytes, password: str) -> dict:
+def cert_not_after_dt(cert) -> "datetime":
+    """Retorna a data de validade do certificado de forma compatível com
+    qualquer versão do cryptography (not_valid_after_utc / not_valid_date_after / not_valid_after)."""
+    for attr in ("not_valid_after_utc", "not_valid_date_after", "not_valid_after"):
+        val = getattr(cert, attr, None)
+        if val is not None:
+            return val
+    return None
     """
     Store a certificate (PFX or PEM) encrypted in the database.
     Returns dict with metadata.
@@ -144,7 +152,7 @@ def store_certificate(cert_type: str, cert_id: int, pfx_data: bytes, password: s
         private_key, cert, _ = pkcs12.load_key_and_certificates(
             pfx_data, password.encode() if password else None
         )
-        not_after = cert.not_valid_after
+        not_after = cert_not_after_dt(cert)
         subject = cert.subject.rfc4514_string()
     except Exception as e:
         logger.warning(f"Could not parse certificate (pode ser PEM): {e}")
