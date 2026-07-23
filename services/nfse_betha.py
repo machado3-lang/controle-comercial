@@ -144,7 +144,7 @@ class BethaNfseService:
                 BETHA_NFSE_URL,
                 data=soap_xml.encode('utf-8'),
                 headers={
-                    'Content-Type': 'text/xml; charset=utf-8',
+                    'Content-Type': 'application/xml; charset=utf-8',
                     'SOAPAction': 'RecepcionarDpsEnvio',
                 },
                 timeout=60
@@ -192,10 +192,10 @@ class BethaNfseService:
         cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
         cnpj = os.getenv('BETHA_CNPJ', '13133714000110')
         
-        soap_xml = f'''<soapenv:Envelope xmlns="http://www.betha.com.br/e-nota-dps" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+        soap_xml = f'''<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
    <soapenv:Header/>
    <soapenv:Body>
-      <ConsultarStatusDpsEnvio>
+      <ConsultarStatusDpsEnvio xmlns="http://www.betha.com.br/e-nota-dps">
          <tpAmb>{tpAmb}</tpAmb>
          <codigoIbge>{cmun}</codigoIbge>
          <cpfCnpjPrestador>{cnpj}</cpfCnpjPrestador>
@@ -210,6 +210,7 @@ class BethaNfseService:
             headers={'Content-Type': 'text/xml; charset=utf-8'},
             timeout=60
         )
+        logger.info(f"ConsultarStatus HTTP {response.status_code}, headers: {dict(response.headers)}")
         if response.status_code >= 400:
             body_err = response.text[:1000]
             logger.error(f"Erro HTTP {response.status_code} da Betha Cloud: {body_err}")
@@ -1006,6 +1007,13 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
                <indTotTrib>0</indTotTrib>
             </totTrib>"""
 
+    prest_fone_val = _limpar_codigo(empresa.celular or empresa.telefone or '')
+    prest_fone_tag = f'<fone>{prest_fone_val}</fone>' if prest_fone_val else ''
+    prest_email_val = (empresa.email or '').strip()
+    prest_email_tag = f'<email>{prest_email_val}</email>' if prest_email_val else ''
+    tom_fone_tag = f'<fone>{cli_fone}</fone>' if cli_fone else ''
+    tom_email_tag = f'<email>{cli_email}</email>' if cli_email else ''
+
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
@@ -1018,8 +1026,8 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
       <cLocEmi>{cmun}</cLocEmi>
       <prest>
          <CNPJ>{cnpj_prest}</CNPJ>
-         <fone>{_limpar_codigo(empresa.celular or empresa.telefone or '')}</fone>
-         <email>{empresa.email or ''}</email>
+         {prest_fone_tag}
+         {prest_email_tag}
          <regTrib>
             <opSimpNac>1</opSimpNac>
             <regEspTrib>0</regEspTrib>
@@ -1029,8 +1037,8 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
           {toma_doc}
           <xNome>{cli.nome or ''}</xNome>
           {toma_end}
-          <fone>{cli_fone}</fone>
-          <email>{cli_email}</email>
+          {tom_fone_tag}
+          {tom_email_tag}
        </toma>
        <serv>
          <locPrest>
@@ -1168,6 +1176,13 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
                <indTotTrib>0</indTotTrib>
             </totTrib>"""
 
+    prest_fone_val = _limpar_codigo(empresa.celular or empresa.telefone or '')
+    prest_fone_tag = f'<fone>{prest_fone_val}</fone>' if prest_fone_val else ''
+    prest_email_val = (empresa.email or '').strip()
+    prest_email_tag = f'<email>{prest_email_val}</email>' if prest_email_val else ''
+    tom_fone_tag = f'<fone>{cli_fone}</fone>' if cli_fone else ''
+    tom_email_tag = f'<email>{cli_email}</email>' if cli_email else ''
+
     return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
    <infDPS id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
@@ -1180,8 +1195,8 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
       <cLocEmi>{cmun}</cLocEmi>
       <prest>
          <CNPJ>{cnpj_prest}</CNPJ>
-         <fone>{_limpar_codigo(empresa.celular or empresa.telefone or '')}</fone>
-         <email>{empresa.email or ''}</email>
+         {prest_fone_tag}
+         {prest_email_tag}
          <regTrib>
             <opSimpNac>1</opSimpNac>
             <regEspTrib>0</regEspTrib>
@@ -1191,8 +1206,8 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
           {toma_doc}
           <xNome>{cli_nome}</xNome>
           {toma_end}
-          <fone>{cli_fone}</fone>
-          <email>{cli_email}</email>
+          {tom_fone_tag}
+          {tom_email_tag}
        </toma>
        <serv>
          <locPrest>
