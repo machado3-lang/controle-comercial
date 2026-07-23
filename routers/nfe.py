@@ -52,6 +52,40 @@ def _get_messages(request):
     return messages
 
 
+def _extrair_erro_nfe(data):
+    """Extrai um motivo legível da SEFAZ/NotaAS a partir do dict retornado
+    (cStat, xMotivo, protocolo, mensagem). Retorna string ou None."""
+    if not isinstance(data, dict):
+        return None
+    cstat = data.get("cStat") or data.get("cstat")
+    status = data.get("status")
+    msg = (data.get("message") or data.get("motivo") or data.get("xMotivo")
+           or data.get("mensagem") or data.get("xMotivoAutorizacao"))
+    protocolo = (data.get("protocolo") or data.get("nProt")
+                or data.get("nProtAutorizacao") or data.get("chaveAcesso"))
+    partes = []
+    if cstat:
+        partes.append(f"cStat: {cstat}")
+    if msg:
+        partes.append(str(msg))
+    if status and status not in ("issued", "queued", "processing"):
+        partes.append(f"status: {status}")
+    if protocolo and protocolo not in partes:
+        partes.append(f"protocolo: {protocolo}")
+    if not partes:
+        for chave in ("erros", "erro", "errors", "errosList"):
+            lista = data.get(chave)
+            if isinstance(lista, list) and lista:
+                sub = "; ".join(
+                    str(e.get("mensagem") or e.get("message") or e)
+                    for e in lista if isinstance(e, dict)
+                )
+                if sub:
+                    partes.append(sub)
+                break
+    return " | ".join(partes) if partes else None
+
+
 def _salvar_xml_nfe(empresa, nfe, db):
     if not nfe.invoice_id or nfe.xml_path:
         return
@@ -1627,6 +1661,26 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         invoice_id = result.get("invoiceId")
 
         nfe.invoice_id = invoice_id
+
+        # Tenta capturar o motivo exato (cStat/xMotivo/protocolo) caso a
+        # NotaAS/SEFAZ já devolva a rejeição de imediato. Não bloqueia a
+        # emissão: se a consulta falhar ou ainda estiver processando, segue
+        # como 'queued' e o webhook/Consultar Status atualiza depois.
+        try:
+            if invoice_id:
+                status_data = consultar_status(empresa, invoice_id)
+                erro_nfe = _extrair_erro_nfe(status_data)
+                if erro_nfe and (status_data.get("status") in (None, "error", "cancelled")
+                                  or status_data.get("cStat") not in (None, "100")):
+                    nfe.status = "error"
+                    nfe.mensagem_retorno = erro_nfe
+                    nfe.protocolo = status_data.get("nProt") or nfe.protocolo
+                    db.commit()
+                    request.session["error"] = f"Erro ao transmitir NFe #{nfe.numero}: {erro_nfe}"
+                    return RedirectResponse(url=f"/nfe/{nfe.id}", status_code=303)
+        except Exception as e:
+            logger.warning(f"Falha ao consultar status imediato da NFe: {e}")
+
         nfe.status = "queued"
         db.commit()
 
@@ -1821,7 +1875,12 @@ def poll_status(
                 nfe.protocolo = data.get("nProt") or nfe.protocolo
                 if novo_status == "issued":
                     nfe.data_emissao = datetime.now()
+                    nfe.mensagem_retorno = None
                     _salvar_xml_nfe(empresa, nfe, db)
+                else:
+                    erro = _extrair_erro_nfe(data)
+                    if erro:
+                        nfe.mensagem_retorno = erro
                 db.commit()
         if redirect and nfe:
             request.session["message"] = f"Status atualizado: {STATUS_LABELS.get(nfe.status, nfe.status)}"
@@ -1917,7 +1976,7 @@ async def webhook_nfe(request: Request, db: Session = Depends(get_db)):
                 logger.warning(f"Erro ao baixar estoque NFe: {e}")
         elif event in ("nfe.error", "nfce.error"):
             nfe.status = "error"
-            nfe.mensagem_retorno = json.dumps(data)
+            nfe.mensagem_retorno = _extrair_erro_nfe(data) or json.dumps(data, ensure_ascii=False)
         elif event in ("nfe.cancelled", "nfce.cancelled"):
             nfe.status = "cancelled"
             nfe.mensagem_retorno = json.dumps(data)
