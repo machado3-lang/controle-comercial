@@ -1155,7 +1155,6 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         # NÃ£o sobrescreve protocolo se nova tentativa nÃ£o retornou um
         if novo_protocolo:
             nfse.protocolo = novo_protocolo
-        nfse.data_emissao = resultado.get('data_emissao')
 
         erros = resultado.get('erros', [])
         if erros:

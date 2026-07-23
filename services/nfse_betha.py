@@ -1255,6 +1255,7 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
 
         protocolo = resultado.get('protocolo')
         erros = resultado.get('erros', [])
+        data_original = nfse.data_emissao
         if erros:
             return {
                 'status_processamento': 'erro',
@@ -1262,7 +1263,7 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                 'numero': None,
                 'codigo_verificacao': None,
                 'xml': dps_xml,
-                'data_emissao': datetime.now(),
+                'data_emissao': data_original,
                 'erros': erros,
                 'retry_iss_retido': retry_iss_retido,
             }
@@ -1278,7 +1279,7 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                     'codigo_verificacao': status.get('chave_acesso'),
                     'xml': dps_xml,
                     'xml_documento': status.get('xml_documento'),
-                    'data_emissao': datetime.now(),
+                    'data_emissao': data_original,
                     'erros': [],
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1289,7 +1290,7 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                     'numero': None,
                     'codigo_verificacao': None,
                     'xml': dps_xml,
-                    'data_emissao': datetime.now(),
+                    'data_emissao': data_original,
                     'erros': status.get('erros', []),
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1299,7 +1300,7 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
             'numero': None,
             'codigo_verificacao': None,
             'xml': None,
-            'data_emissao': datetime.now(),
+            'data_emissao': data_original,
             'erros': [{'mensagem': 'NFSe enviada, aguardando processamento na prefeitura'}],
             'retry_iss_retido': retry_iss_retido,
         }
@@ -1418,6 +1419,7 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
             resultado, dps_xml = _send_with_serie(attempt)
 
         protocolo = resultado.get('protocolo')
+        data_original = pedido.data
         erros = resultado.get('erros', [])
         if erros:
             return {
@@ -1425,7 +1427,7 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                 'numero': None,
                 'codigo_verificacao': None,
                 'xml': dps_xml,
-                'data_emissao': datetime.now(),
+                'data_emissao': data_original,
                 'erros': erros,
                 'retry_iss_retido': retry_iss_retido,
             }
@@ -1441,7 +1443,7 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                     'codigo_verificacao': status.get('chave_acesso'),
                     'xml': dps_xml,
                     'xml_documento': status.get('xml_documento'),
-                    'data_emissao': datetime.now(),
+                    'data_emissao': data_original,
                     'erros': [],
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1451,7 +1453,7 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                     'numero': None,
                     'codigo_verificacao': None,
                     'xml': dps_xml,
-                    'data_emissao': datetime.now(),
+                    'data_emissao': data_original,
                     'erros': status.get('erros', []),
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1460,7 +1462,7 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
             'numero': None,
             'codigo_verificacao': None,
             'xml': dps_xml,
-            'data_emissao': datetime.now(),
+            'data_emissao': data_original,
             'erros': [{'mensagem': 'Tempo limite excedido aguardando processamento'}],
             'retry_iss_retido': retry_iss_retido,
         }
