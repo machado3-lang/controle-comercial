@@ -35,6 +35,8 @@ BETHA_RECOVER_PDF_URL = os.getenv('BETHA_RECOVER_PDF_URL', 'https://e-gov.betha.
 # API do Ambiente de Dados Nacional (ADN) / SEFIN
 ADN_NFSE_URL = os.getenv('ADN_NFSE_URL', 'https://sefin.nfse.gov.br/SefinNacional')
 ADN_DFE_URL = os.getenv('ADN_DFE_URL', 'https://adn.nfse.gov.br/contribuintes/dfe')
+# Portal Nacional da NFS-e (consulta por chave de acesso; exige mTLS)
+PORTAL_NFSE_URL = os.getenv('PORTAL_NFSE_URL', 'https://nfse.gov.br')
 
 # Cache (por processo) do último NSU visto na distribuição DF-e do ADN.
 # Permite varredura incremental — notas recém-autorizadas têm NSU recente,
@@ -610,22 +612,79 @@ class BethaNfseService:
             logger.warning(f"SEFIN por chave falhou: {e}")
         return None
 
+    def _obter_xml_portal_por_chave(self, chave: str) -> Optional[str]:
+        """Consulta direta por chave no Portal Nacional da NFS-e
+        (https://nfse.gov.br/{chaveAcesso}/xml). Exige mTLS (mesmo certificado
+        do ADN). Resposta direta e rápida, sem varredura de NSU.
+
+        Retorna o XML nacional (infNFSe) ou None. Se o body não contiver o
+        infNFSe (ou vier 200 com formato inesperado), registra um trecho para
+        diagnóstico e retorna None — o chamador tenta então ADN/SEFIN."""
+        import base64, gzip, time
+        session = self._get_adn_session()
+        url = f"{PORTAL_NFSE_URL}/{chave}/xml"
+        for _ in range(3):
+            try:
+                r = session.get(url, timeout=30)
+                logger.info(f"Portal nfse.gov.br por chave => HTTP {r.status_code}")
+                if r.status_code == 429:
+                    logger.info("Portal 429; aguardando 10s para retry...")
+                    time.sleep(10)
+                    continue
+                if r.status_code != 200:
+                    logger.info(f"Portal body: {r.text[:300]}")
+                    return None
+                body = r.content
+                xml = None
+                try:
+                    xml = body.decode('utf-8')
+                except Exception:
+                    pass
+                if xml is None or 'infNFSe' not in xml:
+                    try:
+                        xml = gzip.decompress(body).decode('utf-8')
+                    except Exception:
+                        try:
+                            xml = base64.b64decode(body).decode('utf-8')
+                        except Exception:
+                            xml = None
+                if xml and 'infNFSe' in xml:
+                    logger.info("XML nacional obtido do Portal nfse.gov.br por chave")
+                    return xml
+                logger.info(f"Portal retornou 200 mas sem infNFSe; body: {r.text[:300]}")
+                return None
+            except Exception as e:
+                logger.warning(f"Portal por chave falhou: {e}")
+                return None
+        return None
+
     def _obter_xml_adn_por_chave(self, chave: str) -> Optional[str]:
         """Busca direta do DF-e no ADN por chave de acesso:
-        GET /contribuintes/nfse/{chaveAcesso} — sem varredura de NSU.
-        Retorna o XML nacional (infNFSe) ou None."""
-        import base64, gzip
+        GET /contribuintes/NFSe/{chaveAcesso} (e /nfse/ como fallback) — sem
+        varredura de NSU. Retorna o XML nacional (infNFSe) ou None.
+        Trata 429 com backoff para não provocar tempestade de rate limit."""
+        import base64, gzip, time
         base = ADN_DFE_URL.rsplit('/', 1)[0]  # .../contribuintes
         session = self._get_adn_session()
-        for rota in (f"{base}/nfse/{chave}", f"{base}/NFSe/{chave}"):
+        # 'NFSe' (S maiúsculo) é a rota que efetivamente responde no ADN.
+        for rota in (f"{base}/NFSe/{chave}", f"{base}/nfse/{chave}"):
             try:
-                r = session.get(rota, timeout=30)
-                logger.info(f"ADN por chave {rota.rsplit('/', 2)[-2]}/(chave) => HTTP {r.status_code}")
-                if r.status_code != 200:
-                    if r.status_code not in (404,):
-                        logger.info(f"ADN por chave body: {r.text[:300]}")
+                data = None
+                for _ in range(3):
+                    r = session.get(rota, timeout=30)
+                    logger.info(f"ADN por chave {rota.rsplit('/', 2)[-2]}/(chave) => HTTP {r.status_code}")
+                    if r.status_code == 429:
+                        logger.info("ADN 429; aguardando 10s para retry...")
+                        time.sleep(10)
+                        continue
+                    if r.status_code != 200:
+                        if r.status_code not in (404,):
+                            logger.info(f"ADN por chave body: {r.text[:300]}")
+                        break
+                    data = r.json()
+                    break
+                if not data:
                     continue
-                data = r.json()
                 # Formatos possíveis: doc único, lote, ou campo direto
                 candidatos = []
                 if isinstance(data, dict):
@@ -657,13 +716,13 @@ class BethaNfseService:
     def obter_xml_nacional_por_chave(self, chave: str, max_paginas: int = 80,
                                     tentativas: int = 1, intervalo: float = 0) -> Optional[str]:
         """Obtém o XML da NFS-e Nacional (infNFSe+DPS) de UMA nota pela chave de
-        acesso. Fonte primária: Ambiente Nacional (adn.nfse.gov.br).
-        Estratégia (da mais direta para a mais custosa):
-        1) ADN GET /contribuintes/nfse/{chave} — direto ao ponto, sem varredura;
-        2) Varredura incremental do DF-e a partir do último NSU em cache
+        acesso. Estratégia (da mais direta para a mais custosa):
+        1) Portal Nacional nfse.gov.br/{chave}/xml — direto, mTLS, sem varredura;
+        2) ADN GET /contribuintes/NFSe/{chave} — direto, mTLS, sem varredura;
+        3) Varredura incremental do DF-e a partir do último NSU em cache
            (rápida — notas novas têm NSU recente);
-        3) Varredura completa do DF-e desde o NSU 0;
-        4) SEFIN GET /nfse/{chave} (último recurso; historicamente retorna 403).
+        4) Varredura completa do DF-e desde o NSU 0 (último recurso).
+        O SEFIN não é usado aqui (apenas recebe/envia eventos, não retorna XML).
         Esta é a única fonte válida do XML padrão nacional usado para gerar o
         DANFSe (brazilfiscalreport). Não usa XML da Betha.
 
@@ -675,29 +734,29 @@ class BethaNfseService:
             return None
         logger.info(f"Buscando XML nacional para chave {chave[:20]}...")
         for tent in range(max(tentativas, 1)):
-            # 1) ADN direto por chave de acesso (sem varredura)
+            # 1) Portal Nacional nfse.gov.br por chave (direto, mTLS)
+            xml = self._obter_xml_portal_por_chave(chave)
+            if xml:
+                return xml
+            # 2) ADN direto por chave de acesso (sem varredura; trata 429)
             xml = self._obter_xml_adn_por_chave(chave)
             if xml:
                 return xml
-            # 2) Varredura incremental (a partir do último NSU visto neste processo)
+            # 3) Varredura incremental (a partir do último NSU visto neste processo)
             nsu_cache = _ADN_NSU_CACHE.get('ultNSU', 0)
             if nsu_cache > 0:
                 xml = self._varrer_dfe_adn(chave, max_paginas, nsu_inicial=nsu_cache)
                 if xml:
                     return xml
-            # 3) Varredura completa desde o NSU 0
+            # 4) Varredura completa desde o NSU 0 (último recurso)
             xml = self._varrer_dfe_adn(chave, max_paginas)
-            if xml:
-                return xml
-            # 4) SEFIN direto por chave (último recurso)
-            xml = self._obter_xml_sefin(chave)
             if xml:
                 return xml
             if tent < max(tentativas, 1) - 1 and intervalo > 0:
                 logger.info(f"XML nacional não localizado na tentativa {tent + 1}; "
                             f"aguardando {intervalo}s para nova tentativa...")
                 time.sleep(intervalo)
-        logger.info("XML nacional não localizado (distribuição DF-e e SEFIN)")
+        logger.info("XML nacional não localizado (Portal, ADN e distribuição DF-e)")
         return None
 
     def consultar_situacao_nfse(self, numero_nfse: str, codigo_verificacao: str = None) -> dict:
