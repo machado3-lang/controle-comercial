@@ -132,6 +132,9 @@ def cert_not_after_dt(cert) -> "datetime":
         if val is not None:
             return val
     return None
+
+
+def store_certificate(cert_type: str, cert_id: int, pfx_data: bytes, password: str) -> dict:
     """
     Store a certificate (PFX or PEM) encrypted in the database.
     Returns dict with metadata.
