@@ -151,6 +151,10 @@ class BethaNfseService:
             logger.info(f"Response HTTP {response.status_code}, headers: {dict(response.headers)}")
             if response.status_code >= 400:
                 body_err = response.text[:1500]
+                if response.status_code == 400 and not body_err.strip():
+                    body_err = ("(corpo vazio) XML da requisição rejeitado pelo servidor - "
+                                "geralmente causado por caractere especial não escapado (&, <, >) "
+                                "em nome/endereço do cliente ou descrição do serviço")
                 logger.error(f"Erro HTTP {response.status_code} da Betha Cloud (enviar_dps): {body_err}")
                 raise NFSeBethaError(f"Erro HTTP {response.status_code} da Betha Cloud: {body_err}")
             response.raise_for_status()
@@ -895,6 +899,16 @@ def _limpar_codigo(valor) -> str:
     return "".join(c for c in str(valor) if c.isdigit())
 
 
+def _esc(valor) -> str:
+    """Escapa caracteres especiais XML (& < > " ') em campos de texto.
+    Sem isso, um cliente com '&' no nome (ex.: 'X & Y LTDA') gera XML inválido
+    e a Betha responde HTTP 400 com corpo vazio."""
+    if not valor:
+        return ""
+    from xml.sax.saxutils import escape
+    return escape(str(valor), {'"': '&quot;', "'": '&apos;'})
+
+
 def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1') -> str:
     """Gera XML DPS Nacional - formato ID 45 chars - filtra apenas serviços.
     O parâmetro `serie` (1 caractere) é variado nas retentativas para gerar um ID
@@ -910,12 +924,12 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
     cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
 
     cli = pedido.cliente
-    cli_end = (cli.endereco or '').strip()
-    cli_bairro = (cli.bairro or '').strip()
+    cli_end = _esc((cli.endereco or '').strip())
+    cli_bairro = _esc((cli.bairro or '').strip())
     cli_cep = _limpar_codigo(cli.cep or '')
     cli_cmun = _limpar_codigo(cli.codigo_ibge or '') or cmun
     cli_fone = _limpar_codigo(cli.celular or cli.telefone or '')
-    cli_email = (cli.email or '').strip()
+    cli_email = _esc((cli.email or '').strip())
     cli_im = _limpar_codigo(cli.inscricao_municipal or '')
 
     toma_end = f'''<end>
@@ -991,7 +1005,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
     ali_mun = float(empresa.aliquota_municipal or 0.0)
     p_tot_trib = ali_fed + ali_est + ali_mun
 
-    desc_serv = discriminacao
+    desc_serv = _esc(discriminacao)
 
     if ali_fed > 0 or ali_est > 0 or ali_mun > 0:
         tot_trib = f"""         <totTrib>
@@ -1008,7 +1022,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
 
     prest_fone_val = _limpar_codigo(empresa.celular or empresa.telefone or '')
     prest_fone_tag = f'<fone>{prest_fone_val}</fone>' if prest_fone_val else ''
-    prest_email_val = (empresa.email or '').strip()
+    prest_email_val = _esc((empresa.email or '').strip())
     prest_email_tag = f'<email>{prest_email_val}</email>' if prest_email_val else ''
     tom_fone_tag = f'<fone>{cli_fone}</fone>' if cli_fone else ''
     tom_email_tag = f'<email>{cli_email}</email>' if cli_email else ''
@@ -1034,7 +1048,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
       </prest>
        <toma>
           {toma_doc}
-          <xNome>{cli.nome or ''}</xNome>
+          <xNome>{_esc(cli.nome or '')}</xNome>
           {toma_end}
           {tom_fone_tag}
           {tom_email_tag}
@@ -1078,14 +1092,14 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     cmun = os.getenv('MUNICIPIO_CODIGO', '5003702')
     cli = nfse.cliente
 
-    cli_end = (cli.endereco or '').strip() if cli else ''
-    cli_bairro = (cli.bairro or '').strip() if cli else ''
+    cli_end = _esc((cli.endereco or '').strip()) if cli else ''
+    cli_bairro = _esc((cli.bairro or '').strip()) if cli else ''
     cli_cep = _limpar_codigo(cli.cep or '') if cli else ''
     cli_cmun = _limpar_codigo(cli.codigo_ibge or '') or cmun if cli else cmun
     cli_fone = _limpar_codigo(cli.celular or cli.telefone or '') if cli else ''
-    cli_email = (cli.email or '').strip() if cli else ''
+    cli_email = _esc((cli.email or '').strip()) if cli else ''
     cli_im = _limpar_codigo(cli.inscricao_municipal or '') if cli else ''
-    cli_nome = (cli.nome or '') if cli else ''
+    cli_nome = _esc(cli.nome or '') if cli else ''
 
     toma_end = f'''<end>
          <endNac>
@@ -1161,6 +1175,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     desc_serv = discriminacao
     if observacoes:
         desc_serv += f" | {observacoes}"
+    desc_serv = _esc(desc_serv)
 
     if ali_fed > 0 or ali_est > 0 or ali_mun > 0:
         tot_trib = f"""         <totTrib>
@@ -1177,7 +1192,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
 
     prest_fone_val = _limpar_codigo(empresa.celular or empresa.telefone or '')
     prest_fone_tag = f'<fone>{prest_fone_val}</fone>' if prest_fone_val else ''
-    prest_email_val = (empresa.email or '').strip()
+    prest_email_val = _esc((empresa.email or '').strip())
     prest_email_tag = f'<email>{prest_email_val}</email>' if prest_email_val else ''
     tom_fone_tag = f'<fone>{cli_fone}</fone>' if cli_fone else ''
     tom_email_tag = f'<email>{cli_email}</email>' if cli_email else ''
