@@ -706,9 +706,15 @@ class BethaNfseService:
         ns_e = "http://www.betha.com.br/e-nota-dps"
         # Formato ISO sem microssegundos para evitar JAXB parsing issues
         agora_s = datetime.now(timezone(timedelta(hours=-3))).strftime('%Y-%m-%dT%H:%M:%S-03:00')
-        evt_id = f"EVT{datetime.now().strftime('%Y%m%d%H%M%S%f')[:22]}"
-        pre_id = f"PRE{datetime.now().strftime('%Y%m%d%H%M%S%f')[:22]}"
-        n_dfe = f"{datetime.now().year}{str(numero_nfse).zfill(11)}"
+        evt_id = f"EVT{    offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None).strftime('%Y%m%d%H%M%S%f')[:22]}"
+        pre_id = f"PRE{    offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None).strftime('%Y%m%d%H%M%S%f')[:22]}"
+        n_dfe = f"{    offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None).year}{str(numero_nfse).zfill(11)}"
 
         evento_xml = f'''<RecepcionarEventoCancelamentoEnvio xmlns="{ns_e}">
   <evento versao="1.0">
@@ -1243,7 +1249,9 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                 'numero': None,
                 'codigo_verificacao': None,
                 'xml': dps_xml,
-                'data_emissao': datetime.now(),
+                'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
                 'erros': erros,
                 'retry_iss_retido': retry_iss_retido,
             }
@@ -1259,7 +1267,9 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                     'codigo_verificacao': status.get('chave_acesso'),
                     'xml': dps_xml,
                     'xml_documento': status.get('xml_documento'),
-                    'data_emissao': datetime.now(),
+                    'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
                     'erros': [],
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1270,7 +1280,9 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                     'numero': None,
                     'codigo_verificacao': None,
                     'xml': dps_xml,
-                    'data_emissao': datetime.now(),
+                    'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
                     'erros': status.get('erros', []),
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1280,7 +1292,9 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
             'numero': None,
             'codigo_verificacao': None,
             'xml': None,
-            'data_emissao': datetime.now(),
+            'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
             'erros': [{'mensagem': 'NFSe enviada, aguardando processamento na prefeitura'}],
             'retry_iss_retido': retry_iss_retido,
         }
@@ -1406,7 +1420,9 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                 'numero': None,
                 'codigo_verificacao': None,
                 'xml': dps_xml,
-                'data_emissao': datetime.now(),
+                'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
                 'erros': erros,
                 'retry_iss_retido': retry_iss_retido,
             }
@@ -1422,7 +1438,9 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                     'codigo_verificacao': status.get('chave_acesso'),
                     'xml': dps_xml,
                     'xml_documento': status.get('xml_documento'),
-                    'data_emissao': datetime.now(),
+                    'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
                     'erros': [],
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1432,7 +1450,9 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                     'numero': None,
                     'codigo_verificacao': None,
                     'xml': dps_xml,
-                    'data_emissao': datetime.now(),
+                    'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
                     'erros': status.get('erros', []),
                     'retry_iss_retido': retry_iss_retido,
                 }
@@ -1441,7 +1461,9 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
             'numero': None,
             'codigo_verificacao': None,
             'xml': dps_xml,
-            'data_emissao': datetime.now(),
+            'data_emissao':     offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
+    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None),
             'erros': [{'mensagem': 'Tempo limite excedido aguardando processamento'}],
             'retry_iss_retido': retry_iss_retido,
         }
