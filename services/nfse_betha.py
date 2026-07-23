@@ -192,13 +192,17 @@ class BethaNfseService:
    </soapenv:Body>
 </soapenv:Envelope>'''
         
-        response = session.post(
-            BETHA_NFSE_URL,
-            data=soap_xml.encode('utf-8'),
-            headers={'Content-Type': 'text/xml; charset=utf-8'},
-            timeout=60
-        )
-        response.raise_for_status()
+            response = session.post(
+                BETHA_NFSE_URL,
+                data=soap_xml.encode('utf-8'),
+                headers={'Content-Type': 'text/xml; charset=utf-8'},
+                timeout=60
+            )
+            if response.status_code >= 400:
+                body_err = response.text[:1000]
+                logger.error(f"Erro HTTP {response.status_code} da Betha Cloud: {body_err}")
+                raise NFSeBethaError(f"Erro HTTP {response.status_code} da Betha Cloud: {body_err}")
+            response.raise_for_status()
         text = response.text
         
         def _val(name):
