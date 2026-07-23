@@ -609,15 +609,60 @@ class BethaNfseService:
             logger.warning(f"SEFIN por chave falhou: {e}")
         return None
 
+    def _obter_xml_adn_por_chave(self, chave: str) -> Optional[str]:
+        """Busca direta do DF-e no ADN por chave de acesso:
+        GET /contribuintes/nfse/{chaveAcesso} — sem varredura de NSU.
+        Retorna o XML nacional (infNFSe) ou None."""
+        import base64, gzip
+        base = ADN_DFE_URL.rsplit('/', 1)[0]  # .../contribuintes
+        session = self._get_adn_session()
+        for rota in (f"{base}/nfse/{chave}", f"{base}/NFSe/{chave}"):
+            try:
+                r = session.get(rota, timeout=30)
+                logger.info(f"ADN por chave {rota.rsplit('/', 2)[-2]}/(chave) => HTTP {r.status_code}")
+                if r.status_code != 200:
+                    if r.status_code not in (404,):
+                        logger.info(f"ADN por chave body: {r.text[:300]}")
+                    continue
+                data = r.json()
+                # Formatos possíveis: doc único, lote, ou campo direto
+                candidatos = []
+                if isinstance(data, dict):
+                    candidatos.append(data.get('ArquivoXml'))
+                    candidatos.append(data.get('nfseXmlGZipB64'))
+                    for df in (data.get('LoteDFe') or []):
+                        candidatos.append(df.get('ArquivoXml'))
+                elif isinstance(data, list):
+                    for df in data:
+                        if isinstance(df, dict):
+                            candidatos.append(df.get('ArquivoXml'))
+                for b64 in candidatos:
+                    if not b64:
+                        continue
+                    try:
+                        xml = gzip.decompress(base64.b64decode(b64)).decode('utf-8')
+                    except Exception:
+                        try:
+                            xml = base64.b64decode(b64).decode('utf-8')
+                        except Exception:
+                            continue
+                    if xml and 'infNFSe' in xml and 'sped.fazenda.gov.br/nfse' in xml:
+                        logger.info("XML nacional obtido do ADN por chave de acesso")
+                        return xml
+            except Exception as e:
+                logger.warning(f"ADN por chave falhou ({rota}): {e}")
+        return None
+
     def obter_xml_nacional_por_chave(self, chave: str, max_paginas: int = 80,
                                     tentativas: int = 1, intervalo: float = 0) -> Optional[str]:
         """Obtém o XML da NFS-e Nacional (infNFSe+DPS) de UMA nota pela chave de
-        acesso. Fonte primária: distribuição DF-e do ADN (adn.nfse.gov.br).
-        Estratégia:
-        1) Varredura incremental do DF-e a partir do último NSU em cache
+        acesso. Fonte primária: Ambiente Nacional (adn.nfse.gov.br).
+        Estratégia (da mais direta para a mais custosa):
+        1) ADN GET /contribuintes/nfse/{chave} — direto ao ponto, sem varredura;
+        2) Varredura incremental do DF-e a partir do último NSU em cache
            (rápida — notas novas têm NSU recente);
-        2) Varredura completa do DF-e desde o NSU 0;
-        3) SEFIN GET /nfse/{chave} (último recurso; historicamente retorna 403).
+        3) Varredura completa do DF-e desde o NSU 0;
+        4) SEFIN GET /nfse/{chave} (último recurso; historicamente retorna 403).
         Esta é a única fonte válida do XML padrão nacional usado para gerar o
         DANFSe (brazilfiscalreport). Não usa XML da Betha.
 
@@ -629,17 +674,21 @@ class BethaNfseService:
             return None
         logger.info(f"Buscando XML nacional para chave {chave[:20]}...")
         for tent in range(max(tentativas, 1)):
-            # 1) Varredura incremental (a partir do último NSU visto neste processo)
+            # 1) ADN direto por chave de acesso (sem varredura)
+            xml = self._obter_xml_adn_por_chave(chave)
+            if xml:
+                return xml
+            # 2) Varredura incremental (a partir do último NSU visto neste processo)
             nsu_cache = _ADN_NSU_CACHE.get('ultNSU', 0)
             if nsu_cache > 0:
                 xml = self._varrer_dfe_adn(chave, max_paginas, nsu_inicial=nsu_cache)
                 if xml:
                     return xml
-            # 2) Varredura completa desde o NSU 0
+            # 3) Varredura completa desde o NSU 0
             xml = self._varrer_dfe_adn(chave, max_paginas)
             if xml:
                 return xml
-            # 3) SEFIN direto por chave (último recurso)
+            # 4) SEFIN direto por chave (último recurso)
             xml = self._obter_xml_sefin(chave)
             if xml:
                 return xml
