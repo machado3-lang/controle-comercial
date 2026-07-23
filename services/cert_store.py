@@ -129,13 +129,18 @@ def load_pfx_robust(pfx_data: bytes, password: str):
     """
     Abre um PFX tolerando cifras legadas (OpenSSL 3 rejeita PKCS12 antigo) e
     diferentes codificações de senha (UTF-8/latin-1/cp1252).
-    Tenta cryptography (várias codificações), openssl moderno e openssl -legacy.
+    Tenta cryptography (várias codificações), openssl moderno/legacy, e por fim
+    asn1crypto (decifra os bags IGNORANDO o MAC — contorna o bug do OpenSSL 3.0).
     Retorna (private_key, cert, cas) ou levanta exceção.
     """
     # 1) cryptography com candidatos de codificação da senha
     for pw in _pw_candidates(password):
         try:
-            return pkcs12.load_key_and_certificates(pfx_data, pw)
+            pk, cert, cas = pkcs12.load_key_and_certificates(pfx_data, pw)
+            # Em PFX legado o cryptography retorna (key, None, cas) sem levantar
+            # erro; nesse caso desce para os fallbacks (openssl/asn1crypto).
+            if cert is not None:
+                return pk, cert, cas
         except Exception:
             continue
     # 2) openssl (moderno e -legacy) com bytes exatos da senha
@@ -146,7 +151,105 @@ def load_pfx_robust(pfx_data: bytes, password: str):
                 return _load_pfx_openssl(pfx_data, pw, legacy=legacy)
             except Exception as e:
                 last_err = e
+    # 3) asn1crypto: decifra os bags sem verificar o MAC (RFC 7292 + PBE manual)
+    try:
+        return _load_pfx_asn1crypto(pfx_data, password)
+    except Exception as e:
+        last_err = e
     raise RuntimeError(f"Não foi possível abrir o PFX (senha incorreta ou cifra não suportada): {last_err}")
+
+
+def _load_pfx_asn1crypto(pfx_data: bytes, password: str):
+    """Decifra um PFX via asn1crypto + PBE manual (services.pkcs12_pbe),
+    ignorando o MAC. Retorna (private_key, cert, cas) em objetos cryptography."""
+    from asn1crypto import pkcs12 as apkcs12, keys, x509 as ax509
+    from cryptography.hazmat.primitives.serialization import (
+        load_der_private_key, Encoding, PrivateFormat, NoEncryption
+    )
+    from cryptography.x509 import load_der_x509_certificate
+    from services.pkcs12_pbe import decrypt_pbe, _bmpstring
+
+    pfx = apkcs12.Pfx.load(pfx_data)
+    auth_safe = apkcs12.AuthenticatedSafe.load(pfx['auth_safe']['content'].native)
+    priv_key = None
+    cert = None
+    cas = []
+
+    def _decrypt_bag(enc_bytes, alg_id, pw_candidate, validate):
+        oid = alg_id['algorithm'].dotted
+        params = alg_id['parameters']
+        salt = params['salt'].native
+        iterations = int(params['iterations'].native)
+        return decrypt_pbe(enc_bytes, oid, salt, iterations, pw_candidate, validate=validate)
+
+    def _validate_safe(d):
+        try:
+            apkcs12.SafeContents.load(d)
+            return True
+        except Exception:
+            return False
+
+    def _validate_key(d):
+        try:
+            load_der_private_key(d, password=None)
+            return True
+        except Exception:
+            return False
+
+    # candidatos de senha: BMPString (RFC) e bytes crus (não-BMPString)
+    pw_candidates = [_bmpstring(password)] + _pw_candidates(password)
+
+    for ci in auth_safe:
+        ctype = ci['content_type'].native
+        safe_bags = None
+        if ctype == 'data':
+            sc = apkcs12.SafeContents.load(ci['content'].native)
+            safe_bags = sc
+        elif ctype == 'encrypted_data':
+            ed = ci['content']
+            eci = ed['encrypted_content_info']
+            enc = eci['encrypted_content'].native
+            alg_id = eci['content_encryption_algorithm']
+            ok = False
+            for pc in pw_candidates:
+                try:
+                    decrypted = _decrypt_bag(enc, alg_id, pc, _validate_safe)
+                    sc = apkcs12.SafeContents.load(decrypted)
+                    safe_bags = sc
+                    ok = True
+                    break
+                except Exception:
+                    continue
+            if not ok:
+                continue
+        else:
+            continue
+        for bag in safe_bags:
+            bt = bag['bag_id'].dotted
+            if bt == '1.2.840.113549.1.12.10.1.2':  # pkcs8ShroudedKeyBag
+                epki = bag['bag_value']
+                enc = epki['encrypted_data'].native
+                alg_id = epki['encryption_algorithm']
+                for pc in pw_candidates:
+                    try:
+                        pki_der = _decrypt_bag(enc, alg_id, pc, _validate_key)
+                        priv_key = load_der_private_key(pki_der, password=None)
+                        break
+                    except Exception:
+                        continue
+            elif bt == '1.2.840.113549.1.12.10.1.1':  # keyBag
+                pki_der = bag['bag_value'].native
+                priv_key = load_der_private_key(pki_der, password=None)
+            elif bt == '1.2.840.113549.1.12.10.1.3':  # certBag
+                cv = bag['bag_value']['cert_value'].native
+                cc = load_der_x509_certificate(cv)
+                if priv_key is not None and cert is None:
+                    cert = cc
+                else:
+                    cas.append(cc)
+    if priv_key is None or cert is None:
+        raise RuntimeError("asn1crypto não encontrou chave/certificado utilizáveis")
+    return priv_key, cert, cas
 
 
 def _normalize_pfx(pfx_data: bytes, password: str) -> bytes:
