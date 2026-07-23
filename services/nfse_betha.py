@@ -690,6 +690,7 @@ class BethaNfseService:
             raise NFSeBethaError(f"Erro SOAP cancelamento: {e}")
 
     def cancelar_nfse_assinado(self, numero_nfse: str, tpAmb: int = 1,
+                                dak_empresa=None,
                                 motivo: str = "Cancelamento solicitado",
                                 chave_acesso: str = None,
                                 protocolo_dps: str = None) -> dict:
@@ -705,16 +706,23 @@ class BethaNfseService:
             raise NFSeBethaError("chave_acesso é obrigatória para cancelamento via evento")
         ns_e = "http://www.betha.com.br/e-nota-dps"
         # Formato ISO sem microssegundos para evitar JAXB parsing issues
-        agora_s = datetime.now(timezone(timedelta(hours=-3))).strftime('%Y-%m-%dT%H:%M:%S-03:00')
-        evt_id = f"EVT{    offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None).strftime('%Y%m%d%H%M%S%f')[:22]}"
-        pre_id = f"PRE{    offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None).strftime('%Y%m%d%H%M%S%f')[:22]}"
-        n_dfe = f"{    offset_fuso = int(empresa.fuso_horario if empresa and empresa.fuso_horario is not None else -4)
-    FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-    now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None).year}{str(numero_nfse).zfill(11)}"
+        from database import SessionLocal
+        from models import Empresa
+        db_s = SessionLocal()
+        emp = db_s.query(Empresa).first()
+        offset_fuso = int(emp.fuso_horario if emp and emp.fuso_horario is not None else -4)
+        db_s.close()
+
+        FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+        now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None)
+        sign = "+" if offset_fuso >= 0 else "-"
+        abs_off = abs(offset_fuso)
+        fuso_str = f"{sign}{abs_off:02d}:00"
+
+        agora_s = now_local.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')
+        evt_id = f"EVT{now_local.strftime('%Y%m%d%H%M%S%f')[:22]}"
+        pre_id = f"PRE{now_local.strftime('%Y%m%d%H%M%S%f')[:22]}"
+        n_dfe = f"{now_local.year}{str(numero_nfse).zfill(11)}"
 
         evento_xml = f'''<RecepcionarEventoCancelamentoEnvio xmlns="{ns_e}">
   <evento versao="1.0">
