@@ -9,9 +9,9 @@ from app.core.config import settings
 API_BASE = settings.NOTAAS_API_URL
 
 
-def _http_retry(method: str, url: str, empresa: Empresa, json_body: dict = None, params: dict = None, timeout: int = 30):
+def _http_retry(method: str, url: str, empresa: Empresa, json_body: dict = None, params: dict = None, timeout: int = 30, retries: bool = True):
     headers = _get_headers(empresa)
-    for tentativa in range(3):
+    for tentativa in (range(3) if retries else range(1)):
         try:
             with httpx.Client(timeout=timeout) as client:
                 if method == "GET":
@@ -23,12 +23,12 @@ def _http_retry(method: str, url: str, empresa: Empresa, json_body: dict = None,
                 resp.raise_for_status()
                 return resp
         except httpx.HTTPStatusError as e:
-            if e.response.status_code in (429, 502, 503, 504) and tentativa < 2:
+            if retries and e.response.status_code in (429, 502, 503, 504) and tentativa < 2:
                 time.sleep(2 ** tentativa)
                 continue
             raise Exception(f"Erro NotaAs: {e.response.status_code} - {e.response.text}")
         except Exception as e:
-            if tentativa < 2:
+            if retries and tentativa < 2:
                 time.sleep(2 ** tentativa)
                 continue
             raise
@@ -48,7 +48,9 @@ def _get_ambiente(empresa: Empresa) -> int:
 def emitir_nfe(empresa: Empresa, payload: dict) -> dict:
     url = f"{API_BASE}/nfe/emitir"
     payload["modelo"] = payload.get("modelo", 55)
-    resp = _http_retry("POST", url, empresa, json_body=payload, timeout=30)
+    # SEM retry: reenviar POST de emissão é não-idempotente e gera DUPLICATA
+    # (ex.: 5xx/timeout após a SEFAZ já ter processado).
+    resp = _http_retry("POST", url, empresa, json_body=payload, timeout=30, retries=False)
     return resp.json()
 
 
@@ -82,7 +84,8 @@ def consultar_municipios(empresa: Empresa, uf: str = None) -> list:
 def cancelar_nfe(empresa: Empresa, invoice_id: str, motivo: str) -> dict:
     url = f"{API_BASE}/nfe/cancelar"
     payload = {"invoiceId": invoice_id, "justificativa": motivo}
-    resp = _http_retry("POST", url, empresa, json_body=payload, timeout=30)
+    # SEM retry: cancelamento também é não-idempotente.
+    resp = _http_retry("POST", url, empresa, json_body=payload, timeout=30, retries=False)
     return resp.json()
 
 

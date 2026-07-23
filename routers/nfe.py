@@ -1622,12 +1622,14 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
 
     nfe = db.query(NFe).options(
         joinedload(NFe.itens), joinedload(NFe.pedido), joinedload(NFe.cliente)
-    ).filter(NFe.id == nfe_id).first()
+    ).filter(NFe.id == nfe_id).with_for_update().first()
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
-    if nfe.status in ("issued", "cancelled"):
-        request.session["error"] = "NFe já foi transmitida"
+    # Guarda atômica: with_for_update() serializa submissões concorrentes
+    # (duplo clique). Só emitimos se ainda for rascunho e sem invoice_id.
+    if nfe.status != "rascunho" or nfe.invoice_id is not None:
+        request.session["error"] = "NFe já transmitida ou em processamento"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
     cliente = nfe.cliente or (nfe.pedido.cliente if nfe.pedido else None)
@@ -1646,6 +1648,12 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         "preco_unitario": i.preco_unitario,
         "origem": getattr(db.query(Produto).filter(Produto.id == i.produto_id).first(), 'origem', 0) if i.produto_id else 0,
     } for i in nfe.itens]
+
+    # Marca como em processamento ANTES da chamada à API. O with_for_update()
+    # acima serializa o duplo clique: a 2ª transação espera o commit e então
+    # vê status="queued", sendo barrada pelo guarda.
+    nfe.status = "queued"
+    db.commit()
 
     try:
         data_emissao_str = nfe.data_emissao.strftime("%Y-%m-%dT%H:%M:%S") if nfe.data_emissao else None
@@ -1701,7 +1709,13 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         request.session["message"] = f"NFe #{nfe.numero} transmitida com sucesso!"
         return RedirectResponse(url=f"/nfe/{nfe.id}", status_code=303)
     except Exception as e:
-        db.rollback()
+        # Falhou a emissão: libera o rascunho para nova tentativa manual.
+        try:
+            nfe.status = "rascunho"
+            nfe.invoice_id = None
+            db.commit()
+        except Exception:
+            db.rollback()
         request.session["error"] = f"Erro ao transmitir NFe: {str(e)}"
         return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
 
