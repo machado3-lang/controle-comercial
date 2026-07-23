@@ -1051,8 +1051,6 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
    </infDPS>
 </DPS>'''
 
-def gerar_dps_xml_nfse
-
 def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1') -> str:
     """Gera XML DPS Nacional a partir de uma NFSe já registrada.
     O parâmetro `serie` (1 caractere) é variado nas retentativas para gerar um ID
