@@ -9,7 +9,7 @@
     
     {% set editavel = assinatura.situacao == 1 %}
     
-    <form method="post" class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4" onsubmit="return validarEditarAssinatura()">
+    <form method="post" class="p-4 grid grid-cols-1 md:grid-cols-2 gap-4" onsubmit="return validarEditarAssinatura(this)">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="relative">
             <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>
@@ -328,7 +328,7 @@ function excluirHistorico(id) {
     modal.show();
 }
 
-function validarEditarAssinatura() {
+function validarEditarAssinatura(formEl) {
     const campos = [
         { id: 'clienteId', nome: 'Cliente' },
         { id: 'servicoId', nome: 'Serviço' },
@@ -340,11 +340,10 @@ function validarEditarAssinatura() {
             return false;
         }
     }
-    const form = document.querySelector('#modalConfirmarHistorico')?.closest('form') || document.querySelector('form[onsubmit]');
-    const inputs = document.querySelectorAll('form[onsubmit] input[name], form[onsubmit] select[name]');
+    const inputs = formEl.querySelectorAll('input[name], select[name]');
     for (const inp of inputs) {
-            if (inp.name === 'observacao' || inp.name === 'csrf_token') continue;
-            if (inp.name === 'descricao') continue;
+        if (inp.name === 'observacao' || inp.name === 'csrf_token') continue;
+        if (inp.name === 'descricao') continue;
         if (inp.name === 'fornecedor_id') continue;
         if (!inp.value || inp.value.trim() === '') {
             const labels = inp.closest('div')?.querySelectorAll('label');

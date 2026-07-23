@@ -337,12 +337,14 @@ def gerar_nfse_assinatura(request: Request, assinatura_id: int, db: Session = De
 
         nome_servico = servico.nome if servico else ""
         descricao_completa = f"{nome_servico} - {assinatura.descricao}" if nome_servico else assinatura.descricao
+        if assinatura.quantidade:
+            descricao_completa += f" ({assinatura.quantidade} pessoas)"
         nfse_item = NFSeItem(
             nfse_id=nfse.id,
             produto_id=servico.id if servico else None,
             descricao=descricao_completa,
-            quantidade=assinatura.quantidade or 1,
-            valor_unitario=assinatura.valor / (assinatura.quantidade or 1),
+            quantidade=1,
+            valor_unitario=assinatura.valor,
             valor_total=assinatura.valor,
             codigo_servico=servico.codigo_lc116 if servico else "",
             tributacao_municipal=servico.codigo_tributacao_municipal if servico else "",

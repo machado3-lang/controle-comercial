@@ -790,7 +790,12 @@ def editar_nfse_salvar(
     nfse.iss_retido = getattr(cliente, 'iss_retido', False) or False
     nfse.observacoes = observacoes or ""
     if data_competencia:
-        nfse.data_emissao = datetime.strptime(data_competencia, '%Y-%m-%d')
+        data_antiga = nfse.data_emissao
+        nova_data = datetime.strptime(data_competencia, '%Y-%m-%d')
+        nfse.data_emissao = nova_data.replace(
+            hour=data_antiga.hour, minute=data_antiga.minute,
+            second=data_antiga.second, microsecond=data_antiga.microsecond
+        )
 
     for old_item in nfse.itens:
         db.delete(old_item)
