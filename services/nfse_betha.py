@@ -128,21 +128,28 @@ class BethaNfseService:
         try:
             logger.info(f"Enviando DPS para Betha (tpAmb={tpAmb})...")
             session = self._get_session()
-            soap_xml = f'''<soapenv:Envelope xmlns="http://www.betha.com.br/e-nota-dps" xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
+            soap_xml = f'''<soapenv:Envelope xmlns:soapenv="http://schemas.xmlsoap.org/soap/envelope/">
    <soapenv:Header/>
    <soapenv:Body>
-      <RecepcionarDpsEnvio>
+      <RecepcionarDpsEnvio xmlns="http://www.betha.com.br/e-nota-dps">
          {dps_xml}
       </RecepcionarDpsEnvio>
    </soapenv:Body>
 </soapenv:Envelope>'''
 
+            logger.info(f"SOAP XML enviado:\n{soap_xml[:3000]}")
+            logger.info(f"URL: {BETHA_NFSE_URL}")
+
             response = session.post(
                 BETHA_NFSE_URL,
                 data=soap_xml.encode('utf-8'),
-                headers={'Content-Type': 'text/xml; charset=utf-8'},
+                headers={
+                    'Content-Type': 'text/xml; charset=utf-8',
+                    'SOAPAction': 'RecepcionarDpsEnvio',
+                },
                 timeout=60
             )
+            logger.info(f"Response HTTP {response.status_code}, headers: {dict(response.headers)}")
             if response.status_code >= 400:
                 body_err = response.text[:1500]
                 logger.error(f"Erro HTTP {response.status_code} da Betha Cloud (enviar_dps): {body_err}")
