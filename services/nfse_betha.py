@@ -1282,13 +1282,11 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
             resultado, dps_xml = _send_with_serie(attempt)
             retry_iss_retido = True
 
-        # Se DPS duplicada (E050), reenvia com série diferente mantendo mesmo nDPS
-        if resultado.get('erros') and any(
-            e.get('codigo') == 'E050'
-            or 'jÃ¡ recepcionada' in (e.get('mensagem','') or '').lower()
-            or ('dps' in (e.get('mensagem','') or '').lower() and 'recepcionad' in (e.get('mensagem','') or '').lower())
-            for e in resultado['erros']
-        ):
+        # Se DPS duplicada (E050), reenvia com séries diferentes mantendo mesmo nDPS.
+        # Loop até 10 séries (0-9): tentativas anteriores podem já ter consumido
+        # várias séries (ex.: série 1 na emissão original, série 2 num retry antigo),
+        # e a Betha devolve E050 para cada ID já recepcionado.
+        while resultado.get('erros') and _erro_dps_duplicada(resultado['erros']) and attempt < 9:
             attempt += 1
             logger.info(f"DPS duplicada — reenviando com série variada (attempt {attempt})...")
             resultado, dps_xml = _send_with_serie(attempt)
@@ -1431,6 +1429,19 @@ def sincronizar_nfse(protocolo: str, tpAmb: int = 1, numero_nfse: str = None) ->
         raise NFSeBethaError(f"Erro ao sincronizar: {e}")
 
 
+def _erro_dps_duplicada(erros: list) -> bool:
+    """Detecta E050 (DPS já recepcionada anteriormente)."""
+    if not erros:
+        return False
+    for e in erros:
+        if e.get('codigo') == 'E050':
+            return True
+        msg = (e.get('mensagem') or '').lower()
+        if 'recepcionada' in msg or ('dps' in msg and 'recepcionad' in msg):
+            return True
+    return False
+
+
 def _erro_iss_retido(erros: list) -> bool:
     if not erros:
         return False
@@ -1469,13 +1480,10 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
             resultado, dps_xml = _send_with_serie(attempt)
             retry_iss_retido = True
 
-        # Se DPS duplicada, reenvia com série diferente mantendo mesmo nDPS
-        if resultado.get('erros') and any(
-            e.get('codigo') == 'E050'
-            or 'jÃ¡ recepcionada' in (e.get('mensagem','') or '').lower()
-            or ('dps' in (e.get('mensagem','') or '').lower() and 'recepcionad' in (e.get('mensagem','') or '').lower())
-            for e in resultado['erros']
-        ):
+        # Se DPS duplicada (E050), reenvia com séries diferentes mantendo mesmo nDPS.
+        # Loop até 10 séries (0-9): tentativas anteriores podem já ter consumido
+        # várias séries, e a Betha devolve E050 para cada ID já recepcionado.
+        while resultado.get('erros') and _erro_dps_duplicada(resultado['erros']) and attempt < 9:
             attempt += 1
             logger.info(f"DPS duplicada — reenviando com série variada (attempt {attempt})...")
             resultado, dps_xml = _send_with_serie(attempt)
