@@ -995,7 +995,6 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         if os.path.exists(pattern):
             cached = f"/{pattern.replace(os.sep, '/')}"
     if cached:
-        from fastapi.responses import FileResponse
         return FileResponse(f".{cached}", media_type="application/pdf",
                             filename=f"nfse_{nfse.numero or nfse.id}.pdf")
 
@@ -1009,7 +1008,6 @@ def baixar_pdf_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
         pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, itens, STATUS_LABELS)
         nfse.pdf_path = pdf_url
         db.commit()
-        from fastapi.responses import FileResponse
         return FileResponse(f".{pdf_url}", media_type="application/pdf",
                             filename=f"nfse_{nfse.numero or nfse.id}.pdf")
     except Exception as e:
