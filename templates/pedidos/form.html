@@ -474,7 +474,7 @@ document.addEventListener('DOMContentLoaded', function() {
         clientesDropdown.addEventListener('click', function(e) {
             var item = e.target.closest('[data-id]');
             if (item) {
-                clienteSearch.value = item.querySelector('.font-medium').textContent;
+                clienteSearch.value = item.textContent.trim();
                 clienteIdInput.value = item.dataset.id;
                 clientesDropdown.classList.add('hidden');
             }
