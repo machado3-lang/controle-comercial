@@ -107,9 +107,9 @@
             <button type="button" onclick="confirmExcluir({{ nfe.id }}, '{{ nfe.numero }}')" class="flex items-center px-3 py-2 text-sm text-rose-400 border border-rose-800/50 rounded-xl hover:bg-rose-950/30 transition">
                 <i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Excluir
             </button>
-            {% if nfe.invoice_id and nfe.status in ('queued', 'processing') %}
+            {% if nfe.invoice_id and nfe.status in ('queued', 'processing', 'error') %}
             <a href="/nfe/invoices/{{ nfe.invoice_id }}/status?redirect=1" class="flex items-center px-3 py-2 text-sm text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition">
-                <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Consultar Status
+                <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> {% if nfe.status == 'error' %}Sincronizar{% else %}Consultar Status{% endif %}
             </a>
             {% endif %}
             {% elif nfe.status == 'issued' %}

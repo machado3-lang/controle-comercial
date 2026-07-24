@@ -117,8 +117,8 @@
                         <a href="/nfe/{{ n.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="edit" class="w-4 h-4"></i></a>
                         <button type="button" onclick="confirmExcluir({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                         {% endif %}
-                        {% if n.invoice_id and n.status in ('queued', 'processing') %}
-                        <a href="/nfe/invoices/{{ n.invoice_id }}/status?redirect=1" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Consultar Status"><i data-lucide="refresh-cw" class="w-4 h-4"></i></a>
+                        {% if n.invoice_id and n.status in ('queued', 'processing', 'error') %}
+                        <a href="/nfe/invoices/{{ n.invoice_id }}/status?redirect=1" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="{% if n.status == 'error' %}Sincronizar{% else %}Consultar Status{% endif %}"><i data-lucide="refresh-cw" class="w-4 h-4"></i></a>
                         {% endif %}
                         {% if n.status == 'issued' and (n.invoice_id or n.xml_text) %}
                         <a href="/nfe/{{ n.id }}/pdf" target="_blank" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="DANFE"><i data-lucide="file-down" class="w-4 h-4"></i></a>

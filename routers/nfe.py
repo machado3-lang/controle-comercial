@@ -58,6 +58,9 @@ def _extrair_erro_nfe(data):
     if not isinstance(data, dict):
         return None
     cstat = data.get("cStat") or data.get("cstat")
+    # cStat 100 = autorizado pela SEFAZ: não é erro.
+    if cstat in (100, "100"):
+        return None
     status = data.get("status")
     msg = (data.get("message") or data.get("motivo") or data.get("xMotivo")
            or data.get("mensagem") or data.get("xMotivoAutorizacao"))
@@ -1694,12 +1697,26 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         # NotaAS/SEFAZ já devolva a rejeição de imediato. Não bloqueia a
         # emissão: se a consulta falhar ou ainda estiver processando, segue
         # como 'queued' e o webhook/Consultar Status atualiza depois.
+        ja_emitida = False
         try:
             if invoice_id:
                 status_data = consultar_status(empresa, invoice_id)
+                cstat_val = status_data.get("cStat") or status_data.get("cstat")
+                autorizado = cstat_val in (100, "100")
                 erro_nfe = _extrair_erro_nfe(status_data)
-                if erro_nfe and (status_data.get("status") in (None, "error", "cancelled")
-                                  or status_data.get("cStat") not in (None, "100")):
+                status_nf = status_data.get("status")
+
+                if autorizado:
+                    # cStat 100 = autorizado pela SEFAZ: sucesso, independentemente
+                    # do status de ciclo informado pela NotaAs.
+                    nfe.status = "issued"
+                    nfe.protocolo = status_data.get("nProt") or nfe.protocolo
+                    nfe.chave_acesso = status_data.get("chaveAcesso") or nfe.chave_acesso
+                    nfe.mensagem_retorno = None
+                    db.commit()
+                    ja_emitida = True
+                elif erro_nfe and (status_nf in (None, "error", "cancelled")
+                                   or (cstat_val is not None and cstat_val not in (100, "100"))):
                     nfe.status = "error"
                     nfe.mensagem_retorno = erro_nfe
                     nfe.protocolo = status_data.get("nProt") or nfe.protocolo
@@ -1709,7 +1726,8 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         except Exception as e:
             logger.warning(f"Falha ao consultar status imediato da NFe: {e}")
 
-        nfe.status = "queued"
+        if not ja_emitida:
+            nfe.status = "queued"
         db.commit()
 
         # Baixa de estoque: venda de mercadoria (SAIDA_VENDA). Idempotente:
@@ -1744,16 +1762,34 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
 
-    if nfe.invoice_id and nfe.status in ("queued", "processing"):
+    if nfe.invoice_id and nfe.status in ("queued", "processing", "error"):
         try:
             status_data = consultar_status(empresa, nfe.invoice_id)
+            cstat_val = status_data.get("cStat") or status_data.get("cstat")
+            autorizado = cstat_val in (100, "100")
             novo_status = status_data.get("status")
-            if novo_status and novo_status != nfe.status:
+            if autorizado:
+                # cStat 100 = autorizado pela SEFAZ: sucesso, mesmo que a NotaAs
+                # informe status 'error' num instante transitório.
+                nfe.status = "issued"
+                nfe.chave_acesso = status_data.get("chaveAcesso") or nfe.chave_acesso
+                nfe.protocolo = status_data.get("nProt") or nfe.protocolo
+                nfe.data_emissao = _agora_local(empresa)
+                nfe.mensagem_retorno = None
+                _salvar_xml_nfe(empresa, nfe, db)
+                db.commit()
+            elif novo_status and novo_status != nfe.status and not (nfe.status == "issued" and novo_status == "error"):
                 nfe.status = novo_status
                 nfe.chave_acesso = status_data.get("chaveAcesso") or nfe.chave_acesso
                 nfe.protocolo = status_data.get("nProt") or nfe.protocolo
                 if novo_status == "issued":
                     nfe.data_emissao = _agora_local(empresa)
+                    nfe.mensagem_retorno = None
+                    _salvar_xml_nfe(empresa, nfe, db)
+                else:
+                    erro = _extrair_erro_nfe(status_data)
+                    if erro:
+                        nfe.mensagem_retorno = erro
                 db.commit()
         except Exception as e:
             logger.warning(f"Falha ao consultar status da NFe #{nfe_id}: {e}")
@@ -1902,20 +1938,36 @@ def poll_status(
         data = consultar_status(empresa, invoice_id)
         nfe = db.query(NFe).filter(NFe.invoice_id == invoice_id).first()
         if nfe:
+            cstat_val = data.get("cStat") or data.get("cstat")
+            autorizado = cstat_val in (100, "100")
             novo_status = data.get("status")
-            if novo_status and novo_status != nfe.status:
-                nfe.status = novo_status
+
+            if autorizado:
+                # cStat 100 = autorizado pela SEFAZ: sucesso, independentemente
+                # do status de ciclo informado pela NotaAs (que pode vir como
+                # 'error' num instante em que a SEFAZ já autorizou).
+                nfe.status = "issued"
                 nfe.chave_acesso = data.get("chaveAcesso") or nfe.chave_acesso
                 nfe.protocolo = data.get("nProt") or nfe.protocolo
-                if novo_status == "issued":
-                    nfe.data_emissao = _agora_local(empresa)
-                    nfe.mensagem_retorno = None
-                    _salvar_xml_nfe(empresa, nfe, db)
-                else:
-                    erro = _extrair_erro_nfe(data)
-                    if erro:
-                        nfe.mensagem_retorno = erro
-                db.commit()
+                nfe.data_emissao = _agora_local(empresa)
+                nfe.mensagem_retorno = None
+                _salvar_xml_nfe(empresa, nfe, db)
+            elif novo_status and novo_status != nfe.status:
+                # Não retrocede uma NFe já autorizada para 'error' por uma
+                # resposta transitória da NotaAs.
+                if not (nfe.status == "issued" and novo_status == "error"):
+                    nfe.status = novo_status
+                    nfe.chave_acesso = data.get("chaveAcesso") or nfe.chave_acesso
+                    nfe.protocolo = data.get("nProt") or nfe.protocolo
+                    if novo_status == "issued":
+                        nfe.data_emissao = _agora_local(empresa)
+                        nfe.mensagem_retorno = None
+                        _salvar_xml_nfe(empresa, nfe, db)
+                    else:
+                        erro = _extrair_erro_nfe(data)
+                        if erro:
+                            nfe.mensagem_retorno = erro
+            db.commit()
         if redirect and nfe:
             request.session["message"] = f"Status atualizado: {STATUS_LABELS.get(nfe.status, nfe.status)}"
             return RedirectResponse(url=f"/nfe/{nfe.id}", status_code=303)
