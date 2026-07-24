@@ -1318,6 +1318,15 @@ def importar_nfe_xml(
                 nf.cliente_id = cli.id
             db.add(nf)
         db.commit()
+        # Sincroniza o contador de numeração para NÃO reutilizar um número já
+        # existente/importado (evita nova duplicata na próxima emissão).
+        try:
+            num = int(re.sub(r'\D', '', str(getattr(nf, 'numero', '') or '') or 0))
+            if num > (empresa.ultimo_numero_nfe or 0):
+                empresa.ultimo_numero_nfe = num
+                db.commit()
+        except Exception as e:
+            logger.warning(f"Falha ao sincronizar ultimo_numero_nfe na importação: {e}")
         request.session["message"] = f"NFe {resultado.get('numero', '')} importada do XML com sucesso!"
     except Exception as e:
         db.rollback()
