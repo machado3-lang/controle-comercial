@@ -1631,7 +1631,7 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
 
     nfe = db.query(NFe).options(
         joinedload(NFe.itens), joinedload(NFe.pedido), joinedload(NFe.cliente)
-    ).filter(NFe.id == nfe_id).with_for_update().first()
+    ).filter(NFe.id == nfe_id).with_for_update(of=NFe).first()
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)

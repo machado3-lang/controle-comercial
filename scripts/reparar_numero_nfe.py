@@ -51,7 +51,7 @@ def main():
                 nfnf = int(chave[25:34])
             except Exception:
                 continue
-            if n.numero != nfnf:
+            if n.numero is None or int(n.numero) != nfnf:
                 if args.apply:
                     n.numero = nfnf
                 reparadas += 1
