@@ -133,6 +133,11 @@
                 <i data-lucide="x-circle" class="w-4 h-4 me-1"></i> Cancelar
             </button>
             {% endif %}
+            {% if nfe.status == 'issued' and nfe.origem == 'importada' and not nfe.invoice_id %}
+            <a href="/nfe/{{ nfe.id }}/sincronizar" class="flex items-center px-3 py-2 text-sm text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition">
+                <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sincronizar Status
+            </a>
+            {% endif %}
         </div>
     </div>
 </div>

@@ -124,6 +124,9 @@
                         <a href="/nfe/{{ n.id }}/pdf" target="_blank" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="DANFE"><i data-lucide="file-down" class="w-4 h-4"></i></a>
                         <a href="/nfe/{{ n.id }}/xml" target="_blank" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="XML"><i data-lucide="file-code" class="w-4 h-4"></i></a>
                         {% endif %}
+                        {% if n.status == 'issued' and n.origem == 'importada' and not n.invoice_id %}
+                        <a href="/nfe/{{ n.id }}/sincronizar" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Sincronizar Status"><i data-lucide="refresh-cw" class="w-4 h-4"></i></a>
+                        {% endif %}
                         {% if n.invoice_id and n.status == 'issued' %}
                         <a href="/nfe/{{ n.id }}" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Cancelar"><i data-lucide="x-circle" class="w-4 h-4"></i></a>
                         {% endif %}

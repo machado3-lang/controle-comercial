@@ -1979,6 +1979,55 @@ def poll_status(
         return JSONResponse({"error": str(e)}, status_code=500)
 
 
+@router.get("/{nfe_id}/sincronizar")
+def sincronizar_status_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
+    """Sincroniza o status de uma NFe importada.
+
+    - Se houver invoice_id (NotaAs), consulta a NotaAs.
+    - Caso contrário (origem importada sem invoice_id), confere a SEFAZ pela
+      chave de acesso: se a SEFAZ retornar o evento de cancelamento, marca a
+      NFe como cancelada localmente. Assim, quem cancela a NFe direto no portal
+      da NotaAs/SEFAZ consegue apenas atualizar o status aqui.
+    """
+    empresa = db.query(Empresa).first()
+    nfe = db.query(NFe).filter(NFe.id == nfe_id).first()
+    if not nfe:
+        request.session["error"] = "NFe não encontrada"
+        return RedirectResponse(url="/nfe", status_code=303)
+    try:
+        if nfe.invoice_id:
+            data = consultar_status(empresa, nfe.invoice_id)
+            cstat_val = data.get("cStat") or data.get("cstat")
+            if cstat_val in (100, "100"):
+                nfe.status = "issued"
+                nfe.mensagem_retorno = None
+            else:
+                novo = data.get("status")
+                if novo:
+                    nfe.status = novo
+            db.commit()
+            request.session["message"] = f"Status atualizado: {STATUS_LABELS.get(nfe.status, nfe.status)}"
+        elif nfe.chave_acesso:
+            from services.nfe_distribuicao import NFeDistribuicaoService
+            service = NFeDistribuicaoService(empresa, db=db)
+            resultado = service.consultar_por_chave(empresa.cnpj, nfe.chave_acesso)
+            schema = resultado.get("schema", "") or ""
+            xml = resultado.get("xml", "") or ""
+            cancelada = ("Evento" in schema) or ("procEvento" in xml) or ("110111" in xml)
+            if cancelada:
+                nfe.status = "cancelled"
+                nfe.mensagem_retorno = "Cancelada (conferido via SEFAZ)"
+                db.commit()
+                request.session["message"] = "NFe marcada como CANCELADA (conferida na SEFAZ)."
+            else:
+                request.session["message"] = "NFe continua ATIVA na SEFAZ (status mantido como Autorizada)."
+        else:
+            request.session["error"] = "NFe sem chave de acesso nem invoiceId para sincronizar."
+    except Exception as e:
+        request.session["error"] = f"Erro ao sincronizar status: {str(e)}"
+    return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
+
+
 @router.get("/municipios")
 def buscar_municipios(
     request: Request, db: Session = Depends(get_db),
