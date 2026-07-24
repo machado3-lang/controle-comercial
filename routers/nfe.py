@@ -1629,9 +1629,14 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         request.session["error"] = "API Key NotaAs não configurada"
         return RedirectResponse(url="/nfe/config", status_code=303)
 
+    # Lock atômico da linha (SEM joins) para serializar submissões concorrentes
+    # (duplo clique). joinedload + FOR UPDATE quebra no PostgreSQL ("nullable
+    # side of an outer join"), então o lock é feito numa query à parte.
+    db.query(NFe).filter(NFe.id == nfe_id).with_for_update().first()
+
     nfe = db.query(NFe).options(
         joinedload(NFe.itens), joinedload(NFe.pedido), joinedload(NFe.cliente)
-    ).filter(NFe.id == nfe_id).with_for_update(of=NFe).first()
+    ).filter(NFe.id == nfe_id).first()
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
