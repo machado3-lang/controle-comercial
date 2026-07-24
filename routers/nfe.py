@@ -2008,19 +2008,31 @@ def sincronizar_status_nfe(request: Request, nfe_id: int, db: Session = Depends(
             db.commit()
             request.session["message"] = f"Status atualizado: {STATUS_LABELS.get(nfe.status, nfe.status)}"
         elif nfe.chave_acesso:
-            from services.nfe_distribuicao import NFeDistribuicaoService
+            from services.nfe_distribuicao import NFeDistribuicaoService, NFeDistribuicaoError
             service = NFeDistribuicaoService(empresa, db=db)
-            resultado = service.consultar_por_chave(empresa.cnpj, nfe.chave_acesso)
-            schema = resultado.get("schema", "") or ""
-            xml = resultado.get("xml", "") or ""
-            cancelada = ("Evento" in schema) or ("procEvento" in xml) or ("110111" in xml)
-            if cancelada:
-                nfe.status = "cancelled"
-                nfe.mensagem_retorno = "Cancelada (conferido via SEFAZ)"
-                db.commit()
-                request.session["message"] = "NFe marcada como CANCELADA (conferida na SEFAZ)."
-            else:
-                request.session["message"] = "NFe continua ATIVA na SEFAZ (status mantido como Autorizada)."
+            try:
+                resultado = service.consultar_por_chave(empresa.cnpj, nfe.chave_acesso)
+                schema = resultado.get("schema", "") or ""
+                xml = resultado.get("xml", "") or ""
+                cancelada = ("Evento" in schema) or ("procEvento" in xml) or ("110111" in xml)
+                if cancelada:
+                    nfe.status = "cancelled"
+                    nfe.mensagem_retorno = "Cancelada (conferido via SEFAZ)"
+                    db.commit()
+                    request.session["message"] = "NFe marcada como CANCELADA (conferida na SEFAZ)."
+                else:
+                    request.session["message"] = "NFe continua ATIVA na SEFAZ (status mantido como Autorizada)."
+            except NFeDistribuicaoError as e:
+                msg = str(e)
+                # cStat 652/653: NF-e já cancelada na SEFAZ (arquivo indisponível
+                # para download). A própria rejeição confirma o cancelamento.
+                if "Cancelada" in msg or "652" in msg or "653" in msg:
+                    nfe.status = "cancelled"
+                    nfe.mensagem_retorno = "Cancelada (conferido via SEFAZ)"
+                    db.commit()
+                    request.session["message"] = "NFe marcada como CANCELADA (conferida na SEFAZ)."
+                else:
+                    raise
         else:
             request.session["error"] = "NFe sem chave de acesso nem invoiceId para sincronizar."
     except Exception as e:
