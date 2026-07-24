@@ -47,28 +47,34 @@ def _proximo_sku_produto(db: Session) -> str:
     return f"SKU-{max_num + 1:05d}"
 
 def _proximo_codigo_produto(db: Session) -> str:
-    empresa = db.query(Empresa).with_for_update().first()
-    if empresa:
-        empresa.ultimo_codigo_produto = (empresa.ultimo_codigo_produto or 0) + 1
-        return f"{empresa.ultimo_codigo_produto:05d}"
+    """Próximo código de produto disponível.
+
+    Varre os códigos já existentes e retorna o primeiro número livre
+    (00001, 00002, ...), pulando qualquer um já utilizado. Assim, se o
+    00005 já existir, o gerador entrega 00006 e segue, sem produzir códigos
+    duplicados. Não depende de um contador persistido, evitando que o
+    formulário de "novo" sempre abra com 00001.
+    """
     codigos = db.query(Produto.codigo).filter(Produto.codigo.isnot(None)).all()
-    codigos = [c[0] for c in codigos if c[0]]
-    
     usados = set()
     for c in codigos:
-        try:
-            num = int(c)
-            usados.add(num)
-        except ValueError:
+        val = c[0]
+        if not val:
             continue
-    
-    max_num = max(usados) if usados else 0
-    
-    for i in range(1, max_num + 2):
+        try:
+            usados.add(int(str(val).strip()))
+        except ValueError:
+            try:
+                usados.add(int(str(val).split("-")[-1].strip()))
+            except (ValueError, IndexError):
+                continue
+
+    inicio = max(usados) if usados else 0
+    for i in range(1, inicio + 2):
         if i not in usados:
             return f"{i:05d}"
-    
-    return f"{max_num + 1:05d}"
+
+    return f"{inicio + 1:05d}"
 
 
 router = APIRouter(prefix="/produtos", tags=["Produtos"])
