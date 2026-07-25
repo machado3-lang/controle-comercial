@@ -152,21 +152,26 @@ def criar_assinatura(
     request: Request, db: Session = Depends(get_db),
     cliente_id: int = Form(...),
     periodicidade: int = Form(1),
-    servico_id: int = Form(None),
+    servico_id: str = Form(""),
     descricao: str = Form(None),
     valor: float = Form(...),
-    quantidade: int = Form(None),
+    quantidade: str = Form(""),
     data_inicio: str = Form(...),
     data_fim: str = Form(None),
     dia_vencimento: int = Form(...),
     mes_vencimento: int = Form(0),
     situacao: int = Form(1),
-    fornecedor_id: int = Form(None),
-    valor_revenda: float = Form(None),
+    fornecedor_id: str = Form(""),
+    valor_revenda: str = Form(""),
     numero_contrato: str = Form(None),
     observacao: str = Form(None),
     travar_cobranca: str = Form(""),
 ):
+    # Tolerancia a campos int/float enviados vazios pelos selects ("Selecione...")
+    servico_id = int(servico_id) if str(servico_id or "").strip() else None
+    fornecedor_id = int(fornecedor_id) if str(fornecedor_id or "").strip() else None
+    valor_revenda = float(valor_revenda) if str(valor_revenda or "").strip() else None
+    quantidade = int(quantidade) if str(quantidade or "").strip() else None
     try:
         inicio = date.fromisoformat(data_inicio)
         fim = date.fromisoformat(data_fim) if data_fim else None
@@ -404,21 +409,26 @@ def atualizar_assinatura(
     request: Request, assinatura_id: int, db: Session = Depends(get_db),
     cliente_id: int = Form(...),
     periodicidade: int = Form(1),
-    servico_id: int = Form(None),
+    servico_id: str = Form(""),
     descricao: str = Form(None),
     valor: float = Form(...),
-    quantidade: int = Form(0),
+    quantidade: str = Form(""),
     data_inicio: str = Form(...),
     data_fim: str = Form(""),
     dia_vencimento: int = Form(...),
     mes_vencimento: int = Form(0),
     situacao: int = Form(1),
-    fornecedor_id: int = Form(0),
-    valor_revenda: float = Form(0),
+    fornecedor_id: str = Form(""),
+    valor_revenda: str = Form(""),
     numero_contrato: str = Form(""),
     observacao: str = Form(""),
     travar_cobranca: str = Form(""),
 ):
+    # Tolerancia a campos int/float enviados vazios pelos selects ("Selecione...")
+    servico_id = int(servico_id) if str(servico_id or "").strip() else None
+    fornecedor_id = int(fornecedor_id) if str(fornecedor_id or "").strip() else None
+    valor_revenda = float(valor_revenda) if str(valor_revenda or "").strip() else None
+    quantidade = int(quantidade) if str(quantidade or "").strip() else 0
     assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
     if not assinatura:
         return RedirectResponse(url="/assinaturas", status_code=303)
