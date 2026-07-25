@@ -229,9 +229,8 @@ function confirmarExclusaoSimples(url) {
         .catch(() => window.location.reload());
 }
 
-function confirmarGerarCobranca(assinaturaId) {
-    const btn = event && event.currentTarget;
-    if (btn && btn.dataset.trava === "1") {
+function confirmarGerarCobranca(assinaturaId, travada) {
+    if (travada === true || travada === "1" || travada === 1) {
         alert("Cobrança desta assinatura está travada.\nGere a cobrança a partir da NFS-e emitida para esta assinatura.");
         return;
     }
