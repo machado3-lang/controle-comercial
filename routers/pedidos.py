@@ -435,6 +435,9 @@ def finalizar_pedido(
     gerar_boleto: bool = Form(False),
     terminos_boleto: str = Form(""),
     gerar_cobranca: bool = Form(False),
+    num_parcelas: int = Form(1),
+    primeiro_vencimento: str = Form(""),
+    intervalo_dias: int = Form(30),
 ):
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
     if pedido:
@@ -450,17 +453,38 @@ def finalizar_pedido(
                 pass
         pedido.gerar_boleto = gerar_boleto
         pedido.terminos_boleto = terminos_boleto
-        # Cria conta a receber automática
+        # Cria conta(s) a receber automática(s) — com suporte a parcelamento
+        contas_geradas = []
         if gerar_cobranca or forma_pagamento == "boleto":
-            cr = ContaReceber(
+            from services.parcelamento import gerar_contas_receber
+            try:
+                venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (pedido.data or date.today())
+            except ValueError:
+                venc = pedido.data or date.today()
+            contas_geradas = gerar_contas_receber(
+                db,
                 cliente_id=pedido.cliente_id,
                 descricao=f"Pedido {pedido.numero or '#' + str(pedido.id)}",
-                valor=pedido.total or 0,
-                data_vencimento=pedido.data,
+                valor_total=pedido.total or 0,
+                primeiro_vencimento=venc,
+                num_parcelas=num_parcelas,
+                intervalo_dias=intervalo_dias,
                 forma_pagamento=forma_pagamento or "NFSe",
+                pedido_id=pedido.id,
             )
-            db.add(cr)
         db.commit()
+        # Emissão imediata de TODOS os boletos das parcelas (Sicoob)
+        if contas_geradas and (gerar_boleto or forma_pagamento == "boleto"):
+            from services.parcelamento import emitir_boletos_contas
+            ok, erros = emitir_boletos_contas(db, contas_geradas)
+            if erros:
+                request.session["error"] = (
+                    f"Pedido faturado; {ok} boleto(s) emitido(s), mas houve erro(s): " + "; ".join(erros)
+                )
+            else:
+                request.session["message"] = f"Pedido faturado e {ok} boleto(s) emitido(s) com sucesso!"
+        elif contas_geradas:
+            request.session["message"] = f"Pedido faturado! {len(contas_geradas)} conta(s) a receber gerada(s)."
         # Baixa de estoque na finalizacao (venda sem nota). Se o pedido ja
         # gerou NFSe/NFe, a baixa ocorre na nota (evita duplicar).
         try:

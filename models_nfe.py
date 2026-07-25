@@ -9,6 +9,7 @@ class NFe(Base):
     id = Column(Integer, primary_key=True)
     pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
     os_id = Column(Integer, ForeignKey("ordens_servico.id"), nullable=True, index=True)
+    consolidacao_id = Column(Integer, ForeignKey("pedidos_consolidados.id"), nullable=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True, index=True)
     origem = Column(String(20), default="avulsa", nullable=False)  # "pedido", "os", "consolidacao", "assinatura", "importada" ou "avulsa"
     numero = Column(Integer, nullable=False)
@@ -26,6 +27,8 @@ class NFe(Base):
     data_saida = Column(DateTime, nullable=True)
     finalidade = Column(String(30), default="normal")
     indicador_presenca = Column(Integer, default=1)
+    forma_pagamento = Column(String(20), nullable=True)  # dinheiro/pix/boleto/cartao_credito/...
+    observacoes = Column(Text, nullable=True)  # informações complementares (infCpl do XML)
     valor_total = Column(Numeric(12, 2), default=0)
     base_calculo = Column(Numeric(12, 2), default=0)
     valor_icms = Column(Numeric(12, 2), default=0)

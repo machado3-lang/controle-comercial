@@ -31,6 +31,26 @@
         
         <form method="post" action="/nfse/emitir/{{ pedido.id }}">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3 mb-4">
+        <div class="md:col-span-3">
+            <label class="block text-xs font-medium text-emerald-400 mb-1">Condição de Pagamento (pré-preenche parcelas)</label>
+            <select id="condicaoPagamento" data-target-parcelas="numParcelasNfseEmis" data-target-venc="primeiroVencNfseEmis" data-target-intervalo="intervaloDiasNfseEmis" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                <option value="">-- Manual --</option>
+            </select>
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Nº de Parcelas</label>
+            <input type="number" min="1" max="60" value="1" name="num_parcelas" id="numParcelasNfseEmis" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-cyan-400 mb-1">1º Vencimento</label>
+            <input type="date" name="primeiro_vencimento" id="primeiroVencNfseEmis" value="{{ pedido.data.isoformat() if pedido.data else '' }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+        </div>
+        <div>
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Intervalo (dias)</label>
+            <input type="number" min="1" max="365" value="30" name="intervalo_dias" id="intervaloDiasNfseEmis" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+        </div>
+    </div>
     <button type="submit" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl transition"><i data-lucide="send" class="w-4 h-4 inline me-1"></i> Emitir NFSe</button>
         </form>
     </div>

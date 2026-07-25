@@ -205,7 +205,30 @@
                 </div>
                 <div class="mb-3">
                     <label class="form-label text-cyan-300">Data Vencimento *</label>
-                    <input type="date" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_vencimento" required>
+                    <input type="date" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_vencimento" id="primeiroVencNovaCr" required>
+                </div>
+                <div class="mb-3 grid grid-cols-2 gap-2">
+                    <div class="col-span-2">
+                        <label class="form-label text-emerald-300">Condição de Pagamento (pré-preenche parcelas)</label>
+                        <select id="condicaoPagamento" data-target-parcelas="numParcelasNovaCr" data-target-venc="primeiroVencNovaCr" data-target-intervalo="intervaloDiasNovaCr" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                            <option value="">-- Manual --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="form-label text-cyan-300">Nº de Parcelas</label>
+                        <input type="number" min="1" max="60" value="1" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="num_parcelas" id="numParcelasNovaCr">
+                    </div>
+                    <div>
+                        <label class="form-label text-cyan-300">Intervalo (dias)</label>
+                        <input type="number" min="1" max="365" value="30" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="intervalo_dias" id="intervaloDiasNovaCr">
+                    </div>
+                    <p class="col-span-2 text-xs text-slate-500">Acima de 1 parcela, o valor é dividido e a data informada vira o 1º vencimento.</p>
+                </div>
+                <div class="mb-3">
+                    <label class="flex items-center gap-2 text-emerald-300 cursor-pointer">
+                        <input type="checkbox" name="emitir_boletos" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded">
+                        <span class="text-sm">Emitir boleto(s) Sicoob de todas as parcelas</span>
+                    </label>
                 </div>
                 <div class="mb-3">
                     <label class="form-label text-cyan-300">Nº Documento</label>

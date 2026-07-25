@@ -376,29 +376,44 @@ def criar_conta_receber(
     numero_documento: Optional[str] = Form(None),
     tipo_documento_id: Optional[str] = Form(None),
     plano_conta_id: Optional[str] = Form(None),
-    forma_pagamento: Optional[str] = Form(None)
+    forma_pagamento: Optional[str] = Form(None),
+    num_parcelas: int = Form(1),
+    intervalo_dias: int = Form(30),
+    emitir_boletos: bool = Form(False),
 ):
     from sqlalchemy import func
+    from services.parcelamento import gerar_contas_receber, emitir_boletos_contas
     def to_int(v):
         try: return int(v) if v and str(v).strip() else None
         except (ValueError, TypeError, AttributeError):
             logger.debug(f"Falha ao converter para int: {v}")
             return None
-    conta = ContaReceber(
-        descricao=descricao,
-        valor=to_decimal(valor),
-        data_vencimento=data_vencimento,
+    contas = gerar_contas_receber(
+        db,
         cliente_id=to_int(cliente_id),
+        descricao=descricao,
+        valor_total=to_decimal(valor),
+        primeiro_vencimento=data_vencimento,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
+        forma_pagamento=forma_pagamento,
         observacao=observacao,
         numero_documento=numero_documento,
         tipo_documento_id=to_int(tipo_documento_id),
         plano_conta_id=to_int(plano_conta_id),
-        forma_pagamento=forma_pagamento,
-        status=StatusConta.PENDENTE
     )
-    db.add(conta)
     db.commit()
-    request.session["message"] = "Conta a receber criada com sucesso!"
+    if len(contas) > 1:
+        request.session["message"] = f"{len(contas)} parcelas criadas com sucesso!"
+    else:
+        request.session["message"] = "Conta a receber criada com sucesso!"
+    # Emissão imediata de TODOS os boletos das parcelas (Sicoob)
+    if emitir_boletos:
+        ok, erros = emitir_boletos_contas(db, contas)
+        if erros:
+            request.session["error"] = f"{ok} boleto(s) emitido(s), com erro(s): " + "; ".join(erros)
+        else:
+            request.session["message"] = f"{len(contas)} conta(s) criada(s) e {ok} boleto(s) emitido(s)!"
     return RedirectResponse(url="/contas/receber", status_code=303)
 
 

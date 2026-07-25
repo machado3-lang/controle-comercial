@@ -508,6 +508,9 @@ def finalizar_consolidacao(
     gerar_boleto: bool = Form(False),
     terminos_boleto: str = Form(""),
     observacao: str = Form(""),
+    num_parcelas: int = Form(1),
+    primeiro_vencimento: str = Form(""),
+    intervalo_dias: int = Form(30),
 ):
     """Finaliza a consolidação - gera contas a receber e prepara para faturamento"""
     consolidacao = db.query(PedidoConsolidado).filter(
@@ -531,19 +534,40 @@ def finalizar_consolidacao(
     # TODO: get current user id from session
     # consolidacao.finalizado_por = current_user_id
 
-    # Cria conta a receber se necessário (forma_pagamento chega como string do template)
+    # Cria conta(s) a receber se necessário — com suporte a parcelamento
+    contas_geradas = []
     if forma_pagamento in ["aprazo", "boleto"] or gerar_boleto:
-        cr = ContaReceber(
+        from services.parcelamento import gerar_contas_receber
+        try:
+            venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (consolidacao.data_fechamento or date.today())
+        except ValueError:
+            venc = consolidacao.data_fechamento or date.today()
+        contas_geradas = gerar_contas_receber(
+            db,
             cliente_id=consolidacao.cliente_id,
             descricao=f"Consolidação {consolidacao.numero}",
-            valor=consolidacao.total or 0,
-            data_vencimento=consolidacao.data_fechamento or date.today(),
+            valor_total=consolidacao.total or 0,
+            primeiro_vencimento=venc,
+            num_parcelas=num_parcelas,
+            intervalo_dias=intervalo_dias,
             forma_pagamento=forma_pagamento or "NFSe",
             consolidacao_id=consolidacao.id,
         )
-        db.add(cr)
 
     db.commit()
+
+    # Emissão imediata de TODOS os boletos das parcelas (Sicoob)
+    if contas_geradas and (gerar_boleto or forma_pagamento == "boleto"):
+        from services.parcelamento import emitir_boletos_contas
+        ok, erros = emitir_boletos_contas(db, contas_geradas)
+        if erros:
+            request.session["error"] = (
+                f"Consolidação finalizada; {ok} boleto(s) emitido(s), mas houve erro(s): " + "; ".join(erros)
+            )
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+        request.session["success"] = f"Consolidação finalizada e {ok} boleto(s) emitido(s) com sucesso!"
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
     request.session["success"] = "Consolidação finalizada com sucesso!"
     return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 

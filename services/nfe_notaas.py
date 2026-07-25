@@ -102,6 +102,9 @@ def montar_payload_nfe(
     indicador_presenca: int = 1,
     data_emissao: str = None,
     data_saida: str = None,
+    forma_pagamento: str = None,
+    duplicatas: list = None,
+    observacoes: str = None,
 ) -> dict:
     cfop = cfop or empresa.cfop_padrao or "5102"
     destino_operacao = 1
@@ -124,6 +127,19 @@ def montar_payload_nfe(
     cep_clean = _limpar_doc(cliente.cep) or ""
 
     finalidade_map = {"normal": 1, "complementar": 2, "ajuste": 3, "devolucao": 4, "credito": 4, "debito": 1}
+
+    # Mapa forma de pagamento -> tPag da SEFAZ (tabela do grupo <detPag>)
+    _TIPO_PAG = {
+        "dinheiro": "01", "avista": "01",
+        "cheque": "02",
+        "cartao_credito": "03",
+        "cartao_debito": "04",
+        "boleto": "15", "aprazo": "15",
+        "transferencia": "18",
+        "pix": "17",
+        "outro": "99",
+    }
+    tipo_pagamento = _TIPO_PAG.get((forma_pagamento or "").lower(), "01")
 
     payload = {
         "modelo": modelo,
@@ -156,7 +172,7 @@ def montar_payload_nfe(
         },
         "items": [],
         "pagamentos": [
-            {"tipoPagamento": "01", "valor": 0}
+            {"tipoPagamento": tipo_pagamento, "valor": 0}
         ],
     }
 
@@ -188,6 +204,32 @@ def montar_payload_nfe(
     total_nota = sum(i.get("valorTotal", 0) for i in payload["items"])
     payload["pagamentos"][0]["valor"] = total_nota
 
+    # Cobrança / duplicatas (grupo <cobr>/<dup> — obrigatório em venda a prazo).
+    # Cada duplicata = uma parcela do contas a receber gerada no faturamento.
+    if duplicatas:
+        payload["pagamentos"][0]["indicadorPagamento"] = 1  # 1 = a prazo
+        payload["cobranca"] = {
+            "fatura": {
+                "numero": str(numero_nfe or ""),
+                "valorOriginal": round(total_nota, 2),
+                "valorDesconto": 0,
+                "valorLiquido": round(total_nota, 2),
+            },
+            "duplicatas": [
+                {
+                    "numero": d.get("numero"),
+                    "dataVencimento": d.get("vencimento"),
+                    "valor": round(float(d.get("valor") or 0), 2),
+                }
+                for d in duplicatas if d.get("vencimento")
+            ],
+        }
+
+    # Informações complementares (infCpl): observações do usuário + tributos IBPT
+    inf_cpl_partes = []
+    if observacoes and str(observacoes).strip():
+        inf_cpl_partes.append(str(observacoes).strip())
+
     # Tributos aproximados IBPT (Lei 12.741/2012)
     # Converte para float: as colunas Numeric vêm como Decimal e 'float * Decimal'
     # (ou 'float + Decimal') quebra em runtime.
@@ -198,12 +240,14 @@ def montar_payload_nfe(
         v_est = total_nota * ali_est / 100
         v_tot = v_fed + v_est
         p_tot = ali_fed + ali_est
-        payload["infCpl"] = (
+        inf_cpl_partes.append(
             f"Total aproximado de tributos: R$ {v_tot:.2f} ({p_tot:.2f}%) "
             f"Federais R$ {v_fed:.2f} ({ali_fed:.2f}%) "
             f"Estaduais R$ {v_est:.2f} ({ali_est:.2f}%) . "
             f"Fonte IBPT."
         )
+    if inf_cpl_partes:
+        payload["infCpl"] = " | ".join(inf_cpl_partes)
 
     return payload
 

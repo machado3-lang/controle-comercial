@@ -139,6 +139,30 @@
             <label class="flex items-center gap-2 text-emerald-300 cursor-pointer"><input type="checkbox" name="gerar_cobranca" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded" checked><span>Gerar Cobrança</span></label>
         </div>
         <div class="lg:col-span-4">
+            <label class="block text-xs font-medium text-emerald-400 mb-1">Condição de Pagamento (pré-preenche parcelas)</label>
+            <select id="condicaoPagamento" data-target-parcelas="numParcelas" data-target-venc="primeiroVencimento" data-target-intervalo="intervaloDias" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                <option value="">-- Manual --</option>
+            </select>
+        </div>
+        <div class="lg:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-3" id="parcelamentoFields">
+            <div>
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Nº de Parcelas</label>
+                <input type="number" min="1" max="60" value="1" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="num_parcelas" id="numParcelas">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-cyan-400 mb-1">1º Vencimento</label>
+                <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="primeiro_vencimento" id="primeiroVencimento" value="{{ pedido.data.isoformat() if pedido.data else '' }}">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Intervalo (dias)</label>
+                <input type="number" min="1" max="365" value="30" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="intervalo_dias" id="intervaloDias">
+            </div>
+            <div class="md:col-span-3 hidden" id="previewParcelas">
+                <label class="block text-xs font-medium text-emerald-400 mb-1">Prévia das Parcelas</label>
+                <div class="text-sm text-slate-300 bg-slate-900/50 border border-slate-800/60 rounded-xl p-3" id="previewParcelasBody"></div>
+            </div>
+        </div>
+        <div class="lg:col-span-4">
             <label class="block text-xs font-medium text-cyan-400 mb-1">Termos do Boleto</label>
             <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="terminos_boleto" rows="2" placeholder="Informações para o boleto..."></textarea>
         </div>
@@ -176,4 +200,38 @@
     <p class="text-slate-100 mt-2">{{ pedido.observacao }}</p>
 </div>
 {% endif %}
+
+<script>
+(function() {
+    const total = {{ (pedido.total or 0)|float }};
+    const numEl = document.getElementById('numParcelas');
+    const vencEl = document.getElementById('primeiroVencimento');
+    const intEl = document.getElementById('intervaloDias');
+    const box = document.getElementById('previewParcelas');
+    const body = document.getElementById('previewParcelasBody');
+    if (!numEl) return;
+    function fmt(v) { return v.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}); }
+    function atualizar() {
+        const n = Math.max(1, parseInt(numEl.value) || 1);
+        const intervalo = Math.max(1, parseInt(intEl.value) || 30);
+        if (n <= 1) { box.classList.add('hidden'); return; }
+        const base = Math.floor((total / n) * 100) / 100;
+        const ultima = Math.round((total - base * (n - 1)) * 100) / 100;
+        let dataBase = vencEl.value ? new Date(vencEl.value + 'T00:00:00') : new Date();
+        let html = '';
+        for (let i = 1; i <= n; i++) {
+            const d = new Date(dataBase);
+            d.setDate(d.getDate() + intervalo * (i - 1));
+            const valor = (i === n) ? ultima : base;
+            html += '<div class="flex justify-between py-0.5"><span>Parcela ' + i + '/' + n +
+                    ' — venc. ' + d.toLocaleDateString('pt-BR') + '</span><span class="text-emerald-400">' + fmt(valor) + '</span></div>';
+        }
+        body.innerHTML = html;
+        box.classList.remove('hidden');
+    }
+    numEl.addEventListener('input', atualizar);
+    vencEl.addEventListener('change', atualizar);
+    intEl.addEventListener('input', atualizar);
+})();
+</script>
 {% endblock %}

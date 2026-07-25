@@ -444,6 +444,7 @@ def emitir_pedido_submit(
             valor_total=total,
             data_emissao=now,
             data_saida=now,
+            forma_pagamento=pedido.forma_pagamento or None,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
         )
@@ -706,6 +707,7 @@ def emitir_consolidacao_submit(
             valor_total=total,
             data_emissao=now,
             data_saida=now,
+            forma_pagamento=consolidacao.forma_pagamento or None,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
         )
@@ -813,6 +815,8 @@ def emitir_avulsa_form(
     saved_hora_saida = request.session.pop("nfe_avulsa_hora_saida", None)
     saved_finalidade = request.session.pop("nfe_avulsa_finalidade", None)
     saved_indicador_presenca = request.session.pop("nfe_avulsa_indicador_presenca", None)
+    saved_observacoes = request.session.pop("nfe_avulsa_observacoes", None)
+    saved_forma_pagamento = request.session.pop("nfe_avulsa_forma_pagamento", None)
     erro_ie_cliente_id = request.session.pop("nfe_avulsa_erro_ie", None)
 
     return request.app.state.templates.TemplateResponse(request, 
@@ -833,6 +837,8 @@ def emitir_avulsa_form(
          "saved_hora_saida": saved_hora_saida,
          "saved_finalidade": saved_finalidade,
          "saved_indicador_presenca": saved_indicador_presenca,
+         "saved_observacoes": saved_observacoes,
+         "saved_forma_pagamento": saved_forma_pagamento,
          "erro_ie_cliente_id": erro_ie_cliente_id}
     )
 
@@ -862,6 +868,11 @@ def emitir_avulsa_submit(
     finalidade: str = Form("normal"),
     indicador_presenca: int = Form(1),
     gerar_cobranca: bool = Form(False),
+    forma_pagamento: str = Form(""),
+    num_parcelas: int = Form(1),
+    primeiro_vencimento: str = Form(""),
+    intervalo_dias: int = Form(30),
+    observacoes: str = Form(""),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -897,6 +908,7 @@ def emitir_avulsa_submit(
         request.session["nfe_avulsa_hora_saida"] = hora_saida
         request.session["nfe_avulsa_finalidade"] = finalidade
         request.session["nfe_avulsa_indicador_presenca"] = indicador_presenca
+        request.session["nfe_avulsa_observacoes"] = observacoes
         return RedirectResponse(url="/nfe/emitir/avulsa", status_code=303)
 
     itens_nfe = []
@@ -939,6 +951,8 @@ def emitir_avulsa_submit(
             data_saida=_parse_nfe_datetime(data_saida, hora_saida),
             finalidade=finalidade,
             indicador_presenca=indicador_presenca,
+            forma_pagamento=forma_pagamento or None,
+            observacoes=observacoes or None,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
         )
@@ -963,21 +977,39 @@ def emitir_avulsa_submit(
                 if prod:
                     prod.estoque = (prod.estoque or 0) - float(item["quantidade"])
 
+        contas_geradas = []
         if gerar_cobranca:
-            cobranca = ContaReceber(
+            from services.parcelamento import gerar_contas_receber
+            try:
+                venc = datetime.strptime(primeiro_vencimento, '%Y-%m-%d').date() if primeiro_vencimento else (
+                    datetime.strptime(data_emissao, '%Y-%m-%d').date() if data_emissao else date.today())
+            except ValueError:
+                venc = date.today()
+            contas_geradas = gerar_contas_receber(
+                db,
                 cliente_id=cliente.id,
                 descricao=f"NFe Avulsa #{numero_nfe}",
-                valor=total,
-                data_vencimento=datetime.strptime(data_emissao, '%Y-%m-%d').date() if data_emissao else date.today(),
-                forma_pagamento="NFe",
+                valor_total=total,
+                primeiro_vencimento=venc,
+                num_parcelas=num_parcelas,
+                intervalo_dias=intervalo_dias,
+                forma_pagamento=forma_pagamento or "NFe",
                 observacao=f"Gerado automaticamente da NFe #{nfe.id}",
+                nfe_id=nfe.id,
             )
-            db.add(cobranca)
 
         db.commit()
         msg = f"Rascunho NFe #{numero_nfe} salvo! Revise antes de transmitir."
-        if gerar_cobranca:
-            msg += " Cobrança gerada."
+        if contas_geradas:
+            msg += f" {len(contas_geradas)} cobrança(s) gerada(s)."
+        # Emissão imediata de TODOS os boletos das parcelas (Sicoob)
+        if contas_geradas and forma_pagamento == "boleto":
+            from services.parcelamento import emitir_boletos_contas
+            ok, erros = emitir_boletos_contas(db, contas_geradas)
+            if erros:
+                request.session["error"] = f"{ok} boleto(s) emitido(s), com erro(s): " + "; ".join(erros)
+            else:
+                msg += f" {ok} boleto(s) emitido(s)."
         request.session["message"] = msg
         return RedirectResponse(url=f"/nfe/{nfe.id}/previa", status_code=303)
     except Exception as e:
@@ -1434,6 +1466,8 @@ def editar_nfe_form(request: Request, nfe_id: int, db: Session = Depends(get_db)
     request.session["nfe_avulsa_hora_saida"] = nfe.data_saida.strftime("%H:%M") if nfe.data_saida else ""
     request.session["nfe_avulsa_finalidade"] = nfe.finalidade
     request.session["nfe_avulsa_indicador_presenca"] = nfe.indicador_presenca
+    request.session["nfe_avulsa_observacoes"] = nfe.observacoes or ""
+    request.session["nfe_avulsa_forma_pagamento"] = nfe.forma_pagamento or ""
     return RedirectResponse(url=f"/nfe/emitir/avulsa?editar={nfe.id}", status_code=303)
 
 
@@ -1451,6 +1485,8 @@ def editar_nfe_submit(
     hora_saida: str = Form(""),
     finalidade: str = Form("normal"),
     indicador_presenca: int = Form(1),
+    forma_pagamento: str = Form(""),
+    observacoes: str = Form(""),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -1492,6 +1528,7 @@ def editar_nfe_submit(
         request.session["nfe_avulsa_hora_saida"] = hora_saida
         request.session["nfe_avulsa_finalidade"] = finalidade
         request.session["nfe_avulsa_indicador_presenca"] = indicador_presenca
+        request.session["nfe_avulsa_observacoes"] = observacoes
         return RedirectResponse(url=f"/nfe/emitir/avulsa?editar={nfe_id}", status_code=303)
 
     itens_nfe = []
@@ -1537,6 +1574,9 @@ def editar_nfe_submit(
         nfe.data_saida = _parse_nfe_datetime(data_saida, hora_saida)
         nfe.finalidade = finalidade
         nfe.indicador_presenca = indicador_presenca
+        if forma_pagamento:
+            nfe.forma_pagamento = forma_pagamento
+        nfe.observacoes = observacoes or None
         db.flush()
 
         for item in itens_nfe:
@@ -1567,7 +1607,10 @@ def editar_nfe_submit(
 
 
 @router.post("/{nfe_id}/gerar-cobranca")
-def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
+def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db),
+                       num_parcelas: int = Form(1),
+                       primeiro_vencimento: str = Form(""),
+                       intervalo_dias: int = Form(30)):
     nfe = db.query(NFe).options(
         joinedload(NFe.pedido),
     ).filter(NFe.id == nfe_id).first()
@@ -1576,6 +1619,7 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
         return RedirectResponse(url="/nfe", status_code=303)
 
     cobranca_existente = db.query(ContaReceber).filter(
+        (ContaReceber.nfe_id == nfe.id) |
         ContaReceber.observacao.like(f"%NFe #{nfe.id}%")
     ).first()
     if cobranca_existente:
@@ -1589,17 +1633,26 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
         request.session["error"] = "Não foi possível identificar o cliente para gerar cobrança"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
-    cobranca = ContaReceber(
+    from services.parcelamento import gerar_contas_receber
+    try:
+        venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (
+            nfe.data_emissao.date() if nfe.data_emissao else date.today())
+    except ValueError:
+        venc = date.today()
+    contas = gerar_contas_receber(
+        db,
         cliente_id=cliente_id,
         descricao=f"NFe #{nfe.numero}",
-        valor=nfe.valor_total or 0,
-        data_vencimento=nfe.data_emissao.date() if nfe.data_emissao else date.today(),
-        forma_pagamento="NFe",
+        valor_total=nfe.valor_total or 0,
+        primeiro_vencimento=venc,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
+        forma_pagamento=nfe.forma_pagamento or "NFe",
         observacao=f"Gerado manualmente da NFe #{nfe.id}",
+        nfe_id=nfe.id,
     )
-    db.add(cobranca)
     db.commit()
-    request.session["message"] = f"Cobrança gerada com sucesso para NFe #{nfe.numero}!"
+    request.session["message"] = f"{len(contas)} cobrança(s) gerada(s) com sucesso para NFe #{nfe.numero}!"
     return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
 
@@ -1676,6 +1729,39 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         data_emissao_str = nfe.data_emissao.strftime("%Y-%m-%dT%H:%M:%S") if nfe.data_emissao else None
         data_saida_str = nfe.data_saida.strftime("%Y-%m-%dT%H:%M:%S") if nfe.data_saida else None
 
+        # Duplicatas: parcelas do contas a receber vinculadas a esta NFe
+        # (grupo <cobr>/<dup> do XML — obrigatório em vendas a prazo).
+        # Fallback: NFe emitida de pedido/consolidação usa as parcelas geradas
+        # no faturamento do documento de origem.
+        from models import StatusConta as _StatusConta
+        _status_validos = ~ContaReceber.status.in_([_StatusConta.EXCLUIDO, _StatusConta.CANCELADO])
+        contas_nfe = db.query(ContaReceber).filter(
+            ContaReceber.nfe_id == nfe.id, _status_validos,
+        ).order_by(ContaReceber.numero_parcela).all()
+        if not contas_nfe and nfe.pedido_id:
+            contas_nfe = db.query(ContaReceber).filter(
+                ContaReceber.pedido_id == nfe.pedido_id, _status_validos,
+            ).order_by(ContaReceber.numero_parcela).all()
+        if not contas_nfe and getattr(nfe, 'consolidacao_id', None):
+            contas_nfe = db.query(ContaReceber).filter(
+                ContaReceber.consolidacao_id == nfe.consolidacao_id, _status_validos,
+            ).order_by(ContaReceber.numero_parcela).all()
+        duplicatas = [
+            {
+                "numero": f"{c.numero_parcela or (idx + 1):03d}",
+                "vencimento": c.data_vencimento.strftime("%Y-%m-%d") if c.data_vencimento else None,
+                "valor": float(c.valor or 0),
+            }
+            for idx, c in enumerate(contas_nfe)
+        ] if contas_nfe else None
+
+        # Forma de pagamento: da NFe; fallback para a do pedido/consolidação
+        forma_pag = getattr(nfe, 'forma_pagamento', None)
+        if not forma_pag and nfe.pedido:
+            forma_pag = nfe.pedido.forma_pagamento
+        if not forma_pag and contas_nfe:
+            forma_pag = contas_nfe[0].forma_pagamento
+
         payload = montar_payload_nfe(
             empresa, cliente, itens_nfe,
             numero_nfe=nfe.numero,
@@ -1686,6 +1772,9 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
             indicador_presenca=nfe.indicador_presenca if hasattr(nfe, 'indicador_presenca') else 1,
             data_emissao=data_emissao_str,
             data_saida=data_saida_str,
+            forma_pagamento=forma_pag,
+            duplicatas=duplicatas,
+            observacoes=getattr(nfe, 'observacoes', None),
         )
 
         result = emitir_nfe(empresa, payload)

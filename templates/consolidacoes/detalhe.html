@@ -270,6 +270,29 @@
                     <input type="checkbox" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded" name="gerar_boleto" id="gerar_boleto_det">
                     <label for="gerar_boleto_det" class="text-sm text-slate-300 cursor-pointer">Gerar Boleto</label>
                 </div>
+                <div class="grid grid-cols-3 gap-2">
+                    <div class="col-span-3">
+                        <label class="block text-xs font-medium text-emerald-400 mb-1">Condição de Pagamento (pré-preenche parcelas)</label>
+                        <select id="condicaoPagamento" data-target-parcelas="numParcelasCons" data-target-venc="primeiroVencCons" data-target-intervalo="intervaloDiasCons" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                            <option value="">-- Manual --</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Parcelas</label>
+                        <input type="number" min="1" max="60" value="1" name="num_parcelas" id="numParcelasCons" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">1º Venc.</label>
+                        <input type="date" name="primeiro_vencimento" id="primeiroVencCons" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Intervalo</label>
+                        <input type="number" min="1" max="365" value="30" name="intervalo_dias" id="intervaloDiasCons" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                    </div>
+                </div>
+                <div class="hidden" id="previewParcelasCons">
+                    <div class="text-xs text-slate-300 bg-slate-900/50 border border-slate-800/60 rounded-xl p-2" id="previewParcelasConsBody"></div>
+                </div>
                 <div id="boleto_fields_det" class="hidden">
                     <label class="block text-xs font-medium text-cyan-400 mb-1">Termos do Boleto</label>
                     <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="terminos_boleto" rows="2"></textarea>
@@ -344,6 +367,37 @@ function fecharModalOrigens() {
 document.getElementById('gerar_boleto_det')?.addEventListener('change', function() {
     document.getElementById('boleto_fields_det').classList.toggle('hidden', !this.checked);
 });
+
+(function() {
+    const total = {{ (consolidacao.total or 0)|float }};
+    const numEl = document.getElementById('numParcelasCons');
+    const vencEl = document.getElementById('primeiroVencCons');
+    const intEl = document.getElementById('intervaloDiasCons');
+    const box = document.getElementById('previewParcelasCons');
+    const body = document.getElementById('previewParcelasConsBody');
+    if (!numEl) return;
+    function fmt(v) { return v.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}); }
+    function atualizar() {
+        const n = Math.max(1, parseInt(numEl.value) || 1);
+        const intervalo = Math.max(1, parseInt(intEl.value) || 30);
+        if (n <= 1) { box.classList.add('hidden'); return; }
+        const base = Math.floor((total / n) * 100) / 100;
+        const ultima = Math.round((total - base * (n - 1)) * 100) / 100;
+        let dataBase = vencEl.value ? new Date(vencEl.value + 'T00:00:00') : new Date();
+        let html = '';
+        for (let i = 1; i <= n; i++) {
+            const d = new Date(dataBase);
+            d.setDate(d.getDate() + intervalo * (i - 1));
+            html += '<div class="flex justify-between py-0.5"><span>Parcela ' + i + '/' + n +
+                    ' — venc. ' + d.toLocaleDateString('pt-BR') + '</span><span class="text-emerald-400">' + fmt(i === n ? ultima : base) + '</span></div>';
+        }
+        body.innerHTML = html;
+        box.classList.remove('hidden');
+    }
+    numEl.addEventListener('input', atualizar);
+    vencEl.addEventListener('change', atualizar);
+    intEl.addEventListener('input', atualizar);
+})();
 
 function confirmarAdicao(form) {
     const sel = document.getElementById('pedido_add');

@@ -136,9 +136,51 @@
                     <input type="hidden" name="itens_json" id="itensJson">
                     <input type="hidden" name="desconto" id="descontoHidden" value="0">
 
+                    <div class="mb-4 pt-3 border-t border-slate-800/60 mt-3">
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Observações (informações complementares da NFe)</label>
+                        <textarea name="observacoes" rows="3" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Observações adicionais que sairão na nota...">{{ saved_observacoes or '' }}</textarea>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-3 pt-3 border-t border-slate-800/60" id="cobrancaFields">
+                        <div class="md:col-span-4">
+                            <label class="block text-xs font-medium text-emerald-400 mb-1">Condição de Pagamento (pré-preenche parcelas)</label>
+                            <select id="condicaoPagamento" data-target-parcelas="numParcelasNfe" data-target-venc="primeiroVencNfe" data-target-intervalo="intervaloDiasNfe" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                                <option value="">-- Manual --</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Forma de Pagamento</label>
+                            <select name="forma_pagamento" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                                <option value="dinheiro" {% if saved_forma_pagamento == 'dinheiro' %}selected{% endif %}>Dinheiro</option>
+                                <option value="pix" {% if saved_forma_pagamento == 'pix' %}selected{% endif %}>PIX</option>
+                                <option value="boleto" {% if saved_forma_pagamento == 'boleto' %}selected{% endif %}>Boleto</option>
+                                <option value="cartao_credito" {% if saved_forma_pagamento == 'cartao_credito' %}selected{% endif %}>Cartão Crédito</option>
+                                <option value="cartao_debito" {% if saved_forma_pagamento == 'cartao_debito' %}selected{% endif %}>Cartão Débito</option>
+                                <option value="transferencia" {% if saved_forma_pagamento == 'transferencia' %}selected{% endif %}>Transferência</option>
+                                <option value="outro" {% if saved_forma_pagamento == 'outro' %}selected{% endif %}>Outro</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Nº de Parcelas</label>
+                            <input type="number" min="1" max="60" value="1" name="num_parcelas" id="numParcelasNfe" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">1º Vencimento</label>
+                            <input type="date" name="primeiro_vencimento" id="primeiroVencNfe" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Intervalo (dias)</label>
+                            <input type="number" min="1" max="365" value="30" name="intervalo_dias" id="intervaloDiasNfe" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                        </div>
+                        <div class="md:col-span-4 hidden" id="previewParcelasNfe">
+                            <div class="text-sm text-slate-300 bg-slate-900/50 border border-slate-800/60 rounded-xl p-3" id="previewParcelasNfeBody"></div>
+                        </div>
+                        <p class="md:col-span-4 text-xs text-slate-500 -mt-1">Parcelas valem quando "Gerar Cobrança" estiver marcado. Se a forma for <span class="text-cyan-400">Boleto</span>, todos os boletos das parcelas serão emitidos automaticamente no Sicoob.</p>
+                    </div>
+
                     <div class="flex items-center justify-between pt-3">
                         <label class="flex items-center gap-2 text-emerald-300 cursor-pointer">
-                            <input type="checkbox" name="gerar_cobranca" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded">
+                            <input type="checkbox" name="gerar_cobranca" id="gerarCobrancaChk" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded">
                             <span class="text-sm">Gerar Cobrança</span>
                         </label>
                         <div class="flex justify-end">
@@ -552,5 +594,44 @@ document.addEventListener('DOMContentLoaded', function() {
         });
     }
 });
+</script>
+<script>
+(function() {
+    const numEl = document.getElementById('numParcelasNfe');
+    const vencEl = document.getElementById('primeiroVencNfe');
+    const intEl = document.getElementById('intervaloDiasNfe');
+    const box = document.getElementById('previewParcelasNfe');
+    const body = document.getElementById('previewParcelasNfeBody');
+    if (!numEl) return;
+    function totalAtual() {
+        const el = document.getElementById('subtotal');
+        // usa o total exibido no resumo (após desconto se houver campo total)
+        const totEl = document.getElementById('total');
+        const txt = (totEl || el) ? (totEl || el).textContent : '0';
+        return parseFloat(txt.replace(/\./g, '').replace(',', '.')) || parseFloat(txt) || 0;
+    }
+    function fmt(v) { return v.toLocaleString('pt-BR', {style: 'currency', currency: 'BRL'}); }
+    function atualizar() {
+        const total = totalAtual();
+        const n = Math.max(1, parseInt(numEl.value) || 1);
+        const intervalo = Math.max(1, parseInt(intEl.value) || 30);
+        if (n <= 1 || total <= 0) { box.classList.add('hidden'); return; }
+        const base = Math.floor((total / n) * 100) / 100;
+        const ultima = Math.round((total - base * (n - 1)) * 100) / 100;
+        let dataBase = vencEl.value ? new Date(vencEl.value + 'T00:00:00') : new Date();
+        let html = '';
+        for (let i = 1; i <= n; i++) {
+            const d = new Date(dataBase);
+            d.setDate(d.getDate() + intervalo * (i - 1));
+            html += '<div class="flex justify-between py-0.5"><span>Parcela ' + i + '/' + n +
+                    ' — venc. ' + d.toLocaleDateString('pt-BR') + '</span><span class="text-emerald-400">' + fmt(i === n ? ultima : base) + '</span></div>';
+        }
+        body.innerHTML = html;
+        box.classList.remove('hidden');
+    }
+    numEl.addEventListener('input', atualizar);
+    vencEl.addEventListener('change', atualizar);
+    intEl.addEventListener('input', atualizar);
+})();
 </script>
 {% endblock %}

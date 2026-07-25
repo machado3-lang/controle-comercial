@@ -241,12 +241,22 @@ class ContaReceber(Base):
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     consolidacao_id = Column(Integer, ForeignKey("pedidos_consolidados.id"), nullable=True, index=True)
+    # Parcelamento: numero da parcela (1..N), total de parcelas do faturamento
+    # e um identificador (UUID) que agrupa todas as parcelas geradas juntas.
+    numero_parcela = Column(Integer, nullable=True, default=1)
+    total_parcelas = Column(Integer, nullable=True, default=1)
+    parcelamento_grupo = Column(String(36), nullable=True, index=True)
+    # Vinculos com o documento de origem do faturamento
+    pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
+    nfe_id = Column(Integer, ForeignKey("nfe.id"), nullable=True, index=True)
 
     cliente = relationship("Cliente", back_populates="contas_receber")
     tipo_documento = relationship("TipoDocumento", back_populates="contas_receber")
     plano_conta = relationship("PlanoDeContas", back_populates="contas_receber")
     nfse = relationship("NFSe", back_populates="contas_receber")
     consolidacao = relationship("PedidoConsolidado", back_populates="contas_receber")
+    pedido = relationship("PedidoVenda", foreign_keys=[pedido_id])
+    nfe = relationship("NFe", foreign_keys=[nfe_id])
 
 
 class Assinatura(Base):
@@ -688,6 +698,18 @@ class TipoDocumento(Base):
 
     contas_pagar = relationship("ContaPagar", back_populates="tipo_documento")
     contas_receber = relationship("ContaReceber", back_populates="tipo_documento")
+
+
+class CondicaoPagamento(Base):
+    __tablename__ = "condicoes_pagamento"
+
+    id = Column(Integer, primary_key=True, index=True)
+    nome = Column(String(100), nullable=False, unique=True)
+    num_parcelas = Column(Integer, nullable=False, default=1)
+    intervalo_dias = Column(Integer, nullable=False, default=30)
+    primeiro_vencimento = Column(Integer, nullable=False, default=0)
+    ativo = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
 
 
 class PlanoDeContas(Base):

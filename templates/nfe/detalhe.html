@@ -115,9 +115,27 @@
             {% elif nfe.status == 'issued' %}
             {% endif %}
             {% if not cobranca and nfe.status in ('rascunho', 'issued') %}
-            <form method="post" action="/nfe/{{ nfe.id }}/gerar-cobranca" class="inline">
+            <form method="post" action="/nfe/{{ nfe.id }}/gerar-cobranca" class="inline-flex items-end gap-2 flex-wrap">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" class="flex items-center px-3 py-2 text-sm text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition">
+    <div>
+                    <label class="block text-[10px] font-medium text-emerald-400 mb-0.5">Condição</label>
+                    <select id="condicaoPagamento" data-target-parcelas="numParcelasNfeDet" data-target-venc="primeiroVencNfeDet" data-target-intervalo="intervaloDiasNfeDet" class="px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
+                        <option value="">-- Manual --</option>
+                    </select>
+                </div>
+    <div>
+                    <label class="block text-[10px] font-medium text-amber-400 mb-0.5">Parcelas</label>
+                    <input type="number" min="1" max="60" value="1" name="num_parcelas" id="numParcelasNfeDet" class="w-20 px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-medium text-amber-400 mb-0.5">1º Venc.</label>
+                    <input type="date" name="primeiro_vencimento" id="primeiroVencNfeDet" value="{{ nfe.data_emissao.strftime('%Y-%m-%d') if nfe.data_emissao else '' }}" class="px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
+                </div>
+                <div>
+                    <label class="block text-[10px] font-medium text-amber-400 mb-0.5">Intervalo</label>
+                    <input type="number" min="1" max="365" value="30" name="intervalo_dias" id="intervaloDiasNfeDet" class="w-20 px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
+                </div>
+                <button type="submit" class="flex items-center px-3 py-2 text-sm text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition">
                     <i data-lucide="banknote" class="w-4 h-4 me-1"></i> Gerar Cobrança
                 </button>
             </form>

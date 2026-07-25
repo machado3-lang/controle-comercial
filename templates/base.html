@@ -64,6 +64,7 @@
                           <a href="/contas/dre" class="block px-4 py-2 text-yellow-400 hover:bg-white/5 rounded-md transition"><i data-lucide="bar-chart-3" class="w-4 h-4 inline me-1"></i> DRE</a>
                           <div class="border-t border-white/10 my-1"></div>
                           <a href="/tipos-documento" class="block px-4 py-2 text-slate-300 hover:bg-white/5 rounded-md transition"><i data-lucide="file-text" class="w-4 h-4 inline me-1"></i> Tipos Documento</a>
+                          <a href="/condicoes-pagamento" class="block px-4 py-2 text-slate-300 hover:bg-white/5 rounded-md transition"><i data-lucide="calendar-clock" class="w-4 h-4 inline me-1"></i> Condições Pagamento</a>
                           <a href="/plano-contas" class="block px-4 py-2 text-slate-300 hover:bg-white/5 rounded-md transition"><i data-lucide="book" class="w-4 h-4 inline me-1"></i> Plano de Contas</a>
                           <a href="/sicoob/boletos" class="block px-4 py-2 text-amber-400 hover:bg-white/5 rounded-md transition"><i data-lucide="file-text" class="w-4 h-4 inline me-1"></i> Boletos Sicoob</a>
                       </div>
@@ -129,6 +130,7 @@
             <a class="block py-2 text-rose-400 ps-4" href="/contas/inadimplencia">Inadimplência</a>
             <a class="block py-2 text-yellow-400 ps-4" href="/contas/dre">DRE</a>
             <a class="block py-2 text-slate-300 ps-4" href="/tipos-documento">Tipos Documento</a>
+            <a class="block py-2 text-slate-300 ps-4" href="/condicoes-pagamento">Condições Pagamento</a>
             <a class="block py-2 text-slate-300 ps-4" href="/plano-contas">Plano de Contas</a>
             <a class="block py-2 text-amber-400 ps-4" href="/sicoob/boletos">Boletos Sicoob</a>
             <a class="block py-2 text-cyan-400" href="/pedidos">Pedidos</a>
@@ -315,6 +317,27 @@
     })();
     </script>
 <script src="/static/js/scripts.js?v=20260720"></script>
+<script>
+(function(){
+  const sel=document.getElementById('condicaoPagamento');
+  if(!sel)return;
+  fetch('/condicoes-pagamento/ativas/json').then(r=>r.json()).then(condicoes=>{
+    condicoes.forEach(c=>{
+      const o=document.createElement('option');o.value=c.id;o.textContent=c.nome;
+      o.dataset.p=c.num_parcelas;o.dataset.v=c.primeiro_vencimento;o.dataset.i=c.intervalo_dias;
+      sel.appendChild(o);
+    });
+  });
+  sel.addEventListener('change',function(){
+    const opt=this.selectedOptions[0];
+    if(!opt||!opt.dataset.p)return;
+    document.getElementById(this.dataset.targetParcelas).value=opt.dataset.p;
+    document.getElementById(this.dataset.targetIntervalo).value=opt.dataset.i;
+    const d=new Date();d.setDate(d.getDate()+parseInt(opt.dataset.v||0));
+    document.getElementById(this.dataset.targetVenc).value=d.toISOString().slice(0,10);
+  });
+})();
+</script>
 {% block scripts %}{% endblock %}
 {% block modals %}{% endblock %}
 </body>

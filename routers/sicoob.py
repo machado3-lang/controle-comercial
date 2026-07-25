@@ -183,7 +183,7 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
         "dataEmissao": data_emissao,
         "codigoModalidade": 1,
         "codigoEspecieDocumento": "DM",
-        "numeroParcela": 1,
+        "numeroParcela": int(conta.numero_parcela or 1),
         "tipoDesconto": 0,
         "tipoMulta": 0,
         "tipoJurosMora": 0,

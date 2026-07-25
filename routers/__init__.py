@@ -2,7 +2,7 @@ from fastapi import APIRouter
 
 from . import auth, clientes, fornecedores, produtos, ordens_servico, pedidos, assinaturas
 from . import contas, configuracoes, bling, sicoob, nfe, nfse, planocontas, tipos_documento
-from . import consolidacoes
+from . import consolidacoes, condicoes_pagamento
 
 router = APIRouter()
 
@@ -21,4 +21,5 @@ router.include_router(nfe.router)
 router.include_router(nfse.router)
 router.include_router(planocontas.router)
 router.include_router(tipos_documento.router)
+router.include_router(condicoes_pagamento.router)
 router.include_router(consolidacoes.router)

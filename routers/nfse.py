@@ -203,6 +203,10 @@ def emitir_avulsa_salvar(
     gerar_cobranca: bool = Form(True),
     desconto: float = Form(0.0),
     observacoes: str = Form(""),
+    forma_pagamento: str = Form(""),
+    num_parcelas: int = Form(1),
+    primeiro_vencimento: str = Form(""),
+    intervalo_dias: int = Form(30),
 ):
     empresa = db.query(Empresa).first()
     if not empresa:
@@ -274,22 +278,35 @@ def emitir_avulsa_salvar(
 
     db.commit()
 
-    # Gera cobranÃ§a automaticamente (se solicitado)
+    # Gera cobranÃ§a automaticamente (se solicitado) â€” com suporte a parcelamento
     if gerar_cobranca:
         try:
-            cobranca = ContaReceber(
+            from services.parcelamento import gerar_contas_receber, emitir_boletos_contas
+            try:
+                venc = datetime.strptime(primeiro_vencimento, '%Y-%m-%d').date() if primeiro_vencimento else (
+                    datetime.strptime(data_competencia, '%Y-%m-%d').date() if data_competencia else date.today())
+            except ValueError:
+                venc = date.today()
+            contas_geradas = gerar_contas_receber(
+                db,
                 cliente_id=cliente_id,
                 descricao=f"NFSe Avulsa #{nfse.numero}",
-                valor=valor_total,
-                data_vencimento=datetime.strptime(data_competencia, '%Y-%m-%d').date() if data_competencia else date.today(),
-                forma_pagamento="NFSe",
+                valor_total=valor_total,
+                primeiro_vencimento=venc,
+                num_parcelas=num_parcelas,
+                intervalo_dias=intervalo_dias,
+                forma_pagamento=forma_pagamento or "NFSe",
                 observacao=f"Gerado automaticamente da NFSe #{nfse.id}",
                 nfse_id=nfse.id,
             )
-            db.add(cobranca)
             db.commit()
+            # EmissÃ£o imediata de TODOS os boletos das parcelas (Sicoob)
+            if contas_geradas and forma_pagamento == "boleto":
+                ok, erros = emitir_boletos_contas(db, contas_geradas)
+                if erros:
+                    request.session["error"] = f"{ok} boleto(s) emitido(s), com erro(s): " + "; ".join(erros)
         except Exception:
-            pass
+            logger.exception("Erro ao gerar cobranca da NFSe avulsa %s", nfse.id)
 
     request.session["message"] = f"Rascunho NFSe #{nfse.numero} salvo com sucesso!"
     return RedirectResponse(url="/nfse", status_code=303)
@@ -309,7 +326,10 @@ def pagina_emitir(request: Request, pedido_id: int, db: Session = Depends(get_db
 
 
 @router.post("/emitir/{pedido_id}")
-def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db)):
+def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
+                num_parcelas: int = Form(1),
+                primeiro_vencimento: str = Form(""),
+                intervalo_dias: int = Form(30)):
     pedido = db.query(PedidoVenda).options(
         selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.produto)
     ).filter(PedidoVenda.id == pedido_id).first()
@@ -398,21 +418,29 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db))
         except Exception:
             pass
 
-        # Gera cobranÃ§a automaticamente
+        # Gera cobranÃ§a automaticamente â€” com suporte a parcelamento
         try:
-            cobranca = ContaReceber(
+            from services.parcelamento import gerar_contas_receber
+            try:
+                venc = datetime.strptime(primeiro_vencimento, '%Y-%m-%d').date() if primeiro_vencimento else (pedido.data or date.today())
+            except ValueError:
+                venc = pedido.data or date.today()
+            gerar_contas_receber(
+                db,
                 cliente_id=pedido.cliente_id,
                 descricao=f"NFSe Pedido #{pedido.numero or pedido.id}",
-                valor=valor_total,
-                data_vencimento=pedido.data,
+                valor_total=valor_total,
+                primeiro_vencimento=venc,
+                num_parcelas=num_parcelas,
+                intervalo_dias=intervalo_dias,
                 forma_pagamento="NFSe",
                 observacao=f"Gerado automaticamente da NFSe #{nfse.id} (Pedido #{pedido.id})",
                 nfse_id=nfse.id,
+                pedido_id=pedido.id,
             )
-            db.add(cobranca)
             db.commit()
         except Exception:
-            pass
+            logger.exception("Erro ao gerar cobranca da NFSe %s", nfse.id)
 
         resp = {
             "success": True,
@@ -1037,7 +1065,10 @@ def baixar_xml_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
 
 
 @router.post("/{nfse_id}/gerar-cobranca")
-def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
+def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db),
+                        num_parcelas: int = Form(1),
+                        primeiro_vencimento: str = Form(""),
+                        intervalo_dias: int = Form(30)):
     nfse = db.query(NFSe).options(
         selectinload(NFSe.pedido),
     ).filter(NFSe.id == nfse_id).first()
@@ -1045,6 +1076,7 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
 
     cobranca_existente = db.query(ContaReceber).filter(
+        (ContaReceber.nfse_id == nfse.id) |
         ContaReceber.observacao.like(f"%NFSe #{nfse.id}%")
     ).first()
     if cobranca_existente:
@@ -1054,23 +1086,34 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
     cliente_id = None
     if nfse.pedido:
         cliente_id = nfse.pedido.cliente_id
+    # Fallback: NFSe de OS/avulsa nÃ£o tem pedido — usa o cliente da prÃ³pria NFSe
+    if not cliente_id:
+        cliente_id = nfse.cliente_id
 
     if not cliente_id:
         request.session["error"] = "NÃ£o foi possÃ­vel identificar o cliente para gerar cobranÃ§a"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
-    cobranca = ContaReceber(
+    from services.parcelamento import gerar_contas_receber
+    try:
+        venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else date.today()
+    except ValueError:
+        venc = date.today()
+    contas = gerar_contas_receber(
+        db,
         cliente_id=cliente_id,
         descricao=f"NFSe #{nfse.numero or nfse.id}",
-        valor=nfse.valor_total or 0,
-        data_vencimento=date.today(),
+        valor_total=nfse.valor_total or 0,
+        primeiro_vencimento=venc,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
         forma_pagamento="NFSe",
         observacao=f"Gerado manualmente da NFSe #{nfse.id}",
         nfse_id=nfse.id,
+        pedido_id=nfse.pedido_id,
     )
-    db.add(cobranca)
     db.commit()
-    request.session["message"] = f"CobranÃ§a gerada com sucesso para NFSe #{nfse.numero}!"
+    request.session["message"] = f"{len(contas)} cobranÃ§a(s) gerada(s) com sucesso para NFSe #{nfse.numero}!"
     return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
 
