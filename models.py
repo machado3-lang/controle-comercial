@@ -27,7 +27,10 @@ class NFeDistribuida(Base):
     nsu = Column(String(20), nullable=True)
     schema_nfe = Column(String(50), nullable=True)
     xml = Column(Text, nullable=True)
+    fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
+
+    fornecedor = relationship("Fornecedor")
 
 
 def get_safe_day(date_obj, target_day: int) -> date:

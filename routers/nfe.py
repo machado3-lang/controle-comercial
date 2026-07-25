@@ -336,6 +336,97 @@ def listar_nfe_recebidas(
     )
 
 
+@router.post("/recebidas/importar-xml")
+def importar_nfe_recebida_xml(request: Request, db: Session = Depends(get_db), xml_file: UploadFile = File(...)):
+    """Importa um XML de NF-e de compra (somos destinatário) para a seção de recebidas."""
+    from services.nfe_distribuicao import NFeDistribuicaoService
+    empresa = db.query(Empresa).first()
+    if not empresa:
+        request.session["error"] = "Empresa não configurada"
+        return RedirectResponse(url="/nfe/recebidas", status_code=303)
+    try:
+        xml_str = xml_file.file.read().decode('utf-8')
+        service = NFeDistribuicaoService(empresa, db=db)
+        resultado = service.importar_xml(xml_str)
+        request.session["message"] = f"NFe {resultado.get('numero')} importada como recebida."
+    except Exception as e:
+        request.session["error"] = f"Erro ao importar XML: {str(e)[:200]}"
+    return RedirectResponse(url="/nfe/recebidas", status_code=303)
+
+
+def _resolver_fornecedor_nfe_recebida(db, nfe_dist):
+    """Retorna o Fornecedor vinculado à NFe recebida, criando-o a partir do emitente se necessário."""
+    from models import Fornecedor
+    empresa = db.query(Empresa).first()
+    cnpj_empresa = re.sub(r'\D', '', empresa.cnpj) if empresa and empresa.cnpj else ''
+    cnpj_emit = re.sub(r'\D', '', nfe_dist.emitente_cnpj or '')
+    if not cnpj_emit or cnpj_emit == cnpj_empresa:
+        return None
+    fornecedor = db.query(Fornecedor).filter(Fornecedor.cpf_cnpj == nfe_dist.emitente_cnpj).first()
+    if not fornecedor:
+        fornecedor = Fornecedor(nome=nfe_dist.emitente_nome or 'Fornecedor', cpf_cnpj=nfe_dist.emitente_cnpj)
+        db.add(fornecedor)
+        db.flush()
+    return fornecedor
+
+
+@router.post("/recebidas/{nfe_id}/vincular-fornecedor")
+def vincular_fornecedor_nfe_recebida(request: Request, nfe_id: int, db: Session = Depends(get_db)):
+    from models import NFeDistribuida
+    n = db.query(NFeDistribuida).filter(NFeDistribuida.id == nfe_id).first()
+    if not n:
+        request.session["error"] = "NFe recebida não encontrada"
+        return RedirectResponse(url="/nfe/recebidas", status_code=303)
+    fornecedor = _resolver_fornecedor_nfe_recebida(db, n)
+    if not fornecedor:
+        request.session["error"] = "Não foi possível vincular fornecedor (emitente sem CNPJ ou é a própria empresa)."
+        return RedirectResponse(url="/nfe/recebidas", status_code=303)
+    n.fornecedor_id = fornecedor.id
+    db.commit()
+    request.session["message"] = f"Fornecedor '{fornecedor.nome}' vinculado à NFe."
+    return RedirectResponse(url="/nfe/recebidas", status_code=303)
+
+
+@router.post("/recebidas/{nfe_id}/gerar-conta")
+def gerar_conta_nfe_recebida(request: Request, nfe_id: int, db: Session = Depends(get_db)):
+    from models import NFeDistribuida, ContaPagar, StatusConta
+    n = db.query(NFeDistribuida).filter(NFeDistribuida.id == nfe_id).first()
+    if not n:
+        request.session["error"] = "NFe recebida não encontrada"
+        return RedirectResponse(url="/nfe/recebidas", status_code=303)
+    fornecedor = _resolver_fornecedor_nfe_recebida(db, n)
+    if not fornecedor:
+        request.session["error"] = "Vincule um fornecedor antes de gerar a conta a pagar."
+        return RedirectResponse(url="/nfe/recebidas", status_code=303)
+    n.fornecedor_id = fornecedor.id
+    descricao = f"NFe {n.numero} - {n.emitente_nome or ''}".strip()
+    existente = db.query(ContaPagar).filter(
+        ContaPagar.descricao == descricao,
+        ContaPagar.fornecedor_id == fornecedor.id,
+        ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]),
+    ).first()
+    if existente:
+        request.session["error"] = "Já existe conta a pagar para esta NFe."
+        db.commit()
+        return RedirectResponse(url="/nfe/recebidas", status_code=303)
+    try:
+        venc = datetime.strptime(n.dh_emi[:10], '%Y-%m-%d').date() if n.dh_emi else date.today()
+    except Exception:
+        venc = date.today()
+    conta = ContaPagar(
+        fornecedor_id=fornecedor.id,
+        descricao=descricao,
+        valor=n.valor or 0,
+        data_vencimento=venc,
+        numero_documento=n.numero,
+        status=StatusConta.PENDENTE,
+    )
+    db.add(conta)
+    db.commit()
+    request.session["message"] = "Conta a pagar criada com sucesso!"
+    return RedirectResponse(url="/nfe/recebidas", status_code=303)
+
+
 @router.get("/config")
 def config_nfe(request: Request, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()

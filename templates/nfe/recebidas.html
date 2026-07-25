@@ -23,6 +23,11 @@
             <input type="text" name="chave_acesso" placeholder="Chave (44 díg.)" maxlength="44" required class="h-9 text-xs px-2 py-1 bg-slate-900/60 border border-slate-700/80 rounded-xl text-slate-100 w-44" pattern="[0-9]{44}" title="Digite os 44 dígitos da chave de acesso">
             <button type="submit" class="flex items-center h-9 px-3 text-xs bg-gradient-to-r from-emerald-500 to-green-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10"><i data-lucide="key" class="w-3.5 h-3.5 me-1"></i> Por Chave</button>
         </form>
+        <form action="/nfe/recebidas/importar-xml" method="post" enctype="multipart/form-data" class="flex items-center gap-1" title="Importar XML de NF-e de compra (somos destinatário)">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="file" name="xml_file" accept=".xml" required class="h-9 text-xs w-48 text-slate-300 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-xs file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600">
+            <button type="submit" class="flex items-center h-9 px-3 text-xs bg-gradient-to-r from-cyan-500 to-indigo-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="upload" class="w-3.5 h-3.5 me-1"></i> XML</button>
+        </form>
         <a href="/nfe" class="flex items-center h-9 px-3 text-sm bg-slate-800 border border-white/10 rounded-xl text-cyan-400 transition hover:bg-slate-700/50">
             <i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar
         </a>
@@ -50,6 +55,7 @@
                     <th class="px-4 py-3 text-right text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('valor', 'Valor', 'right') }}</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">{{ sort_link('dhEmi', 'Emissão') }}</th>
                     <th class="px-4 py-3 text-center text-xs font-semibold text-indigo-400 uppercase">Arquivos</th>
+                    <th class="px-4 py-3 text-center text-xs font-semibold text-indigo-400 uppercase">Ações</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-800/60">
@@ -58,6 +64,7 @@
                     <td class="px-4 py-3 text-sm text-amber-300 max-w-[280px] truncate" title="{{ n.emitente_nome or '' }}">
                         {{ n.emitente_nome or '-' }}
                         <span class="text-xs text-slate-500 block">{{ n.emitente_cnpj or '' }}</span>
+                        {% if n.fornecedor %}<span class="mt-1 inline-block px-1.5 py-0.5 text-[10px] font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded-full">Fornec. vinculado</span>{% endif %}
                     </td>
                     <td class="px-4 py-3 text-sm text-slate-100">{{ n.numero or '-' }}</td>
                     <td class="px-4 py-3 text-sm text-emerald-400 text-right">R$ {{ '%.2f'|format(n.valor or 0) }}</td>
@@ -72,9 +79,21 @@
                             {% endif %}
                         </div>
                     </td>
+                    <td class="px-4 py-3 text-center">
+                        <div class="flex items-center justify-center gap-1">
+                            <form action="/nfe/recebidas/{{ n.id }}/vincular-fornecedor" method="post" class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Vincular Fornecedor"><i data-lucide="link" class="w-4 h-4"></i></button>
+                            </form>
+                            <form action="/nfe/recebidas/{{ n.id }}/gerar-conta" method="post" class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Gerar Conta a Pagar"><i data-lucide="banknote" class="w-4 h-4"></i></button>
+                            </form>
+                        </div>
+                    </td>
                 </tr>
                 {% else %}
-                <tr><td colspan="5" class="px-4 py-12 text-center text-slate-500">Nenhuma NFe recebida encontrada</td></tr>
+                <tr><td colspan="6" class="px-4 py-12 text-center text-slate-500">Nenhuma NFe recebida encontrada</td></tr>
                 {% endfor %}
             </tbody>
         </table>
