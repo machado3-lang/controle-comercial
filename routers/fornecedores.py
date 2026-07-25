@@ -116,6 +116,7 @@ def criar_fornecedor(
     data_sincronizacao: str = Form(""),
     confirmar_duplicado: str = Form(""),
     tambem_cliente: str = Form(""),
+    next: str = Form(""),
 ):
     # Checagem de CPF/CNPJ duplicado (permite cadastro só após confirmação)
     import re
@@ -169,6 +170,9 @@ def criar_fornecedor(
     db.commit()
     if tambem_cliente == "1":
         upsert_cliente_de_fornecedor(db, fornecedor)
+    # Redireciona para a origem (ex.: NF-e recebida) quando informado
+    if next and next.startswith("/") and not next.startswith("//"):
+        return RedirectResponse(url=next, status_code=303)
     return RedirectResponse(url="/fornecedores", status_code=303)
 
 

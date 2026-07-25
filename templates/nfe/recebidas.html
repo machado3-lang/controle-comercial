@@ -118,8 +118,20 @@
 
                     <div id="gcAvisoExistente" class="hidden mb-3 px-3 py-2 rounded-lg bg-amber-950/40 border border-amber-800/50 text-amber-300 text-xs"><i data-lucide="alert-triangle" class="w-4 h-4 inline me-1"></i> Já existe conta a pagar pendente para esta NFe. Gerar novamente pode duplicar lançamentos.</div>
 
+                    <div id="gcNaoCadastrado" class="hidden mb-3 px-4 py-3 rounded-xl bg-rose-950/40 border border-rose-800/50 text-rose-200 text-sm">
+                        <div class="flex items-start gap-2">
+                            <i data-lucide="user-x" class="w-5 h-5 mt-0.5 flex-shrink-0"></i>
+                            <div class="flex-1">
+                                <p class="font-medium mb-1">Fornecedor ainda não cadastrado</p>
+                                <p class="text-xs text-rose-300/80 mb-3">O emitente <span id="gcEmitenteNome" class="font-semibold"></span> não está no cadastro de fornecedores. Cadastre-o primeiro (os dados da nota já vão pré-preenchidos) para gerar a conta a pagar.</p>
+                                <a id="gcBtnCadastrar" href="#" class="inline-flex items-center h-9 px-3 text-xs bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-rose-500/10"><i data-lucide="user-plus" class="w-4 h-4 me-1"></i> Cadastrar Fornecedor</a>
+                            </div>
+                        </div>
+                    </div>
+
                     <div id="gcOrigem" class="mb-3 text-xs"></div>
 
+                    <div id="gcParcelasSection">
                     <!-- Controles de divisão manual (quando sem duplicatas no XML) -->
                     <div id="gcDivisor" class="hidden mb-3 flex flex-wrap items-end gap-2 p-3 bg-slate-950/40 border border-slate-800/60 rounded-xl">
                         <div>
@@ -155,6 +167,7 @@
                             <strong id="gcSoma" class="text-emerald-400 ms-1">R$ 0,00</strong>
                             <span id="gcDiff" class="ms-2 text-xs"></span>
                         </div>
+                    </div>
                     </div>
                 </div>
             </div>
@@ -278,24 +291,50 @@ function abrirGerarConta(nfeId) {
             const content = document.getElementById('gcContent');
             content.dataset.total = d.valor_total;
             content.dataset.jaExiste = d.ja_existe_conta ? '1' : '';
-            document.getElementById('gcFornecedor').textContent = d.fornecedor_vinculado ? d.fornecedor_nome : '(não vinculado)';
+            content.dataset.cadastrado = d.fornecedor_cadastrado ? '1' : '';
+            document.getElementById('gcFornecedor').textContent = d.fornecedor_cadastrado ? d.fornecedor_nome : '(não cadastrado)';
             document.getElementById('gcNumero').textContent = d.numero || '-';
             document.getElementById('gcValorTotal').textContent = gcFmtMoney(d.valor_total);
             document.getElementById('gcAvisoExistente').classList.toggle('hidden', !d.ja_existe_conta);
             document.getElementById('gcPrimeiroVenc').value = d.emissao;
 
+            const naoCad = document.getElementById('gcNaoCadastrado');
+            const parcelasSection = document.getElementById('gcParcelasSection');
+            const submitBtn = document.getElementById('gcSubmit');
             const origem = document.getElementById('gcOrigem');
             const divisor = document.getElementById('gcDivisor');
-            if (d.tem_duplicatas) {
-                origem.innerHTML = '<span class="px-2 py-0.5 rounded-full bg-emerald-950/50 text-emerald-400 border border-emerald-800/50">' + d.duplicatas.length + ' duplicata(s) lida(s) do XML</span>';
-                divisor.classList.add('hidden');
-                d.duplicatas.forEach(function(dup) { gcAddRow(dup.numero, dup.vencimento, dup.valor); });
+
+            if (!d.fornecedor_cadastrado) {
+                // Fornecedor precisa ser cadastrado antes de gerar a conta
+                document.getElementById('gcEmitenteNome').textContent = d.emitente || '';
+                const btn = document.getElementById('gcBtnCadastrar');
+                if (d.cadastro_url) {
+                    btn.href = d.cadastro_url;
+                    btn.classList.remove('hidden');
+                } else {
+                    // Emitente inválido (sem CNPJ ou é a própria empresa)
+                    btn.classList.add('hidden');
+                }
+                naoCad.classList.remove('hidden');
+                origem.classList.add('hidden');
+                parcelasSection.classList.add('hidden');
+                submitBtn.classList.add('hidden');
             } else {
-                origem.innerHTML = '<span class="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">XML sem duplicatas discriminadas — informe as parcelas manualmente</span>';
-                divisor.classList.remove('hidden');
-                gcAddRow(1, d.emissao, d.valor_total);
+                naoCad.classList.add('hidden');
+                origem.classList.remove('hidden');
+                parcelasSection.classList.remove('hidden');
+                submitBtn.classList.remove('hidden');
+                if (d.tem_duplicatas) {
+                    origem.innerHTML = '<span class="px-2 py-0.5 rounded-full bg-emerald-950/50 text-emerald-400 border border-emerald-800/50">' + d.duplicatas.length + ' duplicata(s) lida(s) do XML</span>';
+                    divisor.classList.add('hidden');
+                    d.duplicatas.forEach(function(dup) { gcAddRow(dup.numero, dup.vencimento, dup.valor); });
+                } else {
+                    origem.innerHTML = '<span class="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">XML sem duplicatas discriminadas — informe as parcelas manualmente</span>';
+                    divisor.classList.remove('hidden');
+                    gcAddRow(1, d.emissao, d.valor_total);
+                }
+                gcAtualizarSoma();
             }
-            gcAtualizarSoma();
             document.getElementById('gcLoading').classList.add('hidden');
             content.classList.remove('hidden');
             if (window.lucide) lucide.createIcons();

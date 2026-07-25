@@ -418,3 +418,59 @@ def extrair_duplicatas_nfe(xml: str) -> list:
         d["numero"],
     ))
     return duplicatas
+
+
+def extrair_emitente_nfe(xml: str) -> dict:
+    """Extrai os dados cadastrais do emitente do XML da NF-e.
+
+    Retorna dict com chaves ja mapeadas para o cadastro de fornecedor:
+    nome, fantasia, cpf_cnpj, tipo_pessoa, inscricao_estadual,
+    inscricao_municipal, email, telefone, endereco, numero, complemento,
+    bairro, cidade, estado, cep. Campos ausentes vem como "".
+    """
+    dados = {
+        "nome": "", "fantasia": "", "cpf_cnpj": "", "tipo_pessoa": "",
+        "inscricao_estadual": "", "inscricao_municipal": "", "email": "",
+        "telefone": "", "endereco": "", "numero": "", "complemento": "",
+        "bairro": "", "cidade": "", "estado": "", "cep": "",
+    }
+    if not xml:
+        return dados
+
+    emit = re.search(r'<[^:>]*:?emit>(.*?)</[^:>]*:?emit>', xml, re.DOTALL)
+    if not emit:
+        return dados
+    bloco = emit.group(1)
+
+    def _tag(nome, texto):
+        m = re.search(r'<[^:>]*:?' + nome + r'[^>]*>([^<]+)</', texto)
+        return m.group(1).strip() if m else ""
+
+    dados["nome"] = _tag("xNome", bloco)
+    dados["fantasia"] = _tag("xFant", bloco)
+    cnpj = _tag("CNPJ", bloco)
+    cpf = _tag("CPF", bloco)
+    if cnpj:
+        dados["cpf_cnpj"] = cnpj
+        dados["tipo_pessoa"] = "juridica"
+    elif cpf:
+        dados["cpf_cnpj"] = cpf
+        dados["tipo_pessoa"] = "fisica"
+    ie = _tag("IE", bloco)
+    dados["inscricao_estadual"] = "" if ie.upper() == "ISENTO" else ie
+    dados["inscricao_municipal"] = _tag("IM", bloco)
+    dados["email"] = _tag("email", bloco)
+
+    ender = re.search(r'<[^:>]*:?enderEmit>(.*?)</[^:>]*:?enderEmit>', bloco, re.DOTALL)
+    if ender:
+        eb = ender.group(1)
+        dados["endereco"] = _tag("xLgr", eb)
+        dados["numero"] = _tag("nro", eb)
+        dados["complemento"] = _tag("xCpl", eb)
+        dados["bairro"] = _tag("xBairro", eb)
+        dados["cidade"] = _tag("xMun", eb)
+        dados["estado"] = _tag("UF", eb)
+        dados["cep"] = _tag("CEP", eb)
+        dados["telefone"] = _tag("fone", eb)
+
+    return dados

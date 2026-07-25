@@ -8,6 +8,7 @@
 <form method="post" id="fornecedorForm" class="grid grid-cols-1 lg:grid-cols-2 gap-6">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <input type="hidden" name="confirmar_duplicado" id="confirmarDuplicado" value="">
+    <input type="hidden" name="next" id="nextUrl" value="">
     {% if fornecedor %}<input type="hidden" name="fornecedor_id" id="fornecedorId" value="{{ fornecedor.id }}">{% endif %}
     <div class="glass-card p-4">
         <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="user" class="w-4 h-4 inline me-1"></i> Dados Cadastrais</h5>
@@ -174,6 +175,30 @@
 document.addEventListener('DOMContentLoaded', function() {
     const form = document.getElementById('fornecedorForm');
     const meuId = form ? (form.querySelector('input[name="fornecedor_id"]')?.value || '') : '';
+
+    // Pré-preenchimento a partir da URL (ex.: cadastro vindo de uma NF-e recebida)
+    if (form && !meuId) {
+        const params = new URLSearchParams(window.location.search);
+        const campos = ['nome', 'fantasia', 'cpf_cnpj', 'tipo_pessoa', 'inscricao_estadual',
+            'inscricao_municipal', 'email', 'telefone', 'endereco', 'numero', 'complemento',
+            'bairro', 'cidade', 'estado', 'cep'];
+        let preencheu = false;
+        campos.forEach(function(nome) {
+            const val = params.get(nome);
+            if (val == null || val === '') return;
+            const el = form.querySelector('[name="' + nome + '"]');
+            if (el) { el.value = val; preencheu = true; }
+        });
+        const next = params.get('next');
+        if (next) document.getElementById('nextUrl').value = next;
+        if (preencheu) {
+            const banner = document.createElement('div');
+            banner.className = 'lg:col-span-2 px-4 py-2 rounded-xl bg-cyan-950/40 border border-cyan-800/50 text-cyan-200 text-sm';
+            banner.innerHTML = '<i data-lucide="info" class="w-4 h-4 inline me-1"></i> Dados importados da NF-e. Confira/complete e salve para vincular o fornecedor.';
+            form.insertBefore(banner, form.firstChild);
+            if (window.lucide) lucide.createIcons();
+        }
+    }
     if (form) {
         form.addEventListener('submit', function(e) {
             const docInput = form.querySelector('input[name="cpf_cnpj"]');

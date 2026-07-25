@@ -288,10 +288,22 @@ def listar_nfe_recebidas(
     data_inicio: str = Query(""), data_fim: str = Query(""),
     busca: str = Query(""), page: int = Query(1),
     ordenar: str = Query("dhEmi"), direcao: str = Query("desc"),
+    vincular: int = Query(0),
 ):
     """Lista as NFe recebidas (somos o destinatário) via SEFAZ, com filtros, ordenação e paginação."""
     from models import NFeDistribuida
     empresa = db.query(Empresa).first()
+
+    # Auto-vínculo após cadastrar o fornecedor a partir da NF-e (fluxo do cadastro)
+    if vincular:
+        nfe_vinc = db.query(NFeDistribuida).filter(NFeDistribuida.id == vincular).first()
+        if nfe_vinc:
+            fornecedor = _resolver_fornecedor_nfe_recebida(db, nfe_vinc)
+            if fornecedor:
+                nfe_vinc.fornecedor_id = fornecedor.id
+                db.commit()
+                request.session["message"] = f"Fornecedor '{fornecedor.nome}' cadastrado e vinculado à NFe {nfe_vinc.numero}."
+        return RedirectResponse(url="/nfe/recebidas", status_code=303)
     cnpj_clean = re.sub(r'\D', '', empresa.cnpj) if empresa and empresa.cnpj else ''
     todas = db.query(NFeDistribuida).all()
     recebidas = []
@@ -354,8 +366,13 @@ def importar_nfe_recebida_xml(request: Request, db: Session = Depends(get_db), x
     return RedirectResponse(url="/nfe/recebidas", status_code=303)
 
 
-def _resolver_fornecedor_nfe_recebida(db, nfe_dist):
-    """Retorna o Fornecedor vinculado à NFe recebida, criando-o a partir do emitente se necessário."""
+def _resolver_fornecedor_nfe_recebida(db, nfe_dist, criar=False):
+    """Busca o Fornecedor da NFe recebida pelo CNPJ do emitente.
+
+    Por padrao apenas BUSCA (nao cria). Se `criar=True` e o emitente for valido
+    mas ainda nao cadastrado, cria um registro minimo (uso legado/fallback).
+    Retorna o Fornecedor ou None.
+    """
     from models import Fornecedor
     empresa = db.query(Empresa).first()
     cnpj_empresa = re.sub(r'\D', '', empresa.cnpj) if empresa and empresa.cnpj else ''
@@ -363,11 +380,36 @@ def _resolver_fornecedor_nfe_recebida(db, nfe_dist):
     if not cnpj_emit or cnpj_emit == cnpj_empresa:
         return None
     fornecedor = db.query(Fornecedor).filter(Fornecedor.cpf_cnpj == nfe_dist.emitente_cnpj).first()
-    if not fornecedor:
+    if not fornecedor and criar:
         fornecedor = Fornecedor(nome=nfe_dist.emitente_nome or 'Fornecedor', cpf_cnpj=nfe_dist.emitente_cnpj)
         db.add(fornecedor)
         db.flush()
     return fornecedor
+
+
+def _emitente_valido_nfe_recebida(db, nfe_dist) -> bool:
+    """True quando o emitente tem CNPJ valido e nao e a propria empresa."""
+    empresa = db.query(Empresa).first()
+    cnpj_empresa = re.sub(r'\D', '', empresa.cnpj) if empresa and empresa.cnpj else ''
+    cnpj_emit = re.sub(r'\D', '', nfe_dist.emitente_cnpj or '')
+    return bool(cnpj_emit) and cnpj_emit != cnpj_empresa
+
+
+def _url_cadastro_fornecedor_nfe(nfe_dist) -> str:
+    """Monta a URL do cadastro de fornecedor pre-preenchido com dados do XML."""
+    from urllib.parse import urlencode
+    from services.nfe_distribuicao import extrair_emitente_nfe
+    dados = extrair_emitente_nfe(nfe_dist.xml) if nfe_dist.xml else {}
+    # Fallback para os campos ja persistidos quando o XML nao esta disponivel
+    if not dados.get("nome"):
+        dados["nome"] = nfe_dist.emitente_nome or ""
+    if not dados.get("cpf_cnpj"):
+        dados["cpf_cnpj"] = nfe_dist.emitente_cnpj or ""
+        if dados["cpf_cnpj"]:
+            dados["tipo_pessoa"] = "juridica" if len(re.sub(r'\D', '', dados["cpf_cnpj"])) > 11 else "fisica"
+    params = {k: v for k, v in dados.items() if v}
+    params["next"] = f"/nfe/recebidas?vincular={nfe_dist.id}"
+    return "/fornecedores/novo?" + urlencode(params)
 
 
 @router.post("/recebidas/{nfe_id}/vincular-fornecedor")
@@ -379,6 +421,12 @@ def vincular_fornecedor_nfe_recebida(request: Request, nfe_id: int, db: Session 
         return RedirectResponse(url="/nfe/recebidas", status_code=303)
     fornecedor = _resolver_fornecedor_nfe_recebida(db, n)
     if not fornecedor:
+        if _emitente_valido_nfe_recebida(db, n):
+            request.session["message"] = {
+                "tipo": "warning",
+                "texto": f"Fornecedor '{n.emitente_nome or ''}' ainda não cadastrado. Preencha e salve o cadastro para vincular à NFe.",
+            }
+            return RedirectResponse(url=_url_cadastro_fornecedor_nfe(n), status_code=303)
         request.session["error"] = "Não foi possível vincular fornecedor (emitente sem CNPJ ou é a própria empresa)."
         return RedirectResponse(url="/nfe/recebidas", status_code=303)
     n.fornecedor_id = fornecedor.id
@@ -432,8 +480,13 @@ def parcelas_info_nfe_recebida(request: Request, nfe_id: int, db: Session = Depe
         "emitente": n.emitente_nome or "",
         "valor_total": float(n.valor or 0),
         "emissao": emissao.isoformat(),
+        "fornecedor_cadastrado": fornecedor is not None,
         "fornecedor_vinculado": fornecedor is not None,
         "fornecedor_nome": fornecedor.nome if fornecedor else "",
+        "cadastro_url": None if fornecedor else (
+            _url_cadastro_fornecedor_nfe(n) if _emitente_valido_nfe_recebida(db, n) else None
+        ),
+        "emitente_invalido": fornecedor is None and not _emitente_valido_nfe_recebida(db, n),
         "ja_existe_conta": ja_existe,
         "tem_duplicatas": len(dup_json) > 0,
         "duplicatas": dup_json,
@@ -460,7 +513,13 @@ def gerar_conta_nfe_recebida(
         return RedirectResponse(url="/nfe/recebidas", status_code=303)
     fornecedor = _resolver_fornecedor_nfe_recebida(db, n)
     if not fornecedor:
-        request.session["error"] = "Vincule um fornecedor antes de gerar a conta a pagar."
+        if _emitente_valido_nfe_recebida(db, n):
+            request.session["message"] = {
+                "tipo": "warning",
+                "texto": f"Fornecedor '{n.emitente_nome or ''}' ainda não cadastrado. Cadastre-o para gerar a conta a pagar.",
+            }
+            return RedirectResponse(url=_url_cadastro_fornecedor_nfe(n), status_code=303)
+        request.session["error"] = "Não foi possível identificar o fornecedor (emitente sem CNPJ ou é a própria empresa)."
         return RedirectResponse(url="/nfe/recebidas", status_code=303)
     n.fornecedor_id = fornecedor.id
     descricao = f"NFe {n.numero} - {n.emitente_nome or ''}".strip()
