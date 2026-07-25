@@ -231,7 +231,12 @@ function confirmarExclusaoSimples(url) {
 
 function confirmarGerarCobranca(assinaturaId, travada) {
     if (travada === true || travada === "1" || travada === 1) {
-        alert("Cobrança desta assinatura está travada.\nGere a cobrança a partir da NFS-e emitida para esta assinatura.");
+        const msg = "Cobrança desta assinatura está travada. Gere a cobrança a partir da NFS-e emitida para esta assinatura.";
+        if (typeof showValidationError === "function") {
+            showValidationError(msg);
+        } else {
+            alert(msg);
+        }
         return;
     }
     const form = document.getElementById('formGerarCobranca');
