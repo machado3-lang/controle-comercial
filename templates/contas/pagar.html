@@ -50,7 +50,7 @@
         <tbody class="divide-y divide-slate-800/60">{% if not busca %}{% set busca = "" %}{% endif %}{% if not status_filtro %}{% set status_filtro = "" %}{% endif %}
             {% for c in contas %}
             <tr class="hover:bg-slate-800/40 transition {% if c.status.name.lower() in ['vencido', 'pendente'] and c.data_vencimento < now() %}bg-rose-950/20{% endif %}">
-                <td class="px-4 py-3 text-sm text-slate-100">{{ c.descricao }}</td>
+                <td class="px-4 py-3 text-sm text-slate-100">{{ c.descricao }}{% if c.total_parcelas and c.total_parcelas > 1 %} <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-full">Parcela {{ c.numero_parcela }}/{{ c.total_parcelas }}</span>{% endif %}</td>
                 <td class="px-4 py-3 text-sm text-slate-300">{{ c.fornecedor.nome if c.fornecedor else '-' }}</td>
                 <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(c.valor) }}</td>
                 <td class="px-4 py-3 text-sm{% if c.status.name.lower() in ['pendente', 'vencido'] and c.data_vencimento < now() %} text-rose-400{% else %} text-cyan-300{% endif %}">{{ c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '-' }}</td>

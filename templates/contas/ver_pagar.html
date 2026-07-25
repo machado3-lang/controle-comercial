@@ -3,7 +3,7 @@
 {% block content %}
 <div class="max-w-4xl mx-auto">
     <div class="flex justify-between items-center mb-4">
-        <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="arrow-up-circle" class="w-6 h-6 inline me-2"></i> Conta #{{ conta.id }}</h4>
+        <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="arrow-up-circle" class="w-6 h-6 inline me-2"></i> Conta #{{ conta.id }}{% if conta.total_parcelas and conta.total_parcelas > 1 %} <span class="px-2 py-1 text-xs font-medium bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-full align-middle">Parcela {{ conta.numero_parcela }}/{{ conta.total_parcelas }}</span>{% endif %}</h4>
         <a href="/contas/pagar" class="px-3 py-2 text-sm border border-slate-700 rounded-xl text-cyan-400 hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 inline me-1"></i> Voltar</a>
     </div>
     <div class="glass-card p-6">
@@ -34,6 +34,23 @@
             <button onclick="window.location='/contas/pagar/{{ conta.id }}/editar'" class="px-4 py-2 bg-cyan-600 hover:bg-cyan-700 text-white rounded-xl transition"><i data-lucide="edit" class="w-4 h-4 inline me-1"></i> Editar</button>
             <button onclick="confirmarExclusao('/contas/pagar/{{ conta.id }}/excluir')" class="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl transition"><i data-lucide="trash-2" class="w-4 h-4 inline me-1"></i> Excluir</button>
         </div>
+        {% if irmas %}
+        <div class="mt-6">
+            <h6 class="text-cyan-400 mb-3">Demais parcelas deste grupo</h6>
+            <div class="space-y-1">
+                {% for ir in irmas %}
+                {% set s = ir.status.name.lower() %}
+                {% set cor = 'emerald' if s == 'pago' else 'amber' if s == 'pendente' else 'rose' if s == 'vencido' else 'slate' %}
+                <a href="/contas/pagar/{{ ir.id }}" class="flex items-center justify-between gap-2 px-3 py-2 bg-slate-900/50 border border-slate-800/60 rounded-xl hover:bg-slate-800/40 transition">
+                    <span class="text-sm text-slate-200">Parcela {{ ir.numero_parcela }}/{{ conta.total_parcelas }} — {{ ir.descricao }}</span>
+                    <span class="text-sm text-emerald-400 font-medium whitespace-nowrap">R$ {{ "%.2f"|format(ir.valor) }}</span>
+                    <span class="text-xs text-slate-400 whitespace-nowrap">{{ ir.data_vencimento.strftime('%d/%m/%Y') if ir.data_vencimento else '-' }}</span>
+                    <span class="px-2 py-0.5 text-xs rounded-full bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 whitespace-nowrap">{{ s }}</span>
+                </a>
+                {% endfor %}
+            </div>
+        </div>
+        {% endif %}
     </div>
 </div>
 {% endblock %}

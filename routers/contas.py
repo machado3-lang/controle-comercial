@@ -165,29 +165,36 @@ def criar_conta_pagar(
     numero_documento: Optional[str] = Form(None),
     tipo_documento_id: Optional[str] = Form(None),
     plano_conta_id: Optional[str] = Form(None),
-    forma_pagamento: Optional[str] = Form(None)
+    forma_pagamento: Optional[str] = Form(None),
+    num_parcelas: int = Form(1),
+    intervalo_dias: int = Form(30),
 ):
     from sqlalchemy import func
+    from services.parcelamento import gerar_contas_pagar
     def to_int(v):
         try: return int(v) if v and str(v).strip() else None
         except (ValueError, TypeError, AttributeError):
             logger.debug(f"Falha ao converter para int: {v}")
             return None
-    conta = ContaPagar(
-        descricao=descricao,
-        valor=to_decimal(valor),
-        data_vencimento=data_vencimento,
+    contas = gerar_contas_pagar(
+        db,
         fornecedor_id=to_int(fornecedor_id),
+        descricao=descricao,
+        valor_total=to_decimal(valor),
+        primeiro_vencimento=data_vencimento,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
+        forma_pagamento=forma_pagamento,
         observacao=observacao,
         numero_documento=numero_documento,
         tipo_documento_id=to_int(tipo_documento_id),
         plano_conta_id=to_int(plano_conta_id),
-        forma_pagamento=forma_pagamento,
-        status=StatusConta.PENDENTE
     )
-    db.add(conta)
     db.commit()
-    request.session["message"] = "Conta a pagar criada com sucesso!"
+    if len(contas) > 1:
+        request.session["message"] = f"{len(contas)} parcelas criadas com sucesso!"
+    else:
+        request.session["message"] = "Conta a pagar criada com sucesso!"
     return RedirectResponse(url="/contas/pagar", status_code=303)
 
 
@@ -203,9 +210,15 @@ def editar_conta_pagar_form(request: Request, conta_id: int, db: Session = Depen
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
     planos_contas_despesa = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
+    irmas = []
+    if conta.parcelamento_grupo:
+        irmas = db.query(ContaPagar).filter(
+            ContaPagar.parcelamento_grupo == conta.parcelamento_grupo,
+            ContaPagar.id != conta.id
+        ).order_by(ContaPagar.numero_parcela).all()
     return request.app.state.templates.TemplateResponse(request, 
         "contas/editar_pagar_form.html",
-        {"request": request, "conta": conta, "fornecedores": fornecedores, "fornecedores_json": fornecedores_json,
+        {"request": request, "conta": conta, "irmas": irmas, "fornecedores": fornecedores, "fornecedores_json": fornecedores_json,
          "tipos_documento": tipos_documento, "planos_contas": planos_contas_despesa}
     )
 
@@ -623,10 +636,16 @@ def ver_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_d
     if not conta:
         request.session["error"] = "Conta não encontrada"
         return RedirectResponse(url="/contas/pagar", status_code=303)
+    irmas = []
+    if conta.parcelamento_grupo:
+        irmas = db.query(ContaPagar).filter(
+            ContaPagar.parcelamento_grupo == conta.parcelamento_grupo,
+            ContaPagar.id != conta.id
+        ).order_by(ContaPagar.numero_parcela).all()
     empresa = db.query(Empresa).first()
     return request.app.state.templates.TemplateResponse(request, 
         "contas/ver_pagar.html",
-        {"request": request, "conta": conta, "empresa": empresa}
+        {"request": request, "conta": conta, "irmas": irmas, "empresa": empresa}
     )
 
 

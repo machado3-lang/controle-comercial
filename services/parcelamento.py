@@ -15,7 +15,7 @@ import uuid
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_DOWN
 
-from models import ContaReceber, StatusConta
+from models import ContaReceber, ContaPagar, StatusConta
 
 logger = logging.getLogger(__name__)
 
@@ -95,6 +95,55 @@ def gerar_contas_receber(
             nfe_id=nfe_id,
             pedido_id=pedido_id,
             consolidacao_id=consolidacao_id,
+            numero_parcela=p["numero"],
+            total_parcelas=num_parcelas,
+            parcelamento_grupo=grupo,
+            status=StatusConta.PENDENTE,
+        )
+        db.add(conta)
+        contas.append(conta)
+    return contas
+
+
+def gerar_contas_pagar(
+    db,
+    *,
+    fornecedor_id,
+    descricao,
+    valor_total,
+    primeiro_vencimento,
+    num_parcelas=1,
+    intervalo_dias=30,
+    forma_pagamento=None,
+    observacao=None,
+    numero_documento=None,
+    tipo_documento_id=None,
+    plano_conta_id=None,
+):
+    """Cria N ContaPagar (parcelas) na sessao. NAO faz commit.
+
+    Espelha gerar_contas_receber para o lado de contas a pagar.
+    Retorna a lista de contas criadas (adicionadas via db.add).
+    """
+    try:
+        num_parcelas = max(1, int(num_parcelas or 1))
+    except (ValueError, TypeError):
+        num_parcelas = 1
+    parcelas = calcular_parcelas(valor_total, num_parcelas, primeiro_vencimento, intervalo_dias)
+    grupo = str(uuid.uuid4()) if num_parcelas > 1 else None
+    contas = []
+    for p in parcelas:
+        sufixo = f" ({p['numero']}/{num_parcelas})" if num_parcelas > 1 else ""
+        conta = ContaPagar(
+            fornecedor_id=fornecedor_id,
+            descricao=f"{descricao}{sufixo}",
+            valor=p["valor"],
+            data_vencimento=p["vencimento"],
+            forma_pagamento=forma_pagamento,
+            observacao=observacao,
+            numero_documento=numero_documento,
+            tipo_documento_id=tipo_documento_id,
+            plano_conta_id=plano_conta_id,
             numero_parcela=p["numero"],
             total_parcelas=num_parcelas,
             parcelamento_grupo=grupo,

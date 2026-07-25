@@ -12,7 +12,19 @@
         <input type="number" step="0.01" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" name="valor" required>
     </div>
     <div><label class="block text-xs font-medium text-cyan-400 mb-1">Vencimento *</label>
-        <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_vencimento" required>
+        <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_vencimento" id="primeiroVencNovaPagar" required>
+    </div>
+    <div class="md:col-span-2">
+        <label class="block text-xs font-medium text-emerald-400 mb-1">Condição de Pagamento (pré-preenche parcelas)</label>
+        <select id="condicaoPagamento" data-target-parcelas="numParcelasNovaPagar" data-target-venc="primeiroVencNovaPagar" data-target-intervalo="intervaloDiasNovaPagar" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+            <option value="">-- Manual --</option>
+        </select>
+    </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Nº de Parcelas</label>
+        <input type="number" min="1" max="60" value="1" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="num_parcelas" id="numParcelasNovaPagar">
+    </div>
+    <div><label class="block text-xs font-medium text-cyan-400 mb-1">Intervalo entre Parcelas (dias)</label>
+        <input type="number" min="1" max="365" value="30" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="intervalo_dias" id="intervaloDiasNovaPagar">
     </div>
     <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Descrição *</label>
         <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="descricao" required>

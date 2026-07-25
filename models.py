@@ -200,6 +200,11 @@ class ContaPagar(Base):
     plano_conta_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
+    # Parcelamento: numero da parcela (1..N), total de parcelas e UUID que
+    # agrupa todas as parcelas geradas juntas (espelha ContaReceber).
+    numero_parcela = Column(Integer, nullable=True, default=1)
+    total_parcelas = Column(Integer, nullable=True, default=1)
+    parcelamento_grupo = Column(String(36), nullable=True, index=True)
 
     fornecedor = relationship("Fornecedor", back_populates="contas_pagar")
     tipo_documento = relationship("TipoDocumento", back_populates="contas_pagar")
