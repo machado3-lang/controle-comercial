@@ -50,14 +50,35 @@ def _proximo_vencimento(assinatura: Assinatura) -> date | None:
     if assinatura.situacao != 1:
         return None
     hoje = date.today()
+    dia = min(assinatura.dia_vencimento, 28)
     if assinatura.mes_vencimento == 1:
         if hoje.month == 12:
-            data = date(hoje.year + 1, 1, min(assinatura.dia_vencimento, 28))
+            data = date(hoje.year + 1, 1, dia)
         else:
-            data = date(hoje.year, hoje.month + 1, min(assinatura.dia_vencimento, 28))
+            data = date(hoje.year, hoje.month + 1, dia)
     else:
-        data = date(hoje.year, hoje.month, min(assinatura.dia_vencimento, 28))
+        data = date(hoje.year, hoje.month, dia)
+    # Avanca o periodo ate cair em uma data futura (nao mostrar vencimento passado)
+    while data < hoje:
+        data = _add_months(data, assinatura.periodicidade)
     return data
+
+
+def proximo_vencimento_para_cobranca(db: Session, assinatura: Assinatura) -> date:
+    """Proximo vencimento para gerar a cobranca da assinatura.
+
+    Baseia-se na ultima cobranca ja gerada para esta assinatura (observacao
+    contendo 'assinatura #id') avancando pela periodicidade; se nao houver
+    cobranca anterior, usa o proximo vencimento calendario.
+    """
+    ultima = db.query(ContaReceber).filter(
+        ContaReceber.cliente_id == assinatura.cliente_id,
+        ContaReceber.observacao.like(f"%assinatura #{assinatura.id}%"),
+        ContaReceber.status != StatusConta.CANCELADO,
+    ).order_by(ContaReceber.data_vencimento.desc()).first()
+    if ultima:
+        return get_safe_day(_add_months(ultima.data_vencimento, assinatura.periodicidade), assinatura.dia_vencimento)
+    return _proximo_vencimento(assinatura) or date.today()
 
 
 @router.get("/")
@@ -362,6 +383,9 @@ def gerar_nfse_assinatura(request: Request, assinatura_id: int, db: Session = De
         )
         db.add(nfse)
         db.flush()
+        # Vincula a NFS-e a assinatura de origem para rastrear o vencimento na cobranca
+        nfse.assinatura_id = assinatura.id
+        assinatura.nfse_id = nfse.id
 
         servico = assinatura.produto
 

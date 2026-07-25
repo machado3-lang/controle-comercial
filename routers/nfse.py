@@ -853,6 +853,7 @@ def detalhe_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
         selectinload(NFSe.itens).selectinload(NFSeItem.produto),
         selectinload(NFSe.pedido),
         selectinload(NFSe.cliente),
+        selectinload(NFSe.assinatura),
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
@@ -861,9 +862,15 @@ def detalhe_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
         ContaReceber.observacao.like(f"%NFSe #{nfse.id}%")
     ).first()
 
+    vencimento_sugerido = None
+    if nfse.assinatura_id and nfse.assinatura and not cobranca:
+        from routers.assinaturas import proximo_vencimento_para_cobranca
+        vencimento_sugerido = proximo_vencimento_para_cobranca(db, nfse.assinatura)
+
     return request.app.state.templates.TemplateResponse(request, 
         "nfse/detalhe.html",
-        {"request": request, "nfse": nfse, "STATUS_LABELS": STATUS_LABELS, "cobranca": cobranca}
+        {"request": request, "nfse": nfse, "STATUS_LABELS": STATUS_LABELS,
+         "cobranca": cobranca, "vencimento_sugerido": vencimento_sugerido}
     )
 
 
@@ -1071,6 +1078,7 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
                         intervalo_dias: int = Form(30)):
     nfse = db.query(NFSe).options(
         selectinload(NFSe.pedido),
+        selectinload(NFSe.assinatura),
     ).filter(NFSe.id == nfse_id).first()
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
@@ -1094,11 +1102,25 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         request.session["error"] = "NÃ£o foi possÃ­vel identificar o cliente para gerar cobranÃ§a"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
-    from services.parcelamento import gerar_contas_receber
-    try:
-        venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else date.today()
-    except ValueError:
+    # Vencimento sugerido: se a NFSe veio de uma assinatura, usa o proximo
+    # vencimento da assinatura (baseado na ultima cobranca + periodicidade).
+    venc = None
+    if primeiro_vencimento:
+        try:
+            venc = date.fromisoformat(primeiro_vencimento)
+        except ValueError:
+            venc = None
+    if venc is None and nfse.assinatura_id and nfse.assinatura:
+        from routers.assinaturas import proximo_vencimento_para_cobranca
+        venc = proximo_vencimento_para_cobranca(db, nfse.assinatura)
+    if venc is None:
         venc = date.today()
+
+    observacao = f"Gerado da NFSe #{nfse.id}"
+    if nfse.assinatura_id:
+        observacao = f"CobranÃ§a automÃ¡tica - assinatura #{nfse.assinatura_id} (NFSe #{nfse.id})"
+
+    from services.parcelamento import gerar_contas_receber
     contas = gerar_contas_receber(
         db,
         cliente_id=cliente_id,
@@ -1108,7 +1130,7 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         num_parcelas=num_parcelas,
         intervalo_dias=intervalo_dias,
         forma_pagamento="NFSe",
-        observacao=f"Gerado manualmente da NFSe #{nfse.id}",
+        observacao=observacao,
         nfse_id=nfse.id,
         pedido_id=nfse.pedido_id,
     )

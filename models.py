@@ -297,7 +297,10 @@ class Assinatura(Base):
     cliente = relationship("Cliente", back_populates="assinaturas")
     fornecedor = relationship("Fornecedor", back_populates="assinaturas")
     produto = relationship("Produto", back_populates="assinaturas")
-    nfse = relationship("NFSe", back_populates="assinaturas")
+    nfse = relationship("NFSe", back_populates="assinaturas",
+                        foreign_keys="[Assinatura.nfse_id]")
+    nfses = relationship("NFSe", back_populates="assinatura",
+                        foreign_keys="[NFSe.assinatura_id]")
     historico = relationship("AssinaturaHistorico", back_populates="assinatura", cascade="all, delete-orphan",
                              order_by="AssinaturaHistorico.data_alteracao.desc()")
 

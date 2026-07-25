@@ -71,6 +71,7 @@ class NFSe(Base):
     pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
     consolidacao_id = Column(Integer, ForeignKey("pedidos_consolidados.id"), nullable=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True, index=True)
+    assinatura_id = Column(Integer, ForeignKey("assinaturas.id", use_alter=True), nullable=True, index=True)
     numero = Column(String(50))
     codigo_verificacao = Column(String(100))
     chave_acesso = Column(String(100), unique=True)
@@ -103,7 +104,10 @@ class NFSe(Base):
     cliente = relationship("Cliente", back_populates="nfses")
     itens = relationship("NFSeItem", back_populates="nfse", cascade="all, delete-orphan")
     contas_receber = relationship("ContaReceber", back_populates="nfse")
-    assinaturas = relationship("Assinatura", back_populates="nfse")
+    assinaturas = relationship("Assinatura", back_populates="nfse",
+                               foreign_keys="[Assinatura.nfse_id]")
+    assinatura = relationship("Assinatura", back_populates="nfses",
+                              foreign_keys="[NFSe.assinatura_id]")
 
     @property
     def valor_liquido(self):
