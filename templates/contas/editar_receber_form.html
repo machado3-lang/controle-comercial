@@ -1,4 +1,9 @@
 <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+    {% if conta and conta.total_parcelas and conta.total_parcelas > 1 %}
+    <div class="md:col-span-2">
+        <span class="px-2 py-1 text-xs font-medium bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-full">Parcela {{ conta.numero_parcela }}/{{ conta.total_parcelas }} deste grupo</span>
+    </div>
+    {% endif %}
     <div class="md:col-span-2 relative">
         <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente</label>
         <input type="text" id="clienteSearchEditar" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off">
@@ -59,5 +64,22 @@
     <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
         <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="3">{{ conta.observacao if conta else '' }}</textarea>
     </div>
+    {% if irmas %}
+    <div class="md:col-span-2 mt-1">
+        <label class="block text-xs font-medium text-cyan-400 mb-2">Demais parcelas deste grupo</label>
+        <div class="space-y-1">
+            {% for ir in irmas %}
+            {% set s = ir.status.name.lower() %}
+            {% set cor = 'emerald' if s == 'pago' else 'amber' if s == 'pendente' else 'rose' if s == 'vencido' else 'slate' %}
+            <div class="flex items-center justify-between gap-2 px-3 py-2 bg-slate-900/50 border border-slate-800/60 rounded-xl cursor-pointer hover:bg-slate-800/40 transition" onclick="abrirEditarReceber({{ ir.id }})">
+                <span class="text-sm text-slate-200">Parcela {{ ir.numero_parcela }}/{{ conta.total_parcelas }} — {{ ir.descricao }}</span>
+                <span class="text-sm text-emerald-400 font-medium whitespace-nowrap">R$ {{ "%.2f"|format(ir.valor) }}</span>
+                <span class="text-xs text-slate-400 whitespace-nowrap">{{ ir.data_vencimento.strftime('%d/%m/%Y') if ir.data_vencimento else '-' }}</span>
+                <span class="px-2 py-0.5 text-xs rounded-full bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 whitespace-nowrap">{{ s }}</span>
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+    {% endif %}
 </div>
 

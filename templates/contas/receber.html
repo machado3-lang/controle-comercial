@@ -63,7 +63,7 @@
             {% for c in contas %}
             <tr class="hover:bg-slate-800/40 transition">
                 <td class="px-3 py-3 text-center"><input type="checkbox" name="conta_ids" value="{{ c.id }}" class="rounded border-slate-600 bg-slate-800 text-cyan-500"></td>
-                <td class="px-4 py-3 text-sm text-slate-100">{{ c.descricao }}</td>
+                <td class="px-4 py-3 text-sm text-slate-100">{{ c.descricao }}{% if c.total_parcelas and c.total_parcelas > 1 %} <span class="ml-1 px-1.5 py-0.5 text-[10px] font-medium bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-full">Parcela {{ c.numero_parcela }}/{{ c.total_parcelas }}</span>{% endif %}</td>
                 <td class="px-4 py-3 text-sm text-cyan-300">{{ c.cliente.nome if c.cliente else '-' }}</td>
                 <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(c.valor) }}</td>
                 <td class="px-4 py-3 text-sm{% if c.status.name.lower() in ['pendente', 'vencido'] and c.data_vencimento < now() %} text-rose-400{% else %} text-cyan-300{% endif %}">{{ c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '-' }}</td>

@@ -429,9 +429,15 @@ def editar_conta_receber_form(request: Request, conta_id: int, db: Session = Dep
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
     planos_contas_receita = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
+    irmas = []
+    if conta.parcelamento_grupo:
+        irmas = db.query(ContaReceber).filter(
+            ContaReceber.parcelamento_grupo == conta.parcelamento_grupo,
+            ContaReceber.id != conta.id
+        ).order_by(ContaReceber.numero_parcela).all()
     return request.app.state.templates.TemplateResponse(request, 
         "contas/editar_receber_form.html",
-        {"request": request, "conta": conta, "clientes": clientes, "clientes_json": clientes_json,
+        {"request": request, "conta": conta, "irmas": irmas, "clientes": clientes, "clientes_json": clientes_json,
          "tipos_documento": tipos_documento, "planos_contas": planos_contas_receita}
     )
 
