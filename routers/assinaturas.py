@@ -165,6 +165,7 @@ def criar_assinatura(
     valor_revenda: float = Form(None),
     numero_contrato: str = Form(None),
     observacao: str = Form(None),
+    travar_cobranca: str = Form(""),
 ):
     try:
         inicio = date.fromisoformat(data_inicio)
@@ -181,7 +182,7 @@ def criar_assinatura(
             if not fornecedor_id and servico.fornecedor_id:
                 fornecedor_id_final = servico.fornecedor_id
         
-        assinatura = Assinatura(
+        assinatura =         Assinatura(
             cliente_id=cliente_id, periodicidade=periodicidade, descricao=descricao_final,
             valor=valor, quantidade=quantidade,
             data_inicio=inicio, data_fim=fim,
@@ -192,6 +193,7 @@ def criar_assinatura(
             valor_revenda=valor_revenda,
             numero_contrato=numero_contrato,
             observacao=observacao,
+            travar_cobranca=(travar_cobranca == "1"),
             produto_id=produto_id_final,
             bling_pending_sync=True,
         )
@@ -213,6 +215,9 @@ def _add_months(source_date, months):
 
 
 def _gerar_cobranca(db: Session, assinatura: Assinatura, gerar_proximas: int = 3):
+    # Trava: cobranca da assinatura eh feita pela NFS-e (nao pela assinatura)
+    if assinatura.travar_cobranca:
+        return
     hoje = date.today()
     label = PERIODICIDADE_LABELS.get(assinatura.periodicidade, "Mensal")
     dia = assinatura.dia_vencimento
@@ -287,6 +292,8 @@ def gerar_cobranca(request: Request, assinatura_id: int, db: Session = Depends(g
     assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
     if not assinatura:
         request.session["error"] = "Assinatura não encontrada"
+    elif assinatura.travar_cobranca:
+        request.session["error"] = "Cobrança desta assinatura está travada: gere a cobrança a partir da NFS-e."
     else:
         try:
             qtd = max(1, min(int(quantidade), 24))
@@ -410,6 +417,7 @@ def atualizar_assinatura(
     valor_revenda: float = Form(0),
     numero_contrato: str = Form(""),
     observacao: str = Form(""),
+    travar_cobranca: str = Form(""),
 ):
     assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
     if not assinatura:
@@ -440,6 +448,7 @@ def atualizar_assinatura(
     assinatura.valor_revenda = valor_revenda if valor_revenda else None
     assinatura.numero_contrato = numero_contrato if numero_contrato else None
     assinatura.observacao = observacao
+    assinatura.travar_cobranca = (travar_cobranca == "1")
     assinatura.updated_at = datetime.now()
     assinatura.bling_pending_sync = True
     db.commit()

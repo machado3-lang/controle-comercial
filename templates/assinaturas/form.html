@@ -87,6 +87,12 @@
         <div class="md:col-span-2"><label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
             <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="3" {% if not editavel %}readonly{% endif %}>{{ assinatura.observacao or '' }}</textarea>
         </div>
+        <div class="md:col-span-2">
+            <label class="flex items-center gap-2 text-sm text-cyan-300 cursor-pointer">
+                <input type="checkbox" name="travar_cobranca" value="1" {% if assinatura.travar_cobranca %}checked{% endif %} {% if not editavel %}disabled{% endif %} class="w-4 h-4 rounded border-slate-700 bg-slate-900 text-cyan-500 focus:ring-cyan-500/50">
+                Travar geração de cobrança pela assinatura (cobrança deve ser feita a partir da NFS-e)
+            </label>
+        </div>
         {% if editavel %}
         <div class="md:col-span-2"><button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button></div>
         {% else %}

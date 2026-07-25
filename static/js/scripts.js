@@ -230,6 +230,11 @@ function confirmarExclusaoSimples(url) {
 }
 
 function confirmarGerarCobranca(assinaturaId) {
+    const btn = event && event.currentTarget;
+    if (btn && btn.dataset.trava === "1") {
+        alert("Cobrança desta assinatura está travada.\nGere a cobrança a partir da NFS-e emitida para esta assinatura.");
+        return;
+    }
     const form = document.getElementById('formGerarCobranca');
     if (!form) {
         alert('Erro: formulário de cobrança não encontrado');

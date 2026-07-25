@@ -105,6 +105,20 @@ class NFSe(Base):
     contas_receber = relationship("ContaReceber", back_populates="nfse")
     assinaturas = relationship("Assinatura", back_populates="nfse")
 
+    @property
+    def valor_liquido(self):
+        """Valor efetivo a receber: bruto menos ISS retido (quando o tomador retém).
+
+        Usado na geracao de cobranca (ContaReceber) para que o cliente seja
+        cobrado do valor liquido e nao do bruto quando ha ISS retido.
+        """
+        from decimal import Decimal
+        bruto = Decimal(str(self.valor_total or 0))
+        if self.iss_retido:
+            aliquota = Decimal(str(self.aliquota_iss or 0)) / Decimal("100")
+            return (bruto * (Decimal("1") - aliquota)).quantize(Decimal("0.01"))
+        return bruto
+
 
 class NFSeItem(Base):
     __tablename__ = "nfse_itens"

@@ -288,6 +288,7 @@ class Assinatura(Base):
     valor_revenda = Column(Numeric(12, 2), nullable=True)
     numero_contrato = Column(String(50), nullable=True)
     observacao = Column(Text, nullable=True)
+    travar_cobranca = Column(Boolean, default=False, nullable=True)
     produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True, index=True)
     nfse_id = Column(Integer, ForeignKey("nfse.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
