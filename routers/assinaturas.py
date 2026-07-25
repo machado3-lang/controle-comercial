@@ -81,17 +81,21 @@ def listar_assinaturas(
     if busca:
         query = query.filter(Cliente.nome.ilike(f"%{busca}%") | Cliente.fantasia.ilike(f"%{busca}%") | Cliente.cpf_cnpj.ilike(f"%{busca}%"))
 
-    # Ordenação por colunas (cliente, descricao, revenda, data_inicio, vencimento)
+    # Ordenação por colunas (cliente, descricao, revenda, data_inicio)
+    # "vencimento" e ordenado em Python pela data real de vencimento (ver abaixo),
+    # pois dependeria de _proximo_vencimento (logica em Python) e nao do dia isolado.
     sort_map = {
         "cliente": Cliente.nome,
         "descricao": Assinatura.descricao,
         "revenda": Fornecedor.nome,
         "data_inicio": Assinatura.data_inicio,
-        "vencimento": Assinatura.dia_vencimento,
     }
-    order_col = sort_map.get(sort, Assinatura.data_inicio)
-    descendente = (ordem != "asc")
-    query = query.order_by(order_col.desc() if descendente else order_col.asc())
+    if sort in sort_map:
+        order_col = sort_map[sort]
+        descendente = (ordem != "asc")
+        query = query.order_by(order_col.desc() if descendente else order_col.asc())
+    else:
+        query = query.order_by(Assinatura.data_inicio.asc())
 
     if vencimento_dias:
         try:
@@ -111,10 +115,24 @@ def listar_assinaturas(
     
     for a in assinaturas:
         prox = _proximo_vencimento(a)
+        a.prox_data = prox
         if prox:
             a.proximo_vencimento = prox.strftime("%d/%m/%Y")
+            dias = (prox - date.today()).days
+            a.vencendo_15 = 0 <= dias <= 15
+            a.vencendo_30 = 15 < dias <= 30
         else:
             a.proximo_vencimento = None
+            a.vencendo_15 = False
+            a.vencendo_30 = False
+
+    # Ordena por vencimento real (data completa), nao apenas pelo dia
+    if sort == "vencimento":
+        descendente = (ordem != "asc")
+        assinaturas.sort(
+            key=lambda a: (a.prox_data is None, a.prox_data),
+            reverse=descendente
+        )
 
     lucro_total = sum(
         a.valor - (a.valor_revenda or 0)
@@ -439,7 +457,9 @@ def atualizar_assinatura(
 
     servico = db.query(Produto).filter(Produto.id == servico_id).first() if servico_id else None
     descricao_final = descricao or (servico.nome if servico else '')
-    
+
+    dia_antigo = assinatura.dia_vencimento
+
     _salvar_historico(db, assinatura, valor, valor_revenda, quantidade if quantidade else None, dia_vencimento)
 
     assinatura.cliente_id = cliente_id
@@ -461,6 +481,23 @@ def atualizar_assinatura(
     assinatura.travar_cobranca = (travar_cobranca == "1")
     assinatura.updated_at = datetime.now()
     assinatura.bling_pending_sync = True
+
+    # Ajusta o vencimento recorrente nas cobrancas futuras ja geradas
+    # quando o dia de vencimento da assinatura e alterado
+    if dia_antigo != dia_vencimento:
+        hoje = date.today()
+        contas_futuras = db.query(ContaReceber).filter(
+            ContaReceber.cliente_id == assinatura.cliente_id,
+            ContaReceber.observacao.like(f"%assinatura #{assinatura.id}%"),
+            ContaReceber.data_vencimento >= hoje,
+            ContaReceber.status.notin_([
+                StatusConta.PAGO, StatusConta.CANCELADO,
+                StatusConta.BAIXA_SOLICITADA, StatusConta.EXCLUIDO
+            ])
+        ).all()
+        for c in contas_futuras:
+            c.data_vencimento = get_safe_day(c.data_vencimento, dia_vencimento)
+
     db.commit()
     return RedirectResponse(url="/assinaturas", status_code=303)
 
