@@ -387,9 +387,73 @@ def vincular_fornecedor_nfe_recebida(request: Request, nfe_id: int, db: Session 
     return RedirectResponse(url="/nfe/recebidas", status_code=303)
 
 
-@router.post("/recebidas/{nfe_id}/gerar-conta")
-def gerar_conta_nfe_recebida(request: Request, nfe_id: int, db: Session = Depends(get_db)):
+@router.get("/recebidas/{nfe_id}/parcelas-info")
+def parcelas_info_nfe_recebida(request: Request, nfe_id: int, db: Session = Depends(get_db)):
+    """Retorna dados para o popup de geracao de conta a pagar da NFe recebida.
+
+    Inclui as duplicatas lidas do XML (se houver) para que a UI gere N parcelas
+    automaticamente, ou solicite preenchimento manual quando ausentes.
+    """
     from models import NFeDistribuida, ContaPagar, StatusConta
+    from services.nfe_distribuicao import extrair_duplicatas_nfe
+
+    n = db.query(NFeDistribuida).filter(NFeDistribuida.id == nfe_id).first()
+    if not n:
+        return JSONResponse({"error": "NFe recebida não encontrada"}, status_code=404)
+
+    fornecedor = _resolver_fornecedor_nfe_recebida(db, n)
+    descricao = f"NFe {n.numero} - {n.emitente_nome or ''}".strip()
+    ja_existe = False
+    if fornecedor:
+        ja_existe = db.query(ContaPagar).filter(
+            ContaPagar.descricao.like(descricao + "%"),
+            ContaPagar.fornecedor_id == fornecedor.id,
+            ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]),
+        ).first() is not None
+
+    try:
+        emissao = datetime.strptime(n.dh_emi[:10], '%Y-%m-%d').date() if n.dh_emi else date.today()
+    except Exception:
+        emissao = date.today()
+
+    duplicatas = extrair_duplicatas_nfe(n.xml) if n.xml else []
+    dup_json = [
+        {
+            "numero": d["numero"],
+            "vencimento": d["vencimento"].isoformat() if d["vencimento"] else "",
+            "valor": float(d["valor"]),
+        }
+        for d in duplicatas
+    ]
+
+    return JSONResponse({
+        "nfe_id": n.id,
+        "numero": n.numero,
+        "emitente": n.emitente_nome or "",
+        "valor_total": float(n.valor or 0),
+        "emissao": emissao.isoformat(),
+        "fornecedor_vinculado": fornecedor is not None,
+        "fornecedor_nome": fornecedor.nome if fornecedor else "",
+        "ja_existe_conta": ja_existe,
+        "tem_duplicatas": len(dup_json) > 0,
+        "duplicatas": dup_json,
+    })
+
+
+@router.post("/recebidas/{nfe_id}/gerar-conta")
+def gerar_conta_nfe_recebida(
+    request: Request,
+    nfe_id: int,
+    db: Session = Depends(get_db),
+    parcela_numero: list[str] = Form(default=None),
+    parcela_vencimento: list[str] = Form(default=None),
+    parcela_valor: list[str] = Form(default=None),
+    confirmar: str = Form(default=None),
+):
+    from models import NFeDistribuida, ContaPagar, StatusConta
+    from services.nfe_distribuicao import extrair_duplicatas_nfe
+    from services.parcelamento import gerar_contas_pagar_parcelas
+
     n = db.query(NFeDistribuida).filter(NFeDistribuida.id == nfe_id).first()
     if not n:
         request.session["error"] = "NFe recebida não encontrada"
@@ -401,29 +465,66 @@ def gerar_conta_nfe_recebida(request: Request, nfe_id: int, db: Session = Depend
     n.fornecedor_id = fornecedor.id
     descricao = f"NFe {n.numero} - {n.emitente_nome or ''}".strip()
     existente = db.query(ContaPagar).filter(
-        ContaPagar.descricao == descricao,
+        ContaPagar.descricao.like(descricao + "%"),
         ContaPagar.fornecedor_id == fornecedor.id,
         ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]),
     ).first()
-    if existente:
+    if existente and not confirmar:
         request.session["error"] = "Já existe conta a pagar para esta NFe."
         db.commit()
         return RedirectResponse(url="/nfe/recebidas", status_code=303)
+
     try:
-        venc = datetime.strptime(n.dh_emi[:10], '%Y-%m-%d').date() if n.dh_emi else date.today()
+        emissao = datetime.strptime(n.dh_emi[:10], '%Y-%m-%d').date() if n.dh_emi else date.today()
     except Exception:
-        venc = date.today()
-    conta = ContaPagar(
+        emissao = date.today()
+
+    # 1) Parcelas informadas pelo popup (lidas do XML ou digitadas manualmente)
+    parcelas = []
+    if parcela_valor:
+        for i, valor_raw in enumerate(parcela_valor):
+            valor_raw = (valor_raw or "").strip().replace(",", ".")
+            if not valor_raw:
+                continue
+            try:
+                valor = Decimal(valor_raw)
+            except Exception:
+                request.session["error"] = "Valor de parcela inválido."
+                return RedirectResponse(url="/nfe/recebidas", status_code=303)
+            venc_raw = (parcela_vencimento[i] if parcela_vencimento and i < len(parcela_vencimento) else "").strip()
+            try:
+                venc = datetime.strptime(venc_raw[:10], '%Y-%m-%d').date() if venc_raw else emissao
+            except Exception:
+                venc = emissao
+            num_raw = (parcela_numero[i] if parcela_numero and i < len(parcela_numero) else "").strip()
+            parcelas.append({"numero": num_raw or (i + 1), "valor": valor, "vencimento": venc})
+
+    # 2) Sem parcelas no formulario: tenta ler duplicatas direto do XML (fallback)
+    if not parcelas and n.xml:
+        for d in extrair_duplicatas_nfe(n.xml):
+            parcelas.append({
+                "numero": d["numero"],
+                "valor": d["valor"],
+                "vencimento": d["vencimento"] or emissao,
+            })
+
+    # 3) Ainda sem parcelas: conta unica com o valor total da NFe
+    if not parcelas:
+        parcelas = [{"numero": 1, "valor": Decimal(str(n.valor or 0)), "vencimento": emissao}]
+
+    contas = gerar_contas_pagar_parcelas(
+        db,
         fornecedor_id=fornecedor.id,
         descricao=descricao,
-        valor=n.valor or 0,
-        data_vencimento=venc,
+        parcelas=parcelas,
         numero_documento=n.numero,
-        status=StatusConta.PENDENTE,
     )
-    db.add(conta)
     db.commit()
-    request.session["message"] = "Conta a pagar criada com sucesso!"
+
+    if len(contas) > 1:
+        request.session["message"] = f"{len(contas)} parcelas (contas a pagar) criadas com sucesso!"
+    else:
+        request.session["message"] = "Conta a pagar criada com sucesso!"
     return RedirectResponse(url="/nfe/recebidas", status_code=303)
 
 

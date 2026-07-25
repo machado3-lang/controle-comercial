@@ -130,10 +130,50 @@ def gerar_contas_pagar(
     except (ValueError, TypeError):
         num_parcelas = 1
     parcelas = calcular_parcelas(valor_total, num_parcelas, primeiro_vencimento, intervalo_dias)
-    grupo = str(uuid.uuid4()) if num_parcelas > 1 else None
+    return gerar_contas_pagar_parcelas(
+        db,
+        fornecedor_id=fornecedor_id,
+        descricao=descricao,
+        parcelas=parcelas,
+        forma_pagamento=forma_pagamento,
+        observacao=observacao,
+        numero_documento=numero_documento,
+        tipo_documento_id=tipo_documento_id,
+        plano_conta_id=plano_conta_id,
+    )
+
+
+def gerar_contas_pagar_parcelas(
+    db,
+    *,
+    fornecedor_id,
+    descricao,
+    parcelas,
+    forma_pagamento=None,
+    observacao=None,
+    numero_documento=None,
+    tipo_documento_id=None,
+    plano_conta_id=None,
+):
+    """Cria N ContaPagar a partir de uma lista EXPLICITA de parcelas.
+
+    Usado quando os valores/vencimentos ja sao conhecidos (ex.: duplicatas
+    lidas do XML da NF-e ou informadas manualmente pelo usuario), sem rateio
+    uniforme. Reaproveita o mesmo agrupamento (parcelamento_grupo) das demais
+    contas a pagar. NAO faz commit.
+
+    `parcelas`: lista de dicts {"numero", "valor" (Decimal/num), "vencimento" (date)}.
+    Retorna a lista de contas criadas.
+    """
+    parcelas = list(parcelas or [])
+    if not parcelas:
+        return []
+    total = len(parcelas)
+    grupo = str(uuid.uuid4()) if total > 1 else None
     contas = []
-    for p in parcelas:
-        sufixo = f" ({p['numero']}/{num_parcelas})" if num_parcelas > 1 else ""
+    for idx, p in enumerate(parcelas, start=1):
+        numero = p.get("numero") or idx
+        sufixo = f" ({numero}/{total})" if total > 1 else ""
         conta = ContaPagar(
             fornecedor_id=fornecedor_id,
             descricao=f"{descricao}{sufixo}",
@@ -144,8 +184,8 @@ def gerar_contas_pagar(
             numero_documento=numero_documento,
             tipo_documento_id=tipo_documento_id,
             plano_conta_id=plano_conta_id,
-            numero_parcela=p["numero"],
-            total_parcelas=num_parcelas,
+            numero_parcela=numero,
+            total_parcelas=total,
             parcelamento_grupo=grupo,
             status=StatusConta.PENDENTE,
         )

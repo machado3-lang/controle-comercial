@@ -367,3 +367,54 @@ class NFeDistribuicaoService:
                 if m2: destinatario_cnpj = m2.group(1)
 
         return chave, numero, dh_emi, valor, emitente_nome, emitente_cnpj, destinatario_nome, destinatario_cnpj
+
+
+def extrair_duplicatas_nfe(xml: str) -> list:
+    """Extrai as duplicatas (parcelas) do bloco <cobr><dup> de uma NF-e.
+
+    Retorna lista ordenada de dicts: {"numero": str, "vencimento": date|None,
+    "valor": Decimal}. Retorna lista vazia se a NF-e nao discrimina duplicatas
+    (ex.: pagamento a vista ou sem <cobr>).
+    """
+    from datetime import datetime as _dt
+    from decimal import Decimal, InvalidOperation
+
+    if not xml:
+        return []
+
+    duplicatas = []
+    # Cada <dup>...</dup> (namespace-agnostico), tolerante a auto-fechamento improvavel
+    for bloco in re.findall(r'<[^:>]*:?dup\b[^>]*>(.*?)</[^:>]*:?dup>', xml, re.DOTALL):
+        m_num = re.search(r'<[^:>]*:?nDup[^>]*>([^<]+)</', bloco)
+        m_venc = re.search(r'<[^:>]*:?dVenc[^>]*>([^<]+)</', bloco)
+        m_val = re.search(r'<[^:>]*:?vDup[^>]*>([\d.,]+)</', bloco)
+
+        numero = m_num.group(1).strip() if m_num else str(len(duplicatas) + 1)
+
+        vencimento = None
+        if m_venc:
+            raw = m_venc.group(1).strip()[:10]
+            for fmt in ("%Y-%m-%d", "%d/%m/%Y"):
+                try:
+                    vencimento = _dt.strptime(raw, fmt).date()
+                    break
+                except ValueError:
+                    continue
+
+        valor = Decimal("0")
+        if m_val:
+            raw_v = m_val.group(1).strip().replace(".", "").replace(",", ".") \
+                if ("," in m_val.group(1)) else m_val.group(1).strip()
+            try:
+                valor = Decimal(raw_v)
+            except (InvalidOperation, ValueError):
+                valor = Decimal("0")
+
+        duplicatas.append({"numero": numero, "vencimento": vencimento, "valor": valor})
+
+    # Ordena por vencimento (quando disponivel) e depois pelo numero da duplicata
+    duplicatas.sort(key=lambda d: (
+        d["vencimento"] or _dt.max.date(),
+        d["numero"],
+    ))
+    return duplicatas
