@@ -49,6 +49,12 @@
             <option value="outro" {% if conta.forma_pagamento == 'outro' %}selected{% endif %}>Outro</option>
         </select>
     </div>
+    <div class="md:col-span-2">
+        <label class="flex items-center gap-2 text-emerald-300 cursor-pointer">
+            <input type="checkbox" name="emitir_boletos" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded">
+            <span class="text-sm">Emitir boleto(s) Sicoob {% if conta.parcelamento_grupo %}de todas as parcelas deste grupo{% else %}desta conta{% endif %}</span>
+        </label>
+    </div>
     <div><label class="block text-xs font-medium text-cyan-400 mb-1">Tipo Documento</label>
         <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tipo_documento_id">
             <option value="">Selecione...</option>

@@ -469,12 +469,18 @@ def atualizar_conta_receber(
     numero_documento: Optional[str] = Form(None),
     tipo_documento_id: Optional[str] = Form(None),
     plano_conta_id: Optional[str] = Form(None),
-    forma_pagamento: Optional[str] = Form(None)
+    forma_pagamento: Optional[str] = Form(None),
+    data_recebimento: Optional[str] = Form(None),
+    emitir_boletos: bool = Form(False),
 ):
     def to_int(v):
         try: return int(v) if v and str(v).strip() else None
         except (ValueError, TypeError, AttributeError):
             logger.debug(f"Falha ao converter para int: {v}")
+            return None
+    def to_date(v):
+        try: return date.fromisoformat(v) if v and str(v).strip() else None
+        except (ValueError, TypeError, AttributeError):
             return None
     conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
     if not conta:
@@ -490,8 +496,29 @@ def atualizar_conta_receber(
     conta.tipo_documento_id = to_int(tipo_documento_id)
     conta.plano_conta_id = to_int(plano_conta_id)
     conta.forma_pagamento = forma_pagamento
+    # Data de recebimento: usa a informada; se vazia e a conta foi paga, assume hoje
+    dr = to_date(data_recebimento)
+    if dr:
+        conta.data_recebimento = dr
+    elif status == StatusConta.PAGO and not conta.data_recebimento:
+        conta.data_recebimento = date.today()
     db.commit()
     request.session["message"] = "Conta a receber atualizada com sucesso!"
+
+    # Emissao de boletos Sicoob (paridade com a tela de criacao)
+    if emitir_boletos:
+        from services.parcelamento import emitir_boletos_contas
+        if conta.parcelamento_grupo:
+            grupo = db.query(ContaReceber).filter(
+                ContaReceber.parcelamento_grupo == conta.parcelamento_grupo
+            ).all()
+        else:
+            grupo = [conta]
+        ok, erros = emitir_boletos_contas(db, grupo)
+        if erros:
+            request.session["error"] = f"{ok} boleto(s) emitido(s), com erro(s): " + "; ".join(erros)
+        else:
+            request.session["message"] = f"Conta atualizada e {ok} boleto(s) emitido(s)!"
     return RedirectResponse(url="/contas/receber", status_code=303)
 
 
