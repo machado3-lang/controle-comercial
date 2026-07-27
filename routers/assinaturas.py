@@ -140,12 +140,21 @@ def listar_assinaturas(
         if prox:
             a.proximo_vencimento = prox.strftime("%d/%m/%Y")
             dias = (prox - date.today()).days
-            a.vencendo_15 = 0 <= dias <= 15
-            a.vencendo_30 = 15 < dias <= 30
+            # Tres estados de vencimento:
+            #  urgente     : 0..9 dias (emitir ja)
+            #  janela_emissao: 10..15 dias (janela ideal p/ gerar NFSe antes do vencimento)
+            #  atencao     : 16..30 dias
+            a.urgente = 0 <= dias <= 9
+            a.janela_emissao = 10 <= dias <= 15
+            a.atencao = 16 <= dias <= 30
         else:
             a.proximo_vencimento = None
-            a.vencendo_15 = False
-            a.vencendo_30 = False
+            a.urgente = False
+            a.janela_emissao = False
+            a.atencao = False
+        # compatibilidade com destaques anteriores
+        a.vencendo_15 = bool(a.urgente or a.janela_emissao)
+        a.vencendo_30 = bool(a.atencao)
 
     # Ordena por vencimento real (data completa), nao apenas pelo dia
     if sort == "vencimento":

@@ -105,3 +105,35 @@ async def test_alterar_dia_ajusta_cobrancas_futuras(authenticated_client, db_ses
     assert c2.data_vencimento.day == 20
     assert c2.data_vencimento.month == futuro.month
     assert c2.data_vencimento.year == futuro.year
+
+
+@pytest.mark.asyncio
+async def test_janela_emissao_badge_na_listagem(authenticated_client, db_session, test_empresa):
+    cliente = criar_cliente_teste(db_session, nome="Janela Cli", cpf_cnpj="33333444445")
+    hoje = date.today()
+    # dia = hoje -> proximo vencimento = hoje (dias 0) -> "Emitir agora"
+    a = Assinatura(
+        cliente_id=cliente.id, periodicidade=1, descricao="Janela",
+        valor=100, quantidade=1, data_inicio=hoje, data_fim=date(2030, 1, 1),
+        dia_vencimento=hoje.day, mes_vencimento=0, situacao=1, travar_cobranca=True,
+    )
+    db_session.add(a)
+    db_session.commit()
+    db_session.refresh(a)
+
+    resp = await authenticated_client.get("/assinaturas/")
+    assert resp.status_code == 200
+
+    # Calcula o tier esperado com a mesma logica do backend
+    prox = router_assinaturas._proximo_vencimento(a)
+    dias = (prox - hoje).days
+    if 0 <= dias <= 9:
+        esperado = "Emitir agora"
+    elif 10 <= dias <= 15:
+        esperado = "Emitir NFSe"
+    elif 16 <= dias <= 30:
+        esperado = "Atenção"
+    else:
+        esperado = None
+    if esperado:
+        assert esperado in resp.text
