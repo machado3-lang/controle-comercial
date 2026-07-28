@@ -76,7 +76,10 @@ def listar_nfse(
         query = query.filter(NFSe.status == status)
     if busca:
         query = query.filter(
-            NFSe.numero.ilike(f"%{busca}%")
+            NFSe.numero.ilike(f"%{busca}%") |
+            NFSe.cliente.has(Cliente.nome.ilike(f"%{busca}%")) |
+            NFSe.cliente.has(Cliente.fantasia.ilike(f"%{busca}%")) |
+            NFSe.cliente.has(Cliente.cpf_cnpj.ilike(f"%{busca}%"))
         )
     if data_inicio:
         query = query.filter(NFSe.data_emissao >= datetime.strptime(data_inicio, "%Y-%m-%d"))

@@ -199,7 +199,10 @@ def listar_nfe(
         query = query.filter(NFe.status == status)
     if busca:
         query = query.filter(
-            NFe.numero.cast(String).ilike(f"%{busca}%")
+            NFe.numero.cast(String).ilike(f"%{busca}%") |
+            NFe.cliente.has(Cliente.nome.ilike(f"%{busca}%")) |
+            NFe.cliente.has(Cliente.fantasia.ilike(f"%{busca}%")) |
+            NFe.cliente.has(Cliente.cpf_cnpj.ilike(f"%{busca}%"))
         )
     from sqlalchemy import asc as sql_asc
     order_func = desc if ordem == "desc" else sql_asc
