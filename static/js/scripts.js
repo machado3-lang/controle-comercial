@@ -281,7 +281,7 @@ function handleSubmitExclusao(form) {
         if (status === 403) {
             showToast(data.erro || data.error || 'Senha inválida', 'danger');
         } else if (data.ok || data.success) {
-            showToast('Registro excluído', 'success');
+            showToast(data.message || 'Registro excluído', 'success');
             bootstrap.Modal.getInstance(document.getElementById('modalConfirmarExclusao')).hide();
             setTimeout(() => {
                 if (data.redirect) {

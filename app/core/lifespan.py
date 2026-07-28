@@ -784,11 +784,24 @@ def create_app() -> FastAPI:
             ContaReceber.data_vencimento <= hoje + timedelta(days=30)
         ).scalar() or 0
 
-        assinaturas_vencendo = db.query(func.count(Assinatura.id)).filter(
-            Assinatura.situacao == 1,
-            Assinatura.data_fim >= hoje,
-            Assinatura.data_fim <= hoje + timedelta(days=30)
-        ).scalar() or 0
+        # Assinaturas vencendo: usa a data real de vencimento (ciclo de cobrança
+        # calculada por proximo_vencimento_exibicao), não o campo data_fim bruto,
+        # que costuma estar em 2050 (indefinido) ou no passado.
+        from routers.assinaturas import proximo_vencimento_exibicao
+        _limite_venc = hoje + timedelta(days=30)
+        _assinaturas_ativas = db.query(Assinatura).options(joinedload(Assinatura.cliente)).filter(
+            Assinatura.situacao == 1
+        ).all()
+        assinaturas_proximas = []
+        for _a in _assinaturas_ativas:
+            _prox = proximo_vencimento_exibicao(db, _a)
+            if _prox is not None and _prox <= _limite_venc:
+                _a.proximo_vencimento = _prox.strftime("%d/%m/%Y")
+                _a.prox_data = _prox
+                assinaturas_proximas.append(_a)
+        assinaturas_proximas.sort(key=lambda x: x.prox_data)
+        assinaturas_proximas = assinaturas_proximas[:5]
+        assinaturas_vencendo = len(assinaturas_proximas)
 
         ordens_abertas = db.query(func.count(OrdemServico.id)).filter(
             OrdemServico.status.in_([StatusOS.ABERTA, StatusOS.EM_ANDAMENTO])
@@ -797,12 +810,6 @@ def create_app() -> FastAPI:
         clientes_rapidos = db.query(Cliente).order_by(Cliente.nome).all()
         produtos_rapidos = db.query(Produto).order_by(Produto.nome).all()
         ultima_os = db.query(OrdemServico).order_by(OrdemServico.created_at.desc()).limit(5).all()
-        assinaturas_proximas = db.query(Assinatura).options(joinedload(Assinatura.cliente)).filter(
-            Assinatura.situacao == 1,
-            Assinatura.data_fim >= hoje,
-            Assinatura.data_fim <= hoje + timedelta(days=30)
-        ).order_by(Assinatura.data_fim).limit(5).all()
-
         inadimplente_total = db.query(func.sum(ContaReceber.valor)).filter(
             ContaReceber.data_vencimento < hoje,
             ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])

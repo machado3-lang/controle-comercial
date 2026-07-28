@@ -114,8 +114,9 @@ def checar_cpf_cnpj(q: str = Query(""), db: Session = Depends(get_db)):
 
 @router.get("/diagnostico-codigos")
 def diagnostico_codigos(request: Request, db: Session = Depends(get_db)):
-    """Relatório read-only: cadastros sem código e códigos duplicados
-    (clientes e fornecedores). Não altera nada."""
+    """Relatório read-only: cadastros sem código, códigos duplicados e
+    CPF/CNPJ duplicados (clientes e fornecedores). Não altera nada."""
+    import re
     from models import Fornecedor
     from collections import defaultdict
 
@@ -131,17 +132,33 @@ def diagnostico_codigos(request: Request, db: Session = Depends(get_db)):
         sem_codigo.sort(key=lambda r: (r.nome or "").lower())
         return sem_codigo, duplicados
 
+    def analisar_docs(rows):
+        """Agrupa por CPF/CNPJ normalizado (sem máscara)."""
+        grupos = defaultdict(list)
+        for r in rows:
+            doc = re.sub(r"[^A-Za-z0-9]", "", r.cpf_cnpj or "").upper()
+            if doc:
+                grupos[doc].append(r)
+        dups = [(doc, regs) for doc, regs in grupos.items() if len(regs) > 1]
+        dups.sort(key=lambda x: x[0])
+        return dups
+
     clientes = db.query(Cliente).all()
     fornecedores = db.query(Fornecedor).all()
     cli_sem, cli_dup = analisar(clientes)
     for_sem, for_dup = analisar(fornecedores)
+    cli_dup_doc = analisar_docs(clientes)
+    for_dup_doc = analisar_docs(fornecedores)
     return request.app.state.templates.TemplateResponse(request,
         "clientes/diagnostico_codigos.html",
         {"request": request,
          "cli_sem": cli_sem, "cli_dup": cli_dup,
          "for_sem": for_sem, "for_dup": for_dup,
+         "cli_dup_doc": cli_dup_doc, "for_dup_doc": for_dup_doc,
          "cli_dup_total": sum(len(r) for _, r in cli_dup),
-         "for_dup_total": sum(len(r) for _, r in for_dup)}
+         "for_dup_total": sum(len(r) for _, r in for_dup),
+         "cli_dup_doc_total": sum(len(r) for _, r in cli_dup_doc),
+         "for_dup_doc_total": sum(len(r) for _, r in for_dup_doc)}
     )
 
 
@@ -430,18 +447,34 @@ def atualizar_cliente(
 
 
 @router.post("/{cliente_id}/excluir")
-def excluir_cliente(request: Request, cliente_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+def excluir_cliente(request: Request, cliente_id: int, db: Session = Depends(get_db), senha: str = Form(""), next: str = Query("")):
     if not confirma_senha_usuario(request, db, senha):
         return JSONResponse({"success": False, "error": "Senha inválida ou usuário não autorizado"}, status_code=403)
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
-    if cliente:
-        cliente_nome = cliente.nome
+    if not cliente:
+        return JSONResponse({"success": False, "error": "Cliente não encontrado"})
+    cliente_nome = cliente.nome
+    tem_vinculo = any([
+        cliente.contas_receber, cliente.assinaturas, cliente.ordens_servico,
+        cliente.pedidos_venda, cliente.consolidacoes, cliente.nfes, cliente.nfses,
+    ])
+    destino = next if (next.startswith("/") and not next.startswith("//")) else "/clientes"
+    if tem_vinculo:
         cliente.situacao = "I"
         db.commit()
         registrar_auditoria(
-            db, request.session.get("user_id"), "excluir",
-            "cliente", cliente_id, f"Cliente: {cliente_nome}",
+            db, request.session.get("user_id"), "inativar",
+            "cliente", cliente_id, f"Cliente (vínculos): {cliente_nome}",
             request.client.host if request.client else None
         )
-        return {"success": True, "redirect": "/clientes"}
-    return {"success": False, "error": "Cliente não encontrado"}
+        return {"success": True, "redirect": destino,
+                "message": "Cliente inativado (possui registros vinculados)."}
+    db.delete(cliente)
+    db.commit()
+    registrar_auditoria(
+        db, request.session.get("user_id"), "excluir",
+        "cliente", cliente_id, f"Cliente: {cliente_nome}",
+        request.client.host if request.client else None
+    )
+    return {"success": True, "redirect": destino,
+            "message": "Cliente excluído definitivamente."}

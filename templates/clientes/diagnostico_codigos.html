@@ -13,7 +13,7 @@
     </div>
 </div>
 
-<p class="text-slate-400 text-sm mb-6">Relatório somente leitura — nada é alterado. Use para localizar cadastros <strong>sem código</strong> e <strong>códigos duplicados</strong>.</p>
+<p class="text-slate-400 text-sm mb-6">Relatório somente leitura — nada é alterado. Use para localizar cadastros <strong>sem código</strong>, <strong>códigos duplicados</strong> e <strong>CPF/CNPJ duplicados</strong>. Em CPF duplicado, lembre-se de que pode ser legítimo (ex.: produtor rural com mais de uma empresa); CNPJ duplicado geralmente é erro de cadastro.</p>
 
 {% macro bloco(titulo, cor, sem, dup, dup_total, url_base) %}
 <div class="glass-card p-4 mb-6">
@@ -77,6 +77,45 @@
 </div>
 {% endmacro %}
 
+{% macro bloco_doc(titulo, cor, dup, dup_total, url_base) %}
+<div class="glass-card p-4 mb-6">
+    <h5 class="text-{{ cor }}-400 border-b border-slate-800/50 pb-2 mb-3">{{ titulo }}</h5>
+
+    <h6 class="text-slate-300 text-sm mb-2">CPF/CNPJ duplicados <span class="text-slate-500">({{ dup|length }} documento(s), {{ dup_total }} cadastro(s))</span></h6>
+    {% if dup %}
+    <div class="overflow-x-auto">
+        <table class="w-full text-sm">
+            <thead class="text-xs text-slate-500 uppercase"><tr>
+                <th class="text-left py-1 px-2">CPF/CNPJ</th>
+                <th class="text-left py-1 px-2">Nome</th>
+                <th class="text-left py-1 px-2">Código</th>
+                <th class="text-center py-1 px-2">Ação</th>
+            </tr></thead>
+            <tbody class="divide-y divide-slate-800/60">
+                {% for doc, regs in dup %}
+                    {% for r in regs %}
+                    <tr class="{{ 'border-t-2 border-rose-800/40' if loop.first }}">
+                        <td class="py-1 px-2 font-mono text-rose-300">{{ doc if loop.first }}</td>
+                        <td class="py-1 px-2 text-slate-100">{{ r.nome }}</td>
+                        <td class="py-1 px-2 text-amber-300">{{ r.codigo or '-' }}</td>
+                        <td class="py-1 px-2 text-center whitespace-nowrap">
+                            <a href="{{ url_base }}/{{ r.id }}/editar" class="text-cyan-400 hover:text-cyan-300 me-2" title="Editar"><i data-lucide="pencil" class="w-4 h-4 inline"></i></a>
+                            <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition align-middle" onclick="confirmarExclusao('{{ url_base }}/{{ r.id }}/excluir?next=/clientes/diagnostico-codigos')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+    {% else %}
+    <p class="text-emerald-400/70 text-sm mb-2">Nenhum CPF/CNPJ duplicado.</p>
+    {% endif %}
+</div>
+{% endmacro %}
+
 {{ bloco('Clientes', 'cyan', cli_sem, cli_dup, cli_dup_total, '/clientes') }}
 {{ bloco('Fornecedores', 'amber', for_sem, for_dup, for_dup_total, '/fornecedores') }}
+{{ bloco_doc('Clientes — CPF/CNPJ', 'cyan', cli_dup_doc, cli_dup_doc_total, '/clientes') }}
+{{ bloco_doc('Fornecedores — CPF/CNPJ', 'amber', for_dup_doc, for_dup_doc_total, '/fornecedores') }}
 {% endblock %}

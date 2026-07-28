@@ -115,7 +115,7 @@
                     <span class="text-slate-100 text-sm">{{ a.cliente.nome }}</span>
                     <strong class="text-emerald-400 text-sm">R$ {{ "%.2f"|format(a.valor) }}</strong>
                 </div>
-                <small class="text-slate-400">Vence: {{ a.data_fim }}</small>
+                <small class="text-slate-400">Vence: {{ a.proximo_vencimento }}</small>
             </div>
             {% else %}
             <div class="p-4 text-slate-500 text-sm">Nenhuma assinatura vencendo</div>

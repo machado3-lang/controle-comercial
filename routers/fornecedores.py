@@ -288,18 +288,34 @@ def atualizar_fornecedor(
 
 
 @router.post("/{fornecedor_id}/excluir")
-def excluir_fornecedor(request: Request, fornecedor_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+def excluir_fornecedor(request: Request, fornecedor_id: int, db: Session = Depends(get_db), senha: str = Form(""), next: str = Query("")):
     if not confirma_senha_usuario(request, db, senha):
         return JSONResponse({"success": False, "error": "Senha inválida ou usuário não autorizado"}, status_code=403)
     fornecedor = db.query(Fornecedor).filter(Fornecedor.id == fornecedor_id).first()
-    if fornecedor:
-        fornecedor_nome = fornecedor.nome
+    if not fornecedor:
+        return JSONResponse({"success": False, "error": "Fornecedor não encontrado"})
+    fornecedor_nome = fornecedor.nome
+    tem_vinculo = any([
+        fornecedor.contas_pagar, fornecedor.assinaturas, fornecedor.produtos,
+        fornecedor.itens_venda, fornecedor.nfse_recebidas,
+    ])
+    destino = next if (next.startswith("/") and not next.startswith("//")) else "/fornecedores"
+    if tem_vinculo:
         fornecedor.situacao = "I"
         db.commit()
         registrar_auditoria(
-            db, request.session.get("user_id"), "excluir",
-            "fornecedor", fornecedor_id, f"Fornecedor: {fornecedor_nome}",
+            db, request.session.get("user_id"), "inativar",
+            "fornecedor", fornecedor_id, f"Fornecedor (vínculos): {fornecedor_nome}",
             request.client.host if request.client else None
         )
-        return {"success": True, "redirect": "/fornecedores"}
-    return {"success": False, "error": "Fornecedor não encontrado"}
+        return {"success": True, "redirect": destino,
+                "message": "Fornecedor inativado (possui registros vinculados)."}
+    db.delete(fornecedor)
+    db.commit()
+    registrar_auditoria(
+        db, request.session.get("user_id"), "excluir",
+        "fornecedor", fornecedor_id, f"Fornecedor: {fornecedor_nome}",
+        request.client.host if request.client else None
+    )
+    return {"success": True, "redirect": destino,
+            "message": "Fornecedor excluído definitivamente."}
