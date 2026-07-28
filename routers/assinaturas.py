@@ -132,7 +132,8 @@ def proximo_vencimento_exibicao(db: Session, assinatura: Assinatura) -> date | N
 def listar_assinaturas(
     request: Request, db: Session = Depends(get_db),
     periodicidade: str = Query(""), status_filtro: str = Query(""), busca: str = Query(""),
-    vencimento_dias: str = Query(""), sort: str = Query(""), ordem: str = Query("")
+    vencimento_dias: str = Query(""), sort: str = Query(""), ordem: str = Query(""),
+    page: int = Query(1), per_page: int = Query(20)
 ):
     from sqlalchemy.orm import joinedload
     query = db.query(Assinatura).options(joinedload(Assinatura.cliente), joinedload(Assinatura.fornecedor)).join(Cliente)
@@ -211,6 +212,20 @@ def listar_assinaturas(
             reverse=descendente
         )
 
+    # Paginacao (apos filtros, calculo de vencimento e ordenacao em Python)
+    try:
+        pagina = max(1, int(page))
+    except (ValueError, TypeError):
+        pagina = 1
+    try:
+        tamanho = max(1, min(int(per_page), 100))
+    except (ValueError, TypeError):
+        tamanho = 20
+    total_count = len(assinaturas)
+    total_pages = max(1, (total_count + tamanho - 1) // tamanho)
+    pagina = max(1, min(pagina, total_pages))
+    assinaturas_pagina = assinaturas[(pagina - 1) * tamanho: pagina * tamanho]
+
     lucro_total = sum(
         a.valor - (a.valor_revenda or 0)
         for a in assinaturas
@@ -232,12 +247,13 @@ def listar_assinaturas(
     
     return request.app.state.templates.TemplateResponse(
         "assinaturas/listar.html",
-        {"request": request, "assinaturas": assinaturas, "clientes": clientes,
+        {"request": request, "assinaturas": assinaturas_pagina, "clientes": clientes,
          "fornecedores": fornecedores, "servicos": servicos,
          "clientes_json": clientes_json, "fornecedores_json": fornecedores_json, "servicos_json": servicos_json,
          "periodicidade": periodicidade, "status_filtro": status_filtro,
          "busca": busca, "vencimento_dias": vencimento_dias, "SITUACAO_LABELS": SITUACAO_LABELS,
          "sort": sort, "ordem": ordem,
+         "page": pagina, "per_page": tamanho, "total_pages": total_pages, "total_count": total_count,
          "PERIODICIDADE_LABELS": PERIODICIDADE_LABELS, "lucro_total": lucro_total}
     )
 
