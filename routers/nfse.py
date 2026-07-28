@@ -1180,11 +1180,11 @@ def excluir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
         request.session["error"] = "SÃ³ Ã© possÃ­vel excluir NFSe em rascunho"
         return RedirectResponse(url="/nfse", status_code=303)
     try:
-        db.query(ContaReceber).filter(ContaReceber.nfse_id == nfse.id).delete(
-            synchronize_session=False
+        db.query(ContaReceber).filter(ContaReceber.nfse_id == nfse.id).update(
+            {ContaReceber.nfse_id: None}, synchronize_session=False
         )
-        db.query(Assinatura).filter(Assinatura.nfse_id == nfse.id).delete(
-            synchronize_session=False
+        db.query(Assinatura).filter(Assinatura.nfse_id == nfse.id).update(
+            {Assinatura.nfse_id: None}, synchronize_session=False
         )
         db.delete(nfse)
         db.commit()

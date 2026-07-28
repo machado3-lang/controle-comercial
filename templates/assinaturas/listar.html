@@ -91,11 +91,13 @@
                 </td>
                 <td class="px-4 py-3 align-middle" style="min-width: 7rem;">
                     <div class="flex items-center justify-center gap-1 h-9">
+                        {% if not a.travar_cobranca %}
+                        <button type="button" onclick="confirmarGerarCobranca({{ a.id }}, false)" class="inline-flex p-1.5 border border-slate-700 rounded hover:bg-emerald-950/30 transition{% if a.janela_emissao or a.urgente %} text-emerald-300 border-emerald-600 bg-emerald-950/20{% else %} text-emerald-400{% endif %}" title="Renovar (avança o vencimento / gera próxima cobrança){% if a.janela_emissao %} — na janela ideal de emissão{% elif a.urgente %} — vencimento próximo{% endif %}"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+                        {% endif %}
                         <form method="post" action="/assinaturas/{{ a.id }}/gerar-nfse" class="inline">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <button type="submit" class="inline-flex p-1.5 border border-slate-700 rounded hover:bg-cyan-950/30 transition{% if a.janela_emissao or a.urgente %} text-cyan-300 border-cyan-600 bg-cyan-950/20{% else %} text-slate-400{% endif %}" title="Renovar (gera próxima NFSe da assinatura){% if a.janela_emissao %} — na janela ideal de emissão{% elif a.urgente %} — vencimento próximo{% endif %}"><i data-lucide="refresh-cw" class="w-4 h-4"></i></button>
+    <button type="submit" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Gerar NFS-e (rascunho separado da renovação)"><i data-lucide="file-text" class="w-4 h-4"></i></button>
                         </form>
-                        <button type="button" onclick="confirmarGerarCobranca({{ a.id }}, {{ 'true' if a.travar_cobranca else 'false' }})" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Gerar cobrança{% if a.travar_cobranca %} (travada: use a NFS-e){% endif %}"><i data-lucide="banknote" class="w-4 h-4"></i></button>
                         <a href="/assinaturas/{{ a.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="pencil" class="w-4 h-4"></i></a>
                         {% if a.situacao == 1 %}
                         <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir" onclick="confirmarExclusao('/assinaturas/{{ a.id }}/excluir')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>

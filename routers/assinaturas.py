@@ -45,22 +45,44 @@ PERIODICIDADE_OPCOES = [
     (7, "Trianual"),
 ]
 
+# Mapeia o codigo da periodicidade para a quantidade real de meses.
+# Antes o proprio codigo era usado como numero de meses, o que fazia
+# Semestral=4, Anual=5, Bianual=6 e Trianual=7 meses (incorreto).
+PERIODICIDADE_MESES = {
+    1: 1,    # Mensal
+    2: 2,    # Bimestral
+    3: 3,    # Trimestral
+    4: 6,    # Semestral
+    5: 12,   # Anual
+    6: 24,   # Bianual
+    7: 36,   # Trianual
+}
+
+
+def _periodo_meses(periodicidade: int) -> int:
+    """Retorna a quantidade de meses correspondente a periodicidade."""
+    return PERIODICIDADE_MESES.get(int(periodicidade or 1), 1)
+
 
 def _proximo_vencimento(assinatura: Assinatura) -> date | None:
     if assinatura.situacao != 1:
         return None
     hoje = date.today()
-    dia = min(assinatura.dia_vencimento, 28)
+    periodo = _periodo_meses(assinatura.periodicidade)
+    # O mes de referencia ancora no mes de inicio da assinatura (ajustado por
+    # mes_vencimento: 0 = mes corrente, 1 = mes seguinte). Assim, uma assinatura
+    # anual com inicio em julho sempre cai em 31/07, independente do mes atual.
+    m = assinatura.data_inicio.month
+    a = assinatura.data_inicio.year
     if assinatura.mes_vencimento == 1:
-        if hoje.month == 12:
-            data = date(hoje.year + 1, 1, dia)
-        else:
-            data = date(hoje.year, hoje.month + 1, dia)
-    else:
-        data = date(hoje.year, hoje.month, dia)
+        m += 1
+        if m > 12:
+            m = 1
+            a += 1
+    data = get_safe_day(date(a, m, 1), assinatura.dia_vencimento)
     # Avanca o periodo ate cair em uma data futura (nao mostrar vencimento passado)
     while data < hoje:
-        data = _add_months(data, assinatura.periodicidade)
+        data = _add_months(data, periodo)
     return data
 
 
@@ -74,11 +96,36 @@ def proximo_vencimento_para_cobranca(db: Session, assinatura: Assinatura) -> dat
     ultima = db.query(ContaReceber).filter(
         ContaReceber.cliente_id == assinatura.cliente_id,
         ContaReceber.observacao.like(f"%assinatura #{assinatura.id}%"),
-        ContaReceber.status != StatusConta.CANCELADO,
+        ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
     ).order_by(ContaReceber.data_vencimento.desc()).first()
     if ultima:
-        return get_safe_day(_add_months(ultima.data_vencimento, assinatura.periodicidade), assinatura.dia_vencimento)
+        return get_safe_day(_add_months(ultima.data_vencimento, _periodo_meses(assinatura.periodicidade)), assinatura.dia_vencimento)
     return _proximo_vencimento(assinatura) or date.today()
+
+
+def proximo_vencimento_exibicao(db: Session, assinatura: Assinatura) -> date | None:
+    """Próximo vencimento exibido na listagem.
+
+    Regra: próximo vencimento = última cobrança já gerada para a assinatura
+    + periodicidade (com rollover de 31/30 -> 1º do mês seguinte). Se não há
+    nenhuma cobrança, usa o calendário (primeira cobrança).
+
+    Vantagens desta abordagem:
+      - um ciclo cuja cobrança já existe deixa de aparecer como 'Emitir agora';
+      - ao excluir cobranças futuras, o próximo vencimento "recomeça" a partir
+        da última cobrança remanescente (ex.: sobrando 28/07 -> próximo 28/08);
+      - não depende de flags de boleto/nfse/pago, evitando falsos 'Emitir agora'.
+    """
+    if assinatura.situacao != 1:
+        return None
+    ultima = db.query(ContaReceber).filter(
+        ContaReceber.cliente_id == assinatura.cliente_id,
+        ContaReceber.observacao.like(f"%assinatura #{assinatura.id}%"),
+        ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
+    ).order_by(ContaReceber.data_vencimento.desc()).first()
+    if ultima:
+        return get_safe_day(_add_months(ultima.data_vencimento, _periodo_meses(assinatura.periodicidade)), assinatura.dia_vencimento)
+    return _proximo_vencimento(assinatura)
 
 
 @router.get("/")
@@ -128,14 +175,14 @@ def listar_assinaturas(
                 Assinatura.data_inicio <= fim
             )
             assinaturas = query.all()
-            assinaturas = [a for a in assinaturas if _proximo_vencimento(a) and hoje <= _proximo_vencimento(a) <= fim]
+            assinaturas = [a for a in assinaturas if (prox := proximo_vencimento_exibicao(db, a)) and hoje <= prox <= fim]
         except ValueError:
             assinaturas = query.all()
     else:
         assinaturas = query.all()
     
     for a in assinaturas:
-        prox = _proximo_vencimento(a)
+        prox = proximo_vencimento_exibicao(db, a)
         a.prox_data = prox
         if prox:
             a.proximo_vencimento = prox.strftime("%d/%m/%Y")
@@ -263,8 +310,9 @@ def _add_months(source_date, months):
     month = source_date.month - 1 + months
     year = source_date.year + month // 12
     month = month % 12 + 1
-    day = min(source_date.day, 28)
-    return date(year, month, day)
+    # Preserva o dia original; se o mes nao tiver esse dia (ex.: 31 em fevereiro),
+    # get_safe_day ajusta para o dia 1 do mes seguinte (conforme regra de negocio).
+    return get_safe_day(date(year, month, 1), source_date.day)
 
 
 def _gerar_cobranca(db: Session, assinatura: Assinatura, gerar_proximas: int = 3):
@@ -274,23 +322,34 @@ def _gerar_cobranca(db: Session, assinatura: Assinatura, gerar_proximas: int = 3
     hoje = date.today()
     label = PERIODICIDADE_LABELS.get(assinatura.periodicidade, "Mensal")
     dia = assinatura.dia_vencimento
+    periodo = _periodo_meses(assinatura.periodicidade)
 
     ultima_conta = db.query(ContaReceber).filter(
         ContaReceber.cliente_id == assinatura.cliente_id,
-        ContaReceber.observacao.like(f"%assinatura #{assinatura.id}%")
+        ContaReceber.observacao.like(f"%assinatura #{assinatura.id}%"),
+        ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
     ).order_by(ContaReceber.data_vencimento.desc()).first()
 
     if ultima_conta:
-        data_base = _add_months(ultima_conta.data_vencimento, assinatura.periodicidade)
+        data_base = _add_months(ultima_conta.data_vencimento, periodo)
     else:
-        m = hoje.month + 1 if assinatura.mes_vencimento == 1 else hoje.month
-        a = hoje.year if m <= 12 else hoje.year + 1
-        m = m if m <= 12 else 1
+        # Primeira cobranca ancora no mes de inicio da assinatura (ajustado por
+        # mes_vencimento: 0 = mes corrente, 1 = mes seguinte).
+        m = assinatura.data_inicio.month
+        a = assinatura.data_inicio.year
+        if assinatura.mes_vencimento == 1:
+            m += 1
+            if m > 12:
+                m = 1
+                a += 1
         data_base = date(a, m, 1)
+        # Avanca ate a primeira data de vencimento futura ou igual a hoje
+        while get_safe_day(data_base, dia) < hoje:
+            data_base = _add_months(data_base, periodo)
 
     for i in range(gerar_proximas):
         data_venc = get_safe_day(data_base, dia)
-        if assinatura.periodicidade >= 5:
+        if periodo >= 12:
             desc = f"{label} - {assinatura.descricao} - {data_venc.year}"
         else:
             desc = f"{label} - {assinatura.descricao} - {data_venc.month:02d}/{data_venc.year}"
@@ -298,7 +357,7 @@ def _gerar_cobranca(db: Session, assinatura: Assinatura, gerar_proximas: int = 3
         existente = db.query(ContaReceber).filter(
             ContaReceber.cliente_id == assinatura.cliente_id,
             ContaReceber.descricao == desc,
-            ContaReceber.status != StatusConta.CANCELADO
+            ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO])
         ).first()
 
         if not existente and data_venc >= hoje:
@@ -311,7 +370,7 @@ def _gerar_cobranca(db: Session, assinatura: Assinatura, gerar_proximas: int = 3
             )
             db.add(conta)
 
-        data_base = _add_months(data_base, assinatura.periodicidade)
+        data_base = _add_months(data_base, periodo)
 
     db.commit()
 
