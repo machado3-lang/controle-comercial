@@ -132,7 +132,7 @@ def proximo_vencimento_exibicao(db: Session, assinatura: Assinatura) -> date | N
 def listar_assinaturas(
     request: Request, db: Session = Depends(get_db),
     periodicidade: str = Query(""), status_filtro: str = Query(""), busca: str = Query(""),
-    vencimento_dias: str = Query(""), sort: str = Query(""), ordem: str = Query(""),
+    vencimento_dias: str = Query(""), sort: str = Query("vencimento"), ordem: str = Query("asc"),
     page: int = Query(1), per_page: int = Query(20)
 ):
     from sqlalchemy.orm import joinedload

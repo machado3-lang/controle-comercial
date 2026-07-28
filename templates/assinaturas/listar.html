@@ -34,6 +34,8 @@
                 <option value="3" {{ 'selected' if status_filtro == '3' }}>Isento</option>
                 <option value="4" {{ 'selected' if status_filtro == '4' }}>Em Avaliação</option>
             </select>
+            <input type="hidden" name="sort" value="{{ sort }}">
+            <input type="hidden" name="ordem" value="{{ ordem }}">
         </form>
     </div>
     <button class="flex items-center h-9 px-4 text-sm bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10 flex-shrink-0 ml-auto" data-bs-toggle="modal" data-bs-target="#modalNova"><i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> Novo</button>
