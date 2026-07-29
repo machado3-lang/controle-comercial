@@ -11,7 +11,7 @@ from database import get_db
 from models import (
     PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem,
     PedidoConsolidadoItemOrigem, Cliente, Produto, ProdutoVariacao, StatusPedido,
-    FormaPagamento, StatusConsolidacao, ContaReceber, Empresa, Usuario
+    FormaPagamento, StatusConsolidacao, ContaReceber, StatusConta, Empresa, Usuario
 )
 
 logger = logging.getLogger(__name__)
@@ -237,6 +237,10 @@ async def criar_consolidacao(
 
     for pedido in pedidos:
         for item in pedido.itens:
+            # Pula itens-filho de kit (item_pai_id): sao representados pela
+            # explosao do kit-pai na emissao, evitando dupla contagem.
+            if item.item_pai_id is not None:
+                continue
             key = (item.produto_id, item.variacao_id, item.descricao, item.preco_unitario)
             if key not in itens_agregados:
                 itens_agregados[key] = {
@@ -249,6 +253,7 @@ async def criar_consolidacao(
                     "unidade": "UN",
                     "ncm": None,
                     "cfop": None,
+                    "fornecedor_id": item.fornecedor_id,
                     "origens": [],
                 }
             agg = itens_agregados[key]
@@ -278,6 +283,7 @@ async def criar_consolidacao(
             unidade=agg["unidade"],
             ncm=agg["ncm"],
             cfop=agg["cfop"],
+            fornecedor_id=agg["fornecedor_id"],
         )
         db.add(item_cons)
         db.flush()
@@ -318,13 +324,15 @@ def _rebuild_itens_consolidacao(db, consolidacao):
     total_consolidado = Decimal("0")
     for pedido in consolidacao.pedidos_origem:
         for item in pedido.itens:
+            if item.item_pai_id is not None:
+                continue
             key = (item.produto_id, item.variacao_id, item.descricao, item.preco_unitario)
             if key not in itens_agregados:
                 itens_agregados[key] = {
                     "produto_id": item.produto_id, "variacao_id": item.variacao_id,
                     "descricao": item.descricao, "quantidade": Decimal("0"),
                     "preco_unitario": item.preco_unitario, "total": Decimal("0"),
-                    "unidade": "UN", "ncm": None, "cfop": None, "origens": [],
+                    "unidade": "UN", "ncm": None, "cfop": None, "fornecedor_id": item.fornecedor_id, "origens": [],
                 }
             agg = itens_agregados[key]
             agg["quantidade"] += Decimal(str(item.quantidade))
@@ -340,6 +348,7 @@ def _rebuild_itens_consolidacao(db, consolidacao):
             variacao_id=agg["variacao_id"], descricao=agg["descricao"],
             quantidade=agg["quantidade"], preco_unitario=agg["preco_unitario"],
             total=agg["total"], unidade=agg["unidade"], ncm=agg["ncm"], cfop=agg["cfop"],
+            fornecedor_id=agg["fornecedor_id"],
         )
         db.add(item_cons)
         db.flush()
@@ -534,25 +543,25 @@ def finalizar_consolidacao(
     # TODO: get current user id from session
     # consolidacao.finalizado_por = current_user_id
 
-    # Cria conta(s) a receber se necessário — com suporte a parcelamento
+    # Cria conta(s) a receber com suporte a parcelamento, independente da
+    # forma de pagamento (à vista/cartão também geram o registro financeiro).
     contas_geradas = []
-    if forma_pagamento in ["aprazo", "boleto"] or gerar_boleto:
-        from services.parcelamento import gerar_contas_receber
-        try:
-            venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (consolidacao.data_fechamento or date.today())
-        except ValueError:
-            venc = consolidacao.data_fechamento or date.today()
-        contas_geradas = gerar_contas_receber(
-            db,
-            cliente_id=consolidacao.cliente_id,
-            descricao=f"Consolidação {consolidacao.numero}",
-            valor_total=consolidacao.total or 0,
-            primeiro_vencimento=venc,
-            num_parcelas=num_parcelas,
-            intervalo_dias=intervalo_dias,
-            forma_pagamento=forma_pagamento or "NFSe",
-            consolidacao_id=consolidacao.id,
-        )
+    from services.parcelamento import gerar_contas_receber
+    try:
+        venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (consolidacao.data_fechamento or date.today())
+    except ValueError:
+        venc = consolidacao.data_fechamento or date.today()
+    contas_geradas = gerar_contas_receber(
+        db,
+        cliente_id=consolidacao.cliente_id,
+        descricao=f"Consolidação {consolidacao.numero}",
+        valor_total=consolidacao.total or 0,
+        primeiro_vencimento=venc,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
+        forma_pagamento=forma_pagamento or "NFSe",
+        consolidacao_id=consolidacao.id,
+    )
 
     db.commit()
 
@@ -599,6 +608,12 @@ def cancelar_consolidacao(
     consolidacao.status = StatusConsolidacao.CANCELADO
     if motivo:
         consolidacao.observacao = (consolidacao.observacao or "") + f"\nCancelado: {motivo}"
+
+    # Estorna os registros financeiros/fiscais já gerados pela consolidação
+    for conta in consolidacao.contas_receber:
+        conta.status = StatusConta.CANCELADO
+    if consolidacao.nfse:
+        consolidacao.nfse.status = "cancelada"
 
     db.commit()
     request.session["success"] = "Consolidação cancelada e pedidos liberados"

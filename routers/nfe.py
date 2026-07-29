@@ -667,6 +667,10 @@ def emitir_pedido_submit(
         request.session["error"] = "Pedido não encontrado"
         return RedirectResponse(url="/nfe", status_code=303)
 
+    if pedido.consolidacao_id is not None:
+        request.session["error"] = "Este pedido pertence a uma consolidação; fature pela consolidação."
+        return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
+
     itens_nfe, itens_nfse = explodir_itens(pedido=pedido, db=db)
     if not itens_nfe:
         if itens_nfse:

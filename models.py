@@ -472,6 +472,7 @@ class StatusPedido(str, enum.Enum):
     FATURADO = "faturado"
     PRE_VENDA = "pre_venda"
     CONSOLIDADO = "consolidado"
+    AGRUPADO = "agrupado"
     CANCELADO = "cancelado"
 
 
@@ -596,11 +597,13 @@ class PedidoConsolidadoItem(Base):
     unidade = Column(String(10), nullable=True, default="UN")
     ncm = Column(String(10), nullable=True)
     cfop = Column(String(4), nullable=True)
+    fornecedor_id = Column(Integer, ForeignKey("fornecedores.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
 
     consolidacao = relationship("PedidoConsolidado", back_populates="itens")
     produto = relationship("Produto", back_populates="itens_consolidado")
     variacao = relationship("ProdutoVariacao", back_populates="itens_consolidado")
+    fornecedor = relationship("Fornecedor")
     itens_origem = relationship("PedidoConsolidadoItemOrigem", back_populates="item_consolidado", cascade="all, delete-orphan")
 
 

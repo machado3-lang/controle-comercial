@@ -339,6 +339,12 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido nÃ£o encontrado")
 
+    if pedido.consolidacao_id is not None:
+        return JSONResponse(
+            {"error": "Este pedido pertence a uma consolidação; fature pela consolidação."},
+            status_code=400,
+        )
+
     itens_servico = [i for i in pedido.itens if i.produto and i.produto.tipo == 'servico']
     if not itens_servico:
         return JSONResponse({"error": "Nenhum item de serviÃ§o no pedido"}, status_code=400)

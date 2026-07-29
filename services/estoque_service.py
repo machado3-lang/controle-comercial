@@ -169,6 +169,10 @@ def baixar_pedido(db, pedido, usuario_id=None):
     for item in itens:
         if not item.produto_id:
             continue
+        produto = item.produto
+        # Kit e agregacao: a baixa e feita pelos insumos (filhos), nao pelo pai
+        if produto and produto.tipo == "kit":
+            continue
         lancar_movimentacao(
             db, produto_id=item.produto_id, tipo="SAIDA_VENDA",
             quantidade=-float(item.quantidade or 0),

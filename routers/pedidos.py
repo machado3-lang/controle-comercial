@@ -19,6 +19,8 @@ STATUS_PEDIDO_LABELS = {
     StatusPedido.APROVADO: "Aprovado",
     StatusPedido.FATURADO: "Faturado",
     StatusPedido.PRE_VENDA: "Pré-venda",
+    StatusPedido.CONSOLIDADO: "Consolidado",
+    StatusPedido.AGRUPADO: "Agrupado",
     StatusPedido.CANCELADO: "Cancelado",
 }
 
@@ -155,9 +157,11 @@ async def finalizar_grupo(
             )
             db.add(novo_item)
             novo_pedido.total = (novo_pedido.total or 0) + item.total
-        # Manter pedido antigo, apenas marcar referência
+        # Manter pedido antigo, apenas marcar referência.
+        # Status AGRUPADO (e nao FATURADO) evita dupla contagem de receita:
+        # o pedido agrupado (novo_pedido) e o unico considerado faturado.
         p.pedido_agrupado_id = novo_pedido.id
-        p.status = StatusPedido.FATURADO  # Atualiza status para indicar agrupado
+        p.status = StatusPedido.AGRUPADO
     novo_pedido.observacao = f"Pedidos agrupados: {pedidos_numeros}"
     db.commit()
     return RedirectResponse(url=f"/pedidos/{novo_pedido.id}", status_code=303)
@@ -270,6 +274,7 @@ def salvar_pedido(
                         pi_filho = PedidoVendaItem(
                             pedido_id=pedido.id,
                             item_pai_id=pai_id,
+                            produto_id=comp.insumo_id,
                             descricao=comp_prod.nome,
                             quantidade=comp.quantidade_padrao,
                             preco_unitario=float(comp_prod.preco or 0),
@@ -343,6 +348,35 @@ def excluir_pedido(
     if not pedido:
         return JSONResponse({"erro": "Pedido não encontrado"}, status_code=404)
     try:
+        # Pedido dentro de uma consolidação: tratar para não deixar órfãos
+        if pedido.consolidacao_id is not None:
+            from routers.consolidacoes import _rebuild_itens_consolidacao
+            from models import PedidoConsolidado, StatusConsolidacao
+            cons = db.query(PedidoConsolidado).filter(
+                PedidoConsolidado.id == pedido.consolidacao_id
+            ).first()
+            if cons and cons.status != StatusConsolidacao.ABERTO:
+                return JSONResponse(
+                    {"erro": "Não é possível excluir: este pedido pertence a uma consolidação já finalizada. Cancele a consolidação primeiro."},
+                    status_code=400,
+                )
+            pedido.consolidacao_id = None
+            pedido.status = StatusPedido.PRE_VENDA
+            if cons:
+                restantes = db.query(PedidoVenda).filter(
+                    PedidoVenda.consolidacao_id == cons.id
+                ).count()
+                if restantes == 0:
+                    for it in cons.itens:
+                        db.query(PedidoConsolidadoItemOrigem).filter(
+                            PedidoConsolidadoItemOrigem.item_consolidado_id == it.id
+                        ).delete()
+                    db.query(PedidoConsolidadoItem).filter(
+                        PedidoConsolidadoItem.consolidacao_id == cons.id
+                    ).delete()
+                    db.delete(cons)
+                else:
+                    _rebuild_itens_consolidacao(db, cons)
         if excluir_contas == "1":
             for nfse in db.query(NFSe).filter(NFSe.pedido_id == pedido_id).all():
                 db.delete(nfse)

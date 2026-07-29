@@ -277,6 +277,10 @@ def explodir_itens(pedido=None, os=None, db=None) -> tuple:
 
     if pedido:
         for item in pedido.itens:
+            # Itens-filho de kit (item_pai_id) sao representados pela explosao
+            # do kit-pai; pular aqui para nao duplicar na NFe.
+            if item.item_pai_id is not None:
+                continue
             produto = item.produto
             if not produto:
                 continue
@@ -325,7 +329,7 @@ def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse):
     ).all()
     for comp in composicoes:
         insumo = comp.insumo
-        qtd = (comp.quantidade_padrao or 1) * quantidade
+        qtd = float(comp.quantidade_padrao or 1) * float(quantidade)
         if insumo.tipo == "produto":
             itens_nfe.append({
                 "produto_id": insumo.id,
