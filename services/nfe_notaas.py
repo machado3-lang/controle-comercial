@@ -2,7 +2,7 @@ import json
 import time
 import httpx
 from typing import Optional
-from models import Empresa
+from models import Empresa, Produto
 from app.core.config import settings
 
 
@@ -301,23 +301,39 @@ def explodir_itens(pedido=None, os=None, db=None) -> tuple:
 
     if os:
         if os.valor_pecas and os.valor_pecas > 0:
-            nomes_pecas = "Peças diversas"
+            pecas = []
             if os.pecas_utilizadas:
                 try:
-                    pecas_data = json.loads(os.pecas_utilizadas)
-                    if isinstance(pecas_data, list):
-                        nomes_pecas = "; ".join(p.get("nome", "") for p in pecas_data if p.get("nome"))
+                    data = json.loads(os.pecas_utilizadas)
+                    if isinstance(data, list):
+                        pecas = data
                 except (json.JSONDecodeError, TypeError):
-                    nomes_pecas = os.pecas_utilizadas[:280]
-            itens_nfe.append({
-                "produto_id": None,
-                "descricao": nomes_pecas[:300],
-                "ncm": "99999999",
-                "unidade": "UN",
-                "quantidade": 1,
-                "preco_unitario": os.valor_pecas,
-                "origem": 0,
-            })
+                    pecas = []
+            if pecas:
+                for p in pecas:
+                    pid = p.get("id")
+                    prod = db.query(Produto).filter(Produto.id == pid).first() if pid else None
+                    qtd = float(p.get("qtd", 1) or 1)
+                    preco = float(p.get("preco", 0) or 0)
+                    itens_nfe.append({
+                        "produto_id": pid,
+                        "descricao": p.get("nome") or (prod.nome if prod else "Peça"),
+                        "ncm": (prod.ncm if (prod and prod.ncm) else "99999999"),
+                        "unidade": (prod.unidade or "UN") if prod else "UN",
+                        "quantidade": qtd,
+                        "preco_unitario": preco,
+                        "origem": (prod.origem if (prod and prod.origem is not None) else 0),
+                    })
+            else:
+                itens_nfe.append({
+                    "produto_id": None,
+                    "descricao": "Peças diversas",
+                    "ncm": "99999999",
+                    "unidade": "UN",
+                    "quantidade": 1,
+                    "preco_unitario": os.valor_pecas,
+                    "origem": 0,
+                })
 
     return itens_nfe, itens_nfse
 

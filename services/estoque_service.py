@@ -4,6 +4,7 @@ Regra central: o saldo do produto eh SEMPRE atualizado por uma
 MovimentacaoEstoque (nunca editado direto). Todo lancamento eh idempotente
 por (doc_tipo, doc_id, produto_id, tipo) para nao duplicar ao reemitir notas.
 """
+import json
 import logging
 from decimal import Decimal
 from database import SessionLocal
@@ -182,11 +183,24 @@ def baixar_pedido(db, pedido, usuario_id=None):
 
 
 def baixar_os_pecas(db, os_id, usuario_id=None):
-    """OS: baixa as pecas vinculadas (os_pecas). Insumo -> SAIDA_INSUMO;
-    mercadoria -> SAIDA_VENDA."""
+    """OS: baixa as pecas vinculadas. Prioriza os registros estruturados
+    (OSPeca); se nao houver nenhum, usa o JSON pecas_utilizadas da OS.
+    Insumo -> SAIDA_INSUMO; mercadoria -> SAIDA_VENDA."""
     from models_estoque import OSPeca
-    from models import Produto
+    from models import Produto, OrdemServico
     pecas = db.query(OSPeca).filter(OSPeca.os_id == os_id).all()
+    if not pecas:
+        os = db.query(OrdemServico).filter(OrdemServico.id == os_id).first()
+        if os and os.pecas_utilizadas:
+            try:
+                dados = json.loads(os.pecas_utilizadas)
+                if isinstance(dados, list):
+                    pecas = [
+                        type("P", (), {"produto_id": p.get("id"), "quantidade": p.get("qtd", 1)})()
+                        for p in dados if p.get("id")
+                    ]
+            except (json.JSONDecodeError, TypeError):
+                pecas = []
     for p in pecas:
         produto = db.query(Produto).filter(Produto.id == p.produto_id).first()
         if not produto:

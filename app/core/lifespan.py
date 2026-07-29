@@ -561,6 +561,16 @@ def create_app() -> FastAPI:
         return Markup(result)
 
     templates.env.filters["tojson"] = tojson_filter
+
+    def fromjson_filter(value):
+        if not value:
+            return None
+        try:
+            return json.loads(value)
+        except (json.JSONDecodeError, TypeError, ValueError):
+            return None
+    templates.env.filters["fromjson"] = fromjson_filter
+
     templates.env.globals["now"] = date_func.today
     app.state.templates = templates
 

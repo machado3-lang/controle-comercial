@@ -534,21 +534,57 @@ def emitir_os_nfse_submit(
         db.add(nfse)
         db.flush()
 
-        servico_produto = db.query(Produto).filter(
-            Produto.tipo == "servico", Produto.situacao == "A"
-        ).first()
+        import json
+        # Monta os itens de serviço a partir dos serviços reais da OS
+        servicos = []
+        if os.servicos_executados:
+            try:
+                servicos = json.loads(os.servicos_executados)
+                if not isinstance(servicos, list):
+                    servicos = []
+            except (json.JSONDecodeError, TypeError):
+                servicos = []
 
-        nfse_item = NFSeItem(
-            nfse_id=nfse.id,
-            produto_id=servico_produto.id if servico_produto else None,
-            descricao=os.servicos_executados or "ServiÃ§o prestado",
-            quantidade=1,
-            valor_unitario=os.valor_servico,
-            valor_total=os.valor_servico,
-            codigo_servico=servico_produto.codigo_lc116 if servico_produto else "",
-            tributacao_municipal=servico_produto.codigo_tributacao_municipal if servico_produto else "",
-        )
-        db.add(nfse_item)
+        if not servicos:
+            # Sem detalhamento: usa o valor total do serviço como item único
+            servicos = [{"nome": "Serviço prestado", "qtd": 1, "preco": float(os.valor_servico or 0)}]
+
+        # Validação: Dourados exige um único código LC116 por NFS-e
+        codigos_lc116 = set()
+        for s in servicos:
+            pid = s.get("id")
+            prod = db.query(Produto).filter(Produto.id == pid).first() if pid else None
+            if prod and prod.codigo_lc116:
+                codigos_lc116.add(prod.codigo_lc116)
+        if len(codigos_lc116) > 1:
+            db.rollback()
+            request.session["error"] = (
+                f"OS possui serviços com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. "
+                f"A prefeitura de Dourados não aceita múltiplos códigos na mesma NFS-e. Separe em OS diferentes."
+            )
+            return RedirectResponse(url=f"/ordens-servico/{os_id}", status_code=303)
+
+        valor_total = float(sum((float(s.get("qtd", 1) or 1) * float(s.get("preco", 0) or 0)) for s in servicos) or 0)
+        if valor_total == 0:
+            valor_total = float(os.valor_servico or 0)
+        nfse.valor_total = valor_total
+
+        for s in servicos:
+            pid = s.get("id")
+            prod = db.query(Produto).filter(Produto.id == pid).first() if pid else None
+            qtd = float(s.get("qtd", 1) or 1)
+            preco = float(s.get("preco", 0) or 0)
+            nfse_item = NFSeItem(
+                nfse_id=nfse.id,
+                produto_id=pid,
+                descricao=s.get("nome") or (prod.nome if prod else "Serviço prestado"),
+                quantidade=qtd,
+                valor_unitario=preco,
+                valor_total=qtd * preco,
+                codigo_servico=prod.codigo_lc116 if prod else "",
+                tributacao_municipal=prod.codigo_tributacao_municipal if prod else "",
+            )
+            db.add(nfse_item)
 
         db.commit()
         request.session["message"] = f"Rascunho NFSe #{numero_nfse} gerado para OS #{os_id}! Revise antes de emitir."

@@ -41,6 +41,17 @@ def _normalizar_status(valor):
             return StatusOS.ABERTA
 
 
+def _buscar_pecas(db):
+    """Retorna os produtos que são peças (tipo='produto'), restritos à categoria
+    'Peças' quando ela existir, para o seletor da OS não listar itens que não
+    são peças (insumos, materiais etc.)."""
+    query = db.query(Produto).filter(Produto.tipo == 'produto')
+    cat = db.query(CategoriaProduto).filter(CategoriaProduto.nome.ilike("%peça%")).first()
+    if cat:
+        query = query.filter(Produto.categoria_id == cat.id)
+    return query.order_by(Produto.nome).all()
+
+
 @router.get("/")
 def listar_ordens(
     request: Request, db: Session = Depends(get_db),
@@ -86,7 +97,7 @@ def listar_ordens(
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     marcas = db.query(MarcaProduto).order_by(MarcaProduto.nome).all()
     servicos = db.query(Produto).filter(Produto.tipo == 'servico').order_by(Produto.nome).all()
-    pecas = db.query(Produto).filter(Produto.tipo == 'produto').order_by(Produto.nome).all()
+    pecas = _buscar_pecas(db)
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
     servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": float(s.preco or 0)} for s in servicos]
@@ -107,7 +118,7 @@ def nova_ordem(request: Request, db: Session = Depends(get_db)):
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     marcas = db.query(MarcaProduto).order_by(MarcaProduto.nome).all()
     servicos = db.query(Produto).filter(Produto.tipo == 'servico').order_by(Produto.nome).all()
-    pecas = db.query(Produto).filter(Produto.tipo == 'produto').order_by(Produto.nome).all()
+    pecas = _buscar_pecas(db)
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
     servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": float(s.preco or 0)} for s in servicos]
@@ -125,7 +136,7 @@ def criar_ordem(
     request: Request, db: Session = Depends(get_db),
     cliente_id: int = Form(...),
     equipamento: str = Form(...),
-    marca_id: int = Form(0),
+    marca_id: str = Form(""),
     modelo: str = Form(""),
     numero_serie: str = Form(""),
     defeito_relatado: str = Form(""),
@@ -136,7 +147,7 @@ def criar_ordem(
 ):
     marca = None
     if marca_id:
-        m = db.query(MarcaProduto).get(marca_id)
+        m = db.query(MarcaProduto).get(int(marca_id))
         marca = m.nome if m else None
     ordem = OrdemServico(
         cliente_id=cliente_id, equipamento=equipamento,
@@ -159,7 +170,7 @@ def detalhe_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     marcas = db.query(MarcaProduto).order_by(MarcaProduto.nome).all()
     servicos = db.query(Produto).filter(Produto.tipo == 'servico').order_by(Produto.nome).all()
-    pecas = db.query(Produto).filter(Produto.tipo == 'produto').order_by(Produto.nome).all()
+    pecas = _buscar_pecas(db)
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
     servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": float(s.preco or 0)} for s in servicos]
@@ -185,9 +196,7 @@ def editar_ordem_form(request: Request, ordem_id: int, db: Session = Depends(get
     servicos = db.query(Produto).filter(
         Produto.tipo == 'servico', Produto.situacao == 'A'
     ).order_by(Produto.nome).all()
-    pecas = db.query(Produto).filter(
-        Produto.tipo == 'produto', Produto.situacao == 'A'
-    ).order_by(Produto.nome).all()
+    pecas = _buscar_pecas(db)
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
     categorias_json = [{"id": c.id, "nome": c.nome} for c in categorias]
@@ -231,7 +240,7 @@ def atualizar_ordem(
     request: Request, ordem_id: int, db: Session = Depends(get_db),
     cliente_id: int = Form(...),
     equipamento: str = Form(...),
-    marca_id: int = Form(0),
+    marca_id: str = Form(""),
     modelo: str = Form(""),
     numero_serie: str = Form(""),
     defeito_relatado: str = Form(""),
@@ -254,9 +263,8 @@ def atualizar_ordem(
     
     marca = None
     if marca_id:
-        m = db.query(MarcaProduto).get(marca_id)
+        m = db.query(MarcaProduto).get(int(marca_id))
         marca = m.nome if m else None
-    
     ordem.cliente_id = cliente_id
     ordem.equipamento = equipamento
     ordem.marca = marca
@@ -288,7 +296,7 @@ def atualizar_ordem(
     
     ordem.valor_servico = valor_servico
     ordem.valor_pecas = valor_pecas
-    ordem.valor_total = valor_total
+    ordem.valor_total = (valor_servico or 0) + (valor_pecas or 0)
     ordem.data_entrada = date.fromisoformat(data_entrada) if data_entrada else ordem.data_entrada
     ordem.data_saida = date.fromisoformat(data_saida) if data_saida else None
     ordem.status = _normalizar_status(status)
