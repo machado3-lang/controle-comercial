@@ -135,7 +135,7 @@
         </div>
 
         <div id="insumos-section" class="hidden">
-            <h5 class="text-cyan-400 mb-3"><i data-lucide="package-plus" class="w-5 h-5 inline me-2"></i> Composição do Kit</h5>
+            <h5 class="text-cyan-400 mb-3"><i data-lucide="package-plus" class="w-5 h-5 inline me-2"></i> Composi&ccedil;&atilde;o (Insumos do Kit/Servi&ccedil;o)</h5>
             <div class="relative">
                 <table class="w-full text-xs">
                     <thead>
@@ -234,7 +234,7 @@ document.getElementById('situacaoToggle').addEventListener('click', function() {
 function toggleSections() {
     const tipo = tipoSelect.value;
     variacoesSection.classList.toggle('hidden', tipo !== 'produto');
-    insumosSection.classList.toggle('hidden', tipo !== 'kit');
+    insumosSection.classList.toggle('hidden', tipo !== 'kit' && tipo !== 'servico');
     document.querySelectorAll('.campos-preco').forEach(el => {
         const isPrecoCusto = el.querySelector('#precoCusto, input[name="margem"]');
         el.classList.toggle('hidden', tipo === 'kit' || (isPrecoCusto && tipo === 'servico'));

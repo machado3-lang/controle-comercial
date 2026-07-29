@@ -86,7 +86,7 @@ def buscar_insumos(request: Request, db: Session = Depends(get_db), q: str = Que
     if not q or len(q) < 2:
         return {"itens": []}
     query = db.query(Produto).filter(or_(Produto.nome.ilike(f"%{q}%"), Produto.codigo.ilike(f"%{q}%")))
-    query = query.filter(Produto.situacao == "A", Produto.tipo.in_(["produto", "servico"]))
+    query = query.filter(Produto.situacao == "A", Produto.tipo == "produto")
     itens = query.order_by(Produto.nome).limit(20).all()
     return {"itens": [{"id": i.id, "nome": i.nome, "preco": float(i.preco or 0), "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": float(v.preco_adicional or 0)} for v in i.variacoes]} for i in itens]}
 
@@ -286,8 +286,8 @@ def criar_produto(
                 estoque_minimo=0
             ))
         db.commit()
-    # Salvar insumos (composição) se for kit
-    if tipo == "kit" and insumos:
+    # Salvar insumos (composição) se for kit ou serviço
+    if tipo in ("kit", "servico") and insumos:
         import json
         try:
             insumos_list = json.loads(insumos)
@@ -428,8 +428,8 @@ def atualizar_produto(
                 ))
             db.commit()
         
-        # Salvar insumos (composição) se for kit
-        if tipo == "kit" and insumos:
+        # Salvar insumos (composição) se for kit ou serviço
+        if tipo in ("kit", "servico") and insumos:
             db.query(ProdutoComposicao).filter(ProdutoComposicao.produto_pai_id == produto_id).delete()
             import json
             try:

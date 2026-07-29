@@ -104,23 +104,42 @@ def ajuste_inventario(db, produto_id, quantidade_fisica, usuario_id=None, motivo
 
 
 def baixar_nfse(db, nfse, usuario_id=None):
-    """NFSe autorizada: baixa como SAIDA_INSUMO apenas os itens que sao insumos
-    (produto.eh_insumo=True). Mercadorias a venda (nao insumo) nao baixam aqui
-    (Q3: explosao em 2 notas fica para fase futura). Se a NFSe veio de uma OS,
-    tambem baixa as pecas vinculadas (os_pecas)."""
+    """NFSe autorizada: baixa como SAIDA_INSUMO os insumos consumidos.
+
+    - Itens marcados como insumo (produto.eh_insumo=True): baixa direta (compatibilidade).
+    - Servicos (e kits) com composicao (ProdutoComposicao): explode os insumos
+      vinculados e baixa cada um em SAIDA_INSUMO, na proporcao da quantidade do servico.
+    Mercadorias vendidas a parte (tipo='produto') nao entram na NFSe e sao baixadas
+    como SAIDA_VENDA pela baixar_nfe.
+    Se a NFSe veio de uma OS, tambem baixa as pecas vinculadas (os_pecas)."""
     from models import Produto
     for item in nfse.itens:
         if not item.produto_id:
             continue
         produto = db.query(Produto).filter(Produto.id == item.produto_id).first()
-        if not produto or not getattr(produto, "eh_insumo", False):
+        if not produto:
             continue
-        lancar_movimentacao(
-            db, produto_id=produto.id, tipo="SAIDA_INSUMO",
-            quantidade=-float(item.quantidade or 0),
-            doc_tipo="nfse", doc_id=nfse.id, usuario_id=usuario_id,
-            motivo=f"Consumo NFSe #{nfse.numero or nfse.id}",
-        )
+        qtd_item = float(item.quantidade or 1)
+        # Insumo direto (flag eh_insumo) — mantido para compatibilidade
+        if getattr(produto, "eh_insumo", False):
+            lancar_movimentacao(
+                db, produto_id=produto.id, tipo="SAIDA_INSUMO",
+                quantidade=-qtd_item,
+                doc_tipo="nfse", doc_id=nfse.id, usuario_id=usuario_id,
+                motivo=f"Consumo NFSe #{nfse.numero or nfse.id}",
+            )
+        # Insumos vinculados ao servico/kit (ProdutoComposicao)
+        for comp in produto.composicoes:
+            insumo = comp.insumo
+            if not insumo:
+                continue
+            qtd = (comp.quantidade_padrao or 1) * qtd_item
+            lancar_movimentacao(
+                db, produto_id=insumo.id, tipo="SAIDA_INSUMO",
+                quantidade=-float(qtd),
+                doc_tipo="nfse", doc_id=nfse.id, usuario_id=usuario_id,
+                motivo=f"Consumo NFSe #{nfse.numero or nfse.id} (servico: {produto.nome})",
+            )
     if getattr(nfse, "os_id", None):
         try:
             baixar_os_pecas(db, nfse.os_id, usuario_id=usuario_id)
