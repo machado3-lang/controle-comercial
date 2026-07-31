@@ -4,7 +4,9 @@
 <div class="flex items-center justify-between w-full mb-6 gap-4">
     <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="arrow-up-circle" class="w-6 h-6 inline me-2"></i> Contas a Pagar</h4>
     <div class="flex items-center gap-2">
-        <form class="flex items-center flex-wrap gap-2">
+        <form class="flex items-center flex-wrap gap-2" id="formFiltros" method="get">
+            <input type="hidden" name="sort" value="{{ sort }}">
+            <input type="hidden" name="ordem" value="{{ ordem }}">
             <div class="flex items-center">
                 <input type="text" class="w-28 md:w-40 h-9 text-sm px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-l-xl text-slate-100 focus:border-cyan-500/50" name="busca" placeholder="Buscar..." value="{{ busca }}">
                 <button class="flex items-center justify-center h-9 w-10 bg-slate-800 border border-white/10 rounded-r-md -ml-px text-cyan-400 transition" type="submit"><i data-lucide="search" class="w-4 h-4"></i></button>
@@ -256,7 +258,7 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
 <script>
 function irPagina(pag, tamanho) {
-    const form = document.querySelector('.flex.items-center.flex-wrap form');
+    const form = document.getElementById('formFiltros');
     if (!form) { location.href = '?page=' + pag + '&per_page=' + tamanho; return; }
     let inp = document.querySelector('input[name="page"]');
     if (!inp) { inp = document.createElement('input'); inp.type = 'hidden'; inp.name = 'page'; form.appendChild(inp); }

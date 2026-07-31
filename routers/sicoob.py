@@ -402,7 +402,7 @@ def obter_boleto(request: Request, conta_id: str, db: Session = Depends(get_db))
 
 
 @router.get("/api/listar-boletos", response_class=JSONResponse)
-def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 1, size: int = 20, situacao: str = None, busca: str = None, data_inicio: str = None, data_fim: str = None, sort: str = "data_vencimento", ordem: str = "desc"):
+def listar_boletos(request: Request, db: Session = Depends(get_db), page: int = 1, size: int = 20, situacao: str = None, busca: str = None, data_inicio: str = None, data_fim: str = None, sort: str = "data_vencimento", ordem: str = "asc"):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
 
