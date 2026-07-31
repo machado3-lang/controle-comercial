@@ -1021,38 +1021,54 @@ async def alterar_boleto(request: Request, nosso_numero: str, db: Session = Depe
     emp = get_empresa(db)
     cert_config = get_cert_config(db)
     body = await request.json()
-    body_req = {"numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820, "codigoModalidade": 1}
-    if "valor" in body and body["valor"] is not None:
-        body_req["valor"] = float(body["valor"])
-    if "dataVencimento" in body and body["dataVencimento"]:
-        body_req["dataVencimento"] = body["dataVencimento"]
     token = refresh_sicoob_token(db, "boletos_alteracao")
     if not token:
         return {"success": False, "error": "Token Sicoob não configurado"}
+
+    # A API do Sicoob exige a alteração de apenas UM objeto do boleto por requisição PATCH.
+    # Cada tipo de alteração deve ir num objeto próprio (prorrogacaoVencimento, valorNominal, etc.)
+    alteracoes = []
+    if "dataVencimento" in body and body["dataVencimento"]:
+        alteracoes.append({"prorrogacaoVencimento": {"dataVencimento": body["dataVencimento"]}})
+    if "valor" in body and body["valor"] is not None:
+        alteracoes.append({"valorNominal": {"valor": float(body["valor"])}})
+
+    if not alteracoes:
+        return {"success": False, "error": "Nenhuma alteração informada"}
+
     client_args = {"timeout": 30}
     if cert_config and "cert" in cert_config:
         client_args["cert"] = cert_config["cert"]
     with httpx.Client(**client_args) as client:
-        resp = client.patch(
-            f"{SICOOO_API}/boletos/{nosso_numero}",
-            json=body_req,
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        )
-        if resp.status_code in (200, 204):
-            conta = db.query(ContaReceber).filter(
-                (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
-            ).first()
-            if conta:
-                if "valor" in body:
-                    conta.valor = body["valor"]
-                if "dataVencimento" in body:
-                    try:
-                        conta.data_vencimento = datetime.strptime(body["dataVencimento"], "%Y-%m-%d").date()
-                    except (ValueError, TypeError):
-                        logger.warning(f"Data de vencimento inválida ao alterar boleto {nosso_numero}: {body.get('dataVencimento')}")
-                db.commit()
-            return {"success": True}
-        return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+        headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        for alt in alteracoes:
+            body_req = {
+                "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
+                "codigoModalidade": 1,
+                **alt,
+            }
+            resp = client.patch(
+                f"{SICOOO_API}/boletos/{nosso_numero}",
+                json=body_req,
+                headers=headers,
+            )
+            if resp.status_code not in (200, 204):
+                return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+
+        # Atualiza a Conta a Receber vinculada somente após o sucesso no Sicoob
+        conta = db.query(ContaReceber).filter(
+            (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
+        ).first()
+        if conta:
+            if "valor" in body and body["valor"] is not None:
+                conta.valor = float(body["valor"])
+            if "dataVencimento" in body and body["dataVencimento"]:
+                try:
+                    conta.data_vencimento = datetime.strptime(body["dataVencimento"], "%Y-%m-%d").date()
+                except (ValueError, TypeError):
+                    logger.warning(f"Data de vencimento inválida ao alterar boleto {nosso_numero}: {body.get('dataVencimento')}")
+            db.commit()
+        return {"success": True}
 
 
 @router.post("/boleto/{nosso_numero}/excluir", response_class=JSONResponse)
