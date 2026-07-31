@@ -37,6 +37,32 @@ def extrair_situacao(boleto: dict) -> str:
         return str(raw.get("codigo", raw.get("descricao", raw)))
     return str(raw or "")
 
+
+def extrair_data_liquidacao(boleto: dict) -> str | None:
+    """Retorna a data da liquidação do boleto (dt. liquid. do Sicoob).
+
+    O Sicoob não devolve a data de pagamento em campo de nível superior; ela
+    fica em 'listaHistorico', no evento de 'tipoHistorico' 6 (LIQUIDAÇÃO ou
+    BAIXA). Tenta também os campos diretos, caso existam.
+    """
+    for campo in ("dataLiquidacao", "dataPagamento", "dataCredito"):
+        valor = boleto.get(campo)
+        if valor:
+            return str(valor)
+    historico = boleto.get("listaHistorico") or []
+    if isinstance(historico, list):
+        for item in historico:
+            if not isinstance(item, dict):
+                continue
+            tipo = str(item.get("tipoHistorico", "")).strip()
+            descricao = (item.get("descricaoHistorico") or "").upper()
+            # 6 = LIQUIDAÇÃO ou BAIXA; consideramos liquidação quando não há baixa
+            if tipo == "6" or "LIQUIDA" in descricao:
+                data = item.get("dataHistorico")
+                if data:
+                    return str(data)
+    return None
+
 def get_empresa(db: Session) -> Empresa | None:
     return db.query(Empresa).first()
 
@@ -715,7 +741,7 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
                 situacao = extrair_situacao(boleto_data).upper()
                 if "LIQUIDADO" in situacao or "PAGO" in situacao:
                     conta.status = StatusConta.PAGO
-                    data_pgto = boleto_data.get("dataPagamento") or boleto_data.get("dataLiquidacao") or boleto_data.get("dataCredito")
+                    data_pgto = extrair_data_liquidacao(boleto_data)
                     if data_pgto:
                         try:
                             conta.data_recebimento = datetime.strptime(str(data_pgto)[:10], "%Y-%m-%d").date()
@@ -723,6 +749,7 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
                             logger.warning(f"Data de pagamento inválida ao sincronizar boleto {nn}: {data_pgto}")
                             conta.data_recebimento = date.today()
                     else:
+                        logger.warning(f"Boleto {nn} liquidado sem data de liquidação na resposta do Sicoob; usando data atual")
                         conta.data_recebimento = date.today()
                     atualizados += 1
                 elif "BAIXADO" in situacao:
