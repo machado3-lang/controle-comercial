@@ -32,25 +32,43 @@ def lancar_movimentacao(
     usuario_id: int = None,
     motivo: str = None,
     deposito_id: int = None,
+    variacao_id: int = None,
+    idempotente: bool = True,
 ) -> bool:
     """Lanca uma movimentacao e atualiza o saldo do produto.
 
-    Retorna False se ja existir lancamento identico (idempotencia).
+    Retorna False se quantidade 0 ou (quando idempotente) se ja existir
+    lancamento identico.
+
+    Se variacao_id for informado, a incidencia recai na variacao e o saldo do
+    pai (Produto.estoque) passa a ser a soma das variacoes.
     """
-    from models import Produto
+    from models import Produto, ProdutoVariacao
+    from sqlalchemy import func
 
     if quantidade == 0:
         return False
 
-    if _ja_lancado(db, doc_tipo, doc_id, produto_id, tipo):
+    if idempotente and _ja_lancado(db, doc_tipo, doc_id, produto_id, tipo):
         return False
 
     produto = db.query(Produto).filter(Produto.id == produto_id).first()
     if not produto:
         return False
 
-    saldo_antes = float(produto.estoque or 0)
-    saldo_apos = saldo_antes + float(quantidade)
+    if variacao_id:
+        variacao = db.query(ProdutoVariacao).filter(
+            ProdutoVariacao.id == variacao_id,
+            ProdutoVariacao.produto_id == produto_id,
+        ).first()
+        if variacao:
+            variacao.estoque_atual = float(variacao.estoque_atual or 0) + float(quantidade)
+        produto.estoque = db.query(func.sum(ProdutoVariacao.estoque_atual)).filter(
+            ProdutoVariacao.produto_id == produto_id
+        ).scalar() or 0
+    else:
+        saldo_antes = float(produto.estoque or 0)
+        produto.estoque = saldo_antes + float(quantidade)
 
     mov = MovimentacaoEstoque(
         produto_id=produto_id,
@@ -61,33 +79,36 @@ def lancar_movimentacao(
         usuario_id=usuario_id,
         motivo=motivo,
         deposito_id=deposito_id,
-        saldo_apos=saldo_apos,
+        saldo_apos=produto.estoque,
     )
     db.add(mov)
-    produto.estoque = saldo_apos
     db.commit()
     return True
 
 
 def baixar_por_itens(db, itens, tipo_saida, doc_tipo, doc_id, usuario_id=None):
-    """Baixa estoque para uma lista de itens {produto_id, quantidade}.
+    """Baixa estoque para uma lista de itens {produto_id, quantidade, variacao_id?}.
 
     `tipo_saida` eh SAIDA_VENDA ou SAIDA_INSUMO. Ignora itens sem produto_id.
     """
     for item in itens:
         pid = item.get("produto_id") if isinstance(item, dict) else getattr(item, "produto_id", None)
         qtd = item.get("quantidade") if isinstance(item, dict) else getattr(item, "quantidade", None)
+        vid = item.get("variacao_id") if isinstance(item, dict) else getattr(item, "variacao_id", None)
         if not pid or not qtd:
             continue
         lancar_movimentacao(
             db, produto_id=pid, tipo=tipo_saida,
             quantidade=-float(qtd), doc_tipo=doc_tipo, doc_id=doc_id,
-            usuario_id=usuario_id,
+            usuario_id=usuario_id, variacao_id=vid,
         )
 
 
 def ajuste_inventario(db, produto_id, quantidade_fisica, usuario_id=None, motivo="Ajuste de inventario"):
-    """Ajusta o saldo do produto para a quantidade fisica contada."""
+    """Ajusta o saldo do produto (sem variacoes) para a quantidade fisica contada.
+
+    Ajustes nao sao idempotentes: cada contagem fisica eh um evento distinto.
+    """
     from models import Produto
     produto = db.query(Produto).filter(Produto.id == produto_id).first()
     if not produto:
@@ -100,7 +121,31 @@ def ajuste_inventario(db, produto_id, quantidade_fisica, usuario_id=None, motivo
     return lancar_movimentacao(
         db, produto_id=produto_id, tipo=tipo,
         quantidade=diferenca, doc_tipo="ajuste", doc_id=produto_id,
-        usuario_id=usuario_id, motivo=motivo,
+        usuario_id=usuario_id, motivo=motivo, idempotente=False,
+    )
+
+
+def ajustar_variacao(db, produto_id, variacao_id, quantidade_fisica, usuario_id=None, motivo="Ajuste de inventario"):
+    """Ajusta o estoque de uma variacao especifica para a quantidade fisica contada.
+
+    O saldo do pai (Produto.estoque) passa a ser a soma das variacoes.
+    """
+    from models import Produto, ProdutoVariacao
+    variacao = db.query(ProdutoVariacao).filter(
+        ProdutoVariacao.id == variacao_id,
+        ProdutoVariacao.produto_id == produto_id,
+    ).first()
+    if not variacao:
+        return False
+    saldo_atual = float(variacao.estoque_atual or 0)
+    diferenca = float(quantidade_fisica) - saldo_atual
+    if diferenca == 0:
+        return False
+    tipo = "AJUSTE_POS" if diferenca > 0 else "AJUSTE_NEG"
+    return lancar_movimentacao(
+        db, produto_id=produto_id, tipo=tipo,
+        quantidade=diferenca, doc_tipo="ajuste", doc_id=produto_id,
+        usuario_id=usuario_id, motivo=motivo, variacao_id=variacao_id, idempotente=False,
     )
 
 
@@ -179,6 +224,7 @@ def baixar_pedido(db, pedido, usuario_id=None):
             quantidade=-float(item.quantidade or 0),
             doc_tipo="pedido", doc_id=pedido.id, usuario_id=usuario_id,
             motivo=f"Venda Pedido #{pedido.numero or pedido.id}",
+            variacao_id=item.variacao_id,
         )
 
 

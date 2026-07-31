@@ -239,8 +239,9 @@ def relatorio_movimentacoes_pdf(
 def ajustar_estoque(
     request: Request, produto_id: int, db: Session = Depends(get_db),
     quantidade_fisica: float = Form(...), motivo: str = Form(""),
+    variacoes: str = Form(""),
 ):
-    from services.estoque_service import ajuste_inventario
+    from services.estoque_service import ajuste_inventario, ajustar_variacao
     from models import Produto
 
     if not verificar_admin(request, db):
@@ -252,16 +253,47 @@ def ajustar_estoque(
         return RedirectResponse(url=request.headers.get("Referer", "/produtos"), status_code=303)
 
     usuario_id = request.session.get("usuario_id")
-    ok = ajuste_inventario(db, produto_id, quantidade_fisica, usuario_id=usuario_id, motivo=motivo or "Ajuste de inventario")
-    if ok:
-        request.session["message"] = f"Estoque de {produto.nome} ajustado para {quantidade_fisica}"
+
+    # Produto com variacoes: ajuste por variacao
+    if produto.variacoes:
+        import json
+        lista = []
         try:
-            registrar_auditoria(db, usuario_id, "ajuste_estoque", "produto", produto_id,
-                                detalhes=f"qtd_fisica={quantidade_fisica}; motivo={motivo}")
-        except Exception:
-            pass
+            lista = json.loads(variacoes) if variacoes else []
+        except (json.JSONDecodeError, TypeError):
+            lista = []
+        if not lista:
+            request.session["error"] = "Informe a quantidade fisica de cada variacao"
+            return RedirectResponse(url=request.headers.get("Referer", "/produtos"), status_code=303)
+        ajustados = 0
+        for v in lista:
+            try:
+                vid = int(v.get("variacao_id"))
+                qtd = float(v.get("quantidade_fisica"))
+            except (ValueError, TypeError, AttributeError):
+                continue
+            if ajustar_variacao(db, produto_id, vid, qtd, usuario_id=usuario_id, motivo=motivo or "Ajuste de inventario"):
+                ajustados += 1
+        if ajustados:
+            request.session["message"] = f"Estoque de {produto.nome} ajustado por variacao ({ajustados} variacao(oes))"
+            try:
+                registrar_auditoria(db, usuario_id, "ajuste_estoque", "produto", produto_id,
+                                    detalhes=f"por_variacao={ajustados}; motivo={motivo}")
+            except Exception:
+                pass
+        else:
+            request.session["message"] = "Nenhuma alteracao necessaria (saldo ja conferia)"
     else:
-        request.session["message"] = "Nenhuma alteracao necessaria (saldo ja conferia) ou produto invalido"
+        ok = ajuste_inventario(db, produto_id, quantidade_fisica, usuario_id=usuario_id, motivo=motivo or "Ajuste de inventario")
+        if ok:
+            request.session["message"] = f"Estoque de {produto.nome} ajustado para {quantidade_fisica}"
+            try:
+                registrar_auditoria(db, usuario_id, "ajuste_estoque", "produto", produto_id,
+                                    detalhes=f"qtd_fisica={quantidade_fisica}; motivo={motivo}")
+            except Exception:
+                pass
+        else:
+            request.session["message"] = "Nenhuma alteracao necessaria (saldo ja conferia) ou produto invalido"
     return RedirectResponse(url=request.headers.get("Referer", "/produtos"), status_code=303)
 
 

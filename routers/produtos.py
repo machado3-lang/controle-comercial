@@ -28,23 +28,46 @@ logger = logging.getLogger(__name__)
 UNIDADES_MEDIDA = ["cm", "m", "mm", "UN", "KG", "L"]
 
 
-def _proximo_sku_produto(db: Session) -> str:
-    usados = set()
+def _normalizar_sku_para_numero(sku):
+    try:
+        return int(str(sku).split("-")[-1])
+    except (ValueError, IndexError, AttributeError):
+        return None
+
+
+def _sku_ja_existe(db: Session, sku: str, ignorar_produto_id: int = None) -> bool:
+    from models import ProdutoVariacao
+    q = db.query(ProdutoVariacao).filter(ProdutoVariacao.sku == sku)
+    return q.first() is not None
+
+
+def _proximo_sku_produto(db: Session, usados_extra: set = None) -> str:
+    """Próximo SKU disponível (SKU-NNNNN), pulando os já existentes no banco
+    e os informados em usados_extra (variações adicionadas na mesma requisição)."""
+    usados = set(usados_extra) if usados_extra else set()
     vars = db.query(ProdutoVariacao.sku).filter(ProdutoVariacao.sku.isnot(None)).all()
     for v in vars:
-        try:
-            num = int(v[0].split("-")[-1])
-            usados.add(num)
-        except (ValueError, IndexError, AttributeError):
-            continue
-    
+        n = _normalizar_sku_para_numero(v[0])
+        if n is not None:
+            usados.add(n)
     max_num = max(usados) if usados else 0
-    
     for i in range(1, max_num + 2):
         if i not in usados:
             return f"SKU-{i:05d}"
-    
     return f"SKU-{max_num + 1:05d}"
+
+
+def _recalcular_estoque_produto(db: Session, produto_id: int):
+    """Produto.estoque = soma das variações (quando houver variações)."""
+    from sqlalchemy import func
+    from models import Produto, ProdutoVariacao
+    total = db.query(func.sum(ProdutoVariacao.estoque_atual)).filter(
+        ProdutoVariacao.produto_id == produto_id
+    ).scalar() or 0
+    produto = db.query(Produto).filter(Produto.id == produto_id).first()
+    if produto:
+        produto.estoque = total
+        db.commit()
 
 def _proximo_codigo_produto(db: Session) -> str:
     """Próximo código de produto disponível.
@@ -265,9 +288,16 @@ def criar_produto(
         except (json.JSONDecodeError, TypeError):
             logger.warning(f"Falha ao decodificar JSON de variações na criação do produto: {variacoes}")
             varList = []
+        usados_sku = set()
         if varList and len(varList) > 0:
             for item in varList:
-                sku = item.get("sku") or _proximo_sku_produto(db)
+                sku_enviado = (item.get("sku") or "").strip()
+                n = _normalizar_sku_para_numero(sku_enviado) if sku_enviado else None
+                if n is not None and n not in usados_sku and not _sku_ja_existe(db, sku_enviado):
+                    sku = sku_enviado
+                else:
+                    sku = _proximo_sku_produto(db, usados_sku)
+                usados_sku.add(_normalizar_sku_para_numero(sku))
                 db.add(ProdutoVariacao(
                     produto_id=produto.id,
                     nome_variacao=item.get("nome_variacao", "Padrão"),
@@ -280,12 +310,13 @@ def criar_produto(
             db.add(ProdutoVariacao(
                 produto_id=produto.id,
                 nome_variacao="Padrão",
-                sku=_proximo_sku_produto(db),
+                sku=_proximo_sku_produto(db, usados_sku),
                 preco_adicional=0,
                 estoque_atual=0,
                 estoque_minimo=0
             ))
         db.commit()
+        _recalcular_estoque_produto(db, produto.id)
     # Salvar insumos (composição) se for kit ou serviço
     if tipo in ("kit", "servico") and insumos:
         import json
@@ -406,12 +437,20 @@ def atualizar_produto(
             varList = json.loads(variacoes) if variacoes else []
             # Remove variações antigas e adiciona novas
             db.query(ProdutoVariacao).filter(ProdutoVariacao.produto_id == produto_id).delete()
+            usados_sku = set()
             if len(varList) > 0:
                 for item in varList:
+                    sku_enviado = (item.get("sku") or "").strip()
+                    n = _normalizar_sku_para_numero(sku_enviado) if sku_enviado else None
+                    if n is not None and n not in usados_sku and not _sku_ja_existe(db, sku_enviado, ignorar_produto_id=produto_id):
+                        sku = sku_enviado
+                    else:
+                        sku = _proximo_sku_produto(db, usados_sku)
+                    usados_sku.add(_normalizar_sku_para_numero(sku))
                     db.add(ProdutoVariacao(
                         produto_id=produto_id,
                         nome_variacao=item.get("nome_variacao", "Padrão"),
-                        sku=item.get("sku", ""),
+                        sku=sku,
                         preco_adicional=item.get("preco_adicional", 0),
                         estoque_atual=item.get("estoque_atual", 0),
                         estoque_minimo=item.get("estoque_minimo", 0)
@@ -421,12 +460,13 @@ def atualizar_produto(
                 db.add(ProdutoVariacao(
                     produto_id=produto_id,
                     nome_variacao="Padrão",
-                    sku=_proximo_sku_produto(db),
+                    sku=_proximo_sku_produto(db, usados_sku),
                     preco_adicional=0,
                     estoque_atual=0,
                     estoque_minimo=0
                 ))
             db.commit()
+            _recalcular_estoque_produto(db, produto_id)
         
         # Salvar insumos (composição) se for kit ou serviço
         if tipo in ("kit", "servico") and insumos:

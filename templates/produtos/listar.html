@@ -93,7 +93,7 @@
                             {% if p.tipo == 'servico' %}
                             <button type="button" class="inline-block p-1.5 text-slate-600 border border-slate-800 rounded opacity-40 cursor-not-allowed" title="Serviços não possuem estoque" disabled><i data-lucide="sliders-horizontal" class="w-4 h-4"></i></button>
                             {% else %}
-                            <button type="button" class="inline-block p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Ajustar estoque" onclick="abrirAjusteEstoque('{{ p.id }}', '{{ p.nome|e }}', {{ p.estoque or 0 }})"><i data-lucide="sliders-horizontal" class="w-4 h-4"></i></button>
+                            <button type="button" class="inline-block p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Ajustar estoque" onclick="abrirAjusteEstoque('{{ p.id }}', '{{ p.nome|e }}', {{ p.variacoes|tojson }}, {{ p.estoque or 0 }})"><i data-lucide="sliders-horizontal" class="w-4 h-4"></i></button>
                             {% endif %}
                             <button type="button" class="inline-block p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir" onclick="confirmarExclusao('/produtos/{{ p.id }}/excluir')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                         </div>
@@ -205,12 +205,41 @@ function salvarPdf() {
     iframe.contentWindow.focus();
     iframe.contentWindow.print();
 }
-function abrirAjusteEstoque(id, nome, estoqueAtual) {
+function abrirAjusteEstoque(id, nome, variacoes, estoqueAtual) {
     document.getElementById('ajuste_produto_id').value = id;
     document.getElementById('ajuste_produto_nome').textContent = nome;
-    document.getElementById('ajuste_estoque_atual').textContent = estoqueAtual;
-    document.getElementById('ajuste_quantidade_fisica').value = estoqueAtual;
+    const corpo = document.getElementById('ajuste-corpo');
+    const hidden = document.getElementById('ajuste_variacoes_json');
+    hidden.value = '';
+    if (variacoes && variacoes.length) {
+        corpo.innerHTML = variacoes.map(v => `
+            <div class="mb-2 p-2 border border-slate-700 rounded-lg">
+                <div class="text-sm text-slate-200 mb-1">${v.nome_variacao || 'Variação'} <span class="text-slate-500">(${v.sku || ''})</span></div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-slate-400">Atual: ${v.estoque_atual || 0}</span>
+                    <input type="number" step="0.001" class="form-control bg-slate-800 border-slate-700 text-slate-100" value="${v.estoque_atual || 0}" data-variacao="${v.id}">
+                </div>
+            </div>`).join('');
+    } else {
+        corpo.innerHTML = `<p>Estoque atual: <strong>${estoqueAtual}</strong></p>
+            <label class="form-label">Quantidade física real</label>
+            <input type="number" step="0.001" class="form-control bg-slate-800 border-slate-700 text-slate-100" name="quantidade_fisica" value="${estoqueAtual}" required>`;
+    }
     new bootstrap.Modal(document.getElementById('modalAjusteEstoque')).show();
+}
+
+function prepararAjuste() {
+    const hidden = document.getElementById('ajuste_variacoes_json');
+    const inputs = document.querySelectorAll('#ajuste-corpo input[data-variacao]');
+    if (inputs.length) {
+        const lista = [];
+        inputs.forEach(function(inp) {
+            lista.push({ variacao_id: inp.dataset.variacao, quantidade_fisica: parseFloat(inp.value) || 0 });
+        });
+        hidden.value = JSON.stringify(lista);
+    } else {
+        hidden.value = '';
+    }
 }
 </script>
 {% endblock %}
@@ -223,13 +252,12 @@ function abrirAjusteEstoque(id, nome, estoqueAtual) {
         <h5 class="modal-title text-slate-100">Ajuste de Inventário</h5>
         <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
       </div>
-      <form method="post" action="/estoque/produto/__PID__/ajustar" onsubmit="this.action=this.action.replace('__PID__', document.getElementById('ajuste_produto_id').value);">
+      <form method="post" action="/estoque/produto/__PID__/ajustar" onsubmit="this.action=this.action.replace('__PID__', document.getElementById('ajuste_produto_id').value); prepararAjuste();">
         <div class="modal-body text-slate-200">
           <p>Produto: <strong id="ajuste_produto_nome"></strong></p>
-          <p>Estoque atual: <strong id="ajuste_estoque_atual"></strong></p>
           <input type="hidden" id="ajuste_produto_id" name="produto_id">
-          <label class="form-label">Quantidade física real</label>
-          <input type="number" step="0.001" class="form-control bg-slate-800 border-slate-700 text-slate-100" name="quantidade_fisica" id="ajuste_quantidade_fisica" required>
+          <div id="ajuste-corpo"></div>
+          <input type="hidden" id="ajuste_variacoes_json" name="variacoes">
           <label class="form-label mt-3">Motivo</label>
           <input type="text" class="form-control bg-slate-800 border-slate-700 text-slate-100" name="motivo" placeholder="Ex.: Contagem física, quebra, etc.">
         </div>
