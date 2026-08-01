@@ -311,6 +311,7 @@ document.getElementById('itemDropdown').addEventListener('click', function(e) {
         document.getElementById('itemSearch').value = itemEl.querySelector('.font-medium').textContent;
         document.getElementById('descricaoAdd').value = descricaoItem;
         document.getElementById('precoAdd').value = precoBase.toFixed(2);
+        document.getElementById('precoAdd').dataset.basePreco = precoBase.toFixed(2);
         this.classList.add('hidden');
         
         const variacaoContainer = document.querySelector('.variacao-add-container');
@@ -343,8 +344,8 @@ document.getElementById('itemDropdown').addEventListener('click', function(e) {
 document.getElementById('variacaoAddSelect').addEventListener('change', function() {
     const selected = this.selectedOptions[0];
     const precoAdicional = parseFloat(selected?.dataset?.precoAdicional) || 0;
-    const precoBase = parseFloat(document.getElementById('precoAdd').value) || 0;
-    document.getElementById('precoAdd').value = (precoBase + precoAdicional).toFixed(2);
+    const precoBase = parseFloat(document.getElementById('precoAdd').dataset.basePreco) || 0;
+    document.getElementById('precoAdd').value = (precoAdicional > 0 ? precoAdicional : precoBase).toFixed(2);
 });
 
 document.getElementById('btnAdicionar').addEventListener('click', function() {

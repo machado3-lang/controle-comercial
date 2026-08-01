@@ -93,7 +93,7 @@
                             {% if p.tipo == 'servico' %}
                             <button type="button" class="inline-block p-1.5 text-slate-600 border border-slate-800 rounded opacity-40 cursor-not-allowed" title="Serviços não possuem estoque" disabled><i data-lucide="sliders-horizontal" class="w-4 h-4"></i></button>
                             {% else %}
-                            <button type="button" class="inline-block p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Ajustar estoque" onclick="abrirAjusteEstoque('{{ p.id }}', '{{ p.nome|e }}', {{ p.variacoes|tojson }}, {{ p.estoque or 0 }})"><i data-lucide="sliders-horizontal" class="w-4 h-4"></i></button>
+                            <button type="button" class="inline-block p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Ajustar estoque" onclick="abrirAjusteEstoque('{{ p.id }}', '{{ p.nome|e }}', {{ p.variacoes_serializadas|tojson }}, {{ p.estoque or 0 }})"><i data-lucide="sliders-horizontal" class="w-4 h-4"></i></button>
                             {% endif %}
                             <button type="button" class="inline-block p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" title="Excluir" onclick="confirmarExclusao('/produtos/{{ p.id }}/excluir')"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                         </div>

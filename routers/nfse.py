@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse, JSONResponse, Response, FileResp
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc, asc
 from database import get_db
-from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ContaReceber, StatusConta, OrdemServico, Assinatura, Fornecedor
+from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ProdutoVariacao, ProdutoComposicao, ContaReceber, StatusConta, OrdemServico, Assinatura, Fornecedor
 from models_nfe import NFSe, NFSeItem, NFSeRecebida
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
 from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional
@@ -55,6 +55,18 @@ def _get_messages(request):
     if err:
         messages.append({"tipo": "danger", "texto": err})
     return messages
+
+
+def _servico_contem_variacao(produto: Produto) -> bool:
+    """True se o serviço possui variações próprias ou algum insumo (composição)
+    com variação. Esses serviços não podem ser emitidos em NFS-e avulsa."""
+    if getattr(produto, "variacoes", None):
+        return True
+    for comp in getattr(produto, "composicoes", []) or []:
+        insumo = getattr(comp, "insumo", None)
+        if insumo and getattr(insumo, "variacoes", None):
+            return True
+    return False
 
 
 @router.get("/")
@@ -176,7 +188,10 @@ def listar_nfse_recebidas(
 def emitir_avulsa_form(request: Request, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
-    servicos = db.query(Produto).filter(
+    servicos = db.query(Produto).options(
+        selectinload(Produto.variacoes),
+        selectinload(Produto.composicoes).selectinload(ProdutoComposicao.insumo).selectinload(Produto.variacoes),
+    ).filter(
         Produto.tipo == "servico", Produto.situacao == "A"
     ).order_by(Produto.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "cpf_cnpj": c.cpf_cnpj,
@@ -184,7 +199,8 @@ def emitir_avulsa_form(request: Request, db: Session = Depends(get_db)):
     servicos_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0),
                        "codigo_lc116": p.codigo_lc116 or "",
                        "codigo_tributacao_municipal": p.codigo_tributacao_municipal or "",
-                       "unidade": p.unidade or "UN"} for p in servicos]
+                       "unidade": p.unidade or "UN",
+                       "tem_variacao": _servico_contem_variacao(p)} for p in servicos]
     return request.app.state.templates.TemplateResponse(request, 
         "nfse/emissao_avulsa.html",
         {"request": request, "empresa": empresa, "clientes": clientes,
@@ -226,6 +242,19 @@ def emitir_avulsa_salvar(
 
     if not itens_data:
         return JSONResponse({"error": "Adicione pelo menos um serviÃ§o"}, status_code=400)
+
+    # OpÃ§Ã£o C: NFSe avulsa nÃ£o deve emitir serviÃ§os que contenham itens/insumos com variaÃ§Ã£o.
+    produtos_ids = [i.get("produto_id") for i in itens_data if i.get("produto_id")]
+    if produtos_ids:
+        produtos_checados = db.query(Produto).options(
+            selectinload(Produto.variacoes),
+            selectinload(Produto.composicoes).selectinload(ProdutoComposicao.insumo).selectinload(Produto.variacoes),
+        ).filter(Produto.id.in_(produtos_ids)).all()
+        for p in produtos_checados:
+            if _servico_contem_variacao(p):
+                return JSONResponse({
+                    "error": f"O serviÃ§o '{p.nome}' contÃ©m itens/insumos com variaÃ§Ã£o e nÃ£o pode ser emitido em NFS-e avulsa. Utilize um serviÃ§o sem variaÃ§Ã£o."
+                }, status_code=400)
 
     codigos_lc116 = set(i.get("codigo_lc116", "") for i in itens_data if i.get("codigo_lc116"))
     if len(codigos_lc116) > 1:

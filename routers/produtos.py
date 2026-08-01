@@ -165,6 +165,11 @@ def listar_produtos(
     page = max(1, min(page, total_pages))
     offset = (page - 1) * per_page
     produtos = query.order_by(Produto.nome).offset(offset).limit(per_page).all()
+    for p in produtos:
+        p.variacoes_serializadas = [
+            {"id": v.id, "nome_variacao": v.nome_variacao, "sku": v.sku, "estoque_atual": float(v.estoque_atual or 0)}
+            for v in p.variacoes
+        ]
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
     categorias = db.query(CategoriaProduto).order_by(CategoriaProduto.nome).all()
     marcas = db.query(MarcaProduto).order_by(MarcaProduto.nome).all()

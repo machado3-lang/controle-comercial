@@ -294,6 +294,7 @@ document.getElementById('servicoSearch').addEventListener('input', function(e) {
                 'data-nome="' + p.nome.replace(/'/g, '&#39;') + '">' +
                 '<div class="font-medium text-cyan-300">' + formatProdutoItem(p) + '</div>' +
                 '<div class="text-xs text-slate-400">LC116: ' + (p.codigo_lc116 || '010101') + (p.codigo_tributacao_municipal ? ' | NBS: ' + p.codigo_tributacao_municipal : '') + '</div>' +
+                (p.tem_variacao ? '<div class="text-xs text-amber-400 mt-0.5">AtenÃ§Ã£o: contÃ©m variaÃ§Ã£o (nÃ£o permitido em NFS-e)</div>' : '') +
                 '</div>';
         }).join('');
         dropdown.classList.remove('hidden');
@@ -317,6 +318,10 @@ document.getElementById('btnAdicionar').addEventListener('click', function() {
     if (!servicoId) return;
     const servico = servicosData.find(p => p.id == servicoId);
     if (!servico) return;
+    if (servico.tem_variacao) {
+        showValidationError('Este serviço contém itens/insumos com variação e não pode ser emitido em NFS-e avulsa. Utilize um serviço sem variação.');
+        return;
+    }
     const qtd = parseFloat(document.getElementById('qtdAdd').value) || 1;
     adicionarItem(servico, qtd);
     document.getElementById('servicoSearch').value = '';
