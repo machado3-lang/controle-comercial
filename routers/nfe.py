@@ -713,6 +713,7 @@ def emitir_pedido_submit(
             nfe_item = NFeItem(
                 nfe_id=nfe.id,
                 produto_id=item.get("produto_id"),
+                variacao_id=item.get("variacao_id"),
                 descricao=item.get("descricao", ""),
                 ncm=item.get("ncm"),
                 cfop=cfop or empresa.cfop_padrao,
@@ -760,6 +761,7 @@ def emitir_pedido_submit(
             nfse_item = NFSeItem(
                 nfse_id=nfse.id,
                 produto_id=item.produto_id,
+                variacao_id=item.variacao_id,
                 descricao=item.descricao or item.produto.nome,
                 quantidade=Decimal(str(item.quantidade or 1)),
                 valor_unitario=Decimal(str(item.preco_unitario or 0)),
@@ -866,6 +868,7 @@ def emitir_os_submit(
             nfe_item = NFeItem(
                 nfe_id=nfe.id,
                 produto_id=item.get("produto_id"),
+                variacao_id=item.get("variacao_id"),
                 descricao=item.get("descricao", ""),
                 ncm=item.get("ncm"),
                 cfop=cfop or empresa.cfop_padrao,
@@ -976,6 +979,7 @@ def emitir_consolidacao_submit(
             nfe_item = NFeItem(
                 nfe_id=nfe.id,
                 produto_id=item.get("produto_id"),
+                variacao_id=item.get("variacao_id"),
                 descricao=item.get("descricao", ""),
                 ncm=item.get("ncm"),
                 cfop=cfop or empresa.cfop_padrao,
@@ -1023,6 +1027,7 @@ def emitir_consolidacao_submit(
             nfse_item = NFSeItem(
                 nfse_id=nfse.id,
                 produto_id=item.produto_id,
+                variacao_id=item.variacao_id,
                 descricao=item.descricao or item.produto.nome,
                 quantidade=Decimal(str(item.quantidade or 1)),
                 valor_unitario=Decimal(str(item.preco_unitario or 0)),
@@ -1058,7 +1063,10 @@ def emitir_avulsa_form(
                        "cidade": c.cidade, "estado": c.estado} for c in clientes]
     produtos_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0),
                        "ncm": p.ncm, "unidade": p.unidade or "UN",
-                       "estoque": p.estoque or 0, "codigo": p.codigo or ""} for p in produtos]
+                       "estoque": p.estoque or 0, "codigo": p.codigo or "",
+                       "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao or "Padrão",
+                                     "sku": v.sku or "", "estoque_atual": float(v.estoque_atual or 0)}
+                                    for v in (p.variacoes or [])]} for p in produtos]
 
     saved_editar_id = request.session.pop("nfe_avulsa_editar_id", None)
     editar = saved_editar_id or editar
@@ -1179,6 +1187,7 @@ def emitir_avulsa_submit(
                 origem = prod.origem or 0
         itens_nfe.append({
             "produto_id": prod_id,
+            "variacao_id": item.get("variacao_id"),
             "descricao": item.get("descricao", ""),
             "ncm": item.get("ncm") or "99999999",
             "unidade": item.get("unidade", "UN"),
@@ -1221,6 +1230,7 @@ def emitir_avulsa_submit(
             nfe_item = NFeItem(
                 nfe_id=nfe.id,
                 produto_id=item.get("produto_id"),
+                variacao_id=item.get("variacao_id"),
                 descricao=item["descricao"],
                 ncm=item["ncm"],
                 cfop=cfop or empresa.cfop_padrao,
@@ -1799,6 +1809,7 @@ def editar_nfe_submit(
                 origem = prod.origem or 0
         itens_nfe.append({
             "produto_id": prod_id,
+            "variacao_id": item.get("variacao_id"),
             "descricao": item.get("descricao", ""),
             "ncm": item.get("ncm") or "99999999",
             "unidade": item.get("unidade", "UN"),
@@ -1841,6 +1852,7 @@ def editar_nfe_submit(
             nfe_item = NFeItem(
                 nfe_id=nfe.id,
                 produto_id=item.get("produto_id"),
+                variacao_id=item.get("variacao_id"),
                 descricao=item["descricao"],
                 ncm=item["ncm"],
                 cfop=cfop or empresa.cfop_padrao,

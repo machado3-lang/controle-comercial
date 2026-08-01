@@ -173,6 +173,7 @@ def baixar_nfse(db, nfse, usuario_id=None):
                 quantidade=-qtd_item,
                 doc_tipo="nfse", doc_id=nfse.id, usuario_id=usuario_id,
                 motivo=f"Consumo NFSe #{nfse.numero or nfse.id}",
+                variacao_id=item.variacao_id,
             )
         # Insumos vinculados ao servico/kit (ProdutoComposicao)
         for comp in produto.composicoes:
@@ -205,6 +206,7 @@ def baixar_nfe(db, nfe, usuario_id=None):
             quantidade=-float(item.quantidade or 0),
             doc_tipo="nfe", doc_id=nfe.id, usuario_id=usuario_id,
             motivo=f"Venda NFe #{nfe.numero}",
+            variacao_id=item.variacao_id,
         )
 
 

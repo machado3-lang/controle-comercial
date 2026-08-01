@@ -270,6 +270,7 @@ def emitir_avulsa_salvar(
         nfse_item = NFSeItem(
             nfse_id=nfse.id,
             produto_id=item.get("produto_id") or None,
+            variacao_id=item.get("variacao_id"),
             descricao=item.get("descricao", ""),
             quantidade=Decimal(str(item.get("quantidade", 1))),
             valor_unitario=Decimal(str(item.get("valor_unitario", 0))),
@@ -391,6 +392,7 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
             nfse_item = NFSeItem(
                 nfse_id=nfse.id,
                 produto_id=item.produto_id,
+                variacao_id=item.variacao_id,
                 descricao=item.descricao or item.produto.nome,
                 quantidade=Decimal(str(item.quantidade or 1)),
                 valor_unitario=Decimal(str(item.preco_unitario or 0)),
@@ -696,6 +698,7 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                 nfe_item = NFeItem(
                     nfe_id=nfe.id,
                     produto_id=item.get("produto_id"),
+                variacao_id=item.get("variacao_id"),
                     descricao=item.get("descricao", ""),
                     ncm=item.get("ncm"),
                     cfop=empresa.cfop_padrao or "5102",
@@ -738,6 +741,7 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                 nfse_item = NFSeItem(
                     nfse_id=nfse.id,
                     produto_id=item.produto_id,
+                variacao_id=item.variacao_id,
                     descricao=item.descricao or item.produto.nome,
                     quantidade=Decimal(str(item.quantidade or 1)),
                     valor_unitario=Decimal(str(item.preco_unitario or 0)),
@@ -878,6 +882,7 @@ def editar_nfse_salvar(
         nfse_item = NFSeItem(
             nfse_id=nfse.id,
             produto_id=item.get("produto_id") or None,
+            variacao_id=item.get("variacao_id"),
             descricao=item.get("descricao", ""),
             quantidade=Decimal(str(item.get("quantidade", 1))),
             valor_unitario=Decimal(str(item.get("valor_unitario", 0))),

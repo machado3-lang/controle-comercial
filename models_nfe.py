@@ -52,6 +52,7 @@ class NFeItem(Base):
     id = Column(Integer, primary_key=True)
     nfe_id = Column(Integer, ForeignKey("nfe.id"), nullable=False, index=True)
     produto_id = Column(Integer, ForeignKey("produtos.id"), nullable=True, index=True)
+    variacao_id = Column(Integer, ForeignKey("produto_variacoes.id"), nullable=True, index=True)
     item_pai_id = Column(Integer, ForeignKey("nfe_itens.id"), nullable=True, index=True)
     descricao = Column(Text, nullable=False)
     ncm = Column(String(10), nullable=True)
@@ -63,6 +64,7 @@ class NFeItem(Base):
     
     nfe = relationship("NFe", back_populates="itens")
     produto = relationship("Produto", back_populates="itens_nfe")
+    variacao = relationship("ProdutoVariacao")
 
 
 class NFSe(Base):
@@ -129,6 +131,7 @@ class NFSeItem(Base):
     id = Column(Integer, primary_key=True)
     nfse_id = Column(Integer, ForeignKey("nfse.id"), index=True)
     produto_id = Column(Integer, ForeignKey("produtos.id"), index=True)
+    variacao_id = Column(Integer, ForeignKey("produto_variacoes.id"), nullable=True, index=True)
     descricao = Column(Text)
     quantidade = Column(Numeric(12, 2))
     valor_unitario = Column(Numeric(12, 2))
@@ -138,6 +141,7 @@ class NFSeItem(Base):
     
     nfse = relationship("NFSe", back_populates="itens")
     produto = relationship("Produto", back_populates="itens_nfse")
+    variacao = relationship("ProdutoVariacao")
 
 
 class NFSeRecebida(Base):

@@ -280,6 +280,7 @@ function atualizarItensJson() {
         const produtoId = row.querySelector('.item-produto-id')?.value || '';
         itens.push({
             produto_id: produtoId ? parseInt(produtoId) : null,
+            variacao_id: parseInt(row.querySelector('.item-variacao-id')?.value) || null,
             descricao: row.querySelector('.item-descricao')?.textContent || '',
             ncm: row.querySelector('.item-ncm')?.textContent || '99999999',
             unidade: row.querySelector('.item-un')?.textContent || 'UN',
@@ -300,11 +301,23 @@ function adicionarItem(produto, quantidade) {
     const warning = estoque <= 0 ? '<span class="text-rose-400 text-xs ms-1">(sem estoque)</span>' : '';
     const preco = produto.preco || 0;
     const qtd = quantidade || 1;
+
+    let variacaoHtml = '<input type="hidden" class="item-variacao-id" value="">';
+    if (produto.variacoes && produto.variacoes.length) {
+        const opts = produto.variacoes.map(v =>
+            '<option value="' + v.id + '">' + (v.nome_variacao || 'Padrão') + ' (' + (v.estoque_atual || 0) + ')</option>'
+        ).join('');
+        variacaoHtml =
+            '<div class="mt-1"><select class="item-variacao w-full px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-xs text-slate-200">' + opts + '</select></div>' +
+            '<input type="hidden" class="item-variacao-id" value="' + (produto.variacoes[0].id || '') + '">';
+    }
+
     tr.innerHTML =
         '<td>' +
             '<input type="hidden" class="item-produto-id" value="' + (produto.id || '') + '">' +
             '<span class="text-sm text-slate-100 item-descricao">' + (produto.nome || '') + '</span>' + warning +
             (produto.codigo ? '<div class="text-xs text-slate-500">Cód: ' + produto.codigo + '</div>' : '') +
+            variacaoHtml +
         '</td>' +
         '<td><span class="text-sm text-slate-300 item-ncm">' + (produto.ncm || '99999999') + '</span></td>' +
         '<td><span class="text-sm text-slate-300 item-un">' + (produto.unidade || 'UN') + '</span></td>' +
@@ -445,6 +458,7 @@ document.getElementById('formNfeAvulsa').addEventListener('submit', function(e) 
         const produtoId = row.querySelector('.item-produto-id')?.value || '';
         itens.push({
             produto_id: produtoId ? parseInt(produtoId) : null,
+            variacao_id: parseInt(row.querySelector('.item-variacao-id')?.value) || null,
             descricao: row.querySelector('.item-descricao')?.textContent || '',
             ncm: row.querySelector('.item-ncm')?.textContent || '99999999',
             unidade: row.querySelector('.item-un')?.textContent || 'UN',

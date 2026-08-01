@@ -293,6 +293,7 @@ def explodir_itens(pedido=None, os=None, db=None) -> tuple:
                     "quantidade": item.quantidade or 1,
                     "preco_unitario": item.preco_unitario or 0,
                     "origem": produto.origem or 0,
+                    "variacao_id": item.variacao_id,
                 })
             elif produto.tipo == "servico":
                 itens_nfse.append(item)
@@ -371,16 +372,17 @@ def explodir_itens_consolidacao(consolidacao, db) -> tuple:
         produto = item.produto
         if not produto:
             continue
-        if produto.tipo == "produto":
-            itens_nfe.append({
-                "produto_id": produto.id,
-                "descricao": item.descricao or produto.nome,
-                "ncm": produto.ncm,
-                "unidade": produto.unidade or "UN",
-                "quantidade": item.quantidade or 1,
-                "preco_unitario": item.preco_unitario or 0,
-                "origem": produto.origem or 0,
-            })
+            if produto.tipo == "produto":
+                itens_nfe.append({
+                    "produto_id": produto.id,
+                    "descricao": item.descricao or produto.nome,
+                    "ncm": produto.ncm,
+                    "unidade": produto.unidade or "UN",
+                    "quantidade": item.quantidade or 1,
+                    "preco_unitario": item.preco_unitario or 0,
+                    "origem": produto.origem or 0,
+                    "variacao_id": item.variacao_id,
+                })
         elif produto.tipo == "servico":
             itens_nfse.append(item)
         elif produto.tipo == "kit" and db:
@@ -408,6 +410,7 @@ def explodir_itens_consolidacao(consolidacao=None, db=None) -> tuple:
                     "quantidade": item.quantidade or 1,
                     "preco_unitario": item.preco_unitario or 0,
                     "origem": produto.origem or 0,
+                    "variacao_id": item.variacao_id,
                 })
             elif produto.tipo == "servico":
                 itens_nfse.append(item)
