@@ -2,6 +2,7 @@ import json
 import time
 import httpx
 from typing import Optional
+from datetime import date
 from models import Empresa, Produto
 from app.core.config import settings
 
@@ -208,6 +209,14 @@ def montar_payload_nfe(
     # Cada duplicata = uma parcela do contas a receber gerada no faturamento.
     if duplicatas:
         payload["pagamentos"][0]["indicadorPagamento"] = 1  # 1 = a prazo
+        # Vencimento de fallback: data de emissão (ou hoje) quando a parcela
+        # não traz data explícita — evita descartar a duplicata e silenciar o
+        # vencimento/parcelas no DANFE.
+        _venc_fallback = ""
+        if data_emissao:
+            _venc_fallback = str(data_emissao)[:10]
+        if not _venc_fallback:
+            _venc_fallback = date.today().strftime("%Y-%m-%d")
         payload["cobranca"] = {
             "fatura": {
                 "numero": str(numero_nfe or ""),
@@ -217,11 +226,11 @@ def montar_payload_nfe(
             },
             "duplicatas": [
                 {
-                    "numero": d.get("numero"),
-                    "dataVencimento": d.get("vencimento"),
+                    "numero": d.get("numero") or (idx + 1),
+                    "dataVencimento": d.get("vencimento") or _venc_fallback,
                     "valor": round(float(d.get("valor") or 0), 2),
                 }
-                for d in duplicatas if d.get("vencimento")
+                for idx, d in enumerate(duplicatas) if (d.get("numero") or d.get("vencimento"))
             ],
         }
 

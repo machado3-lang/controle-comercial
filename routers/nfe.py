@@ -1246,7 +1246,7 @@ def emitir_avulsa_submit(
                     prod.estoque = (prod.estoque or 0) - float(item["quantidade"])
 
         contas_geradas = []
-        if gerar_cobranca:
+        if gerar_cobranca or num_parcelas > 1 or bool(primeiro_vencimento):
             from services.parcelamento import gerar_contas_receber
             try:
                 venc = datetime.strptime(primeiro_vencimento, '%Y-%m-%d').date() if primeiro_vencimento else (
