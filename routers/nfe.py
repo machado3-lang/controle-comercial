@@ -1263,6 +1263,7 @@ def emitir_avulsa_submit(
                 intervalo_dias=intervalo_dias,
                 forma_pagamento=forma_pagamento or "NFe",
                 observacao=f"Gerado automaticamente da NFe #{nfe.id}",
+                numero_documento=str(numero_nfe),
                 nfe_id=nfe.id,
             )
 
@@ -1919,6 +1920,7 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
         intervalo_dias=intervalo_dias,
         forma_pagamento=nfe.forma_pagamento or "NFe",
         observacao=f"Gerado manualmente da NFe #{nfe.id}",
+        numero_documento=str(nfe.numero),
         nfe_id=nfe.id,
     )
     db.commit()
