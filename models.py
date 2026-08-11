@@ -89,6 +89,7 @@ class StatusOS(str, enum.Enum):
     ABERTA = "aberta"
     EM_ANDAMENTO = "em_andamento"
     FINALIZADA = "finalizada"
+    CONCLUIDA = "concluida"
     CANCELADA = "cancelada"
 
 
@@ -344,7 +345,7 @@ class OrdemServico(Base):
     valor_total = Column(Numeric(12, 2), default=0)
     data_entrada = Column(Date, nullable=False, default=date.today)
     data_saida = Column(Date, nullable=True)
-    status = Column(Enum(StatusOS, native_enum=False), default=StatusOS.ABERTA, index=True)
+    status = Column(Enum(StatusOS, name='statusos', native_enum=True), default=StatusOS.ABERTA, index=True)
     tecnico = Column(String(200), nullable=True)
     autorizado_por = Column(String(200), nullable=True)
     numero_requisicao = Column(String(100), nullable=True)
@@ -355,6 +356,7 @@ class OrdemServico(Base):
 
     cliente = relationship("Cliente", back_populates="ordens_servico")
     nfes = relationship("NFe", back_populates="os")
+    nfses = relationship("NFSe", back_populates="os")
 
 
 class MarcaProduto(Base):
@@ -498,7 +500,7 @@ class PedidoVenda(Base):
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
     numero = Column(String(50), nullable=True, unique=True, index=True)
     data = Column(Date, nullable=False, default=date.today)
-    status = Column(Enum(StatusPedido, native_enum=False), default=StatusPedido.PENDENTE, index=True)
+    status = Column(Enum(StatusPedido, name='statuspedido', native_enum=True), default=StatusPedido.PENDENTE, index=True)
     total = Column(Numeric(12, 2), nullable=False, default=0)
     observacao = Column(Text, nullable=True)
     tipo_pedido = Column(String(20), default="venda")  # venda ou pre_venda

@@ -17,7 +17,8 @@ from models import (Cliente, Empresa, PedidoVenda, PedidoVendaItem,
 from models_nfe import NFe, NFeItem, NFSe, NFSeItem
 from services.nfe_notaas import (
     emitir_nfe, consultar_status, baixar_pdf, baixar_xml,
-    cancelar_nfe, montar_payload_nfe, explodir_itens, consultar_municipios,
+    cancelar_nfe, montar_payload_nfe, explodir_itens,
+    explodir_itens_consolidacao, consultar_municipios,
     _limpar_doc
 )
 
@@ -1888,6 +1889,10 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
+
+    if nfe.status in ("rascunho", "pendente", "queued"):
+        request.session["error"] = "Não é possível gerar cobrança de uma NFe em rascunho/não transmitida. Emita a nota primeiro."
+        return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
     cobranca_existente = db.query(ContaReceber).filter(
         (ContaReceber.nfe_id == nfe.id) |

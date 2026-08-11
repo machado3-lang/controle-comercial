@@ -7,11 +7,29 @@ from sqlalchemy import or_
 from sqlalchemy.orm import selectinload
 
 from database import get_db
-from models import OrdemServico, Cliente, Empresa, StatusOS, Produto, MarcaProduto, CategoriaProduto
+from models import OrdemServico, Cliente, Empresa, StatusOS, Produto, MarcaProduto, CategoriaProduto, ContaReceber, StatusConta
+from models_nfe import NFe, NFSe
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
 
 router = APIRouter(prefix="/ordens-servico", tags=["Ordens de Serviço"])
+
+# Transicoes de status permitidas. O fluxo e dirigido:
+#   aberta -> em_andamento -> finalizada -> concluida (entregue)
+# 'cancelada' e terminal e pode ser alcancada a partir de qualquer estado ativo.
+# Nao se permite retroceder (ex.: concluida -> finalizada) nem reabrir uma
+# OS cancelada. Para corrigir uma OS concluida errada, o procedimento e
+# cancelar (apos void das notas/cobrancas) e abrir uma nova.
+TRANSICOES_STATUS_VALIDAS = {
+    "aberta": {"em_andamento", "cancelada"},
+    "em_andamento": {"finalizada", "cancelada"},
+    "finalizada": {"concluida", "cancelada"},
+    "concluida": {"cancelada"},
+    "cancelada": set(),
+}
+
+_STATUS_EMITIDOS_NFE = {"issued", "queued", "pendente"}
+_STATUS_EMITIDOS_NFSE = {"autorizada", "pendente", "em_processamento"}
 
 
 def _normalizar_status(valor):
@@ -61,10 +79,14 @@ def listar_ordens(
 ):
     query = db.query(OrdemServico).options(selectinload(OrdemServico.cliente)).join(Cliente)
     if status_filtro:
+        status_enum = None
         try:
-            status_enum = StatusOS(status_filtro)
-            query = query.filter(OrdemServico.status == status_enum.name)
+            status_enum = StatusOS(status_filtro)  # casa por valor ("aberta")
         except ValueError:
+            status_enum = StatusOS.__members__.get(status_filtro.upper())  # por nome
+        if status_enum is not None:
+            query = query.filter(OrdemServico.status == status_enum)
+        else:
             query = query.filter(OrdemServico.status == status_filtro)
     if busca:
         query = query.filter(
@@ -229,10 +251,60 @@ def editar_ordem_form(request: Request, ordem_id: int, db: Session = Depends(get
          "clientes_json": clientes_json, "marcas_json": marcas_json,
          "categorias_json": categorias_json,
          "servicos_json": servicos_json, "pecas_json": pecas_json,
-         "servicos_existentes": json.dumps(servicos_existentes, ensure_ascii=False),
-         "pecas_existentes": json.dumps(pecas_existentes, ensure_ascii=False),
-         "StatusOS": StatusOS}
+          "servicos_existentes": json.dumps(servicos_existentes, ensure_ascii=False),
+          "pecas_existentes": json.dumps(pecas_existentes, ensure_ascii=False),
+          "os_pecas": ordem.os_pecas if hasattr(ordem, "os_pecas") else [],
+          "StatusOS": StatusOS}
     )
+
+
+def _sincronizar_pecas_estoque_os(db: Session, ordem, itens):
+    """Unifica pecas da OS com o estoque: a partir do unico campo 'Pecas' da edicao,
+    cria/atualiza OSPeca e faz baixa (ou estorna ao remover). Evita ter dois campos
+    de pecas diferentes para a mesma OS."""
+    from models_estoque import OSPeca
+    from models import Produto
+    desejados = {}
+    for it in (itens or []):
+        pid = it.get("id")
+        if not pid:
+            continue
+        try:
+            pid = int(pid)
+        except (TypeError, ValueError):
+            continue
+        desejados[pid] = {
+            "qtd": float(it.get("qtd", 1) or 1),
+            "preco": float(it.get("preco", 0) or 0),
+        }
+    existentes = {op.produto_id: op for op in ordem.os_pecas}
+    # Remove os que nao estao mais na lista (estorna estoque)
+    for pid, op in existentes.items():
+        if pid not in desejados:
+            prod = db.query(Produto).filter(Produto.id == pid).first()
+            if prod:
+                prod.estoque = float(prod.estoque or 0) + float(op.quantidade or 0)
+            db.delete(op)
+    # Cria/atualiza os desejados (baixa o delta no estoque)
+    for pid, d in desejados.items():
+        prod = db.query(Produto).filter(Produto.id == pid).first()
+        op = existentes.get(pid)
+        if op:
+            delta = d["qtd"] - float(op.quantidade or 0)
+            op.quantidade = d["qtd"]
+            op.valor_unitario = d["preco"]
+            if prod:
+                prod.estoque = float(prod.estoque or 0) - delta
+        else:
+            qtd_baixa = d["qtd"]
+            if prod:
+                estoque_atual = float(prod.estoque or 0)
+                if qtd_baixa > estoque_atual:
+                    qtd_baixa = estoque_atual  # nao deixa estoque negativo na criacao
+                prod.estoque = estoque_atual - qtd_baixa
+            db.add(OSPeca(os_id=ordem.id, produto_id=pid,
+                          quantidade=qtd_baixa, valor_unitario=d["preco"]))
+    db.flush()
 
 
 @router.post("/{ordem_id}/editar")
@@ -283,16 +355,22 @@ def atualizar_ordem(
         except (json.JSONDecodeError, TypeError):
             pass
     
-    # Montar peças utilizadas da lista (JSON estruturado)
+    # Montar peças utilizadas da lista (JSON estruturado) e fazer baixa de estoque
+    itens_pecas = []
     if pecas_json_data:
         try:
             itens_pecas = json.loads(pecas_json_data)
-            ordem.pecas_utilizadas = json.dumps([{
-                "id": p.get("id"), "nome": p.get("nome", ""),
-                "qtd": float(p.get("qtd", 1)), "preco": float(p.get("preco", 0))
-            } for p in itens_pecas], ensure_ascii=False)
         except (json.JSONDecodeError, TypeError):
-            pass
+            itens_pecas = []
+    ordem.pecas_utilizadas = json.dumps([{
+        "id": p.get("id"), "nome": p.get("nome", ""),
+        "qtd": float(p.get("qtd", 1)), "preco": float(p.get("preco", 0))
+    } for p in itens_pecas], ensure_ascii=False)
+    # Unico campo de pecas: a baixa de estoque eh feita a partir daqui
+    try:
+        _sincronizar_pecas_estoque_os(db, ordem, itens_pecas)
+    except Exception:
+        pass
     
     ordem.valor_servico = valor_servico
     ordem.valor_pecas = valor_pecas
@@ -311,30 +389,165 @@ def atualizar_ordem(
 
 
 @router.get("/{ordem_id}/imprimir")
-def imprimir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db), tipo: str = Query("comum")):
+def imprimir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db), tipo: str = Query("a4")):
     ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
     if not ordem:
         return RedirectResponse(url="/ordens-servico", status_code=303)
     empresa = db.query(Empresa).first()
-    from datetime import datetime
-    return request.app.state.templates.TemplateResponse(request, 
-        "ordens_servico/imprimir.html",
-        {"request": request, "ordem": ordem, "empresa": empresa, "datetime": datetime, "tipo_impressao": tipo}
-    )
+
+    def _parse_itens(texto):
+        if not texto:
+            return []
+        try:
+            dados = json.loads(texto)
+            if isinstance(dados, list):
+                return [
+                    {
+                        "nome": (i.get("nome") or "") if isinstance(i, dict) else str(i),
+                        "qtd": float((i.get("qtd") if isinstance(i, dict) else 1) or 1),
+                        "preco": float((i.get("preco") if isinstance(i, dict) else 0) or 0),
+                    }
+                    for i in dados
+                ]
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+        return None  # texto livre (legado) -> renderizado como paragrafo
+
+    servicos = _parse_itens(ordem.servicos_executados)
+    pecas = _parse_itens(ordem.pecas_utilizadas)
+    # Fallback: pecas vinculadas via baixa de estoque quando o campo JSON esta vazio
+    if (pecas is None or len(pecas) == 0) and getattr(ordem, "os_pecas", None):
+        pecas = [
+            {
+                "nome": (p.produto.nome if p.produto else "Peça"),
+                "qtd": float(p.quantidade or 1),
+                "preco": float(p.valor_unitario or 0),
+            }
+            for p in ordem.os_pecas
+        ]
+
+    templates_por_tipo = {
+        "a4": "ordens_servico/imprimir_a4.html",
+        "orcamento": "ordens_servico/imprimir_a4.html",
+        "termica": "ordens_servico/imprimir_termica.html",
+    }
+    eh_orcamento = tipo == "orcamento"
+    template = templates_por_tipo.get(tipo, "ordens_servico/imprimir_a4.html")
+    return request.app.state.templates.TemplateResponse(request, template, {
+        "request": request, "ordem": ordem, "empresa": empresa,
+        "servicos": servicos, "pecas": pecas,
+        "tipo_impressao": tipo, "eh_orcamento": eh_orcamento, "now": datetime.now(),
+    })
 
 
 @router.post("/{ordem_id}/excluir")
-def excluir_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db), senha: str = Form("")):
+def excluir_ordem(
+    request: Request, ordem_id: int, db: Session = Depends(get_db),
+    senha: str = Form(""), excluir_contas: str = Form(""),
+):
     if not confirma_senha_usuario(request, db, senha):
         return JSONResponse({"erro": "Senha inválida ou usuário não autorizado"}, status_code=403)
     ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
-    if ordem:
+    if not ordem:
+        return JSONResponse({"erro": "OS não encontrada"}, status_code=404)
+    try:
         ordem_descricao = ordem.equipamento or f"OS #{ordem_id}"
-        ordem.status = StatusOS.CANCELADA
+        # NFe possui FK para a OS sem cascade: excluir definitivamente quebra o
+        # integridade. Nesse caso, cancelamos a OS em vez de apagar.
+        if ordem.nfes:
+            ordem.status = StatusOS.CANCELADA
+            db.commit()
+            registrar_auditoria(
+                db, request.session.get("user_id"), "cancelar",
+                "ordem_servico", ordem_id, f"OS: {ordem_descricao} (NFe vinculada)",
+                request.client.host if request.client else None
+            )
+            return JSONResponse({
+                "ok": True, "redirect": "/ordens-servico",
+                "message": "OS cancelada (possui NFe emitida e não pode ser excluída).",
+            })
+        db.delete(ordem)
         db.commit()
         registrar_auditoria(
             db, request.session.get("user_id"), "excluir",
             "ordem_servico", ordem_id, f"OS: {ordem_descricao}",
             request.client.host if request.client else None
         )
-    return RedirectResponse(url="/ordens-servico", status_code=303)
+        return JSONResponse({"ok": True, "redirect": "/ordens-servico", "message": "OS excluída."})
+    except Exception:
+        db.rollback()
+        return JSONResponse({"erro": "Erro interno ao excluir a OS"}, status_code=500)
+
+
+@router.post("/{ordem_id}/status")
+def atualizar_status_ordem(
+    request: Request, ordem_id: int, db: Session = Depends(get_db),
+    novo_status: str = Form(...), data_saida: str = Form(None),
+):
+    """Transiciona o status da OS no fluxo de finalizacao (Aberta -> Em Andamento
+    -> Finalizada -> Concluida, ou Cancelada). Ao concluir (entregar), registra a
+    data de saida. Apenas usuarios autenticados."""
+    ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
+    if not ordem:
+        return JSONResponse({"erro": "OS não encontrada"}, status_code=404)
+    try:
+        status = StatusOS(novo_status)
+    except ValueError:
+        return JSONResponse({"erro": "Status inválido"}, status_code=400)
+
+    # Transicao de status invalida (ex.: concluida -> finalizada, ou reabrir cancelada)
+    if ordem.status != status:
+        permitidos = TRANSICOES_STATUS_VALIDAS.get(ordem.status.value, set())
+        if status.value not in permitidos:
+            return JSONResponse(
+                {"erro": f"Transição inválida: não é possível mudar o status de "
+                         f"'{ordem.status.value}' para '{status.value}'."},
+                status_code=400,
+            )
+
+    # Cancelar uma OS concluida/existente exige antes void das notas e cobrancas
+    if status == StatusOS.CANCELADA and ordem.status != StatusOS.CANCELADA:
+        nfes_os = db.query(NFe).filter(NFe.os_id == ordem.id).all()
+        nfses_os = db.query(NFSe).filter(NFSe.os_id == ordem.id).all()
+        notas_emitidas = [n for n in nfes_os if n.status in _STATUS_EMITIDOS_NFE]
+        notas_emitidas += [n for n in nfses_os if n.status in _STATUS_EMITIDOS_NFSE]
+        if notas_emitidas:
+            return JSONResponse(
+                {"erro": "Não é possível cancelar: a OS possui nota(s) fiscal(is) emitida(s). "
+                         "Cancele a(s) nota(s) primeiro."},
+                status_code=400,
+            )
+        ids_nfe = [n.id for n in nfes_os]
+        ids_nfse = [n.id for n in nfses_os]
+        cobranca_ativa = db.query(ContaReceber).filter(
+            ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
+            or_(ContaReceber.nfe_id.in_(ids_nfe), ContaReceber.nfse_id.in_(ids_nfse)),
+        ).first()
+        if cobranca_ativa:
+            return JSONResponse(
+                {"erro": "Não é possível cancelar: a OS possui cobrança(s) ativa(s). "
+                         "Cancele a(s) cobrança(s) primeiro."},
+                status_code=400,
+            )
+
+    if ordem.status == status and not (status == StatusOS.CONCLUIDA and data_saida):
+        return JSONResponse({"ok": True, "status": status.value, "redirect": f"/ordens-servico/{ordem_id}"})
+    ordem.status = status
+    # Ao concluir (entregar), registra a data de saida: a informada ou hoje.
+    if status == StatusOS.CONCLUIDA:
+        if data_saida:
+            try:
+                ordem.data_saida = date.fromisoformat(data_saida)
+            except (ValueError, TypeError):
+                if not ordem.data_saida:
+                    ordem.data_saida = date.today()
+        elif not ordem.data_saida:
+            ordem.data_saida = date.today()
+    ordem.updated_at = datetime.now()
+    db.commit()
+    registrar_auditoria(
+        db, request.session.get("user_id"), "alterar_status",
+        "ordem_servico", ordem_id, f"Status -> {status.value}",
+        request.client.host if request.client else None
+    )
+    return JSONResponse({"ok": True, "status": status.value, "redirect": f"/ordens-servico/{ordem_id}"})

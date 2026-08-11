@@ -71,6 +71,7 @@ class NFSe(Base):
     __tablename__ = "nfse"
     id = Column(Integer, primary_key=True)
     pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
+    os_id = Column(Integer, ForeignKey("ordens_servico.id"), nullable=True, index=True)
     consolidacao_id = Column(Integer, ForeignKey("pedidos_consolidados.id"), nullable=True, index=True)
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=True, index=True)
     assinatura_id = Column(Integer, ForeignKey("assinaturas.id", use_alter=True), nullable=True, index=True)
@@ -104,6 +105,7 @@ class NFSe(Base):
     pedido = relationship("PedidoVenda", back_populates="nfse")
     consolidacao = relationship("PedidoConsolidado", back_populates="nfse")
     cliente = relationship("Cliente", back_populates="nfses")
+    os = relationship("OrdemServico", back_populates="nfses")
     itens = relationship("NFSeItem", back_populates="nfse", cascade="all, delete-orphan")
     contas_receber = relationship("ContaReceber", back_populates="nfse")
     assinaturas = relationship("Assinatura", back_populates="nfse",
