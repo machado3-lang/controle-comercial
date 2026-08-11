@@ -841,10 +841,10 @@ def create_app() -> FastAPI:
             ContaReceber.status == StatusConta.PENDENTE
         ).order_by(ContaReceber.data_vencimento).limit(5).all()
 
-        proximo_pedido = db.query(func.max(PedidoVenda.numero)).scalar()
+        from routers.pedidos import _proximo_numero_pedido
         try:
-            proximo_pedido = str(int(proximo_pedido) + 1) if proximo_pedido else "1"
-        except:
+            proximo_pedido = _proximo_numero_pedido(db)
+        except Exception:
             proximo_pedido = "1"
 
         return templates.TemplateResponse("index.html", {
@@ -915,12 +915,14 @@ def create_app() -> FastAPI:
     # Add CSRF token and flash messages to all template contexts via context processor
     def add_to_context(request):
         messages = []
-        if "message" in request.session:
-            raw = request.session.pop("message")
-            if isinstance(raw, dict):
-                messages.append({"type": raw.get("tipo", "success"), "text": raw.get("texto", str(raw))})
-            else:
-                messages.append({"type": "success", "text": raw})
+        # "message"/"success"/"info" => sucesso; "error" => erro.
+        for chave, tipo_padrao in (("message", "success"), ("success", "success"), ("info", "info")):
+            if chave in request.session:
+                raw = request.session.pop(chave)
+                if isinstance(raw, dict):
+                    messages.append({"type": raw.get("tipo", tipo_padrao), "text": raw.get("texto", str(raw))})
+                else:
+                    messages.append({"type": tipo_padrao, "text": raw})
         if "error" in request.session:
             raw = request.session.pop("error")
             if isinstance(raw, dict):

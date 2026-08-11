@@ -157,27 +157,103 @@ def nova_consolidacao(
     )
 
 
-@router.post("/criar")
-async def criar_consolidacao(
-    request: Request,
-    db: Session = Depends(get_db),
-    cliente_id: int = Form(0),
-    periodo_inicio: str = Form(""),
-    periodo_fim: str = Form(""),
-    forma_pagamento: str = Form(""),
-    gerar_boleto: bool = Form(False),
-    terminos_boleto: str = Form(""),
-    pedido_ids: str = Form("[]"),
-    observacao: str = Form(""),
-):
-    """Cria uma nova consolidação a partir dos pré-pedidos selecionados"""
-    import json
-    from sqlalchemy import func
+def _parse_pedido_ids(form) -> list:
+    """Extrai os IDs de pedidos enviados pelo formulário de nova consolidação.
 
+    O formulário envia o campo `pedido_ids` REPETIDO: um checkbox por pedido
+    marcado e (historicamente) um hidden com a lista em JSON. Um parâmetro
+    `Form(str)` simples receberia apenas o ÚLTIMO valor (um id solto), o que
+    quebrava o `in_()` com ArgumentError (erro 500). Aqui lemos todos os
+    valores e aceitamos tanto ids soltos quanto JSON.
+    """
+    valores = []
+    for campo in ("pedido_ids", "pedido_ids_json"):
+        try:
+            valores.extend(form.getlist(campo))
+        except AttributeError:
+            valor = form.get(campo)
+            if valor is not None:
+                valores.append(valor)
+
+    ids, vistos = [], set()
+    for bruto in valores:
+        if not isinstance(bruto, str):
+            continue
+        bruto = bruto.strip()
+        if not bruto:
+            continue
+        if bruto.startswith("["):
+            try:
+                candidatos = json.loads(bruto)
+            except json.JSONDecodeError:
+                candidatos = []
+            if not isinstance(candidatos, list):
+                candidatos = []
+        else:
+            candidatos = bruto.split(",")
+        for candidato in candidatos:
+            try:
+                pedido_id = int(str(candidato).strip())
+            except (TypeError, ValueError):
+                continue
+            if pedido_id > 0 and pedido_id not in vistos:
+                vistos.add(pedido_id)
+                ids.append(pedido_id)
+    return ids
+
+
+def _parse_data(valor):
+    """Converte 'YYYY-MM-DD' em date, devolvendo None se vazio/inválido."""
+    if not valor:
+        return None
     try:
-        ids_selecionados = json.loads(pedido_ids)
-    except json.JSONDecodeError:
-        ids_selecionados = []
+        return date.fromisoformat(str(valor).strip())
+    except (TypeError, ValueError):
+        return None
+
+
+def _gerar_numero_consolidacao(db) -> str:
+    """Gera o próximo número CONS-XXXXXX garantindo que não exista no banco.
+
+    `pedidos_consolidados.numero` é UNIQUE: sem esta verificação uma colisão
+    (contador reiniciado, importação manual) derrubaria o commit com 500.
+    """
+    empresa = db.query(Empresa).with_for_update().first()
+    if empresa:
+        sequencia = empresa.ultimo_numero_pedido or 0
+    else:
+        ultimo = db.query(func.max(PedidoConsolidado.numero)).scalar()
+        try:
+            sequencia = int(str(ultimo).rsplit("-", 1)[-1])
+        except (TypeError, ValueError):
+            sequencia = 0
+
+    for _ in range(100):
+        sequencia += 1
+        numero = f"CONS-{sequencia:06d}"
+        existe = db.query(PedidoConsolidado.id).filter(
+            PedidoConsolidado.numero == numero
+        ).first()
+        if not existe:
+            if empresa:
+                empresa.ultimo_numero_pedido = sequencia
+            return numero
+    raise RuntimeError("Não foi possível gerar um número livre para a consolidação")
+
+
+@router.post("/criar")
+async def criar_consolidacao(request: Request, db: Session = Depends(get_db)):
+    """Cria uma nova consolidação a partir dos pré-pedidos selecionados"""
+    form = await request.form()
+    ids_selecionados = _parse_pedido_ids(form)
+    forma_pagamento = (form.get("forma_pagamento") or "").strip()
+    gerar_boleto = str(form.get("gerar_boleto") or "").strip().lower() in (
+        "1", "true", "on", "yes", "sim"
+    )
+    terminos_boleto = form.get("terminos_boleto") or ""
+    observacao = form.get("observacao") or ""
+    periodo_inicio = _parse_data(form.get("periodo_inicio"))
+    periodo_fim = _parse_data(form.get("periodo_fim"))
 
     if not ids_selecionados:
         request.session["error"] = "Nenhum pedido selecionado para consolidação"
@@ -189,122 +265,142 @@ async def criar_consolidacao(
     ).all()
 
     if not pedidos:
-        request.session["error"] = "Nenhum pedido válido encontrado"
+        request.session["error"] = (
+            "Nenhum pedido válido encontrado (os pedidos podem já pertencer a outra consolidação)"
+        )
         return RedirectResponse(url="/consolidacoes/nova", status_code=303)
 
-    # Permite pedidos de clientes diferentes: o cliente TITULAR é o do PRIMEIRO
-    # pedido selecionado (matriz). Pedidos de outros clientes entram na consolidação
-    # mesmo assim (ex.: filiais consolidadas no CNPJ da matriz).
-    cliente_ids = list(dict.fromkeys(p.cliente_id for p in pedidos))
-    cliente_id = cliente_ids[0]
-    cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
-    if len(cliente_ids) > 1:
-        request.session["success"] = (
-            f"Consolidação criada com {len(cliente_ids)} clientes diferentes. "
-            f"Faturamento será em nome de {cliente.nome if cliente else 'cliente titular'} (primeiro pedido)."
+    # Só pré-vendas podem ser consolidadas (mesma regra de /adicionar)
+    invalidos = [p for p in pedidos if p.status != StatusPedido.PRE_VENDA]
+    if invalidos:
+        numeros = ", ".join(p.numero or f"#{p.id}" for p in invalidos)
+        request.session["error"] = (
+            f"Apenas pedidos em pré-venda podem ser consolidados. Verifique: {numeros}"
         )
+        return RedirectResponse(url="/consolidacoes/nova", status_code=303)
 
-    # Gera número da consolidação
-    empresa = db.query(Empresa).with_for_update().first()
-    if empresa:
-        empresa.ultimo_numero_pedido = (empresa.ultimo_numero_pedido or 0) + 1
-        numero = f"CONS-{empresa.ultimo_numero_pedido:06d}"
-    else:
-        ultimo = db.query(func.max(PedidoConsolidado.numero)).scalar()
-        num = int(ultimo.split("-")[-1]) + 1 if ultimo else 1
-        numero = f"CONS-{num:06d}"
+    # Mantém a ordem de seleção: o PRIMEIRO pedido define o cliente titular.
+    posicao = {pedido_id: i for i, pedido_id in enumerate(ids_selecionados)}
+    pedidos.sort(key=lambda p: posicao.get(p.id, len(posicao)))
 
-    # Cria a consolidação
-    consolidacao = PedidoConsolidado(
-        numero=numero,
-        data=date.today(),
-        data_fechamento=date.today(),
-        cliente_id=cliente_id,
-        status=StatusConsolidacao.ABERTO,
-        forma_pagamento=forma_pagamento if forma_pagamento else None,
-        gerar_boleto=gerar_boleto,
-        terminos_boleto=terminos_boleto,
-        observacao=observacao,
-        periodo_inicio=date.fromisoformat(periodo_inicio) if periodo_inicio else None,
-        periodo_fim=date.fromisoformat(periodo_fim) if periodo_fim else None,
-    )
-    db.add(consolidacao)
-    db.flush()
+    try:
+        # Permite pedidos de clientes diferentes: o cliente TITULAR é o do PRIMEIRO
+        # pedido selecionado (matriz). Pedidos de outros clientes entram na consolidação
+        # mesmo assim (ex.: filiais consolidadas no CNPJ da matriz).
+        cliente_ids = list(dict.fromkeys(p.cliente_id for p in pedidos))
+        cliente_id = cliente_ids[0]
+        cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
+        aviso_multi_cliente = ""
+        if len(cliente_ids) > 1:
+            aviso_multi_cliente = (
+                f" Atenção: {len(cliente_ids)} clientes diferentes; o faturamento será em nome de "
+                f"{cliente.nome if cliente else 'cliente titular'} (primeiro pedido)."
+            )
 
-    # Agrega itens dos pedidos selecionados
-    itens_agregados = {}  # key: (produto_id, variacao_id, descricao, preco_unitario)
-    total_consolidado = Decimal("0")
+        numero = _gerar_numero_consolidacao(db)
 
-    for pedido in pedidos:
-        for item in pedido.itens:
-            # Pula itens-filho de kit (item_pai_id): sao representados pela
-            # explosao do kit-pai na emissao, evitando dupla contagem.
-            if item.item_pai_id is not None:
-                continue
-            key = (item.produto_id, item.variacao_id, item.descricao, item.preco_unitario)
-            if key not in itens_agregados:
-                itens_agregados[key] = {
-                    "produto_id": item.produto_id,
-                    "variacao_id": item.variacao_id,
-                    "descricao": item.descricao,
-                    "quantidade": Decimal("0"),
-                    "preco_unitario": item.preco_unitario,
-                    "total": Decimal("0"),
-                    "unidade": "UN",
-                    "ncm": None,
-                    "cfop": None,
-                    "fornecedor_id": item.fornecedor_id,
-                    "origens": [],
-                }
-            agg = itens_agregados[key]
-            agg["quantidade"] += Decimal(str(item.quantidade))
-            agg["total"] += item.total or Decimal("0")
-            agg["origens"].append({
-                "pedido_id": pedido.id,
-                "item_id": item.id,
-                "quantidade": Decimal(str(item.quantidade)),
-                "preco_unitario": item.preco_unitario,
-                "total": item.total or Decimal("0"),
-            })
-        # Marca pedido como consolidado
-        pedido.consolidacao_id = consolidacao.id
-        pedido.status = StatusPedido.CONSOLIDADO
-
-    # Cria itens consolidados
-    for agg in itens_agregados.values():
-        item_cons = PedidoConsolidadoItem(
-            consolidacao_id=consolidacao.id,
-            produto_id=agg["produto_id"],
-            variacao_id=agg["variacao_id"],
-            descricao=agg["descricao"],
-            quantidade=agg["quantidade"],
-            preco_unitario=agg["preco_unitario"],
-            total=agg["total"],
-            unidade=agg["unidade"],
-            ncm=agg["ncm"],
-            cfop=agg["cfop"],
-            fornecedor_id=agg["fornecedor_id"],
+        # Cria a consolidação
+        consolidacao = PedidoConsolidado(
+            numero=numero,
+            data=date.today(),
+            data_fechamento=date.today(),
+            cliente_id=cliente_id,
+            status=StatusConsolidacao.ABERTO,
+            forma_pagamento=forma_pagamento if forma_pagamento else None,
+            gerar_boleto=gerar_boleto,
+            terminos_boleto=terminos_boleto,
+            observacao=observacao,
+            periodo_inicio=periodo_inicio,
+            periodo_fim=periodo_fim,
         )
-        db.add(item_cons)
+        db.add(consolidacao)
         db.flush()
 
-        # Cria rastreabilidade das origens
-        for orig in agg["origens"]:
-            item_origem = PedidoConsolidadoItemOrigem(
-                item_consolidado_id=item_cons.id,
-                pedido_origem_id=orig["pedido_id"],
-                item_origem_id=orig["item_id"],
-                quantidade=orig["quantidade"],
-                preco_unitario=orig["preco_unitario"],
-                total=orig["total"],
+        # Agrega itens dos pedidos selecionados
+        itens_agregados = {}  # key: (produto_id, variacao_id, descricao, preco_unitario)
+        total_consolidado = Decimal("0")
+
+        for pedido in pedidos:
+            for item in pedido.itens:
+                # Pula itens-filho de kit (item_pai_id): sao representados pela
+                # explosao do kit-pai na emissao, evitando dupla contagem.
+                if item.item_pai_id is not None:
+                    continue
+                key = (item.produto_id, item.variacao_id, item.descricao, item.preco_unitario)
+                if key not in itens_agregados:
+                    itens_agregados[key] = {
+                        "produto_id": item.produto_id,
+                        "variacao_id": item.variacao_id,
+                        "descricao": item.descricao,
+                        "quantidade": Decimal("0"),
+                        "preco_unitario": item.preco_unitario,
+                        "total": Decimal("0"),
+                        "unidade": "UN",
+                        "ncm": None,
+                        "cfop": None,
+                        "fornecedor_id": item.fornecedor_id,
+                        "origens": [],
+                    }
+                agg = itens_agregados[key]
+                agg["quantidade"] += Decimal(str(item.quantidade))
+                agg["total"] += item.total or Decimal("0")
+                agg["origens"].append({
+                    "pedido_id": pedido.id,
+                    "item_id": item.id,
+                    "quantidade": Decimal(str(item.quantidade)),
+                    "preco_unitario": item.preco_unitario,
+                    "total": item.total or Decimal("0"),
+                })
+            # Marca pedido como consolidado
+            pedido.consolidacao_id = consolidacao.id
+            pedido.status = StatusPedido.CONSOLIDADO
+
+        # Cria itens consolidados
+        for agg in itens_agregados.values():
+            item_cons = PedidoConsolidadoItem(
+                consolidacao_id=consolidacao.id,
+                produto_id=agg["produto_id"],
+                variacao_id=agg["variacao_id"],
+                descricao=agg["descricao"],
+                quantidade=agg["quantidade"],
+                preco_unitario=agg["preco_unitario"],
+                total=agg["total"],
+                unidade=agg["unidade"],
+                ncm=agg["ncm"],
+                cfop=agg["cfop"],
+                fornecedor_id=agg["fornecedor_id"],
             )
-            db.add(item_origem)
+            db.add(item_cons)
+            db.flush()
 
-        total_consolidado += agg["total"]
+            # Cria rastreabilidade das origens
+            for orig in agg["origens"]:
+                item_origem = PedidoConsolidadoItemOrigem(
+                    item_consolidado_id=item_cons.id,
+                    pedido_origem_id=orig["pedido_id"],
+                    item_origem_id=orig["item_id"],
+                    quantidade=orig["quantidade"],
+                    preco_unitario=orig["preco_unitario"],
+                    total=orig["total"],
+                )
+                db.add(item_origem)
 
-    consolidacao.total = total_consolidado
-    db.commit()
-    request.session["success"] = f"Consolidação {numero} criada com sucesso!"
+            total_consolidado += agg["total"]
+
+        consolidacao.total = total_consolidado
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Erro ao criar consolidação (pedidos=%s)", ids_selecionados)
+        request.session["error"] = (
+            "Erro ao criar a consolidação. Nenhuma alteração foi salva; "
+            "confira os pedidos selecionados e tente novamente."
+        )
+        return RedirectResponse(url="/consolidacoes/nova", status_code=303)
+
+    request.session["message"] = (
+        f"Consolidação {numero} criada com {len(pedidos)} pedido(s)!{aviso_multi_cliente}"
+    )
     return RedirectResponse(url=f"/consolidacoes/{consolidacao.id}", status_code=303)
 
 
@@ -390,7 +486,7 @@ def adicionar_pedido_consolidacao(
     pedido.status = StatusPedido.CONSOLIDADO
     _rebuild_itens_consolidacao(db, consolidacao)
     db.commit()
-    request.session["success"] = "Pedido adicionado à consolidação"
+    request.session["message"] = "Pedido adicionado à consolidação"
     return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
 
@@ -424,14 +520,68 @@ def remover_pedido_consolidacao(
         ).delete()
         db.delete(consolidacao)
         db.commit()
-        request.session["info"] = "Consolidação vazia foi excluída"
+        request.session["message"] = "Consolidação vazia foi excluída"
         return RedirectResponse(url="/consolidacoes/", status_code=303)
 
     _rebuild_itens_consolidacao(db, consolidacao)
     db.commit()
-    request.session["success"] = "Pedido removido da consolidação"
+    request.session["message"] = "Pedido removido da consolidação"
     return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
+
+
+@router.get("/pedidos-disponiveis")
+def pedidos_disponiveis_api(
+    request: Request,
+    db: Session = Depends(get_db),
+    cliente_id: int = Query(0),
+    periodo_inicio: str = Query(""),
+    periodo_fim: str = Query(""),
+):
+    """API para buscar pré-pedidos disponíveis para consolidação (AJAX).
+
+    IMPORTANTE: precisa ser declarada ANTES de `GET /{consolidacao_id}`,
+    senão a rota dinâmica captura o caminho e devolve 422.
+    """
+    query = db.query(PedidoVenda).join(Cliente).filter(
+        PedidoVenda.status == StatusPedido.PRE_VENDA,
+        PedidoVenda.consolidacao_id.is_(None)
+    )
+    if cliente_id:
+        query = query.filter(PedidoVenda.cliente_id == cliente_id)
+    if periodo_inicio:
+        query = query.filter(PedidoVenda.data >= periodo_inicio)
+    if periodo_fim:
+        query = query.filter(PedidoVenda.data <= periodo_fim)
+
+    pedidos = query.order_by(Cliente.nome, PedidoVenda.data).all()
+
+    clientes_agrupados = {}
+    for p in pedidos:
+        cid = p.cliente_id
+        if cid not in clientes_agrupados:
+            clientes_agrupados[cid] = {
+                "cliente_id": p.cliente.id,
+                "cliente_nome": p.cliente.nome,
+                "pedidos": [],
+                "total": 0,
+                "qtd_itens": 0,
+            }
+        clientes_agrupados[cid]["pedidos"].append({
+            "id": p.id,
+            "numero": p.numero or f"#{p.id}",
+            "data": p.data.isoformat() if p.data else None,
+            "total": float(p.total or 0),
+            "qtd_itens": len(p.itens) if p.itens else 0,
+        })
+        clientes_agrupados[cid]["total"] += float(p.total or 0)
+        clientes_agrupados[cid]["qtd_itens"] += len(p.itens) if p.itens else 0
+
+    return JSONResponse({
+        "clientes_agrupados": list(clientes_agrupados.values()),
+        "total_pedidos": len(pedidos),
+        "total_geral": sum(float(p.total or 0) for p in pedidos),
+    })
 
 
 @router.get("/{consolidacao_id}")
@@ -545,25 +695,37 @@ def finalizar_consolidacao(
 
     # Cria conta(s) a receber com suporte a parcelamento, independente da
     # forma de pagamento (à vista/cartão também geram o registro financeiro).
-    contas_geradas = []
-    from services.parcelamento import gerar_contas_receber
-    try:
-        venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (consolidacao.data_fechamento or date.today())
-    except ValueError:
-        venc = consolidacao.data_fechamento or date.today()
-    contas_geradas = gerar_contas_receber(
-        db,
-        cliente_id=consolidacao.cliente_id,
-        descricao=f"Consolidação {consolidacao.numero}",
-        valor_total=consolidacao.total or 0,
-        primeiro_vencimento=venc,
-        num_parcelas=num_parcelas,
-        intervalo_dias=intervalo_dias,
-        forma_pagamento=forma_pagamento or "NFSe",
-        consolidacao_id=consolidacao.id,
-    )
+    from services.parcelamento import gerar_contas_receber, contas_receber_existentes
+    contas_geradas = contas_receber_existentes(db, consolidacao_id=consolidacao.id)
+    if contas_geradas:
+        logger.info(
+            "Consolidação %s já possui %s conta(s) a receber; nenhuma nova será gerada",
+            consolidacao.id, len(contas_geradas),
+        )
+    else:
+        try:
+            venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (consolidacao.data_fechamento or date.today())
+        except ValueError:
+            venc = consolidacao.data_fechamento or date.today()
+        contas_geradas = gerar_contas_receber(
+            db,
+            cliente_id=consolidacao.cliente_id,
+            descricao=f"Consolidação {consolidacao.numero}",
+            valor_total=consolidacao.total or 0,
+            primeiro_vencimento=venc,
+            num_parcelas=num_parcelas,
+            intervalo_dias=intervalo_dias,
+            forma_pagamento=forma_pagamento or "NFSe",
+            consolidacao_id=consolidacao.id,
+        )
 
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Erro ao finalizar consolidação %s", consolidacao_id)
+        request.session["error"] = "Erro ao finalizar a consolidação. Nenhuma alteração foi salva."
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
     # Emissão imediata de TODOS os boletos das parcelas (Sicoob)
     if contas_geradas and (gerar_boleto or forma_pagamento == "boleto"):
@@ -574,10 +736,10 @@ def finalizar_consolidacao(
                 f"Consolidação finalizada; {ok} boleto(s) emitido(s), mas houve erro(s): " + "; ".join(erros)
             )
             return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
-        request.session["success"] = f"Consolidação finalizada e {ok} boleto(s) emitido(s) com sucesso!"
+        request.session["message"] = f"Consolidação finalizada e {ok} boleto(s) emitido(s) com sucesso!"
         return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
-    request.session["success"] = "Consolidação finalizada com sucesso!"
+    request.session["message"] = "Consolidação finalizada com sucesso!"
     return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
 
@@ -616,7 +778,7 @@ def cancelar_consolidacao(
         consolidacao.nfse.status = "cancelada"
 
     db.commit()
-    request.session["success"] = "Consolidação cancelada e pedidos liberados"
+    request.session["message"] = "Consolidação cancelada e pedidos liberados"
     return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
 
@@ -649,6 +811,7 @@ def imprimir_consolidacao(
             "consolidacao": consolidacao,
             "empresa": empresa,
             "tipo_impressao": tipo,
+            "now": datetime.now(),
             "STATUS_LABELS": STATUS_CONSOLIDACAO_LABELS,
             "FORMAS_PAGAMENTO": {
                 FormaPagamento.AVISTA: "À Vista",
@@ -659,53 +822,3 @@ def imprimir_consolidacao(
             },
         },
     )
-
-
-@router.get("/pedidos-disponiveis")
-def pedidos_disponiveis_api(
-    request: Request,
-    db: Session = Depends(get_db),
-    cliente_id: int = Query(0),
-    periodo_inicio: str = Query(""),
-    periodo_fim: str = Query(""),
-):
-    """API para buscar pré-pedidos disponíveis para consolidação (AJAX)"""
-    query = db.query(PedidoVenda).join(Cliente).filter(
-        PedidoVenda.status == StatusPedido.PRE_VENDA,
-        PedidoVenda.consolidacao_id.is_(None)
-    )
-    if cliente_id:
-        query = query.filter(PedidoVenda.cliente_id == cliente_id)
-    if periodo_inicio:
-        query = query.filter(PedidoVenda.data >= periodo_inicio)
-    if periodo_fim:
-        query = query.filter(PedidoVenda.data <= periodo_fim)
-
-    pedidos = query.order_by(Cliente.nome, PedidoVenda.data).all()
-
-    clientes_agrupados = {}
-    for p in pedidos:
-        cid = p.cliente_id
-        if cid not in clientes_agrupados:
-            clientes_agrupados[cid] = {
-                "cliente_id": p.cliente.id,
-                "cliente_nome": p.cliente.nome,
-                "pedidos": [],
-                "total": 0,
-                "qtd_itens": 0,
-            }
-        clientes_agrupados[cid]["pedidos"].append({
-            "id": p.id,
-            "numero": p.numero or f"#{p.id}",
-            "data": p.data.isoformat() if p.data else None,
-            "total": float(p.total or 0),
-            "qtd_itens": len(p.itens) if p.itens else 0,
-        })
-        clientes_agrupados[cid]["total"] += float(p.total or 0)
-        clientes_agrupados[cid]["qtd_itens"] += len(p.itens) if p.itens else 0
-
-    return JSONResponse({
-        "clientes_agrupados": list(clientes_agrupados.values()),
-        "total_pedidos": len(pedidos),
-        "total_geral": sum(float(p.total or 0) for p in pedidos),
-    })

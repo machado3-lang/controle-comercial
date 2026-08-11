@@ -97,6 +97,9 @@ async def test_agrupamento_pre_venda(authenticated_client: AsyncClient, db_sessi
     assert novo_pedido is not None
     assert novo_pedido.total == 40.0
     assert len(novo_pedido.itens) == 3
+    # Os itens agrupados preservam o vinculo com o produto (necessario para
+    # emitir NFe/NFSe depois do agrupamento).
+    assert all(i.produto_id is not None for i in novo_pedido.itens)
 
     # Fazer GET na página de detalhes do novo pedido para testar o carregamento do relacionamento
     detalhe_resp = await authenticated_client.get(f"/pedidos/{novo_id}")
@@ -107,8 +110,10 @@ async def test_agrupamento_pre_venda(authenticated_client: AsyncClient, db_sessi
     p1_db = db_session.query(PedidoVenda).filter(PedidoVenda.id == p1.id).first()
     p2_db = db_session.query(PedidoVenda).filter(PedidoVenda.id == p2.id).first()
 
-    assert p1_db.status == StatusPedido.FATURADO
-    assert p2_db.status == StatusPedido.FATURADO
+    # Os pedidos de origem ficam AGRUPADO (e nao FATURADO): apenas o pedido
+    # agrupado conta como receita, evitando dupla contagem.
+    assert p1_db.status == StatusPedido.AGRUPADO
+    assert p2_db.status == StatusPedido.AGRUPADO
     assert p1_db.pedido_agrupado_id == novo_id
     assert p2_db.pedido_agrupado_id == novo_id
 

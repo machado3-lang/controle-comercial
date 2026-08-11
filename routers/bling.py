@@ -1010,8 +1010,9 @@ def importar_contratos(db: Session, token: str, errors: list) -> tuple:
 
 _STATUS_OS_PARA_SITUACAO = {
     StatusOS.ABERTA: 0,
-    StatusOS.EM_ANDAMENTO: 0,
+    StatusOS.EM_ANDAMENTO: 1,
     StatusOS.FINALIZADA: 2,
+    StatusOS.CONCLUIDA: 2,
     StatusOS.CANCELADA: 3,
 }
 

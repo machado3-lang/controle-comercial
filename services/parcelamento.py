@@ -16,6 +16,7 @@ from datetime import date, timedelta
 from decimal import Decimal, ROUND_DOWN
 
 from models import ContaReceber, ContaPagar, StatusConta
+from sqlalchemy import or_
 
 logger = logging.getLogger(__name__)
 
@@ -194,10 +195,38 @@ def gerar_contas_pagar_parcelas(
     return contas
 
 
-def emitir_boletos_contas(db, contas):
+def contas_receber_existentes(db, *, pedido_id=None, consolidacao_id=None, nfse_id=None, nfe_id=None):
+    """Retorna as ContaReceber ja geradas para o documento informado.
+
+    Usado para evitar cobranca em duplicidade quando o mesmo pedido/consolidacao
+    e faturado mais de uma vez (ex.: finalizar o pedido e, depois, emitir a
+    NFSe do mesmo pedido). Contas canceladas/excluidas nao contam.
+    """
+    filtros = []
+    if pedido_id:
+        filtros.append(ContaReceber.pedido_id == pedido_id)
+    if consolidacao_id:
+        filtros.append(ContaReceber.consolidacao_id == consolidacao_id)
+    if nfse_id:
+        filtros.append(ContaReceber.nfse_id == nfse_id)
+    if nfe_id:
+        filtros.append(ContaReceber.nfe_id == nfe_id)
+    if not filtros:
+        return []
+    return (
+        db.query(ContaReceber)
+        .filter(or_(*filtros))
+        .filter(ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]))
+        .all()
+    )
+
+
+def emitir_boletos_contas(db, contas, forcar=False):
     """Emite boletos Sicoob para todas as contas informadas.
 
     As contas precisam estar commitadas (o nosso_numero usa conta.id).
+    Contas que ja possuem boleto emitido sao ignoradas (evita duplicidade no
+    banco), a menos que `forcar=True`.
     Retorna (qtd_ok, lista_de_erros).
     """
     from routers.sicoob import emitir_boleto  # import tardio (evita ciclo)
@@ -205,6 +234,12 @@ def emitir_boletos_contas(db, contas):
     ok = 0
     erros = []
     for conta in contas:
+        if conta.boleto_emitido and not forcar:
+            logger.info(
+                "Boleto da conta %s ja emitido (nosso_numero=%s); emissao ignorada",
+                conta.id, conta.nosso_numero,
+            )
+            continue
         try:
             resultado = emitir_boleto(db, conta)
             if resultado.get("success"):

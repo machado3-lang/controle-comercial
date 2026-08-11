@@ -372,34 +372,6 @@ def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse):
             _explodir_kit(db, insumo, qtd, itens_nfe, itens_nfse)
 
 
-def explodir_itens_consolidacao(consolidacao, db) -> tuple:
-    """Explode itens de uma consolidação em itens NFe (produtos) e NFSe (serviços)"""
-    itens_nfe = []
-    itens_nfse = []
-
-    for item in consolidacao.itens:
-        produto = item.produto
-        if not produto:
-            continue
-            if produto.tipo == "produto":
-                itens_nfe.append({
-                    "produto_id": produto.id,
-                    "descricao": item.descricao or produto.nome,
-                    "ncm": produto.ncm,
-                    "unidade": produto.unidade or "UN",
-                    "quantidade": item.quantidade or 1,
-                    "preco_unitario": item.preco_unitario or 0,
-                    "origem": produto.origem or 0,
-                    "variacao_id": item.variacao_id,
-                })
-        elif produto.tipo == "servico":
-            itens_nfse.append(item)
-        elif produto.tipo == "kit" and db:
-            _explodir_kit(db, produto, item.quantidade or 1, itens_nfe, itens_nfse)
-
-    return itens_nfe, itens_nfse
-
-
 def explodir_itens_consolidacao(consolidacao=None, db=None) -> tuple:
     """Explode itens de uma consolidação separando produtos (NFe) e serviços (NFSe)"""
     itens_nfe = []

@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>{{ 'Orçamento' if eh_orcamento else 'Ordem de Serviço' }} #{{ ordem.id }}</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #f1f5f9; color: #111827; }
+  body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.45; }
+  .os-a4 { max-width: 210mm; margin: 12mm auto; padding: 12mm 14mm; background: #fff;
+           box-shadow: 0 1px 4px rgba(0,0,0,.15); color: #111827; }
+  .no-print { display: inline-block; }
+  @media print {
+    html, body { background: #fff; }
+    .os-a4 { margin: 0; padding: 8mm 10mm; box-shadow: none; max-width: none; }
+    .no-print { display: none !important; }
+  }
+  table { width: 100%; border-collapse: collapse; }
+  .cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 16px;
+               border-bottom: 3px solid #0f172a; padding-bottom: 10px; }
+  .logo-empresa { max-height: 56px; max-width: 200px; object-fit: contain; }
+  .empresa-nome { font-size: 17px; font-weight: 700; color: #0f172a; }
+  .empresa-info { font-size: 11px; color: #374151; margin-top: 2px; }
+  .titulo-os { text-align: right; }
+  .titulo-os h1 { margin: 0; font-size: 18px; letter-spacing: .5px; color: #0f172a; text-transform: uppercase; }
+  .titulo-os .numero { font-size: 22px; font-weight: 800; color: #0f172a; }
+  .badge { display: inline-block; margin-top: 4px; padding: 2px 10px; border-radius: 9999px;
+           font-size: 11px; font-weight: 700; text-transform: capitalize;
+           background: #e2e8f0; color: #0f172a; }
+  .secao { margin-top: 14px; }
+  .secao-titulo { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: .5px;
+                  color: #0f172a; border-bottom: 1px solid #cbd5e1; padding-bottom: 3px; margin-bottom: 6px; }
+  .grid-2 { display: flex; gap: 18px; }
+  .grid-2 > div { flex: 1; }
+  .linha { display: flex; gap: 6px; }
+  .linha .rot { font-weight: 700; color: #374151; min-width: 92px; }
+  .linha .val { color: #111827; }
+  .box { border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 10px; background: #f8fafc; }
+  table.tabela th { background: #0f172a; color: #fff; font-size: 11px; text-transform: uppercase;
+                    text-align: left; padding: 6px 8px; }
+  table.tabela th.num, table.tabela td.num { text-align: right; }
+  table.tabela td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; }
+  table.tabela tbody tr:nth-child(even) { background: #f8fafc; }
+  .totais { margin-top: 10px; display: flex; justify-content: flex-end; }
+  .totais table { width: auto; min-width: 280px; }
+  .totais td { padding: 4px 8px; }
+  .totais .total-final { font-size: 14px; font-weight: 800; background: #0f172a; color: #fff; }
+  .assinaturas { margin-top: 28px; display: flex; gap: 40px; }
+  .assinaturas .linha-ass { flex: 1; }
+  .linha-ass .trilha { border-top: 1px solid #111827; margin-top: 34px; padding-top: 4px;
+                       text-align: center; font-size: 11px; color: #374151; }
+  .btn-imprimir { position: fixed; top: 16px; right: 16px; background: #0f172a; color: #fff;
+                  border: 0; padding: 10px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; }
+</style>
+</head>
+<body>
+<button class="btn-imprimir no-print" onclick="window.print()">🖨 Imprimir / Salvar PDF</button>
+
+<div class="os-a4">
+  <!-- Cabeçalho -->
+  <div class="cabecalho">
+    <div style="display:flex; align-items:center; gap:14px;">
+      {% if empresa and empresa.logo %}
+        <img class="logo-empresa" src="/{{ empresa.logo }}" alt="Logotipo">
+      {% endif %}
+      <div>
+        <div class="empresa-nome">{{ (empresa.nome_fantasia or empresa.razao_social) if empresa else 'Sua Empresa' }}</div>
+        <div class="empresa-info">
+          {% if empresa and empresa.razao_social and empresa.nome_fantasia %}<div>{{ empresa.razao_social }}</div>{% endif %}
+          {% if empresa and empresa.cnpj %}<div>CNPJ: {{ empresa.cnpj }}{% if empresa.inscricao_estadual %} &nbsp;|&nbsp; IE: {{ empresa.inscricao_estadual }}{% endif %}</div>{% endif %}
+          {% if empresa and (empresa.endereco or empresa.cidade) %}
+            <div>{{ [empresa.endereco, (empresa.bairro if empresa.bairro else none), (empresa.cidade ~ '/' ~ empresa.estado if empresa.cidade else none), empresa.cep]|select|join(', ') }}</div>
+          {% endif %}
+          {% if empresa and (empresa.telefone or empresa.celular or empresa.email) %}
+            <div>{{ [('Tel: ' ~ empresa.telefone if empresa.telefone else none), (empresa.celular if empresa.celular else none), empresa.email]|select|join(' &nbsp;|&nbsp; ') }}</div>
+          {% endif %}
+        </div>
+      </div>
+    </div>
+    <div class="titulo-os">
+      <h1>{% if eh_orcamento %}Orçamento{% else %}Ordem de Serviço{% endif %}</h1>
+      <div class="numero">Nº {{ ordem.id }}</div>
+      <span class="badge">{{ ordem.status.value }}</span>
+    </div>
+  </div>
+
+  <!-- Dados gerais -->
+  <div class="secao">
+    <div class="grid-2">
+      <div class="box">
+        <div class="secao-titulo">Cliente</div>
+        <div class="linha"><span class="rot">Nome:</span><span class="val">{{ ordem.cliente.nome if ordem.cliente else '-' }}</span></div>
+        <div class="linha"><span class="rot">CPF/CNPJ:</span><span class="val">{{ ordem.cliente.cpf_cnpj or '-' }}</span></div>
+        <div class="linha"><span class="rot">Telefone:</span><span class="val">{{ ordem.cliente.telefone or '-' }}</span></div>
+        {% if ordem.cliente and ordem.cliente.email %}<div class="linha"><span class="rot">E-mail:</span><span class="val">{{ ordem.cliente.email }}</span></div>{% endif %}
+      </div>
+      <div class="box">
+        <div class="secao-titulo">Equipamento</div>
+        <div class="linha"><span class="rot">Equip.:</span><span class="val">{{ ordem.equipamento or '-' }}</span></div>
+        <div class="linha"><span class="rot">Marca/Mod.:</span><span class="val">{{ [ordem.marca, ordem.modelo]|select|join(' / ') or '-' }}</span></div>
+        <div class="linha"><span class="rot">Nº Série:</span><span class="val">{{ ordem.numero_serie or '-' }}</span></div>
+        <div class="linha"><span class="rot">Req./Prot.:</span><span class="val">{{ ordem.numero_requisicao or '-' }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Datas / responsáveis -->
+  <div class="secao">
+    <div class="grid-2">
+      <div class="box">
+        <div class="secao-titulo">Cronograma</div>
+        <div class="linha"><span class="rot">Entrada:</span><span class="val">{{ ordem.data_entrada.strftime('%d/%m/%Y') if ordem.data_entrada else '-' }}</span></div>
+        <div class="linha"><span class="rot">Saída:</span><span class="val">{{ ordem.data_saida.strftime('%d/%m/%Y') if ordem.data_saida else '-' }}</span></div>
+      </div>
+      <div class="box">
+        <div class="secao-titulo">Responsáveis</div>
+        <div class="linha"><span class="rot">Técnico:</span><span class="val">{{ ordem.tecnico or '-' }}</span></div>
+        <div class="linha"><span class="rot">Autoriz.:</span><span class="val">{{ ordem.autorizado_por or '-' }}</span></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Defeito -->
+  <div class="secao">
+    <div class="secao-titulo">{% if eh_orcamento %}Solicitação do Cliente{% else %}Defeito Relatado{% endif %}</div>
+    <div class="box">{{ ordem.defeito_relatado or 'Não informado' }}</div>
+  </div>
+
+  <!-- Serviços -->
+  {% if servicos is not none and servicos|length > 0 %}
+  <div class="secao">
+    <div class="secao-titulo">Serviços {% if eh_orcamento %}Orçados{% else %}Executados{% endif %}</div>
+    <table class="tabela">
+      <thead><tr><th>Descrição</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th></tr></thead>
+      <tbody>
+        {% for s in servicos %}
+        <tr>
+          <td>{{ s.nome }}</td>
+          <td class="num">{{ "%.2f"|format(s.qtd) }}</td>
+          <td class="num">R$ {{ "%.2f"|format(s.preco) }}</td>
+          <td class="num">R$ {{ "%.2f"|format(s.qtd * s.preco) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif servicos is none and ordem.servicos_executados %}
+  <div class="secao">
+    <div class="secao-titulo">Serviços</div>
+    <div class="box">{{ ordem.servicos_executados }}</div>
+  </div>
+  {% endif %}
+
+  <!-- Peças -->
+  {% if pecas is not none and pecas|length > 0 %}
+  <div class="secao">
+    <div class="secao-titulo">Peças / Produtos</div>
+    <table class="tabela">
+      <thead><tr><th>Descrição</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th></tr></thead>
+      <tbody>
+        {% for p in pecas %}
+        <tr>
+          <td>{{ p.nome }}</td>
+          <td class="num">{{ "%.2f"|format(p.qtd) }}</td>
+          <td class="num">R$ {{ "%.2f"|format(p.preco) }}</td>
+          <td class="num">R$ {{ "%.2f"|format(p.qtd * p.preco) }}</td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% elif pecas is none and ordem.pecas_utilizadas %}
+  <div class="secao">
+    <div class="secao-titulo">Peças / Produtos</div>
+    <div class="box">{{ ordem.pecas_utilizadas }}</div>
+  </div>
+  {% endif %}
+
+  <!-- Valores -->
+  <div class="totais">
+    <table>
+      <tr><td>Valor dos Serviços</td><td class="num">R$ {{ "%.2f"|format(ordem.valor_servico or 0) }}</td></tr>
+      <tr><td>Valor das Peças</td><td class="num">R$ {{ "%.2f"|format(ordem.valor_pecas or 0) }}</td></tr>
+      <tr class="total-final"><td>Total Geral</td><td class="num">R$ {{ "%.2f"|format(ordem.valor_total or 0) }}</td></tr>
+    </table>
+  </div>
+
+  <!-- Observações -->
+  {% if ordem.observacao %}
+  <div class="secao">
+    <div class="secao-titulo">Observações</div>
+    <div class="box">{{ ordem.observacao }}</div>
+  </div>
+  {% endif %}
+
+  <!-- Assinaturas -->
+  <div class="assinaturas">
+    <div class="linha-ass"><div class="trilha">Assinatura do Cliente</div></div>
+    <div class="linha-ass"><div class="trilha">{% if eh_orcamento %}Aceite do Orçamento{% else %}Técnico Responsável{% endif %}</div></div>
+  </div>
+
+  <div style="margin-top:18px; text-align:center; font-size:10px; color:#64748b;">
+    Documento gerado em {{ now.strftime('%d/%m/%Y %H:%M') if now else '' }} &nbsp;•&nbsp; {{ (empresa.nome_fantasia or empresa.razao_social) if empresa else 'Controle Comercial' }}
+  </div>
+</div>
+</body>
+</html>

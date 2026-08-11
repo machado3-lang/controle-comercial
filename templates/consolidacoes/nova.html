@@ -37,7 +37,7 @@
 
 <form method="post" action="/consolidacoes/criar" id="formConsolidacao" class="space-y-4">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    <input type="hidden" name="pedido_ids" id="pedido_ids_input" value="[]">
+    <input type="hidden" name="pedido_ids_json" id="pedido_ids_input" value="[]">
 
     <div class="glass-card">
         <div class="p-4 border-b border-slate-800/60 flex justify-between items-center">

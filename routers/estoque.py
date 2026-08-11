@@ -316,6 +316,17 @@ def historico_estoque(request: Request, produto_id: int, db: Session = Depends(g
     )
 
 
+def _recalcular_valores_os(db: Session, os_obj):
+    """Recalcula valor_pecas/valor_total da OS com base nas pecas de estoque
+    vinculadas (os_pecas), mantendo o total da OS coerente com o consumo real."""
+    from models_estoque import OSPeca
+    db.flush()
+    pecas = db.query(OSPeca).filter(OSPeca.os_id == os_obj.id).all()
+    total_pecas = sum(float(p.quantidade or 0) * float(p.valor_unitario or 0) for p in pecas)
+    os_obj.valor_pecas = total_pecas
+    os_obj.valor_total = float(os_obj.valor_servico or 0) + total_pecas
+
+
 @router.post("/os/{os_id}/peca/adicionar")
 def adicionar_peca_os(
     request: Request, os_id: int, db: Session = Depends(get_db),
@@ -333,24 +344,44 @@ def adicionar_peca_os(
         request.session["error"] = "OS ou produto invalido"
         return RedirectResponse(url=request.headers.get("Referer", "/ordens-servico"), status_code=303)
 
-    peca = OSPeca(os_id=os_id, produto_id=produto_id, quantidade=quantidade,
-                   valor_unitario=produto.preco_custo or produto.preco)
+    estoque_atual = float(produto.estoque or 0)
+    if quantidade > estoque_atual:
+        request.session["error"] = (
+            f"Estoque insuficiente de {produto.nome}: {estoque_atual:.3f} disponivel(is)."
+        )
+        return RedirectResponse(url=request.headers.get("Referer", f"/ordens-servico/{os_id}"), status_code=303)
+
+    # Baixa real no estoque
+    produto.estoque = estoque_atual - quantidade
+    peca = OSPeca(
+        os_id=os_id, produto_id=produto_id, quantidade=quantidade,
+        valor_unitario=produto.preco or produto.preco_custo or 0,
+    )
     db.add(peca)
+    _recalcular_valores_os(db, os_obj)
     db.commit()
-    request.session["message"] = f"Peca {produto.nome} vinculada a OS #{os_id}"
+    request.session["message"] = f"Peca {produto.nome} adicionada e estoque debitado (OS #{os_id})"
     return RedirectResponse(url=request.headers.get("Referer", f"/ordens-servico/{os_id}"), status_code=303)
 
 
 @router.post("/os/{os_id}/peca/{peca_id}/remover")
 def remover_peca_os(request: Request, os_id: int, peca_id: int, db: Session = Depends(get_db)):
     from models_estoque import OSPeca
+    from models import Produto, OrdemServico
     if not verificar_admin(request, db):
         return RedirectResponse(url="/login", status_code=303)
     peca = db.query(OSPeca).filter(OSPeca.id == peca_id, OSPeca.os_id == os_id).first()
     if peca:
+        produto = db.query(Produto).filter(Produto.id == peca.produto_id).first()
+        # Estorna o estoque
+        if produto:
+            produto.estoque = float(produto.estoque or 0) + float(peca.quantidade or 0)
         db.delete(peca)
+        os_obj = db.query(OrdemServico).filter(OrdemServico.id == os_id).first()
+        if os_obj:
+            _recalcular_valores_os(db, os_obj)
         db.commit()
-        request.session["message"] = "Peca removida da OS"
+        request.session["message"] = "Peca removida e estoque estornado"
     return RedirectResponse(url=request.headers.get("Referer", f"/ordens-servico/{os_id}"), status_code=303)
 
 

@@ -1,0 +1,112 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>OS #{{ ordem.id }} - Térmica</title>
+<style>
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #e5e7eb; }
+  body { font-family: 'Courier New', Courier, monospace; }
+  .os-termica { width: 80mm; max-width: 80mm; margin: 6mm auto; padding: 3mm 2mm;
+                background: #fff; color: #000; font-size: 11px; line-height: 1.35; }
+  .os-termica, .os-termica * { color: #000 !important; }
+  .c { text-align: center; }
+  .b { font-weight: 700; }
+  .r { text-align: right; }
+  .linha { display: flex; justify-content: space-between; gap: 6px; }
+  .sep { border-top: 1px dashed #000; margin: 4px 0; }
+  .sep-d { border-top: 1px dashed #000; margin: 6px 0; }
+  .item { display: flex; justify-content: space-between; gap: 6px; }
+  .item .n { flex: 1 1 auto; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .item .v { white-space: nowrap; }
+  @media print {
+    html, body { background: #fff; }
+    .os-termica { margin: 0; width: 80mm; max-width: 80mm; padding: 0; }
+    @page { size: 80mm auto; margin: 2mm; }
+  }
+  .btn-imprimir { position: fixed; top: 10px; right: 10px; background: #111; color: #fff;
+                  border: 0; padding: 8px 14px; border-radius: 6px; font-size: 12px; cursor: pointer; }
+  .no-print { display: inline-block; }
+  @media print { .no-print { display: none !important; } }
+</style>
+</head>
+<body>
+<button class="btn-imprimir no-print" onclick="window.print()">🖨 Imprimir</button>
+
+<div class="os-termica">
+  {% if empresa and empresa.logo %}
+    <div class="c"><img src="/{{ empresa.logo }}" alt="Logo" style="max-height:38px; max-width:70mm; object-fit:contain;"></div>
+  {% endif %}
+  <div class="c b" style="font-size:13px;">{{ (empresa.nome_fantasia or empresa.razao_social) if empresa else 'SUA EMPRESA' }}</div>
+  {% if empresa and empresa.cnpj %}<div class="c">CNPJ: {{ empresa.cnpj }}</div>{% endif %}
+  {% if empresa and (empresa.endereco or empresa.cidade) %}
+    <div class="c">{{ [empresa.endereco, (empresa.cidade ~ '/' ~ empresa.estado if empresa.cidade else none)]|select|join(' - ') }}</div>
+  {% endif %}
+  {% if empresa and empresa.telefone %}<div class="c">Tel: {{ empresa.telefone }}</div>{% endif %}
+
+  <div class="sep-d"></div>
+  <div class="c b" style="font-size:13px;">{% if eh_orcamento %}ORÇAMENTO{% else %}ORDEM DE SERVIÇO{% endif %}</div>
+  <div class="c b" style="font-size:15px;">Nº {{ ordem.id }}</div>
+  <div class="c">{{ ordem.status.value|upper }}</div>
+  <div class="sep-d"></div>
+
+  <div class="b">CLIENTE</div>
+  <div>{{ ordem.cliente.nome if ordem.cliente else '-' }}</div>
+  {% if ordem.cliente and ordem.cliente.cpf_cnpj %}<div>Doc: {{ ordem.cliente.cpf_cnpj }}</div>{% endif %}
+  {% if ordem.cliente and ordem.cliente.telefone %}<div>Tel: {{ ordem.cliente.telefone }}</div>{% endif %}
+
+  <div class="sep"></div>
+  <div class="b">EQUIPAMENTO</div>
+  <div>{{ ordem.equipamento or '-' }}</div>
+  <div>Marca/Mod: {{ [ordem.marca, ordem.modelo]|select|join(' / ') or '-' }}</div>
+  {% if ordem.numero_serie %}<div>Série: {{ ordem.numero_serie }}</div>{% endif %}
+  {% if ordem.numero_requisicao %}<div>Req: {{ ordem.numero_requisicao }}</div>{% endif %}
+
+  <div class="sep"></div>
+  <div class="b">{% if eh_orcamento %}SOLICITAÇÃO{% else %}DEFEITO{% endif %}</div>
+  <div>{{ ordem.defeito_relatado or 'Não informado' }}</div>
+
+  {% if servicos is not none and servicos|length > 0 %}
+  <div class="sep"></div>
+  <div class="b">SERVIÇOS</div>
+  {% for s in servicos %}
+    <div class="item"><span class="n">{{ s.nome }}</span><span class="v">R$ {{ "%.2f"|format(s.qtd * s.preco) }}</span></div>
+    <div class="r" style="font-size:10px;">{{ "%.2f"|format(s.qtd) }} x R$ {{ "%.2f"|format(s.preco) }}</div>
+  {% endfor %}
+  {% elif servicos is none and ordem.servicos_executados %}
+  <div class="sep"></div>
+  <div class="b">SERVIÇOS</div>
+  <div>{{ ordem.servicos_executados }}</div>
+  {% endif %}
+
+  {% if pecas is not none and pecas|length > 0 %}
+  <div class="sep"></div>
+  <div class="b">PEÇAS</div>
+  {% for p in pecas %}
+    <div class="item"><span class="n">{{ p.nome }}</span><span class="v">R$ {{ "%.2f"|format(p.qtd * p.preco) }}</span></div>
+    <div class="r" style="font-size:10px;">{{ "%.2f"|format(p.qtd) }} x R$ {{ "%.2f"|format(p.preco) }}</div>
+  {% endfor %}
+  {% elif pecas is none and ordem.pecas_utilizadas %}
+  <div class="sep"></div>
+  <div class="b">PEÇAS</div>
+  <div>{{ ordem.pecas_utilizadas }}</div>
+  {% endif %}
+
+  <div class="sep-d"></div>
+  <div class="item"><span class="n">Serviços</span><span class="v">R$ {{ "%.2f"|format(ordem.valor_servico or 0) }}</span></div>
+  <div class="item"><span class="n">Peças</span><span class="v">R$ {{ "%.2f"|format(ordem.valor_pecas or 0) }}</span></div>
+  <div class="item b" style="font-size:12px;"><span class="n">TOTAL</span><span class="v">R$ {{ "%.2f"|format(ordem.valor_total or 0) }}</span></div>
+
+  {% if ordem.observacao %}
+  <div class="sep"></div>
+  <div class="b">OBS</div>
+  <div>{{ ordem.observacao }}</div>
+  {% endif %}
+
+  <div class="sep-d"></div>
+  <div class="c" style="margin-top:18px;">_______________________</div>
+  <div class="c">Assinatura do Cliente</div>
+  <div class="c" style="margin-top:10px; font-size:10px;">Via do Cliente</div>
+</div>
+</body>
+</html>

@@ -33,6 +33,30 @@ FORMAS_PAGAMENTO = {
 }
 
 
+def _proximo_numero_pedido(db) -> str:
+    """Calcula o próximo número LIVRE de pedido.
+
+    Ignora números não numéricos (ex.: 'PV-12'), que antes derrubavam a tela de
+    novo pedido com ValueError, e garante que o número ainda não exista — a
+    coluna é declarada unique no modelo.
+    """
+    usados = {
+        str(row[0]).strip()
+        for row in db.query(PedidoVenda.numero).filter(PedidoVenda.numero.isnot(None)).all()
+        if row[0] is not None
+    }
+    maior = 0
+    for valor in usados:
+        try:
+            maior = max(maior, int(valor))
+        except (TypeError, ValueError):
+            continue
+    proximo = maior + 1
+    while str(proximo) in usados:
+        proximo += 1
+    return str(proximo)
+
+
 @router.get("/")
 def listar_pedidos(
     request: Request, db: Session = Depends(get_db),
@@ -121,15 +145,14 @@ async def finalizar_grupo(
     if not cliente:
         return RedirectResponse(url="/pedidos/pre-venda/agrupar", status_code=303)
 
-    # Gerar número sequencial para o novo pedido agrupado
+    # Gerar número sequencial LIVRE para o novo pedido agrupado
+    numero = _proximo_numero_pedido(db)
     empresa = db.query(Empresa).with_for_update().first()
     if empresa:
-        empresa.ultimo_numero_pedido = (empresa.ultimo_numero_pedido or 0) + 1
-        numero = str(empresa.ultimo_numero_pedido)
-    else:
-        ultimo_numero = db.query(func.max(PedidoVenda.numero)).scalar()
-        ultimo_val = int(ultimo_numero) if ultimo_numero else 0
-        numero = str(ultimo_val + 1)
+        try:
+            empresa.ultimo_numero_pedido = max(int(numero), empresa.ultimo_numero_pedido or 0)
+        except (TypeError, ValueError):
+            pass
 
     novo_pedido = PedidoVenda(
         cliente_id=cliente_id,
@@ -146,8 +169,13 @@ async def finalizar_grupo(
     # Adicionar todos os itens
     for p in pedidos:
         for item in p.itens:
+            # Pula itens-filho de kit: o total do pedido considera apenas o
+            # kit-pai (a explosao e recriada na emissao da nota).
+            if item.item_pai_id is not None:
+                continue
             novo_item = PedidoVendaItem(
                 pedido_id=novo_pedido.id,
+                produto_id=item.produto_id,
                 variacao_id=item.variacao_id if item.variacao_id else None,
                 descricao=item.descricao,
                 quantidade=item.quantidade,
@@ -156,7 +184,7 @@ async def finalizar_grupo(
                 fornecedor_id=item.fornecedor_id
             )
             db.add(novo_item)
-            novo_pedido.total = (novo_pedido.total or 0) + item.total
+            novo_pedido.total = (novo_pedido.total or 0) + (item.total or 0)
         # Manter pedido antigo, apenas marcar referência.
         # Status AGRUPADO (e nao FATURADO) evita dupla contagem de receita:
         # o pedido agrupado (novo_pedido) e o unico considerado faturado.
@@ -178,8 +206,7 @@ def novo_pedido(request: Request, db: Session = Depends(get_db)):
     itens_json = [{"id": i.id, "nome": i.nome, "preco": float(i.preco or 0), "tipo": i.tipo, "descricao": i.descricao or i.nome, "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao, "preco_adicional": float(v.preco_adicional or 0)} for v in i.variacoes], "composicoes": [{"insumo_id": c.insumo_id, "quantidade": c.quantidade_padrao} for c in i.composicoes]} for i in itens_disponiveis if i.tipo in ('produto', 'servico', 'kit')]
     clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
     hoje = date.today().isoformat()
-    ultimo_numero = db.query(PedidoVenda.numero).order_by(PedidoVenda.numero.desc()).first()
-    proximo_numero = str(int(ultimo_numero[0]) + 1) if ultimo_numero and ultimo_numero[0] else "1"
+    proximo_numero = _proximo_numero_pedido(db)
     return request.app.state.templates.TemplateResponse(
         "pedidos/form.html",
         {"request": request, "clientes": clientes, "pedido": None, "date": date, "hoje": hoje, "proximo_numero": proximo_numero, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "clientes_json": clientes_json}
@@ -225,14 +252,7 @@ def salvar_pedido(
     else:
         # NOVO: Criar novo pedido
         if not numero:
-            ultimo_numero = db.query(func.max(PedidoVenda.numero)).scalar()
-            ultimo_val = 0
-            if ultimo_numero:
-                try:
-                    ultimo_val = int(ultimo_numero)
-                except:
-                    pass
-            numero = str(ultimo_val + 1)
+            numero = _proximo_numero_pedido(db)
         pedido = PedidoVenda(
             cliente_id=cliente_id_int,
             numero=numero,
@@ -241,7 +261,15 @@ def salvar_pedido(
             forma_pagamento=FormaPagamento.AVISTA if forma_pagamento != "prazo" else FormaPagamento.APRAZO,
         )
         db.add(pedido)
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        db.rollback()
+        logger.exception("Erro ao salvar o pedido (numero=%s)", numero)
+        request.session["error"] = (
+            f"Não foi possível salvar o pedido. Verifique se o número '{numero}' já não está em uso."
+        )
+        return RedirectResponse(url="/pedidos/", status_code=303)
     
     try:
         itens_list = json.loads(itens)
@@ -489,28 +517,40 @@ def finalizar_pedido(
         pedido.terminos_boleto = terminos_boleto
         # Cria conta(s) a receber automática(s) — com suporte a parcelamento
         contas_geradas = []
+        contas_existentes = []
         if gerar_cobranca or forma_pagamento == "boleto":
-            from services.parcelamento import gerar_contas_receber
-            try:
-                venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (pedido.data or date.today())
-            except ValueError:
-                venc = pedido.data or date.today()
-            contas_geradas = gerar_contas_receber(
-                db,
-                cliente_id=pedido.cliente_id,
-                descricao=f"Pedido {pedido.numero or '#' + str(pedido.id)}",
-                valor_total=pedido.total or 0,
-                primeiro_vencimento=venc,
-                num_parcelas=num_parcelas,
-                intervalo_dias=intervalo_dias,
-                forma_pagamento=forma_pagamento or "NFSe",
-                pedido_id=pedido.id,
-            )
+            from services.parcelamento import gerar_contas_receber, contas_receber_existentes
+            contas_existentes = contas_receber_existentes(db, pedido_id=pedido.id)
+            if contas_existentes:
+                # Evita cobranca em duplicidade (ex.: pedido finalizado 2x ou ja
+                # faturado via NFSe/NFe). Reaproveita as contas existentes.
+                logger.info(
+                    "Pedido %s ja possui %s conta(s) a receber; nao serao geradas novas",
+                    pedido.id, len(contas_existentes),
+                )
+            else:
+                try:
+                    venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (pedido.data or date.today())
+                except ValueError:
+                    venc = pedido.data or date.today()
+                contas_geradas = gerar_contas_receber(
+                    db,
+                    cliente_id=pedido.cliente_id,
+                    descricao=f"Pedido {pedido.numero or '#' + str(pedido.id)}",
+                    valor_total=pedido.total or 0,
+                    primeiro_vencimento=venc,
+                    num_parcelas=num_parcelas,
+                    intervalo_dias=intervalo_dias,
+                    forma_pagamento=forma_pagamento or "NFSe",
+                    pedido_id=pedido.id,
+                )
         db.commit()
-        # Emissão imediata de TODOS os boletos das parcelas (Sicoob)
-        if contas_geradas and (gerar_boleto or forma_pagamento == "boleto"):
+        # Emissão imediata de TODOS os boletos das parcelas (Sicoob).
+        # Contas que ja possuem boleto sao ignoradas dentro do servico.
+        contas_para_boleto = contas_geradas or contas_existentes
+        if contas_para_boleto and (gerar_boleto or forma_pagamento == "boleto"):
             from services.parcelamento import emitir_boletos_contas
-            ok, erros = emitir_boletos_contas(db, contas_geradas)
+            ok, erros = emitir_boletos_contas(db, contas_para_boleto)
             if erros:
                 request.session["error"] = (
                     f"Pedido faturado; {ok} boleto(s) emitido(s), mas houve erro(s): " + "; ".join(erros)
@@ -519,6 +559,11 @@ def finalizar_pedido(
                 request.session["message"] = f"Pedido faturado e {ok} boleto(s) emitido(s) com sucesso!"
         elif contas_geradas:
             request.session["message"] = f"Pedido faturado! {len(contas_geradas)} conta(s) a receber gerada(s)."
+        elif contas_existentes:
+            request.session["message"] = (
+                f"Pedido faturado! Já existiam {len(contas_existentes)} conta(s) a receber vinculada(s); "
+                "nenhuma cobrança duplicada foi gerada."
+            )
         # Baixa de estoque na finalizacao (venda sem nota). Se o pedido ja
         # gerou NFSe/NFe, a baixa ocorre na nota (evita duplicar).
         try:
