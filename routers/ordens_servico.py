@@ -1,4 +1,5 @@
 import json
+from decimal import Decimal
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -11,6 +12,7 @@ from models import OrdemServico, Cliente, Empresa, StatusOS, Produto, MarcaProdu
 from models_nfe import NFe, NFSe
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
+from services.parcelamento import gerar_contas_receber
 
 router = APIRouter(prefix="/ordens-servico", tags=["Ordens de Serviço"])
 
@@ -186,7 +188,10 @@ def criar_ordem(
 
 @router.get("/{ordem_id}")
 def detalhe_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)):
-    ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
+    ordem = db.query(OrdemServico).options(
+        selectinload(OrdemServico.nfes),
+        selectinload(OrdemServico.nfses),
+    ).filter(OrdemServico.id == ordem_id).first()
     if not ordem:
         return RedirectResponse(url="/ordens-servico", status_code=303)
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
@@ -197,10 +202,31 @@ def detalhe_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)
     marcas_json = [{"id": m.id, "nome": m.nome} for m in marcas]
     servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": float(s.preco or 0)} for s in servicos]
     pecas_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0)} for p in pecas]
+
+    # Cobrancas vinculadas as notas desta OS (agrupadas ou separadas)
+    ids_nfe = [n.id for n in (ordem.nfes or [])]
+    ids_nfse = [n.id for n in (ordem.nfses or [])]
+    cobrancas = []
+    filtros_cob = []
+    if ids_nfe:
+        filtros_cob.append(ContaReceber.nfe_id.in_(ids_nfe))
+    if ids_nfse:
+        filtros_cob.append(ContaReceber.nfse_id.in_(ids_nfse))
+    if filtros_cob:
+        cobrancas = db.query(ContaReceber).options(
+            selectinload(ContaReceber.nfe), selectinload(ContaReceber.nfse),
+        ).filter(or_(*filtros_cob)).order_by(ContaReceber.data_vencimento).all()
+
+    pode_gerar_cobranca = (
+        any(n.status in _STATUS_EMITIDOS_NFE for n in (ordem.nfes or []))
+        or any(n.status in _STATUS_EMITIDOS_NFSE for n in (ordem.nfses or []))
+    )
+
     return request.app.state.templates.TemplateResponse(request, 
         "ordens_servico/detalhe.html",
         {"request": request, "ordem": ordem, "clientes": clientes, "marcas": marcas,
          "servicos": servicos, "pecas": pecas, "StatusOS": StatusOS,
+         "cobrancas": cobrancas, "pode_gerar_cobranca": pode_gerar_cobranca,
          "clientes_json": clientes_json, "marcas_json": marcas_json,
          "servicos_json": servicos_json, "pecas_json": pecas_json,
          "os_pecas": ordem.os_pecas if hasattr(ordem, "os_pecas") else []}
@@ -328,6 +354,7 @@ def atualizar_ordem(
     autorizado_por: str = Form(""),
     numero_requisicao: str = Form(""),
     observacao: str = Form(""),
+    cobranca_separada: str = Form(""),
 ):
     ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
     if not ordem:
@@ -376,15 +403,152 @@ def atualizar_ordem(
     ordem.valor_pecas = valor_pecas
     ordem.valor_total = (valor_servico or 0) + (valor_pecas or 0)
     ordem.data_entrada = date.fromisoformat(data_entrada) if data_entrada else ordem.data_entrada
-    ordem.data_saida = date.fromisoformat(data_saida) if data_saida else None
-    ordem.status = _normalizar_status(status)
+    # Status: respeita o fluxo dirigido (mesmas regras do endpoint /status), para
+    # que a edição não reverta uma OS concluída para "aberta" nem permita
+    # transições inválidas. Se a transição não for permitida, mantém o status
+    # atual e apenas alerta (os demais campos são salvos normalmente).
+    novo_status = _normalizar_status(status)
+    if ordem.status != novo_status:
+        permitidos = TRANSICOES_STATUS_VALIDAS.get(ordem.status.value, set())
+        if novo_status.value not in permitidos:
+            request.session["error"] = (
+                f"Transição de status inválida: não é possível mudar de "
+                f"'{ordem.status.value}' para '{novo_status.value}'. Status mantido."
+            )
+            novo_status = ordem.status
+        else:
+            ordem.status = novo_status
+            if novo_status == StatusOS.CONCLUIDA and not ordem.data_saida:
+                ordem.data_saida = date.today()
+    else:
+        ordem.status = novo_status
+    ordem.data_saida = date.fromisoformat(data_saida) if data_saida else ordem.data_saida
     ordem.tecnico = tecnico
     ordem.autorizado_por = autorizado_por
     ordem.numero_requisicao = numero_requisicao
     ordem.observacao = observacao
+    ordem.cobranca_separada = bool(cobranca_separada)
     ordem.updated_at = datetime.now()
     ordem.bling_pending_sync = True
     db.commit()
+    return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+
+
+@router.post("/{ordem_id}/gerar-cobranca")
+def gerar_cobranca_os(
+    request: Request, ordem_id: int, db: Session = Depends(get_db),
+    cobranca_separada: str = Form(""),
+    forma_pagamento: str = Form("boleto"),
+    num_parcelas: int = Form(1),
+    primeiro_vencimento: str = Form(""),
+    intervalo_dias: int = Form(30),
+):
+    """Gera a cobrança (ContaReceber) a partir das notas fiscais da OS.
+
+    - Agrupada (padrao): UMA ContaReceber referenciando NFe + NFSe, com valor =
+      NFe.valor_total + NFSe.valor_liquido. Se forma_pagamento = boleto, o boleto
+      emitido sera unico (1:1 com a conta).
+    - Separada (cobranca_separada=1): uma ContaReceber por nota (comportamento
+      anterior), respeitando cliente que prefere cobranca isolada.
+    A preferencia e persistida na OS para proximas emissoes.
+    """
+    ordem = db.query(OrdemServico).options(
+        selectinload(OrdemServico.nfes),
+        selectinload(OrdemServico.nfses),
+    ).filter(OrdemServico.id == ordem_id).first()
+    if not ordem:
+        return RedirectResponse(url="/ordens-servico", status_code=303)
+
+    nfe = next((n for n in ordem.nfes if n.status in _STATUS_EMITIDOS_NFE), None)
+    nfse = next((n for n in ordem.nfses if n.status in _STATUS_EMITIDOS_NFSE), None)
+    if not nfe and not nfse:
+        request.session["error"] = (
+            "Não há notas fiscais transmitidas para esta OS. Emita a NFe/NFSe primeiro."
+        )
+        return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+
+    # Guarda anti-duplicacao no nivel da OS: bloqueia se ja houver cobranca ativa
+    # vinculada a qualquer nota desta OS.
+    ids_nfe = [n.id for n in ordem.nfes]
+    ids_nfse = [n.id for n in ordem.nfses]
+    filtros_existentes = []
+    if ids_nfe:
+        filtros_existentes.append(ContaReceber.nfe_id.in_(ids_nfe))
+    if ids_nfse:
+        filtros_existentes.append(ContaReceber.nfse_id.in_(ids_nfse))
+    if filtros_existentes:
+        cobranca_existente = db.query(ContaReceber).filter(
+            ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
+            or_(*filtros_existentes),
+        ).first()
+        if cobranca_existente:
+            request.session["error"] = "Já existe cobrança para as notas desta OS."
+            return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+
+    # Persiste a preferencia para futuras emissoes
+    ordem.cobranca_separada = bool(cobranca_separada)
+    db.flush()
+
+    try:
+        venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (ordem.data_saida or date.today())
+    except ValueError:
+        venc = ordem.data_saida or date.today()
+
+    if bool(cobranca_separada):
+        # Uma conta por nota (comportamento anterior / cliente quer separado)
+        contas = []
+        if nfe:
+            contas += gerar_contas_receber(
+                db, cliente_id=ordem.cliente_id,
+                descricao=f"NFe #{nfe.numero or nfe.id}",
+                valor_total=nfe.valor_total or 0,
+                primeiro_vencimento=venc, num_parcelas=num_parcelas,
+                intervalo_dias=intervalo_dias,
+                forma_pagamento=forma_pagamento or "NFe",
+                observacao=f"Gerado da NFe #{nfe.id} (OS #{ordem_id})",
+                numero_documento=str(nfe.numero) if nfe.numero else None,
+                nfe_id=nfe.id,
+            )
+        if nfse:
+            contas += gerar_contas_receber(
+                db, cliente_id=ordem.cliente_id,
+                descricao=f"NFSe #{nfse.numero or nfse.id}",
+                valor_total=nfse.valor_liquido,
+                primeiro_vencimento=venc, num_parcelas=num_parcelas,
+                intervalo_dias=intervalo_dias,
+                forma_pagamento=forma_pagamento or "NFSe",
+                observacao=f"Gerado da NFSe #{nfse.id} (OS #{ordem_id})",
+                nfse_id=nfse.id,
+            )
+        msg = f"{len(contas)} cobrança(s) separada(s) gerada(s) para a OS #{ordem_id}."
+    else:
+        # Cobrança única agrupando NFe + NFSe (e um único boleto se boleto)
+        valor_total = Decimal("0")
+        if nfe:
+            valor_total += Decimal(str(nfe.valor_total or 0))
+        if nfse:
+            valor_total += Decimal(str(nfse.valor_liquido))
+        if nfe and nfse:
+            descricao = f"Cobrança OS #{ordem_id} (NFe #{nfe.numero or nfe.id} + NFSe #{nfse.numero or nfse.id})"
+        elif nfe:
+            descricao = f"NFe #{nfe.numero or nfe.id} (OS #{ordem_id})"
+        else:
+            descricao = f"NFSe #{nfse.numero or nfse.id} (OS #{ordem_id})"
+        contas = gerar_contas_receber(
+            db, cliente_id=ordem.cliente_id,
+            descricao=descricao,
+            valor_total=valor_total,
+            primeiro_vencimento=venc, num_parcelas=num_parcelas,
+            intervalo_dias=intervalo_dias,
+            forma_pagamento=forma_pagamento or "boleto",
+            observacao=f"Cobrança agrupada da OS #{ordem_id}",
+            nfe_id=nfe.id if nfe else None,
+            nfse_id=nfse.id if nfse else None,
+        )
+        msg = f"{len(contas)} cobrança(s) agrupada(s) gerada(s) para a OS #{ordem_id}."
+
+    db.commit()
+    request.session["message"] = msg
     return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
 
 

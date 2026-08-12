@@ -82,6 +82,125 @@
     </div>
 </div>
 
+<div class="glass-card mb-6">
+    <div class="p-4 border-b border-slate-800/60 flex items-center justify-between gap-3">
+        <h5 class="text-emerald-400 font-semibold"><i data-lucide="receipt" class="w-4 h-4 inline me-1"></i> Cobrança / Faturamento</h5>
+        {% if pode_gerar_cobranca %}
+        <span class="text-xs px-2 py-1 rounded-full bg-emerald-950/50 text-emerald-400 border border-emerald-800/50">Notas transmitidas</span>
+        {% else %}
+        <span class="text-xs px-2 py-1 rounded-full bg-amber-950/50 text-amber-400 border border-amber-800/50">Emita NFe/NFSe primeiro</span>
+        {% endif %}
+    </div>
+    <div class="p-4">
+        {# Resumo das notas da OS #}
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+            {% for n in ordem.nfes %}
+            <div class="flex items-center justify-between bg-slate-900/40 border border-slate-800/60 rounded-xl px-3 py-2">
+                <div>
+                    <div class="text-xs text-slate-500">NFe</div>
+                    <div class="text-slate-100 font-medium">#{{ n.numero or n.id }}</div>
+                </div>
+                <span class="text-xs px-2 py-1 rounded-full bg-sky-950/50 text-sky-400 border border-sky-800/50">{{ n.status }}</span>
+            </div>
+            {% endfor %}
+            {% for n in ordem.nfses %}
+            <div class="flex items-center justify-between bg-slate-900/40 border border-slate-800/60 rounded-xl px-3 py-2">
+                <div>
+                    <div class="text-xs text-slate-500">NFSe</div>
+                    <div class="text-slate-100 font-medium">#{{ n.numero or n.id }}</div>
+                </div>
+                <span class="text-xs px-2 py-1 rounded-full bg-indigo-950/50 text-indigo-400 border border-indigo-800/50">{{ n.status }}</span>
+            </div>
+            {% endfor %}
+            {% if not ordem.nfes and not ordem.nfses %}
+            <div class="text-slate-500 text-sm">Nenhuma nota fiscal gerada para esta OS.</div>
+            {% endif %}
+        </div>
+
+        {% if cobrancas %}
+        <div class="overflow-x-auto mb-4">
+            <table class="w-full text-sm">
+                <thead><tr class="text-slate-400 border-b border-slate-800/60">
+                    <th class="px-2 py-1 text-left">Descrição</th>
+                    <th class="px-2 py-1 text-right">Valor</th>
+                    <th class="px-2 py-1 text-left">Vencimento</th>
+                    <th class="px-2 py-1 text-left">Status</th>
+                    <th class="px-2 py-1 text-left">Boleto</th>
+                </tr></thead>
+                <tbody>
+                {% for c in cobrancas %}
+                <tr class="border-b border-slate-800/30">
+                    <td class="px-2 py-1 text-slate-100">{{ c.descricao }}
+                        {% if c.numero_parcela and c.total_parcelas and c.total_parcelas > 1 %}<span class="text-slate-500">({{ c.numero_parcela }}/{{ c.total_parcelas }})</span>{% endif %}
+                    </td>
+                    <td class="px-2 py-1 text-right text-emerald-400">R$ {{ "%.2f"|format(c.valor) }}</td>
+                    <td class="px-2 py-1 text-slate-300">{{ c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '-' }}</td>
+                    <td class="px-2 py-1 text-slate-300">{{ c.status.value }}</td>
+                    <td class="px-2 py-1">
+                        {% if c.forma_pagamento == 'boleto' and not c.boleto_emitido %}
+                        <form method="post" action="/sicoob/emitir-boleto/{{ c.id }}" class="inline">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="text-xs px-2 py-1 rounded-lg bg-amber-950/50 text-amber-300 border border-amber-800/50 hover:bg-amber-900/40">Emitir Boleto</button>
+                        </form>
+                        {% elif c.boleto_emitido %}
+                        <a href="/sicoob/boleto-pdf/{{ c.nosso_numero }}" target="_blank" class="text-xs px-2 py-1 rounded-lg bg-emerald-950/50 text-emerald-300 border border-emerald-800/50 hover:bg-emerald-900/40">Ver Boleto</a>
+                        {% else %}
+                        <span class="text-xs text-slate-500">{{ c.forma_pagamento or '-' }}</span>
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        {% if pode_gerar_cobranca %}
+        <form method="post" action="/ordens-servico/{{ ordem.id }}/gerar-cobranca" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <div class="lg:col-span-2">
+                <label class="block text-xs font-medium text-emerald-400 mb-1">Forma de Pagamento</label>
+                <select name="forma_pagamento" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                    <option value="boleto">Boleto (1 boleto agrupado)</option>
+                    <option value="pix">PIX</option>
+                    <option value="dinheiro">Dinheiro</option>
+                    <option value="cartao_credito">Cartão de Crédito</option>
+                    <option value="cartao_debito">Cartão de Débito</option>
+                    <option value="avista">À vista</option>
+                    <option value="aprazo">A prazo</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-emerald-400 mb-1">Parcelas</label>
+                <input type="number" min="1" max="24" name="num_parcelas" value="1" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-emerald-400 mb-1">1º Vencimento</label>
+                <input type="date" name="primeiro_vencimento" value="{{ ordem.data_saida.strftime('%Y-%m-%d') if ordem.data_saida else '' }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+            </div>
+            <div>
+                <label class="block text-xs font-medium text-emerald-400 mb-1">Intervalo (dias)</label>
+                <input type="number" min="1" name="intervalo_dias" value="30" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+            </div>
+            <div class="lg:col-span-5 flex flex-wrap items-center gap-3">
+                <label class="flex items-center gap-2 text-xs font-medium text-slate-300 cursor-pointer select-none">
+                    <input type="checkbox" name="cobranca_separada" value="1" {% if ordem.cobranca_separada %}checked{% endif %} class="w-4 h-4 rounded border-slate-700 bg-slate-900/60 text-emerald-500 focus:ring-emerald-500/50">
+                    Cobrança separada (NFe e NFSe em cobranças distintas)
+                </label>
+                <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl font-medium">
+                    <i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> Gerar Cobrança
+                </button>
+                {% if cobrancas %}
+                <span class="text-xs text-amber-400">Já existe cobrança para esta OS. Cancele-a para gerar novamente.</span>
+                {% endif %}
+            </div>
+        </form>
+        {% else %}
+        <div class="text-slate-400 text-sm">Gere e transmita a NFe (peças) e/ou NFSe (serviços) para criar a cobrança.</div>
+        {% endif %}
+    </div>
+</div>
+
 {% if ordem.observacao %}
 <div class="glass-card mb-6"><div class="p-4 text-amber-300">{{ ordem.observacao }}</div></div>
 {% endif %}

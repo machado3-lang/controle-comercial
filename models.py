@@ -350,6 +350,10 @@ class OrdemServico(Base):
     autorizado_por = Column(String(200), nullable=True)
     numero_requisicao = Column(String(100), nullable=True)
     observacao = Column(Text, nullable=True)
+    # Quando True, a cobrança da OS é gerada em contas distintas (uma por nota:
+    # NFe e NFSe separadas). Quando False (padrao), gera-se UMA cobrança única
+    # agrupando NFe + NFSe (e um único boleto, se forma_pagamento = boleto).
+    cobranca_separada = Column(Boolean, default=False)
     data_sincronizacao = Column(DateTime, nullable=True)  # ultima consulta cnpj.ws
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

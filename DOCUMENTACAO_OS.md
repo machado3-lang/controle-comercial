@@ -77,25 +77,31 @@ A partir do detalhe da OS:
 - **Gerar NFe** (`GET/POST /nfe/emitir/os/{id}`) → cria NF-e em **rascunho**
   usando `valor_pecas` (produtos/peças). **Não cria cobrança.**
 
-> O faturamento completo de uma OS normalmente vira **duas cobranças**:
-> NFS-e (serviços, ISS) + NF-e (peças, ICMS).
-
-### 3.2 Vinculação OS → nota
-- A NF-e grava `os_id` (FK direta).
-- A NFS-e agora também grava `os_id` (coluna adicionada — ver Migração). Antes
-  só guardava `origem='os'`.
+> O faturamento completo de uma OS normalmente envolve **duas notas**: NFS-e
+> (serviços, ISS) + NF-e (peças, ICMS). **Por padrão a cobrança é agrupada em
+> UMA só** (`ContaReceber` referenciando NFe + NFSe) — e, se a forma de
+> pagamento for boleto, emite-se **um único boleto** para o cliente. Caso o
+> cliente prefira cobrança isolada, marque `cobranca_separada` na OS (ou no
+> formulário de geração) e cada nota gera sua própria `ContaReceber`.
 
 ### 3.3 Gerar a cobrança (ContaReceber)
-Para efetivamente cobrar, abra a nota e use:
-- NFSe: `POST /nfse/{id}/gerar-cobranca`
-- NFe: `POST /nfe/{id}/gerar-cobranca`
 
-Isso cria `ContaReceber` (com parcelamento e boleto Sicoob opcionais) vinculada
-à nota (`nfe_id` / `nfse_id`).
+A cobrança nasce da nota, mas para a OS há um atalho que agrupa:
 
-**Bloqueio importante:** gerar cobrança a partir de nota em **rascunho** está
-**proibido** (retorna erro e não cria conta). Antes era possível cobrar uma nota
-nunca emitida.
+- **OS (agrupada/separada):** `POST /ordens-servico/{id}/gerar-cobranca`
+  - Cria **UMA** `ContaReceber` com `nfe_id` + `nfse_id` e
+    `valor = NFe.valor_total + NFSe.valor_liquido` (usa `NFSe.valor_liquido`
+    para respeitar ISS retido). Se `forma_pagamento = boleto`, o boleto
+    emitido é único (1:1 com a conta).
+  - Se `cobranca_separada=1`, gera **uma conta por nota** (comportamento
+    anterior), útil quando o cliente quer receber as cobranças separadas.
+  - Suporta parcelamento (`num_parcelas`/`intervalo_dias`): N parcelas =
+    N contas do mesmo grupo (e N boletos, se boleto). Pode ser à vista,
+    dinheiro, PIX ou a prazo sem boleto (conta fica em aberto).
+  - **Guarda anti-duplicação:** bloqueia se já houver `ContaReceber` ativa
+    vinculada a qualquer nota da OS.
+- **Por nota (mantido):** NFSe `POST /nfse/{id}/gerar-cobranca` e
+  NFe `POST /nfe/{id}/gerar-cobranca` (usado no fluxo separado).
 
 ### 3.4 Rastro
 `OS → NFe(os_id) → ContaReceber(nfe_id)` e `OS → NFSe(os_id) → ContaReceber(nfse_id)`.
