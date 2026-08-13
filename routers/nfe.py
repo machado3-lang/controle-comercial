@@ -672,6 +672,15 @@ def emitir_pedido_submit(
         request.session["error"] = "Este pedido pertence a uma consolidação; fature pela consolidação."
         return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
 
+    if pedido.status == StatusPedido.AGRUPADO:
+        request.session["error"] = "Este pedido foi agrupado em outro pedido; a NFe deve ser emitida pelo pedido agrupado para evitar duplicidade."
+        return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
+
+    nfe_existente = db.query(NFe).filter(NFe.pedido_id == pedido_id).first()
+    if nfe_existente:
+        request.session["error"] = "Este pedido já possui uma NFe emitida. Cancele a nota existente para emitir uma nova."
+        return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
+
     itens_nfe, itens_nfse = explodir_itens(pedido=pedido, db=db)
     if not itens_nfe:
         if itens_nfse:
@@ -1955,6 +1964,35 @@ def excluir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/nfe", status_code=303)
 
 
+def _garantir_cobranca_nfe(db, nfe):
+    """Gera ContaReceber para a NFe autorizada se ainda não houver cobrança
+    vinculada. Corrige a cobrança assimétrica: a NFSe de pedido gera cobrança,
+    mas a NFe de pedido não gerava (documento fiscal sem conta a receber)."""
+    if not nfe.pedido_id:
+        return
+    from services.parcelamento import contas_receber_existentes, gerar_contas_receber
+    if contas_receber_existentes(db, nfe_id=nfe.id) or \
+       contas_receber_existentes(db, pedido_id=nfe.pedido_id):
+        return
+    cliente_id = nfe.cliente_id or (nfe.pedido.cliente_id if nfe.pedido else None)
+    if not cliente_id:
+        return
+    venc = nfe.data_emissao.date() if nfe.data_emissao else \
+        (nfe.pedido.data if nfe.pedido and getattr(nfe.pedido, "data", None) else date.today())
+    gerar_contas_receber(
+        db,
+        cliente_id=cliente_id,
+        descricao=f"NFe {nfe.numero or '#' + str(nfe.id)}",
+        valor_total=nfe.valor_total or 0,
+        primeiro_vencimento=venc,
+        num_parcelas=1,
+        intervalo_dias=0,
+        forma_pagamento=nfe.forma_pagamento or "NFSe",
+        pedido_id=nfe.pedido_id,
+        nfe_id=nfe.id,
+    )
+
+
 @router.post("/{nfe_id}/transmitir")
 def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
@@ -2079,6 +2117,10 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
                     nfe.protocolo = status_data.get("nProt") or nfe.protocolo
                     nfe.chave_acesso = status_data.get("chaveAcesso") or nfe.chave_acesso
                     nfe.mensagem_retorno = None
+                    _garantir_cobranca_nfe(db, nfe)
+                    # NF emitida => pedido FATURADO (amarra estado fiscal)
+                    if nfe.pedido and nfe.pedido.status != StatusPedido.FATURADO:
+                        nfe.pedido.status = StatusPedido.FATURADO
                     db.commit()
                     ja_emitida = True
                 elif erro_nfe and (status_nf in (None, "error", "cancelled")
@@ -2142,6 +2184,10 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
                 nfe.protocolo = status_data.get("nProt") or nfe.protocolo
                 nfe.data_emissao = _agora_local(empresa)
                 nfe.mensagem_retorno = None
+                _garantir_cobranca_nfe(db, nfe)
+                # NF emitida => pedido FATURADO (amarra estado fiscal)
+                if nfe.pedido and nfe.pedido.status != StatusPedido.FATURADO:
+                    nfe.pedido.status = StatusPedido.FATURADO
                 _salvar_xml_nfe(empresa, nfe, db)
                 db.commit()
             elif novo_status and novo_status != nfe.status and not (nfe.status == "issued" and novo_status == "error"):

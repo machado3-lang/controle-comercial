@@ -8,7 +8,6 @@
         </h4>
         <span class="px-2 py-1 text-xs font-medium
             {% if consolidacao.status == 'concluido' %} bg-emerald-950/50 text-emerald-400 border border-emerald-800/50
-            {% elif consolidacao.status == 'processando' %} bg-indigo-950/50 text-indigo-400 border border-indigo-800/50
             {% elif consolidacao.status == 'aberto' %} bg-cyan-950/50 text-cyan-400 border border-cyan-800/50
             {% else %} bg-rose-950/50 text-rose-400 border border-rose-800/50 {% endif %}
             rounded-full">{{ STATUS_LABELS.get(consolidacao.status, consolidacao.status) }}</span>

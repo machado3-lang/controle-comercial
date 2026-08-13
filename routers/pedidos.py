@@ -191,6 +191,25 @@ async def finalizar_grupo(
         p.pedido_agrupado_id = novo_pedido.id
         p.status = StatusPedido.AGRUPADO
     novo_pedido.observacao = f"Pedidos agrupados: {pedidos_numeros}"
+    # Gera cobrança para o pedido agrupado (evita pedido "solta" sem
+    # conta a receber) — mesmo padrão de finalizar_pedido.
+    try:
+        from services.parcelamento import gerar_contas_receber, contas_receber_existentes
+        if not contas_receber_existentes(db, pedido_id=novo_pedido.id):
+            venc = novo_pedido.data or date.today()
+            gerar_contas_receber(
+                db,
+                cliente_id=cliente_id,
+                descricao=f"Pedido agrupado {novo_pedido.numero or '#' + str(novo_pedido.id)}",
+                valor_total=novo_pedido.total or 0,
+                primeiro_vencimento=venc,
+                num_parcelas=1,
+                intervalo_dias=0,
+                forma_pagamento="NFSe",
+                pedido_id=novo_pedido.id,
+            )
+    except Exception:
+        logger.exception("Erro ao gerar cobrança do pedido agrupado %s", novo_pedido.id)
     db.commit()
     return RedirectResponse(url=f"/pedidos/{novo_pedido.id}", status_code=303)
 
@@ -222,7 +241,6 @@ def salvar_pedido(
     observacao: str = Form(""),
     forma_pagamento: str = Form("avista"),
     itens: str = Form("[]"),
-    fornecedores_itens: str = Form("[]"),
     pedido_id: str = Form(""),
     acao: str = Form("emitir")
 ):
@@ -375,6 +393,18 @@ def excluir_pedido(
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
         return JSONResponse({"erro": "Pedido não encontrado"}, status_code=404)
+    # Bloqueia exclusão se houver NF autorizada (exige cancelamento fiscal antes)
+    nfse_aut = db.query(func.count(NFSe.id)).filter(
+        NFSe.pedido_id == pedido_id, NFSe.status == "autorizada"
+    ).scalar() or 0
+    nfe_aut = db.query(func.count(NFe.id)).filter(
+        NFe.pedido_id == pedido_id, NFe.status == "issued"
+    ).scalar() or 0
+    if nfse_aut or nfe_aut:
+        return JSONResponse(
+            {"erro": "Este pedido possui NFSe/NFe autorizada na Prefeitura/SEFAZ. Cancele a nota fiscal (pela tela de NF) antes de excluir o pedido."},
+            status_code=400,
+        )
     try:
         # Pedido dentro de uma consolidação: tratar para não deixar órfãos
         if pedido.consolidacao_id is not None:
@@ -596,9 +626,32 @@ def imprimir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_
 def pdf_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
     from fastapi.responses import FileResponse
     import os
-    # PDF generation would go here
-    pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
+    import tempfile
+    pedido = db.query(PedidoVenda).options(
+        selectinload(PedidoVenda.itens),
+        selectinload(PedidoVenda.cliente),
+    ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
         return RedirectResponse(url="/pedidos/", status_code=303)
-    # For now redirect to imprimir
-    return RedirectResponse(url=f"/pedidos/{pedido_id}/imprimir", status_code=303)
+    empresa = db.query(Empresa).first()
+    context = {
+        "request": request, "pedido": pedido, "empresa": empresa,
+        "tipo_impressao": "faturado", "STATUS_LABELS": STATUS_PEDIDO_LABELS,
+        "FORMAS_PAGAMENTO": FORMAS_PAGAMENTO,
+    }
+    try:
+        from weasyprint import HTML
+        template = request.app.state.templates.env.get_template("pedidos/imprimir.html")
+        html_str = template.render(**context)
+        tmp = tempfile.NamedTemporaryFile(delete=False, suffix=".pdf", dir=tempfile.gettempdir())
+        tmp.close()
+        HTML(string=html_str).write_pdf(target=tmp.name)
+        return FileResponse(
+            tmp.name,
+            media_type="application/pdf",
+            filename=f"pedido_{pedido.numero or pedido.id}.pdf",
+        )
+    except Exception as e:
+        logger.warning("Falha ao gerar PDF do pedido %s: %s", pedido_id, e)
+        # Fallback: mantém o comportamento anterior (impressão via navegador)
+        return RedirectResponse(url=f"/pedidos/{pedido_id}/imprimir", status_code=303)

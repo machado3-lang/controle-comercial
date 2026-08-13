@@ -31,7 +31,6 @@
             <select class="w-36 h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="status" onchange="this.form.submit()">
                 <option value="">Todos</option>
                 <option value="aberto" {{ 'selected' if status == 'aberto' }}>Aberto</option>
-                <option value="processando" {{ 'selected' if status == 'processando' }}>Processando</option>
                 <option value="concluido" {{ 'selected' if status == 'concluido' }}>Concluído</option>
                 <option value="cancelado" {{ 'selected' if status == 'cancelado' }}>Cancelado</option>
             </select>
@@ -64,10 +63,9 @@
                 <td class="px-4 py-3 text-sm text-slate-300">{{ c.data.strftime('%d/%m/%Y') if c.data else '-' }}</td>
                 <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ {{ "%.2f"|format(c.total or 0) }}</td>
                 <td class="px-4 py-3 text-center">
-                    {% set cor = 'success' if c.status == 'concluido' else 'primary' if c.status == 'processando' else 'warning' if c.status == 'aberto' else 'danger' %}
+                    {% set cor = 'success' if c.status == 'concluido' else 'warning' if c.status == 'aberto' else 'danger' %}
                     <span class="px-2 py-1 text-xs font-medium
                         {% if c.status == 'concluido' %} bg-emerald-950/50 text-emerald-400 border border-emerald-800/50
-                        {% elif c.status == 'processando' %} bg-indigo-950/50 text-indigo-400 border border-indigo-800/50
                         {% elif c.status == 'aberto' %} bg-cyan-950/50 text-cyan-400 border border-cyan-800/50
                         {% else %} bg-rose-950/50 text-rose-400 border border-rose-800/50 {% endif %}
                         rounded-full">{{ STATUS_LABELS.get(c.status, c.status) }}</span>

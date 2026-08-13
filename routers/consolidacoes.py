@@ -20,7 +20,6 @@ router = APIRouter(prefix="/consolidacoes", tags=["Consolidações"])
 
 STATUS_CONSOLIDACAO_LABELS = {
     StatusConsolidacao.ABERTO: "Aberto",
-    StatusConsolidacao.PROCESSANDO: "Processando",
     StatusConsolidacao.CONCLUIDO: "Concluído",
     StatusConsolidacao.CANCELADO: "Cancelado",
 }
@@ -599,6 +598,7 @@ def detalhe_consolidacao(
         selectinload(PedidoConsolidado.pedidos_origem),
         selectinload(PedidoConsolidado.contas_receber),
         selectinload(PedidoConsolidado.nfse),
+        selectinload(PedidoConsolidado.nfes),
     ).filter(PedidoConsolidado.id == consolidacao_id).first()
 
     if not consolidacao:
@@ -762,6 +762,66 @@ def cancelar_consolidacao(
         request.session["error"] = "Consolidação já está cancelada"
         return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
+    # Cancelamento fiscal real: NFSe e NFe vinculadas devem ser canceladas
+    # na Prefeitura/SEFAZ antes de liberar os pedidos. Falha no cancelamento
+    # fiscal aborta o cancelamento da consolidação (sem efeito colateral).
+    empresa = db.query(Empresa).first()
+
+    if consolidacao.nfse and (consolidacao.nfse.status or '').lower() in ("autorizada", "pendente"):
+        if not empresa:
+            request.session["error"] = "Empresa não configurada; não é possível cancelar a NFSe."
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+        try:
+            from services.nfse_betha import BethaNfseService
+            service = BethaNfseService(empresa=empresa)
+            resultado = service.cancelar_nfse_assinado(
+                consolidacao.nfse.numero, tpAmb=1,
+                motivo=motivo or "Cancelamento da consolidação",
+                chave_acesso=consolidacao.nfse.codigo_verificacao,
+                protocolo_dps=consolidacao.nfse.protocolo,
+            )
+            if not resultado.get('sucesso'):
+                erros = resultado.get('erros', [])
+                msg = '; '.join(e.get('mensagem', '') for e in erros)
+                request.session["error"] = (
+                    f"Falha ao cancelar NFSe na Prefeitura: {msg}. "
+                    "A consolidação NÃO foi cancelada."
+                )
+                return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+            consolidacao.nfse.status = "cancelada"
+            consolidacao.nfse.mensagem_retorno = f"Cancelada via consolidação: {motivo}"
+        except Exception as e:
+            request.session["error"] = (
+                f"Erro ao cancelar NFSe na Prefeitura: {str(e)}. "
+                "A consolidação NÃO foi cancelada."
+            )
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    for nfe in consolidacao.nfes:
+        st = (nfe.status or '').lower()
+        if st == "rascunho":
+            nfe.status = "cancelled"
+            continue
+        if st not in ("issued", "pendente"):
+            continue
+        if not nfe.invoice_id:
+            request.session["error"] = (
+                f"NFe #{nfe.numero} sem invoiceId; não é possível cancelá-la na SEFAZ. "
+                "A consolidação NÃO foi cancelada."
+            )
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+        try:
+            from services.nfe_notaas import cancelar_nfe
+            resultado = cancelar_nfe(empresa, nfe.invoice_id, motivo or "Cancelamento da consolidação")
+            nfe.status = "cancelled"
+            nfe.mensagem_retorno = json.dumps(resultado)
+        except Exception as e:
+            request.session["error"] = (
+                f"Erro ao cancelar NFe #{nfe.numero} na SEFAZ: {str(e)}. "
+                "A consolidação NÃO foi cancelada."
+            )
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
     # Libera os pedidos originais
     for pedido in consolidacao.pedidos_origem:
         pedido.consolidacao_id = None
@@ -771,10 +831,10 @@ def cancelar_consolidacao(
     if motivo:
         consolidacao.observacao = (consolidacao.observacao or "") + f"\nCancelado: {motivo}"
 
-    # Estorna os registros financeiros/fiscais já gerados pela consolidação
+    # Estorna os registros financeiros já gerados pela consolidação
     for conta in consolidacao.contas_receber:
         conta.status = StatusConta.CANCELADO
-    if consolidacao.nfse:
+    if consolidacao.nfse and (consolidacao.nfse.status or '').lower() != "cancelada":
         consolidacao.nfse.status = "cancelada"
 
     db.commit()

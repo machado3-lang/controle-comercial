@@ -485,7 +485,6 @@ class StatusPedido(str, enum.Enum):
 
 class StatusConsolidacao(str, enum.Enum):
     ABERTO = "aberto"
-    PROCESSANDO = "processando"
     CONCLUIDO = "concluido"
     CANCELADO = "cancelado"
 
@@ -578,6 +577,7 @@ class PedidoConsolidado(Base):
     itens = relationship("PedidoConsolidadoItem", back_populates="consolidacao", cascade="all, delete-orphan")
     contas_receber = relationship("ContaReceber", back_populates="consolidacao")
     nfse = relationship("NFSe", back_populates="consolidacao", uselist=False)
+    nfes = relationship("NFe", back_populates="consolidacao")
     finalizador = relationship("Usuario", foreign_keys=[finalizado_por], back_populates="consolidacoes_finalizadas")
 
     @property

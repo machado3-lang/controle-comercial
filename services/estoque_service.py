@@ -22,6 +22,27 @@ def _ja_lancado(db, doc_tipo, doc_id, produto_id, tipo):
     ).first() is not None
 
 
+def _pedido_ja_baixado(db, pedido_id):
+    """Verifica se o pedido já teve baixa de estoque — seja pela finalização
+    (doc_tipo='pedido'), seja por NF emitida (doc_tipo='nfe'/'nfse' vinculada
+    ao pedido). Evita a dupla baixa quando o usuário finaliza o pedido e depois
+    emite a nota (ou vice-versa)."""
+    if not pedido_id:
+        return False
+    from models_nfe import NFe, NFSe
+    nfe_ids = [n.id for n in db.query(NFe.id).filter(NFe.pedido_id == pedido_id).all()]
+    nfse_ids = [n.id for n in db.query(NFSe.id).filter(NFSe.pedido_id == pedido_id).all()]
+    from sqlalchemy import or_
+    return db.query(MovimentacaoEstoque.id).filter(
+        MovimentacaoEstoque.tipo.in_(["SAIDA_VENDA", "SAIDA_INSUMO"]),
+        or_(
+            (MovimentacaoEstoque.doc_tipo == "pedido") & (MovimentacaoEstoque.doc_id == pedido_id),
+            (MovimentacaoEstoque.doc_tipo == "nfe") & (MovimentacaoEstoque.doc_id.in_(nfe_ids or [-1])),
+            (MovimentacaoEstoque.doc_tipo == "nfse") & (MovimentacaoEstoque.doc_id.in_(nfse_ids or [-1])),
+        ),
+    ).first() is not None
+
+
 def lancar_movimentacao(
     db,
     produto_id: int,
@@ -158,6 +179,14 @@ def baixar_nfse(db, nfse, usuario_id=None):
     Mercadorias vendidas a parte (tipo='produto') nao entram na NFSe e sao baixadas
     como SAIDA_VENDA pela baixar_nfe.
     Se a NFSe veio de uma OS, tambem baixa as pecas vinculadas (os_pecas)."""
+    # Idempotente: se o pedido já foi baixado (pela finalização ou por outra
+    # NF), não baixa de novo — evita dupla baixa de estoque.
+    if getattr(nfse, "pedido_id", None) and _pedido_ja_baixado(db, nfse.pedido_id):
+        logger.info(
+            "Pedido %s já teve baixa de estoque; ignorando re-baixa da NFSe %s",
+            nfse.pedido_id, nfse.id,
+        )
+        return
     from models import Produto
     for item in nfse.itens:
         if not item.produto_id:
@@ -196,6 +225,14 @@ def baixar_nfse(db, nfse, usuario_id=None):
 
 def baixar_nfe(db, nfe, usuario_id=None):
     """NFe emitida: baixa como SAIDA_VENDA os itens com produto_id."""
+    # Idempotente: se o pedido já foi baixado (pela finalização ou por outra
+    # NF), não baixa de novo — evita dupla baixa de estoque.
+    if getattr(nfe, "pedido_id", None) and _pedido_ja_baixado(db, nfe.pedido_id):
+        logger.info(
+            "Pedido %s já teve baixa de estoque; ignorando re-baixa da NFe %s",
+            nfe.pedido_id, nfe.id,
+        )
+        return
     from models_nfe import NFeItem
     itens = db.query(NFeItem).filter(NFeItem.nfe_id == nfe.id).all()
     for item in itens:
@@ -212,6 +249,11 @@ def baixar_nfe(db, nfe, usuario_id=None):
 
 def baixar_pedido(db, pedido, usuario_id=None):
     """Pedido efetivado (sem nota): baixa como SAIDA_VENDA os itens com produto_id."""
+    # Idempotente: não baixa se o pedido já teve saída (pela finalização ou
+    # por NF emitida depois) — evita dupla baixa de estoque.
+    if _pedido_ja_baixado(db, pedido.id):
+        logger.info("Pedido %s já teve baixa de estoque; ignorando re-baixa", pedido.id)
+        return
     from models import PedidoVendaItem
     itens = db.query(PedidoVendaItem).filter(PedidoVendaItem.pedido_id == pedido.id).all()
     for item in itens:

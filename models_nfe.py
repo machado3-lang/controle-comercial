@@ -44,6 +44,7 @@ class NFe(Base):
     pedido = relationship("PedidoVenda", back_populates="nfes")
     os = relationship("OrdemServico", back_populates="nfes")
     cliente = relationship("Cliente", back_populates="nfes")
+    consolidacao = relationship("PedidoConsolidado", back_populates="nfes")
     itens = relationship("NFeItem", back_populates="nfe", cascade="all, delete-orphan")
 
 

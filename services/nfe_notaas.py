@@ -307,7 +307,8 @@ def explodir_itens(pedido=None, os=None, db=None) -> tuple:
             elif produto.tipo == "servico":
                 itens_nfse.append(item)
             elif produto.tipo == "kit" and db:
-                _explodir_kit(db, produto, item.quantidade or 1, itens_nfe, itens_nfse)
+                _explodir_kit(db, produto, item.quantidade or 1, itens_nfe, itens_nfse,
+                              valor_kit=item.total)
 
     if os:
         if os.valor_pecas and os.valor_pecas > 0:
@@ -348,16 +349,24 @@ def explodir_itens(pedido=None, os=None, db=None) -> tuple:
     return itens_nfe, itens_nfse
 
 
-def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse):
+def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse, valor_kit=None):
     from models import ProdutoComposicao
     composicoes = db.query(ProdutoComposicao).filter(
         ProdutoComposicao.produto_pai_id == produto.id
     ).all()
+    # Coleta as folhas (produtos) com o preco ATUAL do insumo; serviços continuam
+    # sendo anexados como objeto (comportamento original). Depois, se o valor
+    # negociado do kit (valor_kit) foi informado, escala os precos unitarios das
+    # folhas para que o total da NF bata com o total negociado do pedido/consolidação
+    # (evita divergência NF x pedido quando o preco do insumo mudou ou houve desconto).
+    folhas_nfe = []
     for comp in composicoes:
         insumo = comp.insumo
+        if not insumo:
+            continue
         qtd = float(comp.quantidade_padrao or 1) * float(quantidade)
         if insumo.tipo == "produto":
-            itens_nfe.append({
+            folhas_nfe.append({
                 "produto_id": insumo.id,
                 "descricao": insumo.nome,
                 "ncm": insumo.ncm,
@@ -369,7 +378,14 @@ def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse):
         elif insumo.tipo == "servico":
             itens_nfse.append(insumo)
         elif insumo.tipo == "kit":
-            _explodir_kit(db, insumo, qtd, itens_nfe, itens_nfse)
+            _explodir_kit(db, insumo, qtd, folhas_nfe, itens_nfse, valor_kit=None)
+    if valor_kit:
+        soma = sum((f.get("preco_unitario") or 0) * (f.get("quantidade") or 0) for f in folhas_nfe)
+        if soma > 0:
+            fator = float(valor_kit) / soma
+            for f in folhas_nfe:
+                f["preco_unitario"] = (f.get("preco_unitario") or 0) * fator
+    itens_nfe.extend(folhas_nfe)
 
 
 def explodir_itens_consolidacao(consolidacao=None, db=None) -> tuple:
@@ -396,6 +412,7 @@ def explodir_itens_consolidacao(consolidacao=None, db=None) -> tuple:
             elif produto.tipo == "servico":
                 itens_nfse.append(item)
             elif produto.tipo == "kit" and db:
-                _explodir_kit(db, produto, item.quantidade or 1, itens_nfe, itens_nfse)
+                _explodir_kit(db, produto, item.quantidade or 1, itens_nfe, itens_nfse,
+                              valor_kit=item.total)
 
     return itens_nfe, itens_nfse

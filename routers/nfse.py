@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse, JSONResponse, Response, FileResp
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc, asc
 from database import get_db
-from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ProdutoVariacao, ProdutoComposicao, ContaReceber, StatusConta, OrdemServico, Assinatura, Fornecedor
+from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ProdutoVariacao, ProdutoComposicao, ContaReceber, StatusConta, StatusPedido, OrdemServico, Assinatura, Fornecedor
 from models_nfe import NFSe, NFSeItem, NFSeRecebida
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
 from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional
@@ -375,6 +375,19 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
             status_code=400,
         )
 
+    if pedido.status == StatusPedido.AGRUPADO:
+        return JSONResponse(
+            {"error": "Este pedido foi agrupado em outro pedido; a nota fiscal deve ser emitida pelo pedido agrupado para evitar duplicidade."},
+            status_code=400,
+        )
+
+    nfse_existente = db.query(NFSe).filter(NFSe.pedido_id == pedido_id).first()
+    if nfse_existente:
+        return JSONResponse(
+            {"error": "Este pedido já possui uma NFSe emitida. Cancele a nota existente para emitir uma nova."},
+            status_code=400,
+        )
+
     itens_servico = [i for i in pedido.itens if i.produto and i.produto.tipo == 'servico']
     if not itens_servico:
         return JSONResponse({"error": "Nenhum item de serviÃ§o no pedido"}, status_code=400)
@@ -446,6 +459,12 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
             pass
 
         db.commit()
+
+        # NF emitida => pedido FATURADO (amarra o estado fiscal do pedido à
+        # nota; antes o status ficava desacoplado da realidade fiscal).
+        if pedido.status != StatusPedido.FATURADO:
+            pedido.status = StatusPedido.FATURADO
+            db.commit()
 
         # Gera PDF automaticamente
         try:
