@@ -167,7 +167,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="lg:col-span-2">
                 <label class="block text-xs font-medium text-emerald-400 mb-1">Forma de Pagamento</label>
-                <select name="forma_pagamento" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                <select id="cobrancaForma" name="forma_pagamento" onchange="atualizarCamposRecibo()" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                     <option value="boleto">Boleto (1 boleto agrupado)</option>
                     <option value="pix">PIX</option>
                     <option value="dinheiro">Dinheiro</option>
@@ -178,17 +178,19 @@
                     <option value="garantia">Garantia (sem cobrança)</option>
                 </select>
             </div>
-            <div>
-                <label class="block text-xs font-medium text-emerald-400 mb-1">Parcelas</label>
-                <input type="number" min="1" max="24" name="num_parcelas" value="1" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
-            </div>
-            <div>
-                <label class="block text-xs font-medium text-emerald-400 mb-1">1º Vencimento</label>
-                <input type="date" name="primeiro_vencimento" value="{{ ordem.data_saida.strftime('%Y-%m-%d') if ordem.data_saida else '' }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
-            </div>
-            <div>
-                <label class="block text-xs font-medium text-emerald-400 mb-1">Intervalo (dias)</label>
-                <input type="number" min="1" name="intervalo_dias" value="30" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+            <div id="cobrancaParcelas" class="contents">
+                <div>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">Parcelas</label>
+                    <input type="number" min="1" max="24" name="num_parcelas" value="1" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">1º Vencimento</label>
+                    <input type="date" name="primeiro_vencimento" value="{{ ordem.data_saida.strftime('%Y-%m-%d') if ordem.data_saida else '' }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">Intervalo (dias)</label>
+                    <input type="number" min="1" name="intervalo_dias" value="30" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                </div>
             </div>
             <div class="lg:col-span-5 flex flex-wrap items-center gap-3">
                 <label class="flex items-center gap-2 text-xs font-medium text-slate-300 cursor-pointer select-none">
@@ -208,7 +210,7 @@
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="lg:col-span-2">
                 <label class="block text-xs font-medium text-emerald-400 mb-1">Forma de Pagamento</label>
-                <select name="forma_pagamento" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                <select id="reciboForma" name="forma_pagamento" onchange="atualizarCamposRecibo()" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                     <option value="dinheiro">Dinheiro</option>
                     <option value="pix">PIX</option>
                     <option value="cartao_credito">Cartão de Crédito</option>
@@ -219,17 +221,19 @@
                     <option value="boleto">Boleto (requer nota transmitida)</option>
                 </select>
             </div>
-            <div>
-                <label class="block text-xs font-medium text-emerald-400 mb-1">Parcelas</label>
-                <input type="number" min="1" max="24" name="num_parcelas" value="1" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
-            </div>
-            <div>
-                <label class="block text-xs font-medium text-emerald-400 mb-1">1º Vencimento</label>
-                <input type="date" name="primeiro_vencimento" value="{{ ordem.data_saida.strftime('%Y-%m-%d') if ordem.data_saida else '' }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
-            </div>
-            <div>
-                <label class="block text-xs font-medium text-emerald-400 mb-1">Intervalo (dias)</label>
-                <input type="number" min="1" name="intervalo_dias" value="30" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+            <div id="reciboParcelas" class="contents">
+                <div>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">Parcelas</label>
+                    <input type="number" min="1" max="24" name="num_parcelas" value="1" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">1º Vencimento</label>
+                    <input type="date" name="primeiro_vencimento" value="{{ ordem.data_saida.strftime('%Y-%m-%d') if ordem.data_saida else '' }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                </div>
+                <div>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">Intervalo (dias)</label>
+                    <input type="number" min="1" name="intervalo_dias" value="30" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                </div>
             </div>
             <div class="lg:col-span-5 flex flex-wrap items-center gap-3">
                 <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl font-medium">
@@ -403,6 +407,22 @@ document.getElementById('btnImprimirPreviewRecibo').addEventListener('click', fu
     const iframe = document.getElementById('iframePreviewRecibo');
     if (iframe && iframe.src) window.open(iframe.src, '_blank');
 });
+
+// Mostra/oculta campos de parcelamento conforme a forma de pagamento.
+// Formas a vista (dinheiro, pix, avista, garantia) => cobranca unica (sem parcelas).
+// A prazo / cartao / boleto => mantem parcelas, 1o vencimento e intervalo.
+function _toggleParcelas(selId, boxId) {
+    const sel = document.getElementById(selId);
+    const box = document.getElementById(boxId);
+    if (!sel || !box) return;
+    const simples = ['dinheiro', 'pix', 'avista', 'garantia'].includes(sel.value);
+    box.style.display = simples ? 'none' : '';
+}
+function atualizarCamposRecibo() {
+    _toggleParcelas('reciboForma', 'reciboParcelas');
+    _toggleParcelas('cobrancaForma', 'cobrancaParcelas');
+}
+document.addEventListener('DOMContentLoaded', atualizarCamposRecibo);
 function hojeISO() {
     const d = new Date();
     const off = d.getTimezoneOffset();
