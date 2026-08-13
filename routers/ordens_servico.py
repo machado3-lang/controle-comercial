@@ -13,6 +13,7 @@ from models_nfe import NFe, NFSe
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
 from services.parcelamento import gerar_contas_receber
+from services.email_service import enviar_email
 
 router = APIRouter(prefix="/ordens-servico", tags=["Ordens de Serviço"])
 
@@ -661,6 +662,66 @@ def gerar_cobranca_os(
 
     db.commit()
     return _resposta(200, True, msg)
+
+
+@router.get("/{ordem_id}/recibo/{conta_id}")
+def recibo_ordem(request: Request, ordem_id: int, conta_id: int, db: Session = Depends(get_db)):
+    """Visualiza/imprime o recibo (cobranca sem nota fiscal) gerado da OS."""
+    ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
+    if not ordem:
+        return RedirectResponse(url="/ordens-servico", status_code=303)
+    conta = db.query(ContaReceber).options(
+        selectinload(ContaReceber.cliente),
+    ).filter(ContaReceber.id == conta_id, ContaReceber.os_id == ordem_id).first()
+    if not conta:
+        return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+    empresa = db.query(Empresa).first()
+    return request.app.state.templates.TemplateResponse(request,
+        "ordens_servico/recibo.html",
+        {"request": request, "ordem": ordem, "conta": conta,
+         "empresa": empresa, "cliente": conta.cliente,
+         "now": datetime.now(), "email": False}
+    )
+
+
+@router.post("/{ordem_id}/recibo/{conta_id}/enviar-email")
+def enviar_email_recibo(request: Request, ordem_id: int, conta_id: int, db: Session = Depends(get_db)):
+    """Envia o recibo (cobranca sem nota fiscal) por e-mail ao cliente."""
+    ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
+    if not ordem:
+        return RedirectResponse(url="/ordens-servico", status_code=303)
+    conta = db.query(ContaReceber).options(
+        selectinload(ContaReceber.cliente),
+    ).filter(ContaReceber.id == conta_id, ContaReceber.os_id == ordem_id).first()
+    if not conta:
+        request.session["error"] = "Recibo não encontrado para esta OS."
+        return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+    cliente = conta.cliente
+    if not cliente or not cliente.email:
+        request.session["error"] = "O cliente não possui e-mail cadastrado."
+        return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+    empresa = db.query(Empresa).first()
+    try:
+        corpo = request.app.state.templates.env.get_template("ordens_servico/recibo.html").render(
+            request=request, ordem=ordem, conta=conta, empresa=empresa,
+            cliente=cliente, now=datetime.now(), email=True,
+        )
+    except Exception as e:
+        request.session["error"] = f"Erro ao montar o recibo: {e}"
+        return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+    resultado = enviar_email(
+        cliente.email,
+        f"Recibo da Ordem de Serviço #{ordem_id}",
+        corpo, db=db,
+    )
+    if resultado.get("success"):
+        conta.email_enviado = True
+        conta.data_envio_email = datetime.now()
+        db.commit()
+        request.session["message"] = f"Recibo enviado para {cliente.email}."
+    else:
+        request.session["error"] = f"Falha ao enviar e-mail: {resultado.get('error')}"
+    return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
 
 
 @router.get("/{ordem_id}/imprimir")

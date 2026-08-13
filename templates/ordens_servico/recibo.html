@@ -1,0 +1,91 @@
+{% if not email %}
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<title>Recibo OS #{{ ordem.id }}</title>
+<script src="/static/js/tailwind.js"></script>
+<style>
+  @media print { .no-print { display: none !important; } @page { margin: 1.5cm; } }
+  body { font-family: Arial, Helvetica, sans-serif; color: #1f2937; }
+</style>
+</head>
+<body class="bg-slate-100 p-6">
+<div class="max-w-2xl mx-auto bg-white rounded-2xl shadow p-8">
+  <div class="no-print flex justify-end mb-4">
+    <button onclick="window.print()" class="px-4 py-2 bg-emerald-600 text-white rounded-xl font-medium">Imprimir / Salvar PDF</button>
+  </div>
+{% endif %}
+  <div class="flex items-start justify-between border-b border-slate-300 pb-4 mb-4">
+    <div>
+      <div class="text-xl font-bold text-slate-800">{{ empresa.nome_fantasia or empresa.razao_social if empresa else 'Empresa' }}</div>
+      {% if empresa %}
+      <div class="text-xs text-slate-500">{{ empresa.razao_social }}{% if empresa.cnpj %} — CNPJ {{ empresa.cnpj }}{% endif %}</div>
+      <div class="text-xs text-slate-500">{{ empresa.endereco or '' }}{% if empresa.cidade %} — {{ empresa.cidade }}/{{ empresa.uf }}{% endif %}</div>
+      {% endif %}
+    </div>
+    <div class="text-right">
+      <div class="text-2xl font-bold uppercase tracking-wide text-emerald-700">Recibo</div>
+      <div class="text-xs text-slate-500">Sem emissão de NFS-e / NFe</div>
+      <div class="text-xs text-slate-500">Emitido em {{ now.strftime('%d/%m/%Y %H:%M') }}</div>
+    </div>
+  </div>
+
+  <div class="grid grid-cols-2 gap-4 mb-4 text-sm">
+    <div>
+      <div class="text-xs text-slate-500">Cliente</div>
+      <div class="font-medium text-slate-800">{{ cliente.nome if cliente else '-' }}</div>
+      {% if cliente and cliente.cpf_cnpj %}<div class="text-xs text-slate-500">{{ cliente.cpf_cnpj }}</div>{% endif %}
+    </div>
+    <div>
+      <div class="text-xs text-slate-500">Ordem de Serviço</div>
+      <div class="font-medium text-slate-800">#{{ ordem.id }} — {{ ordem.equipamento or '-' }}</div>
+      <div class="text-xs text-slate-500">{% if ordem.data_entrada %}Entrada: {{ ordem.data_entrada.strftime('%d/%m/%Y') }}{% endif %}
+        {% if ordem.data_saida %} · Saída: {{ ordem.data_saida.strftime('%d/%m/%Y') }}{% endif %}</div>
+    </div>
+  </div>
+
+  <div class="border border-slate-200 rounded-xl overflow-hidden mb-4">
+    <table class="w-full text-sm">
+      <thead><tr class="bg-slate-100 text-slate-600">
+        <th class="text-left px-3 py-2">Descrição</th>
+        <th class="text-right px-3 py-2">Valor</th>
+      </tr></thead>
+      <tbody>
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2">{{ conta.descricao }}</td>
+          <td class="px-3 py-2 text-right font-semibold text-emerald-700">R$ {{ "%.2f"|format(conta.valor) }}</td>
+        </tr>
+        {% if conta.forma_pagamento %}
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2 text-slate-500">Forma de pagamento</td>
+          <td class="px-3 py-2 text-right text-slate-700">{{ conta.forma_pagamento }}</td>
+        </tr>
+        {% endif %}
+        {% if conta.data_vencimento %}
+        <tr class="border-t border-slate-100">
+          <td class="px-3 py-2 text-slate-500">Data</td>
+          <td class="px-3 py-2 text-right text-slate-700">{{ conta.data_vencimento.strftime('%d/%m/%Y') }}</td>
+        </tr>
+        {% endif %}
+      </tbody>
+    </table>
+  </div>
+
+  <div class="text-center text-xs text-slate-500 mb-6">
+    Recebi(emos) de <b>{{ cliente.nome if cliente else 'cliente' }}</b> a importância de
+    <b>R$ {{ "%.2f"|format(conta.valor) }}</b> referente aos serviços/peças da OS #{{ ordem.id }}.
+    {% if conta.forma_pagamento == 'garantia' %}<br><b>Conserto em garantia — sem ônus ao cliente.</b>{% endif %}
+  </div>
+
+  <div class="flex justify-between items-end pt-8 border-t border-slate-300">
+    <div class="text-center">
+      <div class="w-48 border-t border-slate-500 pt-1 text-xs text-slate-500">{{ empresa.nome_fantasia or empresa.razao_social if empresa else 'Empresa' }}</div>
+    </div>
+    <div class="text-center">
+      <div class="w-48 border-t border-slate-500 pt-1 text-xs text-slate-500">{{ cliente.nome if cliente else 'Cliente' }}</div>
+    </div>
+  </div>
+
+  {% if not email %}<div class="no-print text-[10px] text-slate-400 mt-6 text-center">Documento gerado pelo Controle de Serviços — recibo sem emissão de nota fiscal.</div>{% endif %}
+{% if not email %}</div></body></html>{% endif %}

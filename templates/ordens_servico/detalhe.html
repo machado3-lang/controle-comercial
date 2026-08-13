@@ -132,12 +132,19 @@
                 <tr class="border-b border-slate-800/30">
                     <td class="px-2 py-1 text-slate-100">{{ c.descricao }}
                         {% if c.numero_parcela and c.total_parcelas and c.total_parcelas > 1 %}<span class="text-slate-500">({{ c.numero_parcela }}/{{ c.total_parcelas }})</span>{% endif %}
+                        {% if not c.nfe_id and not c.nfse_id %}<span class="ml-1 text-[10px] px-1.5 py-0.5 rounded-full bg-violet-950/50 text-violet-300 border border-violet-800/50 align-middle">RECIBO (sem NFS)</span>{% endif %}
                     </td>
                     <td class="px-2 py-1 text-right text-emerald-400">R$ {{ "%.2f"|format(c.valor) }}</td>
                     <td class="px-2 py-1 text-slate-300">{{ c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else '-' }}</td>
                     <td class="px-2 py-1 text-slate-300">{{ c.status.value }}</td>
                     <td class="px-2 py-1">
-                        {% if c.forma_pagamento == 'boleto' and not c.boleto_emitido %}
+                        {% if not c.nfe_id and not c.nfse_id %}
+                        <a href="/ordens-servico/{{ ordem.id }}/recibo/{{ c.id }}" target="_blank" class="text-xs px-2 py-1 rounded-lg bg-emerald-950/50 text-emerald-300 border border-emerald-800/50 hover:bg-emerald-900/40">Imprimir</a>
+                        <form method="post" action="/ordens-servico/{{ ordem.id }}/recibo/{{ c.id }}/enviar-email" class="inline ml-1">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <button type="submit" class="text-xs px-2 py-1 rounded-lg bg-sky-950/50 text-sky-300 border border-sky-800/50 hover:bg-sky-900/40">Enviar e-mail</button>
+                        </form>
+                        {% elif c.forma_pagamento == 'boleto' and not c.boleto_emitido %}
                         <form method="post" action="/sicoob/emitir-boleto/{{ c.id }}" class="inline">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="text-xs px-2 py-1 rounded-lg bg-amber-950/50 text-amber-300 border border-amber-800/50 hover:bg-amber-900/40">Emitir Boleto</button>
