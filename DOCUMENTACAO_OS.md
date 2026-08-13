@@ -118,16 +118,32 @@ Atalho na OS que agrupa (ou separa) as notas:
     separadas.
   - **Notas parciais:** se a OS tiver só NFe (ou só NFSe) transmitida, a conta
     agrupada referencia apenas a nota existente (sem erro).
+  - **Recibo/fatura SEM nota fiscal:** quando não há NFe/NFS-e transmitida e a
+    `forma_pagamento` é de um tipo que não exige nota (`pix`, `dinheiro`,
+    `cartao_credito`, `cartao_debito`, `avista`, `aprazo`, `garantia`), o
+    endpoint gera uma `ContaReceber` (recibo) a partir de `ordem.valor_total`,
+    **sem** vincular `nfe_id`/`nfse_id`. Útil para emitir/enviar um recibo ou
+    fatura direto ao cliente, pagamento via PIX/dinheiro, ou conserto em
+    **garantia** (neste caso `valor = 0`, apenas registro). A conta recebe
+    `os_id` para rastreabilidade.
   - **Parcelamento:** `num_parcelas`/`intervalo_dias` → N parcelas = N contas do
     mesmo grupo (e N boletos, se boleto). Pode ser à vista, dinheiro, PIX ou a
     prazo sem boleto (conta fica em aberto para recebimento posterior).
   - **Forma de pagamento:** `boleto`, `pix`, `dinheiro`, `cartao_credito`,
-    `cartao_debito`, `avista`, `aprazo` (informada no formulário).
+    `cartao_debito`, `avista`, `aprazo`, `garantia` (informada no formulário).
+    A emissão de cobrança **não é obrigatória via boleto** — qualquer forma
+    acima é válida, inclusive sem nota (recibo).
   - **Pré-requisito:** ao menos uma nota (`NFe` ou `NFSe`) deve estar
-    **transmitida** (status em `_STATUS_EMITIDOS_NFE` / `_STATUS_EMITIDOS_NFSE`).
-    Caso contrário, retorna erro orientando a transmitir as notas.
+    **transmitida** (status em `_STATUS_EMITIDOS_NFE` / `_STATUS_EMITIDOS_NFSE`)
+    **OU** a forma de pagamento deve ser de recibo sem nota (PIX, dinheiro,
+    cartão, à vista, a prazo, garantia). Caso contrário, retorna erro orientando
+    a transmitir as notas ou escolher uma forma sem nota.
   - **Guarda anti-duplicação:** bloqueia se já houver `ContaReceber` ativa
-    (status diferente de cancelada/excluída) vinculada a qualquer nota da OS.
+    (status diferente de cancelada/excluída) vinculada a qualquer nota da OS, ou
+    já houver um recibo (`os_id` = OS e `nfe_id`/`nfse_id` nulos).
+  - **Resposta:** redireciona em navegação normal; se o header `Accept` for
+    `application/json`, retorna JSON (usado pelo modal de conclusão para gerar a
+    cobrança logo ao concluir).
 - **Por nota (mantido):** NFSe `POST /nfse/{id}/gerar-cobranca` e
   NFe `POST /nfe/{id}/gerar-cobranca` (usado no fluxo separado).
 
@@ -136,6 +152,25 @@ Atalho na OS que agrupa (ou separa) as notas:
 - `OS → NFe(os_id) → ContaReceber(nfe_id)` e `OS → NFSe(os_id) → ContaReceber(nfse_id)`.
 - Na cobrança **agrupada**, a mesma `ContaReceber` aponta para **ambas** as notas
   (`nfe_id` e `nfse_id` preenchidos), preservando a rastreabilidade fiscal.
+- Na cobrança **recibo sem nota**, a `ContaReceber` recebe `os_id` preenchido e
+  `nfe_id`/`nfse_id` nulos (visível no card "Cobrança / Faturamento").
+
+### 3.6 Concluir (entregar) com ou sem notas fiscais
+
+O fluxo de status **não exige** notas para concluir (`concluida`). São cenários
+válidos, bastando a forma de pagamento/recibo adequada:
+
+- **Concluir sem emissão de NFS** (recibo/fatura direto): marque "Gerar
+  cobrança/recibo ao concluir" no modal e escolha `dinheiro`, `pix`, `cartão`,
+  `à vista`, `a prazo` ou `garantia`. Gera-se o recibo sem NFe/NFS-e.
+- **Concluir somente com a NFSe** (serviços): gere/transmita a NFSe e, se
+  quiser, a cobrança agrupada/separada referencia só ela.
+- **Concluir com as 2 NFS** (NFe + NFSe): gere/transmita ambas; a cobrança
+  agrupada referencia NFe + NFSe numa única conta/boleto.
+
+No modal de finalização há a opção **"Gerar cobrança/recibo ao concluir"** +
+seletor de forma de pagamento: ao concluir, a cobrança é gerada na sequência
+(recibo se não houver nota transmitida).
 
 ### 3.5 UI — card "Cobrança / Faturamento" (detalhe da OS)
 O `templates/ordens_servico/detalhe.html` exibe um card com:
@@ -150,12 +185,27 @@ O `templates/ordens_servico/detalhe.html` exibe um card com:
 
 ## 4. Bug corrigido: spinner ao concluir
 
-Ao concluir (`concluida`) o servidor gravava o **nome** do enum (`CONCLUIDA`,
-maiúsculas) e o enum nativo do Postgres `statusos` **não tinha esse rótulo** →
-`InvalidTextRepresentation (500)` → o frontend ficava com o spinner girando.
+Ao concluir (`concluida`), o **frontend** trocava o rótulo do botão por um ícone
+de *loader* e **não o restaurava** em caso de erro — qualquer resposta não-200
+(CSRF, enum, etc.) deixava o spinner girando ininterruptamente. Além disso, o
+`fetch` não enviava `Accept: application/json`, então um 500 do backend voltava
+como HTML e o `r.json()` quebrava silenciosamente.
 
-Correção: adicionado o rótulo `CONCLUIDA` ao enum (`ALTER TYPE statusos ADD VALUE 'CONCLUIDA'`)
-e revisado o fluxo de conclusão (data de saída + tratamento de erro no JS).
+Correções:
+- **Frontend (`detalhe.html`):** o botão salva o rótulo original e o restaura
+  tanto em erro de validação quanto em falha de rede (`restaura()`); o `fetch`
+  envia `Accept: application/json` para que o backend responda JSON (e não HTML)
+  mesmo em 500.
+- **Backend (`POST /ordens-servico/{id}/status`):** com o header JSON, o
+  handler genérico de exceção retorna `{"detail": ...}` (JSON), permitindo o
+  tratamento correto no JS.
+- **Enum `statusos` (Railway/Postgres):** o valor gravado pelo SQLAlchemy é o
+  **valor** do enum — `StatusOS.CONCLUIDA.value = 'concluida'` (minúsculo). O
+  `scripts/migracao_os_cobranca.sql` antigo adicionava o rótulo **`CONCLUIDA`
+  (maiúsculo)**, que nunca é usado; num DB restaurado só com esse rótulo, o
+  `UPDATE ... SET status='concluida'` falhava com `InvalidTextRepresentation
+  (500)`. O script e o auto-migration (`lifespan._add_missing_enum_values`) agora
+  garantem o rótulo **`concluida`** (minúsculo) correto.
 
 ---
 
@@ -168,10 +218,11 @@ colunas novas — não requer script manual.
 Para ambientes que preferem SQL explícito (ou PostgreSQL fora do auto-migration),
 o `scripts/migracao_os_cobranca.sql` cobre:
 
-1. `ALTER TYPE statusos ADD VALUE 'CONCLUIDA'` (se ainda não existir).
+1. `ALTER TYPE statusos ADD VALUE 'concluida'` (se ainda não existir — minúsculo).
 2. `ALTER TABLE nfse ADD COLUMN os_id INTEGER REFERENCES ordens_servico(id)`.
 3. `ALTER TABLE ordens_servico ADD COLUMN cobranca_separada BOOLEAN DEFAULT FALSE`.
-4. (Opcional) preencher `os_id` retroativo em NFSe de OS via regex na observação.
+4. `ALTER TABLE contas_receber ADD COLUMN os_id INTEGER REFERENCES ordens_servico(id)` (recibos sem nota).
+5. (Opcional) preencher `os_id` retroativo em NFSe de OS via regex na observação.
 
 ```bash
 psql -U postgres -d controledb -f scripts/migracao_os_cobranca.sql
@@ -181,12 +232,13 @@ psql -U postgres -d controledb -f scripts/migracao_os_cobranca.sql
 
 ## 6. Arquivos envolvidos
 
-- `models.py` — `OrdemServico.cobranca_separada` (flag de agrupamento); `os_id` na NFSe já existente.
+- `models.py` — `OrdemServico.cobranca_separada` (flag de agrupamento); `os_id` na NFSe; novo `os_id` em `ContaReceber` (recibos sem nota).
 - `routers/ordens_servico.py`:
-  - `POST /ordens-servico/{id}/gerar-cobranca` — cobrança agrupada/separada, parcelamento, guarda anti-duplicação.
+  - `POST /ordens-servico/{id}/gerar-cobranca` — cobrança agrupada/separada, **recibo sem nota** (PIX/dinheiro/cartão/garantia), parcelamento, guarda anti-duplicação (notas ou recibo), resposta JSON quando `Accept: application/json`.
   - `atualizar_ordem` — persiste `cobranca_separada` e respeita o fluxo dirigido de status (não reverte `concluida` para `aberta`).
-  - `detalhe_ordem` — carrega notas e `ContaReceber` vinculadas (card de cobrança).
-- `templates/ordens_servico/detalhe.html` — card "Cobrança / Faturamento" (resumo das notas, lista de contas, botão Emitir Boleto e formulário de geração).
+  - `detalhe_ordem` — carrega notas e `ContaReceber` vinculadas, incluindo recibos (`os_id`).
+  - `POST /ordens-servico/{id}/status` — conclusão; agora com `Accept: application/json` retorna JSON em erro (evita spinner travado).
+- `templates/ordens_servico/detalhe.html` — card "Cobrança / Faturamento" (formulário de recibo sem nota quando não há notas; opção `garantia`); modal de conclusão com "Gerar cobrança/recibo ao concluir"; spinner restaurado em erro/falha.
 - `templates/ordens_servico/editar.html` — checkbox "Cobrança separada" e opção `concluida` no `<select>` de status.
 - `routers/nfe.py` / `routers/nfse.py` — `emitir/os` (gera rascunho; não travado por status, por decisão de produto).
 - `services/parcelamento.py` — `gerar_contas_receber` reutilizado (aceita `nfe_id` + `nfse_id` na mesma conta).

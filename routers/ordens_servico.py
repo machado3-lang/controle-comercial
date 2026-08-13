@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, date
-from sqlalchemy import or_
+from sqlalchemy import or_, and_
 from sqlalchemy.orm import selectinload
 
 from database import get_db
@@ -33,6 +33,15 @@ TRANSICOES_STATUS_VALIDAS = {
 _STATUS_EMITIDOS_NFE = {"issued", "queued", "pendente"}
 _STATUS_EMITIDOS_NFSE = {"autorizada", "pendente", "em_processamento"}
 
+# Formas de pagamento que NAO exigem nota fiscal transmitida: permitem gerar a
+# cobranca (recibo/fatura) direto da OS, para PIX, dinheiro, cartao, a vista,
+# a prazo, garantia, etc. A cobranca agrupada tradicional (boleto vinculado a
+# nota) continua funcionando quando ha nota transmitida.
+_FORMAS_SEM_NOTA = {
+    "pix", "dinheiro", "cartao_credito", "cartao_debito", "avista",
+    "aprazo", "garantia",
+}
+
 
 def _normalizar_status(valor):
     """Converte o valor vindo do formulario para o membro StatusOS correto.
@@ -59,6 +68,30 @@ def _normalizar_status(valor):
             return StatusOS(valor)
         except ValueError:
             return StatusOS.ABERTA
+
+
+def _os_tem_itens(ordem):
+    """Verifica se a OS possui servicos e/ou pecas lancados (para nao permitir
+    cobranca/recibo de uma OS vazia). Considera tanto os JSONs de servicos/pecas
+    quanto as OSPeca (baixa de estoque)."""
+    def _json_com_itens(texto):
+        if not texto:
+            return False
+        if isinstance(texto, (list, dict)):
+            return len(texto) > 0
+        t = str(texto).strip()
+        return t not in ("", "[]", "null", "None")
+    if _json_com_itens(getattr(ordem, "servicos_executados", None)):
+        return True
+    if _json_com_itens(getattr(ordem, "pecas_utilizadas", None)):
+        return True
+    os_pecas = getattr(ordem, "os_pecas", None)
+    try:
+        if os_pecas is not None and len(os_pecas) > 0:
+            return True
+    except TypeError:
+        pass
+    return False
 
 
 def _buscar_pecas(db):
@@ -203,7 +236,8 @@ def detalhe_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)
     servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '', "preco": float(s.preco or 0)} for s in servicos]
     pecas_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0)} for p in pecas]
 
-    # Cobrancas vinculadas as notas desta OS (agrupadas ou separadas)
+    # Cobrancas vinculadas as notas desta OS (agrupadas ou separadas) e os recibos
+    # gerados direto da OS sem nota (nfe_id/nfse_id nulos, mas os_id preenchido).
     ids_nfe = [n.id for n in (ordem.nfes or [])]
     ids_nfse = [n.id for n in (ordem.nfses or [])]
     cobrancas = []
@@ -212,6 +246,12 @@ def detalhe_ordem(request: Request, ordem_id: int, db: Session = Depends(get_db)
         filtros_cob.append(ContaReceber.nfe_id.in_(ids_nfe))
     if ids_nfse:
         filtros_cob.append(ContaReceber.nfse_id.in_(ids_nfse))
+    # Recibos/faturas da OS sem nota fiscal (PIX, dinheiro, garantia, etc.)
+    filtros_cob.append(
+        and_(ContaReceber.os_id == ordem.id,
+             ContaReceber.nfe_id.is_(None),
+             ContaReceber.nfse_id.is_(None))
+    )
     if filtros_cob:
         cobrancas = db.query(ContaReceber).options(
             selectinload(ContaReceber.nfe), selectinload(ContaReceber.nfse),
@@ -445,13 +485,32 @@ def gerar_cobranca_os(
 ):
     """Gera a cobrança (ContaReceber) a partir das notas fiscais da OS.
 
-    - Agrupada (padrao): UMA ContaReceber referenciando NFe + NFSe, com valor =
-      NFe.valor_total + NFSe.valor_liquido. Se forma_pagamento = boleto, o boleto
-      emitido sera unico (1:1 com a conta).
-    - Separada (cobranca_separada=1): uma ContaReceber por nota (comportamento
-      anterior), respeitando cliente que prefere cobranca isolada.
-    A preferencia e persistida na OS para proximas emissoes.
+    - Com notas transmitidas (padrao): cobranca agrupada (UMA ContaReceber
+      referenciando NFe + NFSe, valor = NFe.valor_total + NFSe.valor_liquido) ou
+      separada (uma por nota). Se forma_pagamento = boleto, boleto unico.
+    - SEM notas transmitidas (recibo/fatura): quando a forma de pagamento esta em
+      _FORMAS_SEM_NOTA (pix, dinheiro, cartao, avista, aprazo, garantia), gera-se
+      um recibo a partir de ordem.valor_total, sem vincular NFe/NFSe. Cobre casos
+      de PIX/dinheiro direto ou conserto em garantia (sem emissao de NFS).
+    - Garantia: valor da cobranca = 0 (sem onus ao cliente), apenas registro.
+    A preferencia (cobranca_separada) e persistida na OS para proximas emissoes.
+    Retorna JSON quando o header Accept for 'application/json' (usado pelo modal
+    de conclusao), ou RedirectResponse em navegacao normal.
     """
+    aceita_json = (request.headers.get("accept") or "").startswith("application/json")
+
+    def _resposta(status_code, ok, mensagem, redirect=None):
+        if aceita_json:
+            return JSONResponse(
+                {"ok": ok, "mensagem": mensagem, "redirect": redirect or f"/ordens-servico/{ordem_id}"},
+                status_code=status_code,
+            )
+        if ok:
+            request.session["message"] = mensagem
+        else:
+            request.session["error"] = mensagem
+        return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+
     ordem = db.query(OrdemServico).options(
         selectinload(OrdemServico.nfes),
         selectinload(OrdemServico.nfses),
@@ -461,29 +520,65 @@ def gerar_cobranca_os(
 
     nfe = next((n for n in ordem.nfes if n.status in _STATUS_EMITIDOS_NFE), None)
     nfse = next((n for n in ordem.nfses if n.status in _STATUS_EMITIDOS_NFSE), None)
-    if not nfe and not nfse:
-        request.session["error"] = (
-            "Não há notas fiscais transmitidas para esta OS. Emita a NFe/NFSe primeiro."
-        )
-        return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+    sem_notas = (not nfe and not nfse)
 
-    # Guarda anti-duplicacao no nivel da OS: bloqueia se ja houver cobranca ativa
-    # vinculada a qualquer nota desta OS.
-    ids_nfe = [n.id for n in ordem.nfes]
-    ids_nfse = [n.id for n in ordem.nfses]
-    filtros_existentes = []
-    if ids_nfe:
-        filtros_existentes.append(ContaReceber.nfe_id.in_(ids_nfe))
-    if ids_nfse:
-        filtros_existentes.append(ContaReceber.nfse_id.in_(ids_nfse))
-    if filtros_existentes:
+    if sem_notas and forma_pagamento not in _FORMAS_SEM_NOTA:
+        return _resposta(
+            400, False,
+            "Não há notas fiscais transmitidas para esta OS. Emita a NFe/NFSe primeiro "
+            "ou escolha uma forma de pagamento sem nota (PIX, dinheiro, cartão, à vista, "
+            "a prazo ou garantia)."
+        )
+
+    # Recibo sem nota: a OS precisa ter servicos/pecas lancados e (para formas
+    # com cobranca) valor total > 0. Nao permitir gerar recibo zerado de OS vazia.
+    if sem_notas:
+        if not _os_tem_itens(ordem):
+            return _resposta(
+                400, False,
+                "A OS não possui serviços nem peças lançados. Lance ao menos um "
+                "serviço ou peça antes de gerar a cobrança/recibo."
+            )
+        if forma_pagamento == "garantia":
+            valor_total = Decimal("0")
+        else:
+            valor_total = Decimal(str(ordem.valor_total or 0))
+            if valor_total <= 0:
+                return _resposta(
+                    400, False,
+                    "O valor total da OS está zerado. Informe os valores de serviços/peças "
+                    "(ou use a forma 'Garantia' para conserto sem cobrança)."
+                )
+    else:
+        valor_total = None  # calculado abaixo com base nas notas
+
+    # Guarda anti-duplicacao:
+    # - Com notas: bloqueia se ja houver cobranca ativa vinculada a qualquer nota.
+    # - Sem notas (recibo): bloqueia se ja houver recibo (os_id = OS, sem nfe/nfse).
+    if sem_notas:
         cobranca_existente = db.query(ContaReceber).filter(
             ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
-            or_(*filtros_existentes),
+            ContaReceber.os_id == ordem.id,
+            ContaReceber.nfe_id.is_(None),
+            ContaReceber.nfse_id.is_(None),
         ).first()
         if cobranca_existente:
-            request.session["error"] = "Já existe cobrança para as notas desta OS."
-            return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+            return _resposta(400, False, "Já existe um recibo/cobrança para esta OS.")
+    else:
+        ids_nfe = [n.id for n in ordem.nfes]
+        ids_nfse = [n.id for n in ordem.nfses]
+        filtros_existentes = []
+        if ids_nfe:
+            filtros_existentes.append(ContaReceber.nfe_id.in_(ids_nfe))
+        if ids_nfse:
+            filtros_existentes.append(ContaReceber.nfse_id.in_(ids_nfse))
+        if filtros_existentes:
+            cobranca_existente = db.query(ContaReceber).filter(
+                ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
+                or_(*filtros_existentes),
+            ).first()
+            if cobranca_existente:
+                return _resposta(400, False, "Já existe cobrança para as notas desta OS.")
 
     # Persiste a preferencia para futuras emissoes
     ordem.cobranca_separada = bool(cobranca_separada)
@@ -494,8 +589,24 @@ def gerar_cobranca_os(
     except ValueError:
         venc = ordem.data_saida or date.today()
 
-    if bool(cobranca_separada):
-        # Uma conta por nota (comportamento anterior / cliente quer separado)
+    if sem_notas:
+        # Recibo/fatura sem nota fiscal (PIX, dinheiro, cartao, garantia, etc.)
+        # valor_total ja validado acima (0 apenas para garantia).
+        forma = forma_pagamento or "dinheiro"
+        descricao = f"Recibo OS #{ordem_id} ({forma})" + (" — sem nota fiscal" if forma != "garantia" else " — garantia")
+        contas = gerar_contas_receber(
+            db, cliente_id=ordem.cliente_id,
+            descricao=descricao,
+            valor_total=valor_total,
+            primeiro_vencimento=venc, num_parcelas=num_parcelas,
+            intervalo_dias=intervalo_dias,
+            forma_pagamento=forma,
+            observacao=f"Cobrança/recibo da OS #{ordem_id} sem emissão de NFS-e/NFe.",
+            nfe_id=None, nfse_id=None, os_id=ordem.id,
+        )
+        msg = f"{len(contas)} recibo(s) gerado(s) para a OS #{ordem_id} (sem nota fiscal)."
+    elif bool(cobranca_separada):
+        # Uma conta por nota (cliente quer separado)
         contas = []
         if nfe:
             contas += gerar_contas_receber(
@@ -507,7 +618,7 @@ def gerar_cobranca_os(
                 forma_pagamento=forma_pagamento or "NFe",
                 observacao=f"Gerado da NFe #{nfe.id} (OS #{ordem_id})",
                 numero_documento=str(nfe.numero) if nfe.numero else None,
-                nfe_id=nfe.id,
+                nfe_id=nfe.id, os_id=ordem.id,
             )
         if nfse:
             contas += gerar_contas_receber(
@@ -518,7 +629,7 @@ def gerar_cobranca_os(
                 intervalo_dias=intervalo_dias,
                 forma_pagamento=forma_pagamento or "NFSe",
                 observacao=f"Gerado da NFSe #{nfse.id} (OS #{ordem_id})",
-                nfse_id=nfse.id,
+                nfse_id=nfse.id, os_id=ordem.id,
             )
         msg = f"{len(contas)} cobrança(s) separada(s) gerada(s) para a OS #{ordem_id}."
     else:
@@ -544,12 +655,12 @@ def gerar_cobranca_os(
             observacao=f"Cobrança agrupada da OS #{ordem_id}",
             nfe_id=nfe.id if nfe else None,
             nfse_id=nfse.id if nfse else None,
+            os_id=ordem.id,
         )
         msg = f"{len(contas)} cobrança(s) agrupada(s) gerada(s) para a OS #{ordem_id}."
 
     db.commit()
-    request.session["message"] = msg
-    return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
+    return _resposta(200, True, msg)
 
 
 @router.get("/{ordem_id}/imprimir")

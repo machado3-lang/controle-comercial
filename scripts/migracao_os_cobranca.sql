@@ -5,15 +5,20 @@
 -- Ou cole no DBeaver / pgAdmin.
 -- ============================================================================
 
--- 1) Rótulo CONCLUIDA ausente no enum nativo statusos (causava 500 ao concluir OS).
---    O SQLAlchemy grava o NOME do enum (maiúsculas); sem esse rótulo o UPDATE falhava.
+-- 1) Rótulo 'concluida' (minúsculo) ausente no enum nativo statusos.
+--    O SQLAlchemy grava o VALOR do enum (StatusOS.CONCLUIDA.value = 'concluida',
+--    minúsculo). Sem esse rótulo, o UPDATE/INSERT de uma OS concluída falha com
+--    InvalidTextRepresentation (500) e a UI ficava com o spinner girando.
+--    O auto-migration (app/core/lifespan.py -> _add_missing_enum_values) já
+--    adiciona esse valor em startup; este script cobre quem prefere SQL explícito.
+--    (Não usar 'CONCLUIDA' maiúsculo: o modelo nunca grava esse rótulo.)
 DO $$
 BEGIN
     IF NOT EXISTS (
         SELECT 1 FROM pg_type t JOIN pg_enum e ON e.enumtypid = t.oid
-        WHERE t.typname = 'statusos' AND e.enumlabel = 'CONCLUIDA'
+        WHERE t.typname = 'statusos' AND e.enumlabel = 'concluida'
     ) THEN
-        ALTER TYPE statusos ADD VALUE 'CONCLUIDA';
+        ALTER TYPE statusos ADD VALUE 'concluida';
     END IF;
 END$$;
 

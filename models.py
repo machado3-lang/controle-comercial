@@ -258,6 +258,7 @@ class ContaReceber(Base):
     # Vinculos com o documento de origem do faturamento
     pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
     nfe_id = Column(Integer, ForeignKey("nfe.id"), nullable=True, index=True)
+    os_id = Column(Integer, ForeignKey("ordens_servico.id"), nullable=True, index=True)
 
     cliente = relationship("Cliente", back_populates="contas_receber")
     tipo_documento = relationship("TipoDocumento", back_populates="contas_receber")

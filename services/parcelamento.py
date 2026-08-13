@@ -68,6 +68,7 @@ def gerar_contas_receber(
     nfe_id=None,
     pedido_id=None,
     consolidacao_id=None,
+    os_id=None,
 ):
     """Cria N ContaReceber (parcelas) na sessao. NAO faz commit.
 
@@ -96,6 +97,7 @@ def gerar_contas_receber(
             nfe_id=nfe_id,
             pedido_id=pedido_id,
             consolidacao_id=consolidacao_id,
+            os_id=os_id,
             numero_parcela=p["numero"],
             total_parcelas=num_parcelas,
             parcelamento_grupo=grupo,
