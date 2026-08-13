@@ -139,7 +139,7 @@
                     <td class="px-2 py-1 text-slate-300">{{ c.status.value }}</td>
                     <td class="px-2 py-1">
                         {% if not c.nfe_id and not c.nfse_id %}
-                        <a href="/ordens-servico/{{ ordem.id }}/recibo/{{ c.id }}" target="_blank" class="text-xs px-2 py-1 rounded-lg bg-emerald-950/50 text-emerald-300 border border-emerald-800/50 hover:bg-emerald-900/40">Imprimir</a>
+                        <button type="button" onclick="abrirReciboPreview({{ c.id }})" class="text-xs px-2 py-1 rounded-lg bg-emerald-950/50 text-emerald-300 border border-emerald-800/50 hover:bg-emerald-900/40">Imprimir</button>
                         <form method="post" action="/ordens-servico/{{ ordem.id }}/recibo/{{ c.id }}/enviar-email" class="inline ml-1">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="text-xs px-2 py-1 rounded-lg bg-sky-950/50 text-sky-300 border border-sky-800/50 hover:bg-sky-900/40">Enviar e-mail</button>
@@ -299,6 +299,31 @@
             </div>
     </div>
 </div>
+
+<div class="modal fade" id="modalPreviewRecibo" tabindex="-1">
+    <div class="modal-dialog max-w-4xl">
+        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <div class="modal-header border-b border-slate-800/50 flex justify-between items-center">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">Imprimir Recibo (sem NFS)</h5>
+                <div class="flex gap-1">
+                    <button type="button" class="tab-impressao-recibo px-3 py-1.5 text-xs font-medium bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-full active" data-formato="a4">A4</button>
+                    <button type="button" class="tab-impressao-recibo px-3 py-1.5 text-xs font-medium text-slate-400 border border-slate-700 rounded-full hover:text-slate-300" data-formato="termica">Térmica 80mm</button>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body p-0 bg-white" style="height:75vh;">
+                <iframe id="iframePreviewRecibo" src="" class="w-full" style="width:100%;height:75vh;border:0;"></iframe>
+            </div>
+            <div class="modal-footer border-t border-slate-800/50 flex flex-wrap items-center justify-between gap-3">
+                <div class="text-xs text-slate-500">Recibo sem emissão de NFS-e/NFe.</div>
+                <div class="flex gap-2">
+                    <button type="button" class="px-4 py-2 border border-slate-700 rounded-xl text-slate-300 hover:bg-slate-800/50" data-bs-dismiss="modal">Fechar</button>
+                    <button type="button" id="btnImprimirPreviewRecibo" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium"><i data-lucide="printer" class="w-4 h-4 me-1"></i> Imprimir</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
 {% endblock %}
 
 {% block scripts %}
@@ -354,6 +379,29 @@ document.querySelectorAll('.tab-impressao-os').forEach(btn => {
 document.getElementById('btnImprimirPreviewOS').addEventListener('click', function() {
     const iframe = document.getElementById('iframePreviewOS');
     window.open(iframe ? iframe.src : `/ordens-servico/{{ ordem.id }}/imprimir?tipo=${formatoImpressaoOS}`, '_blank');
+});
+
+// --- Preview de impressao do Recibo (sem NFS), padrao A4/Termica 80mm ---
+let formatoRecibo = 'a4';
+let reciboIdAtual = null;
+function abrirReciboPreview(contaId) {
+    reciboIdAtual = contaId;
+    const iframe = document.getElementById('iframePreviewRecibo');
+    if (iframe) iframe.src = `/ordens-servico/{{ ordem.id }}/recibo/${contaId}?tipo=${formatoRecibo}`;
+    new bootstrap.Modal(document.getElementById('modalPreviewRecibo')).show();
+}
+document.querySelectorAll('.tab-impressao-recibo').forEach(btn => {
+    btn.addEventListener('click', function() {
+        document.querySelectorAll('.tab-impressao-recibo').forEach(b => b.classList.remove('bg-cyan-950/50', 'text-cyan-400', 'border-cyan-800/50', 'active'));
+        this.classList.add('bg-cyan-950/50', 'text-cyan-400', 'border-cyan-800/50', 'active');
+        formatoRecibo = this.dataset.formato || 'a4';
+        const iframe = document.getElementById('iframePreviewRecibo');
+        if (iframe && reciboIdAtual !== null) iframe.src = `/ordens-servico/{{ ordem.id }}/recibo/${reciboIdAtual}?tipo=${formatoRecibo}`;
+    });
+});
+document.getElementById('btnImprimirPreviewRecibo').addEventListener('click', function() {
+    const iframe = document.getElementById('iframePreviewRecibo');
+    if (iframe && iframe.src) window.open(iframe.src, '_blank');
 });
 function hojeISO() {
     const d = new Date();

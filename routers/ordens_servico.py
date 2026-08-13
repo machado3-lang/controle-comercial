@@ -665,8 +665,10 @@ def gerar_cobranca_os(
 
 
 @router.get("/{ordem_id}/recibo/{conta_id}")
-def recibo_ordem(request: Request, ordem_id: int, conta_id: int, db: Session = Depends(get_db)):
-    """Visualiza/imprime o recibo (cobranca sem nota fiscal) gerado da OS."""
+def recibo_ordem(request: Request, ordem_id: int, conta_id: int, db: Session = Depends(get_db), tipo: str = Query("a4")):
+    """Visualiza/imprime o recibo (cobranca sem nota fiscal) gerado da OS.
+    Suporta tipo='a4' (padrao) e tipo='termica' (80mm), espelhando o padrao
+    de impressao da Ordem de Servico."""
     ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
     if not ordem:
         return RedirectResponse(url="/ordens-servico", status_code=303)
@@ -676,8 +678,9 @@ def recibo_ordem(request: Request, ordem_id: int, conta_id: int, db: Session = D
     if not conta:
         return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
     empresa = db.query(Empresa).first()
+    template = "ordens_servico/recibo_termica.html" if tipo == "termica" else "ordens_servico/recibo.html"
     return request.app.state.templates.TemplateResponse(request,
-        "ordens_servico/recibo.html",
+        template,
         {"request": request, "ordem": ordem, "conta": conta,
          "empresa": empresa, "cliente": conta.cliente,
          "now": datetime.now(), "email": False}
