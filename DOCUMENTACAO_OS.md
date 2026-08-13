@@ -126,6 +126,21 @@ Atalho na OS que agrupa (ou separa) as notas:
     fatura direto ao cliente, pagamento via PIX/dinheiro, ou conserto em
     **garantia** (neste caso `valor = 0`, apenas registro). A conta recebe
     `os_id` para rastreabilidade.
+  - **Bloqueio de valor zerado (recibo):** não é permitido gerar recibo de OS
+    vazia nem com valor zerado. O endpoint valida que a OS possui **serviços e/ou
+    peças lançados** (`servicos_executados`, `pecas_utilizadas` ou `os_pecas`) e,
+    para formas com cobrança, que `ordem.valor_total > 0`. Casos:
+    - OS sem serviços/peças → `400` ("A OS não possui serviços nem peças lançados…").
+    - OS com itens mas `valor_total = 0` e forma ≠ garantia → `400` ("O valor total
+      da OS está zerado…").
+    - **Garantia** é a única exceção legítima de R$ 0, mas **exige itens lançados**
+      (não faz sentido garantia de OS vazia).
+  - **Campos de parcelamento condicionais (UI):** no formulário de geração, os
+    campos **Parcelas**, **1º Vencimento** e **Intervalo (dias)** são
+    **ocultados** quando a forma é `dinheiro`, `pix`, `à vista` ou `garantia`
+    (recibo/cobrança única); permanecem visíveis para `a prazo`, `cartao_credito`,
+    `cartao_debito` e `boleto`. Os valores padrão (parcelas=1) ainda são enviados,
+    então uma forma à vista vira um documento único.
   - **Parcelamento:** `num_parcelas`/`intervalo_dias` → N parcelas = N contas do
     mesmo grupo (e N boletos, se boleto). Pode ser à vista, dinheiro, PIX ou a
     prazo sem boleto (conta fica em aberto para recebimento posterior).
@@ -172,14 +187,49 @@ No modal de finalização há a opção **"Gerar cobrança/recibo ao concluir"**
 seletor de forma de pagamento: ao concluir, a cobrança é gerada na sequência
 (recibo se não houver nota transmitida).
 
+### 3.7 Recibo — visualização, impressão e envio por e-mail
+
+O recibo (cobrança sem nota, `ContaReceber` com `os_id` e `nfe_id`/`nfse_id`
+nulos) é um documento à parte, com tela própria:
+
+- **Visualizar / Imprimir:** `GET /ordens-servico/{os_id}/recibo/{conta_id}?tipo=a4|termica`
+  - `tipo=a4` (padrão) → `templates/ordens_servico/recibo.html` (layout A4, com
+    botão "Imprimir / Salvar PDF").
+  - `tipo=termica` → `templates/ordens_servico/recibo_termica.html` (layout
+    **Térmica 80mm**, espelhando o padrão da OS térmica).
+  - No card "Cobrança / Faturamento" o recibo aparece com o selo **"RECIBO
+    (sem NFS)"** e o botão **Imprimir** abre o **mesmo modal** da "Emitir/Finalizar"
+    OS, com abas **A4** e **Térmica 80mm** e pré-visualização em iframe.
+- **Enviar por e-mail:** `POST /ordens-servico/{os_id}/recibo/{conta_id}/enviar-email`
+  - Envia o recibo (HTML) ao `cliente.email` via `services.email_service.enviar_email`
+    e marca `ContaReceber.email_enviado = True` / `data_envio_email`.
+  - Requer SMTP configurado em `Empresa` (senão retorna aviso "SMTP não configurado").
+  - No card há o botão **Enviar e-mail** (POST, com CSRF).
+- O recibo identifica "Sem emissão de NFS-e / NFe" e, para **garantia**, inclui
+  a observação "Conserto em garantia — sem ônus ao cliente."
+
 ### 3.5 UI — card "Cobrança / Faturamento" (detalhe da OS)
 O `templates/ordens_servico/detalhe.html` exibe um card com:
 - Resumo das notas da OS (NFe/NFSe com número e status) e selo
   "Notas transmitidas" / "Emita NFe/NFSe primeiro".
-- Lista das `ContaReceber` já geradas (descrição, valor, vencimento, status e
-  ação de boleto: **Emitir Boleto** se `boleto` e não emitido, ou **Ver Boleto**).
+- Lista das `ContaReceber` já geradas (descrição, valor, vencimento, status):
+  - Recibos (sem nota) recebem o selo **"RECIBO (sem NFS)"** e os botões
+    **Imprimir** (abre o modal de pré-visualização A4/Térmica 80mm) e
+    **Enviar e-mail**.
+  - Boleto: **Emitir Boleto** se `boleto` e não emitido, ou **Ver Boleto**.
+  - Demais formas com nota: texto da forma de pagamento.
 - Formulário `POST /ordens-servico/{id}/gerar-cobranca` com: forma de
   pagamento, parcelas, 1º vencimento, intervalo e checkbox "Cobrança separada".
+  - **Sem notas transmitidas:** o formulário vira "Gerar Recibo (sem NFS)" com
+    as formas `dinheiro`, `pix`, `cartao_*`, `à vista`, `a prazo`, `garantia`
+    (mais `boleto` desabilitado, que exige nota).
+  - **Campos de parcelamento condicionais:** Parcelas / 1º Vencimento /
+    Intervalo são ocultados quando a forma é `dinheiro`, `pix`, `à vista` ou
+    `garantia` (ver 3.3).
+- Modal de conclusão ("Emitir/Finalizar") com a opção **"Gerar cobrança/recibo
+  ao concluir"** + seletor de forma; e o **modal de pré-visualização de recibo**
+  (abas A4 / Térmica 80mm, iframe, botão Imprimir), espelhando o modal de
+  impressão da OS.
 
 ---
 
@@ -234,15 +284,20 @@ psql -U postgres -d controledb -f scripts/migracao_os_cobranca.sql
 
 - `models.py` — `OrdemServico.cobranca_separada` (flag de agrupamento); `os_id` na NFSe; novo `os_id` em `ContaReceber` (recibos sem nota).
 - `routers/ordens_servico.py`:
-  - `POST /ordens-servico/{id}/gerar-cobranca` — cobrança agrupada/separada, **recibo sem nota** (PIX/dinheiro/cartão/garantia), parcelamento, guarda anti-duplicação (notas ou recibo), resposta JSON quando `Accept: application/json`.
+  - `POST /ordens-servico/{id}/gerar-cobranca` — cobrança agrupada/separada, **recibo sem nota** (PIX/dinheiro/cartão/garantia), **bloqueio de valor zerado** (OS vazia / total 0, exceto garantia), parcelamento, guarda anti-duplicação (notas ou recibo), resposta JSON quando `Accept: application/json`.
+  - `GET /ordens-servico/{id}/recibo/{conta_id}?tipo=a4|termica` — visualiza/imprime o recibo (A4 ou Térmica 80mm).
+  - `POST /ordens-servico/{id}/recibo/{conta_id}/enviar-email` — envia o recibo por e-mail ao cliente.
   - `atualizar_ordem` — persiste `cobranca_separada` e respeita o fluxo dirigido de status (não reverte `concluida` para `aberta`).
-  - `detalhe_ordem` — carrega notas e `ContaReceber` vinculadas, incluindo recibos (`os_id`).
-  - `POST /ordens-servico/{id}/status` — conclusão; agora com `Accept: application/json` retorna JSON em erro (evita spinner travado).
-- `templates/ordens_servico/detalhe.html` — card "Cobrança / Faturamento" (formulário de recibo sem nota quando não há notas; opção `garantia`); modal de conclusão com "Gerar cobrança/recibo ao concluir"; spinner restaurado em erro/falha.
+  - `detalhe_ordem` — carrega notas e `ContaReceber` vinculadas, incluindo recibos (`os_id` + `nfe_id`/`nfse_id` nulos).
+  - `POST /ordens-servico/{id}/status` — conclusão; com `Accept: application/json` retorna JSON em erro (evita spinner travado).
+- `templates/ordens_servico/detalhe.html` — card "Cobrança / Faturamento" (formulário de recibo sem nota quando não há notas; opção `garantia`; **campos de parcela ocultos** para dinheiro/pix/à vista/garantia); badge "RECIBO (sem NFS)" + botões **Imprimir** (modal A4/Térmica) e **Enviar e-mail**; modal de conclusão com "Gerar cobrança/recibo ao concluir"; spinner restaurado em erro/falha.
+- `templates/ordens_servico/recibo.html` — layout A4 do recibo (sem nota).
+- `templates/ordens_servico/recibo_termica.html` — layout Térmica 80mm do recibo.
 - `templates/ordens_servico/editar.html` — checkbox "Cobrança separada" e opção `concluida` no `<select>` de status.
 - `routers/nfe.py` / `routers/nfse.py` — `emitir/os` (gera rascunho; não travado por status, por decisão de produto).
-- `services/parcelamento.py` — `gerar_contas_receber` reutilizado (aceita `nfe_id` + `nfse_id` na mesma conta).
-- `scripts/migracao_os_cobranca.sql` — migração de banco.
+- `services/parcelamento.py` — `gerar_contas_receber` reutilizado (aceita `nfe_id` + `nfse_id` + `os_id` na mesma conta).
+- `services/email_service.py` — `enviar_email` usado no envio do recibo.
+- `scripts/migracao_os_cobranca.sql` — migração de banco (enum `concluida` minúsculo, colunas `os_id`).
 
 ---
 
