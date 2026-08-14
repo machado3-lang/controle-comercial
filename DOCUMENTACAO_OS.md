@@ -316,3 +316,38 @@ status diretamente, sem validar o fluxo.
   endpoint `/status`): se a transição for inválida, o status é **mantido** (com
   aviso) e os demais campos são salvos. Transições válidas para `concluida`
   registram a `data_saida` (hoje) quando vazia.
+
+---
+
+## 8. Bug corrigido: "Erro ao atualizar Status" ao concluir uma OS `finalizada`
+
+Ao clicar em **Concluir (Entregar)** numa OS que já estava `finalizada`, o
+frontend exibia **"Erro ao atualizar Status"** e a OS não era concluída.
+
+**Causa raiz:** o enum nativo do PostgreSQL (`statusos`) não possuía o rótulo
+`concluida` (ou o *connection pool* da aplicação ainda mantinha em cache a
+versão antiga do enum, anterior à auto-migração que adiciona `concluida`).
+O fluxo `finalizada → concluida` é válido e passava na guarda de transição,
+mas o `db.commit()` falhava com `invalid input value for enum statusos:
+"concluida"` → **HTTP 500** → o `fetch` caía no `else` do JS e mostrava a
+mensagem genérica.
+
+**Correção (`routers/ordens_servico.py`):**
+- Novo helper `_garantir_valor_enum(tipo, valor)`: antes de gravar o status
+  `concluida`, ele confere se o rótulo existe no tipo `statusos` e, se não
+  existir, executa `ALTER TYPE statusos ADD VALUE IF NOT EXISTS 'concluida'`
+  numa conexão *autocommit* separada (o `ADD VALUE` não pode rodar dentro de
+  transação). Em seguida faz `db.rollback()` + `engine.dispose()` para liberar
+  a conexão atual (que pode ter cacheado o enum antigo) e forçar uma
+  reconexão limpa na gravação.
+- O `db.commit()` do status agora está envolto em `try/except`: em caso de
+  falha, o endpoint retorna `{"erro": "Não foi possível atualizar o status da
+  OS: <detalhe>"}` (JSON, 500) em vez de um 500 silencioso — assim o JS mostra
+  a **causa real** em vez da mensagem genérica.
+- A auto-migração de startup (`app/core/lifespan.py`, `_add_missing_enum_values`)
+  agora chama `engine.dispose()` após adicionar valores de enum, evitando que
+  conexões abertas antes da migração usem um enum obsoleto.
+
+**Como se manifesta / como testar:** concluir uma OS `finalizada` deve gravar
+`concluida` e registrar a `data_saida`, sem erro. Se o banco ainda não tiver o
+rótulo, o próprio endpoint o cria em tempo de execução.

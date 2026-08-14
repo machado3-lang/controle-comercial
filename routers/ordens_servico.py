@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
 from datetime import datetime, date
-from sqlalchemy import or_, and_
+from sqlalchemy import or_, and_, text as sa_text
 from sqlalchemy.orm import selectinload
 
 from database import get_db
@@ -42,6 +42,39 @@ _FORMAS_SEM_NOTA = {
     "pix", "dinheiro", "cartao_credito", "cartao_debito", "avista",
     "aprazo", "garantia",
 }
+
+
+def _garantir_valor_enum(tipo_enum, valor):
+    """Garante que 'valor' exista no tipo ENUM nativo do PostgreSQL.
+
+    Resolve o erro 'invalid input value for enum' ao concluir uma OS cujo
+    label (ex.: 'concluida') ainda nao foi adicionado ao banco (cenarios de
+    restore de dump, migracao que nao rodou ou pool de conexoes que cacheou o
+    enum antigo). Usa uma conexao autocommit separada, pois ALTER TYPE ADD
+    VALUE nao pode rodar dentro de uma transacao.
+    """
+    try:
+        from database import engine
+        if engine.dialect.name != "postgresql":
+            return
+        raw = engine.connect()
+        conn = raw.execution_options(isolation_level="AUTOCOMMIT")
+        try:
+            existe = conn.execute(
+                sa_text(
+                    "SELECT 1 FROM pg_enum WHERE enumtypid = "
+                    "(SELECT oid FROM pg_type WHERE typname=:t) AND enumlabel=:v"
+                ).bindparams(t=tipo_enum, v=valor)
+            ).scalar()
+            if not existe:
+                conn.execute(
+                    sa_text(f"ALTER TYPE {tipo_enum} ADD VALUE IF NOT EXISTS '{valor}'")
+                )
+        finally:
+            conn.close()
+            raw.close()
+    except Exception as e:
+        print(f"[ENUM] nao foi possivel garantir {tipo_enum}.{valor}: {e}")
 
 
 def _normalizar_status(valor):
@@ -871,6 +904,20 @@ def atualizar_status_ordem(
 
     if ordem.status == status and not (status == StatusOS.CONCLUIDA and data_saida):
         return JSONResponse({"ok": True, "status": status.value, "redirect": f"/ordens-servico/{ordem_id}"})
+
+    # Garante que o label do enum existe no banco antes de gravar (ex.:
+    # 'concluida'), evitando o erro 'invalid input value for enum' ao concluir.
+    if status == StatusOS.CONCLUIDA:
+        _garantir_valor_enum("statusos", "concluida")
+        # Libera a conexao atual (pode ter cacheado o enum antigo) e forca
+        # reconexao para enxergar o novo label.
+        try:
+            db.rollback()
+            from database import engine
+            engine.dispose()
+        except Exception:
+            pass
+
     ordem.status = status
     # Ao concluir (entregar), registra a data de saida: a informada ou hoje.
     if status == StatusOS.CONCLUIDA:
@@ -883,10 +930,20 @@ def atualizar_status_ordem(
         elif not ordem.data_saida:
             ordem.data_saida = date.today()
     ordem.updated_at = datetime.now()
-    db.commit()
-    registrar_auditoria(
-        db, request.session.get("user_id"), "alterar_status",
-        "ordem_servico", ordem_id, f"Status -> {status.value}",
-        request.client.host if request.client else None
-    )
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        return JSONResponse(
+            {"erro": f"Não foi possível atualizar o status da OS: {str(e)}"},
+            status_code=500,
+        )
+    try:
+        registrar_auditoria(
+            db, request.session.get("user_id"), "alterar_status",
+            "ordem_servico", ordem_id, f"Status -> {status.value}",
+            request.client.host if request.client else None
+        )
+    except Exception:
+        pass
     return JSONResponse({"ok": True, "status": status.value, "redirect": f"/ordens-servico/{ordem_id}"})

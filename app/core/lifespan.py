@@ -71,6 +71,15 @@ def run_migrations():
     except Exception as e:
         print(f"[MIGRATION] Warning: could not migrate enum values: {e}")
 
+    # Apos ALTER TYPE ADD VALUE, as conexoes ja abertas no pool podem manter
+    # cache do enum antigo e falhar com 'invalid input value for enum' ao
+    # gravar um valor novo (ex.: 'concluida'). Descarta o pool para forcar
+    # reconexao limpa nas proximas requisicoes.
+    try:
+        engine.dispose()
+    except Exception:
+        pass
+
     # Auto-migrate: adiciona unique constraints que faltam
     try:
         _add_unique_constraints()
