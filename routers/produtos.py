@@ -25,7 +25,12 @@ from services.audit import registrar_auditoria
 
 logger = logging.getLogger(__name__)
 
-UNIDADES_MEDIDA = ["cm", "m", "mm", "UN", "KG", "L"]
+UNIDADES_MEDIDA = ["cm", "m", "mm", "in"]
+
+UNIDADES_COMERCIAIS = [
+    "UN", "PC", "PÇ", "CX", "Cx", "KG", "G", "L", "ML",
+    "M", "M2", "M3", "PAR", "KIT", "FD", "ROL", "MIL", "DZ",
+]
 
 
 def _normalizar_sku_para_numero(sku):
@@ -199,7 +204,7 @@ def novo_produto_form(request: Request, db: Session = Depends(get_db)):
     itens_disponiveis = db.query(Produto).options(selectinload(Produto.variacoes)).order_by(Produto.nome).all()
     itens_json = [{"id": i.id, "nome": i.nome, "preco": float(i.preco or 0), "tipo": i.tipo, "descricao": i.descricao or i.nome} for i in itens_disponiveis if i.tipo in ('produto', 'servico')]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
-    return request.app.state.templates.TemplateResponse(request, "produtos/form.html", {"request": request, "produto": None, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "editar": False, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "proximo_codigo": _proximo_codigo_produto(db), "fornecedores_json": fornecedores_json})
+    return request.app.state.templates.TemplateResponse(request, "produtos/form.html", {"request": request, "produto": None, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "UNIDADES_COMERCIAIS": UNIDADES_COMERCIAIS, "editar": False, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "proximo_codigo": _proximo_codigo_produto(db), "fornecedores_json": fornecedores_json})
 
 
 @router.post("/novo")
@@ -360,7 +365,7 @@ def editar_produto(request: Request, produto_id: int, db: Session = Depends(get_
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     return request.app.state.templates.TemplateResponse(request, 
         "produtos/form.html",
-        {"request": request, "produto": produto, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "editar": True, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "fornecedores_json": fornecedores_json}
+        {"request": request, "produto": produto, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "UNIDADES_COMERCIAIS": UNIDADES_COMERCIAIS, "editar": True, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "fornecedores_json": fornecedores_json}
     )
 
 
