@@ -40,7 +40,7 @@ C:\Controle de Serviços\
 │   └── sicoob.py              # Integração Sicoob API Cobrança
 ├── services/
 │   ├── nfe_distribuicao.py    # Consulta SEFAZ (distDFeInt, consChNFe)
-│   ├── nfe_notaas.py          # Emissão NFe via API NotaAs
+│   ├── nfe_notaas.py          # Emissão NFe via API NotaAs (payload, frete, CC-e, cancelar)
 │   ├── nfe_danfe.py           # Geração DANFE PDF local
 │   ├── nfse_betha.py          # Emissão NFSe + ADN (Ambiente de Dados Nacional)
 │   ├── nfse_pdf.py            # Geração PDF NFSe + relatório contas
@@ -331,13 +331,20 @@ Dados da empresa para impressão, NFe, NFSe e integrações:
 - Exclusão protegida por senha admin (retorno JSON)
 
 ### NFe (`/nfe/`)
-- **Emissão**: via API NotaAs (a partir de pedido, OS ou avulsa)
+- **Emissão**: via API NotaAs (a partir de pedido, OS, consolidação ou avulsa)
 - **Distribuição SEFAZ**: busca NFe por período (recebidas + emitidas via consChNFe)
 - **Importação**: por chave de acesso (44 dígitos) ou upload de XML
 - **Cache local**: consultas seguintes carregam do banco sem bater na SEFAZ
 - **DANFE**: PDF gerado localmente com brazilfiscalreport ou baixado do NotaAs
 - **Certificado A1**: upload pelo formulário de configuração, armazenado em base64
 - **Webhook**: NotaAs atualiza status automaticamente
+- **Modalidade de Frete**: selecionável no rascunho avulso/edição e enviada à NotaAs
+  em `transporte.modalidadeFrete` (0=CIF, 1=FOB, 2=Terceiros, 3=Próprio Remetente,
+  4=Próprio Destinatário, 9=Sem Transporte). Persistida em `NFe.modalidade_frete`.
+- **Carta de Correção Eletrônica (CC-e)**: em NF-e autorizada (`status=issued` + `invoice_id`),
+  via `GET/POST /nfe/{id}/carta-correcao` → `POST /nfe/invoices/{id}/correcao` (NotaAs).
+  Histórico persistido em `nfe_cartas_correcao` (sequência, protocolo, status).
+- **Documentação dedicada**: ver [`DOCUMENTACAO_NFE.md`](DOCUMENTACAO_NFE.md)
 
 ### NFSe (`/nfse/`)
 - **Emissão**: via API Betha (Dourados-MS)
