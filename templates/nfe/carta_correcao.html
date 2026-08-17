@@ -1,0 +1,73 @@
+{% extends "base.html" %}
+{% block title %}Carta de Correção - NFe {{ nfe.numero }}{% endblock %}
+{% block content %}
+<div class="glass-card mb-6">
+    <div class="p-4 border-b border-slate-800/60 flex items-center justify-between">
+        <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold"><i data-lucide="file-edit" class="w-5 h-5 inline me-2"></i> Carta de Correção Eletrônica — NFe #{{ nfe.numero }}</h4>
+        <a href="/nfe/{{ nfe.id }}" class="flex items-center px-3 py-2 text-sm text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar</a>
+    </div>
+    <div class="p-4">
+        {% if mensagem_retorno %}
+        <div class="mb-4 p-3 bg-slate-800/40 rounded-xl">
+            <p class="text-xs text-slate-500">Mensagem de Retorno</p>
+            <pre class="text-xs text-slate-300 mt-1 whitespace-pre-wrap">{{ mensagem_retorno }}</pre>
+        </div>
+        {% endif %}
+
+        <div class="p-3 bg-slate-800/40 rounded-xl mb-4">
+            <p class="text-xs text-slate-500">Chave de Acesso</p>
+            <p class="text-xs text-slate-300 break-all">{{ nfe.chave_acesso or 'Aguardando emissão...' }}</p>
+        </div>
+
+        <div class="border border-slate-800/60 rounded-xl p-4 mb-6">
+            <h5 class="text-amber-400 font-semibold mb-3">Nova Carta de Correção (sequência {{ proxima_seq }})</h5>
+            <p class="text-xs text-slate-500 mb-3">A correção deve ter entre 15 e 1000 caracteres e não pode alterar impostos, emitente/destinatário ou data de saída.</p>
+            <form method="post" action="/nfe/{{ nfe.id }}/carta-correcao">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <textarea name="correcao" rows="5" required minlength="15" maxlength="1000"
+                          class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-amber-500/50"
+                          placeholder="Ex: Alteração do campo GTIN (cEAN) dos itens da nota: Item 1 para 7898976161169."></textarea>
+                <div class="flex justify-end mt-3">
+                    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10">
+                        <i data-lucide="send" class="w-4 h-4 me-1"></i> Enviar Carta de Correção
+                    </button>
+                </div>
+            </form>
+        </div>
+
+        {% if cartas %}
+        <h5 class="text-emerald-400 font-semibold mb-3">Histórico de Cartas de Correção</h5>
+        <div class="overflow-x-auto">
+            <table class="w-full divide-y divide-slate-800/60">
+                <thead class="bg-slate-950/50">
+                    <tr>
+                        <th class="px-3 py-2 text-xs font-semibold text-cyan-400 uppercase">Seq.</th>
+                        <th class="px-3 py-2 text-xs font-semibold text-cyan-400 uppercase">Data/Hora</th>
+                        <th class="px-3 py-2 text-xs font-semibold text-cyan-400 uppercase">Correção</th>
+                        <th class="px-3 py-2 text-xs font-semibold text-cyan-400 uppercase">Protocolo</th>
+                        <th class="px-3 py-2 text-xs font-semibold text-cyan-400 uppercase">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                    {% for cc in cartas %}
+                    <tr>
+                        <td class="px-3 py-2 text-sm text-slate-100">{{ cc.sequencia }}</td>
+                        <td class="px-3 py-2 text-sm text-slate-300">{{ cc.data_hora.strftime('%d/%m/%Y %H:%M') if cc.data_hora else '-' }}</td>
+                        <td class="px-3 py-2 text-sm text-slate-100">{{ cc.correcao }}</td>
+                        <td class="px-3 py-2 text-sm text-slate-300">{{ cc.protocolo or '-' }}</td>
+                        <td class="px-3 py-2 text-sm">
+                            {% if cc.status == 'issued' %}<span class="px-2 py-1 text-xs font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded-full">Registrada</span>
+                            {% elif cc.status == 'error' %}<span class="px-2 py-1 text-xs font-medium bg-rose-950/50 text-rose-400 border border-rose-800/50 rounded-full">Erro</span>
+                            {% else %}<span class="px-2 py-1 text-xs font-medium bg-amber-950/50 text-amber-400 border border-amber-800/50 rounded-full">{{ cc.status }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p class="text-sm text-slate-500">Nenhuma Carta de Correção enviada para esta NF-e.</p>
+        {% endif %}
+    </div>
+</div>
+{% endblock %}

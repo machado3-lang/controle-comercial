@@ -72,6 +72,17 @@
                                 <option value="9" {{ 'selected' if saved_indicador_presenca == '9' or (nfe and nfe.indicador_presenca == 9) }}>9 - Não presencial, outros</option>
                             </select>
                         </div>
+                        <div class="col-span-1">
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Modalidade de Frete</label>
+                            <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="modalidade_frete" id="inputModalidadeFrete">
+                                <option value="0" {{ 'selected' if saved_modalidade_frete == 0 }}>0 - Remetente (CIF)</option>
+                                <option value="1" {{ 'selected' if saved_modalidade_frete == 1 }}>1 - Destinatário (FOB)</option>
+                                <option value="2" {{ 'selected' if saved_modalidade_frete == 2 }}>2 - Terceiros</option>
+                                <option value="3" {{ 'selected' if saved_modalidade_frete == 3 }}>3 - Próprio Remetente</option>
+                                <option value="4" {{ 'selected' if saved_modalidade_frete == 4 }}>4 - Próprio Destinatário</option>
+                                <option value="9" {{ 'selected' if (saved_modalidade_frete is none or saved_modalidade_frete == 9) }}>9 - Sem Transporte</option>
+                            </select>
+                        </div>
                         <div>
                             <label class="block text-xs font-medium text-cyan-400 mb-1">Data Emissão</label>
                             <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="data_emissao" id="inputDataEmissao" value="{{ saved_data_emissao or '' }}">
@@ -200,8 +211,8 @@
             <div class="flex items-start gap-3 mb-4">
                 <div class="p-2 bg-amber-950/40 rounded-lg">
                     <i data-lucide="alert-triangle" class="w-6 h-6 text-amber-400"></i>
-                </div>
-                <div>
+                        </div>
+                        <div>
                     <h5 class="text-amber-300 font-semibold text-lg">Estoque Negativo</h5>
                     <p class="text-slate-300 text-sm mt-1" id="modalEstoqueTexto">Estoque negativo (0). Deseja inserir o item mesmo assim?</p>
                 </div>

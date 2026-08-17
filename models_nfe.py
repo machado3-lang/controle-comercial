@@ -29,6 +29,10 @@ class NFe(Base):
     indicador_presenca = Column(Integer, default=1)
     forma_pagamento = Column(String(20), nullable=True)  # dinheiro/pix/boleto/cartao_credito/...
     observacoes = Column(Text, nullable=True)  # informações complementares (infCpl do XML)
+    # Modalidade de frete (grupo transp/modFrete da NF-e):
+    # 0=CIF(Remetente) 1=FOB(Destinatário) 2=Terceiros 3=Próprio remetente
+    # 4=Próprio destinatário 9=Sem ocorrência de transporte
+    modalidade_frete = Column(Integer, default=9, nullable=False)
     valor_total = Column(Numeric(12, 2), default=0)
     base_calculo = Column(Numeric(12, 2), default=0)
     valor_icms = Column(Numeric(12, 2), default=0)
@@ -46,6 +50,7 @@ class NFe(Base):
     cliente = relationship("Cliente", back_populates="nfes")
     consolidacao = relationship("PedidoConsolidado", back_populates="nfes")
     itens = relationship("NFeItem", back_populates="nfe", cascade="all, delete-orphan")
+    cartas_correcao = relationship("NFeCartaCorrecao", back_populates="nfe", cascade="all, delete-orphan")
 
 
 class NFeItem(Base):
@@ -66,6 +71,25 @@ class NFeItem(Base):
     nfe = relationship("NFe", back_populates="itens")
     produto = relationship("Produto", back_populates="itens_nfe")
     variacao = relationship("ProdutoVariacao")
+
+
+class NFeCartaCorrecao(Base):
+    """Carta de Correção Eletrônica (CC-e) enviada à SEFAZ via NotaAs.
+
+    Cada registro é uma correção síncrona aplicada a uma NF-e já autorizada
+    (status='issued'). A sequência (1, 2, 3...) é incremental por nota.
+    """
+    __tablename__ = "nfe_cartas_correcao"
+    id = Column(Integer, primary_key=True)
+    nfe_id = Column(Integer, ForeignKey("nfe.id"), nullable=False, index=True)
+    sequencia = Column(Integer, nullable=False)
+    correcao = Column(Text, nullable=False)
+    protocolo = Column(String(50), nullable=True)
+    chave_acesso = Column(String(50), nullable=True)
+    status = Column(String(20), default="pendente", index=True)  # pendente/issued/error
+    mensagem_retorno = Column(Text, nullable=True)
+    data_hora = Column(DateTime, default=datetime.now)
+    nfe = relationship("NFe", back_populates="cartas_correcao")
 
 
 class NFSe(Base):

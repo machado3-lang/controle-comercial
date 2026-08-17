@@ -31,6 +31,10 @@
                 <p class="text-sm text-slate-100">{{ nfe.cfop or '-' }}</p>
             </div>
             <div class="p-3 bg-slate-800/40 rounded-xl">
+                <p class="text-xs text-slate-500">Frete</p>
+                <p class="text-sm text-slate-100">{{ FRETE_LABELS.get(nfe.modalidade_frete, '9 - Sem ocorrência de Transporte') }}</p>
+            </div>
+            <div class="p-3 bg-slate-800/40 rounded-xl">
                 <p class="text-xs text-slate-500">Chave de Acesso</p>
                 <p class="text-xs text-slate-300 break-all">{{ nfe.chave_acesso or 'Aguardando emissão...' }}</p>
             </div>
@@ -150,6 +154,9 @@
             <button type="button" class="flex items-center px-3 py-2 text-sm text-rose-400 border border-rose-800/50 rounded-xl hover:bg-rose-950/30 transition" onclick="abrirCancelamento()">
                 <i data-lucide="x-circle" class="w-4 h-4 me-1"></i> Cancelar
             </button>
+            <a href="/nfe/{{ nfe.id }}/carta-correcao" class="flex items-center px-3 py-2 text-sm text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition">
+                <i data-lucide="file-edit" class="w-4 h-4 me-1"></i> Carta de Correção
+            </a>
             {% endif %}
             {% if nfe.status == 'issued' and nfe.origem == 'importada' and not nfe.invoice_id %}
             <a href="/nfe/{{ nfe.id }}/sincronizar" class="flex items-center px-3 py-2 text-sm text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition">
@@ -157,6 +164,38 @@
             </a>
             {% endif %}
         </div>
+
+        {% if cartas %}
+        <h5 class="text-amber-400 font-semibold mb-3 mt-5"><i data-lucide="file-edit" class="w-4 h-4 inline me-1"></i> Cartas de Correção</h5>
+        <div class="overflow-x-auto mb-2">
+            <table class="w-full divide-y divide-slate-800/60">
+                <thead class="bg-slate-950/50">
+                    <tr>
+                        <th class="px-3 py-2 text-xs font-semibold text-cyan-400 uppercase">Seq.</th>
+                        <th class="px-3 py-2 text-xs font-semibold text-cyan-400 uppercase">Data/Hora</th>
+                        <th class="px-3 py-2 text-xs font-semibold text-cyan-400 uppercase">Correção</th>
+                        <th class="px-3 py-2 text-xs font-semibold text-cyan-400 uppercase">Protocolo</th>
+                        <th class="px-3 py-2 text-xs font-semibold text-cyan-400 uppercase">Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-800/60">
+                    {% for cc in cartas %}
+                    <tr>
+                        <td class="px-3 py-2 text-sm text-slate-100">{{ cc.sequencia }}</td>
+                        <td class="px-3 py-2 text-sm text-slate-300">{{ cc.data_hora.strftime('%d/%m/%Y %H:%M') if cc.data_hora else '-' }}</td>
+                        <td class="px-3 py-2 text-sm text-slate-100">{{ cc.correcao }}</td>
+                        <td class="px-3 py-2 text-sm text-slate-300">{{ cc.protocolo or '-' }}</td>
+                        <td class="px-3 py-2 text-sm">
+                            {% if cc.status == 'issued' %}<span class="px-2 py-1 text-xs font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded-full">Registrada</span>
+                            {% elif cc.status == 'error' %}<span class="px-2 py-1 text-xs font-medium bg-rose-950/50 text-rose-400 border border-rose-800/50 rounded-full">Erro</span>
+                            {% else %}<span class="px-2 py-1 text-xs font-medium bg-amber-950/50 text-amber-400 border border-amber-800/50 rounded-full">{{ cc.status }}</span>{% endif %}
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
     </div>
 </div>
 

@@ -14,12 +14,12 @@ from database import get_db
 from models import (Cliente, Empresa, PedidoVenda, PedidoVendaItem,
                     StatusPedido, Produto, OrdemServico, CfopNatureza,
                     ContaReceber, PedidoConsolidado, PedidoConsolidadoItem)
-from models_nfe import NFe, NFeItem, NFSe, NFSeItem
+from models_nfe import NFe, NFeItem, NFSe, NFSeItem, NFeCartaCorrecao
 from services.nfe_notaas import (
     emitir_nfe, consultar_status, baixar_pdf, baixar_xml,
     cancelar_nfe, montar_payload_nfe, explodir_itens,
     explodir_itens_consolidacao, consultar_municipios,
-    _limpar_doc
+    carta_correcao_nfe, _limpar_doc
 )
 
 logger = logging.getLogger(__name__)
@@ -121,6 +121,16 @@ STATUS_LABELS = {
     "issued": "Autorizada",
     "error": "Erro",
     "cancelled": "Cancelada",
+}
+
+# Modalidade de frete (modFrete) — espelha o padrão do Bling/SEFAZ.
+FRETE_LABELS = {
+    0: "0 - Frete por conta do Remetente (CIF)",
+    1: "1 - Frete por conta do Destinatário (FOB)",
+    2: "2 - Frete por conta de Terceiros",
+    3: "3 - Transporte Próprio do Remetente",
+    4: "4 - Transporte Próprio do Destinatário",
+    9: "9 - Sem ocorrência de Transporte",
 }
 
 
@@ -1093,6 +1103,7 @@ def emitir_avulsa_form(
     saved_indicador_presenca = request.session.pop("nfe_avulsa_indicador_presenca", None)
     saved_observacoes = request.session.pop("nfe_avulsa_observacoes", None)
     saved_forma_pagamento = request.session.pop("nfe_avulsa_forma_pagamento", None)
+    saved_modalidade_frete = request.session.pop("nfe_avulsa_modalidade_frete", None)
     erro_ie_cliente_id = request.session.pop("nfe_avulsa_erro_ie", None)
 
     return request.app.state.templates.TemplateResponse(request, 
@@ -1114,8 +1125,9 @@ def emitir_avulsa_form(
          "saved_finalidade": saved_finalidade,
          "saved_indicador_presenca": saved_indicador_presenca,
          "saved_observacoes": saved_observacoes,
-         "saved_forma_pagamento": saved_forma_pagamento,
-         "erro_ie_cliente_id": erro_ie_cliente_id}
+          "saved_forma_pagamento": saved_forma_pagamento,
+          "saved_modalidade_frete": saved_modalidade_frete,
+          "erro_ie_cliente_id": erro_ie_cliente_id}
     )
 
 
@@ -1149,6 +1161,7 @@ def emitir_avulsa_submit(
     primeiro_vencimento: str = Form(""),
     intervalo_dias: int = Form(30),
     observacoes: str = Form(""),
+    modalidade_frete: int = Form(9),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -1185,6 +1198,7 @@ def emitir_avulsa_submit(
         request.session["nfe_avulsa_finalidade"] = finalidade
         request.session["nfe_avulsa_indicador_presenca"] = indicador_presenca
         request.session["nfe_avulsa_observacoes"] = observacoes
+        request.session["nfe_avulsa_modalidade_frete"] = modalidade_frete
         return RedirectResponse(url="/nfe/emitir/avulsa", status_code=303)
 
     itens_nfe = []
@@ -1229,6 +1243,7 @@ def emitir_avulsa_submit(
             finalidade=finalidade,
             indicador_presenca=indicador_presenca,
             forma_pagamento=forma_pagamento or None,
+            modalidade_frete=modalidade_frete,
             observacoes=observacoes or None,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
@@ -1747,6 +1762,7 @@ def editar_nfe_form(request: Request, nfe_id: int, db: Session = Depends(get_db)
     request.session["nfe_avulsa_indicador_presenca"] = nfe.indicador_presenca
     request.session["nfe_avulsa_observacoes"] = nfe.observacoes or ""
     request.session["nfe_avulsa_forma_pagamento"] = nfe.forma_pagamento or ""
+    request.session["nfe_avulsa_modalidade_frete"] = nfe.modalidade_frete or 9
     return RedirectResponse(url=f"/nfe/emitir/avulsa?editar={nfe.id}", status_code=303)
 
 
@@ -1766,6 +1782,7 @@ def editar_nfe_submit(
     indicador_presenca: int = Form(1),
     forma_pagamento: str = Form(""),
     observacoes: str = Form(""),
+    modalidade_frete: int = Form(9),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -1808,6 +1825,7 @@ def editar_nfe_submit(
         request.session["nfe_avulsa_finalidade"] = finalidade
         request.session["nfe_avulsa_indicador_presenca"] = indicador_presenca
         request.session["nfe_avulsa_observacoes"] = observacoes
+        request.session["nfe_avulsa_modalidade_frete"] = modalidade_frete
         return RedirectResponse(url=f"/nfe/emitir/avulsa?editar={nfe_id}", status_code=303)
 
     itens_nfe = []
@@ -1856,6 +1874,7 @@ def editar_nfe_submit(
         nfe.indicador_presenca = indicador_presenca
         if forma_pagamento:
             nfe.forma_pagamento = forma_pagamento
+        nfe.modalidade_frete = modalidade_frete
         nfe.observacoes = observacoes or None
         db.flush()
 
@@ -2090,6 +2109,7 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
             forma_pagamento=forma_pag,
             duplicatas=duplicatas,
             observacoes=getattr(nfe, 'observacoes', None),
+            modalidade_frete=getattr(nfe, 'modalidade_frete', 9),
         )
 
         result = emitir_nfe(empresa, payload)
@@ -2213,8 +2233,10 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
         "nfe/detalhe.html",
         {"request": request, "nfe": nfe, "empresa": empresa,
          "STATUS_LABELS": STATUS_LABELS,
+         "FRETE_LABELS": FRETE_LABELS,
          "messages": _get_messages(request),
-         "cobranca": cobranca}
+         "cobranca": cobranca,
+         "cartas": nfe.cartas_correcao}
     )
 
 
@@ -2336,6 +2358,89 @@ def cancelar_nfe_view(
     except Exception as e:
         request.session["error"] = f"Erro ao cancelar NFe: {str(e)}"
     return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
+
+
+@router.get("/{nfe_id}/carta-correcao")
+def carta_correcao_form(request: Request, nfe_id: int, db: Session = Depends(get_db)):
+    """Exibe o formulário e o histórico de Cartas de Correção da NF-e."""
+    empresa = db.query(Empresa).first()
+    nfe = db.query(NFe).options(joinedload(NFe.cartas_correcao)).filter(NFe.id == nfe_id).first()
+    if not nfe:
+        request.session["error"] = "NFe não encontrada"
+        return RedirectResponse(url="/nfe", status_code=303)
+    if nfe.status != "issued":
+        request.session["error"] = "Carta de Correção só é permitida em NF-e já autorizada (status issued)."
+        return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
+    if not nfe.invoice_id:
+        request.session["error"] = "NF-e sem invoiceId (emitida via NotaAs) não suporta Carta de Correção pela API."
+        return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
+    cartas = db.query(NFeCartaCorrecao).filter(
+        NFeCartaCorrecao.nfe_id == nfe_id
+    ).order_by(NFeCartaCorrecao.sequencia).all()
+    proxima_seq = (max((c.sequencia for c in cartas), default=0) + 1)
+    return request.app.state.templates.TemplateResponse(request,
+        "nfe/carta_correcao.html",
+        {"request": request, "nfe": nfe, "empresa": empresa, "cartas": cartas,
+         "proxima_seq": proxima_seq, "messages": _get_messages(request)}
+    )
+
+
+@router.post("/{nfe_id}/carta-correcao")
+def carta_correcao_submit(
+    request: Request, nfe_id: int, db: Session = Depends(get_db),
+    correcao: str = Form(...),
+):
+    """Envia uma Carta de Correção Eletrônica (CC-e) para a SEFAZ via NotaAs."""
+    empresa = db.query(Empresa).first()
+    nfe = db.query(NFe).filter(NFe.id == nfe_id).first()
+    if not nfe:
+        request.session["error"] = "NFe não encontrada"
+        return RedirectResponse(url="/nfe", status_code=303)
+    if nfe.status != "issued":
+        request.session["error"] = "Carta de Correção só é permitida em NF-e já autorizada."
+        return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
+    if not nfe.invoice_id:
+        request.session["error"] = "NF-e sem invoiceId não suporta Carta de Correção pela API."
+        return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
+    if not correcao or len(correcao.strip()) < 15:
+        request.session["error"] = "A correção deve ter no mínimo 15 caracteres."
+        return RedirectResponse(url=f"/nfe/{nfe_id}/carta-correcao", status_code=303)
+    if len(correcao) > 1000:
+        request.session["error"] = "A correção deve ter no máximo 1000 caracteres."
+        return RedirectResponse(url=f"/nfe/{nfe_id}/carta-correcao", status_code=303)
+
+    ultima_seq = db.query(NFeCartaCorrecao).filter(
+        NFeCartaCorrecao.nfe_id == nfe_id
+    ).order_by(NFeCartaCorrecao.sequencia.desc()).first()
+    sequencia = (ultima_seq.sequencia + 1) if ultima_seq else 1
+
+    try:
+        result = carta_correcao_nfe(empresa, nfe.invoice_id, correcao.strip())
+        cc = NFeCartaCorrecao(
+            nfe_id=nfe.id,
+            sequencia=sequencia,
+            correcao=correcao.strip(),
+            status="issued",
+            protocolo=result.get("protocolo") or result.get("nProt") or result.get("protocoloAutorizacao"),
+            chave_acesso=nfe.chave_acesso,
+            mensagem_retorno=json.dumps(result, ensure_ascii=False),
+        )
+        db.add(cc)
+        db.commit()
+        request.session["message"] = f"Carta de Correção #{sequencia} registrada com sucesso na SEFAZ!"
+    except Exception as e:
+        cc = NFeCartaCorrecao(
+            nfe_id=nfe.id,
+            sequencia=sequencia,
+            correcao=correcao.strip(),
+            status="error",
+            chave_acesso=nfe.chave_acesso,
+            mensagem_retorno=str(e),
+        )
+        db.add(cc)
+        db.commit()
+        request.session["error"] = f"Erro ao enviar Carta de Correção: {str(e)[:300]}"
+    return RedirectResponse(url=f"/nfe/{nfe_id}/carta-correcao", status_code=303)
 
 
 @router.get("/invoices/{invoice_id}/status")

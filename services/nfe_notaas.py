@@ -90,6 +90,19 @@ def cancelar_nfe(empresa: Empresa, invoice_id: str, motivo: str) -> dict:
     return resp.json()
 
 
+def carta_correcao_nfe(empresa: Empresa, invoice_id: str, correcao: str) -> dict:
+    """Envia uma Carta de Correção Eletrônica (CC-e) para uma NF-e autorizada.
+
+    Endpoint NotaAs: POST /nfe/invoices/{invoiceId}/correcao
+    O envio é síncrono (200 = registrada na SEFAZ). Sem retry: não é
+    idempotente e reenvios criariam CC-e duplicadas.
+    """
+    url = f"{API_BASE}/nfe/invoices/{invoice_id}/correcao"
+    payload = {"correcao": correcao}
+    resp = _http_retry("POST", url, empresa, json_body=payload, timeout=30, retries=False)
+    return resp.json()
+
+
 def montar_payload_nfe(
     empresa: Empresa,
     cliente,
@@ -106,6 +119,7 @@ def montar_payload_nfe(
     forma_pagamento: str = None,
     duplicatas: list = None,
     observacoes: str = None,
+    modalidade_frete: int = 9,
 ) -> dict:
     cfop = cfop or empresa.cfop_padrao or "5102"
     destino_operacao = 1
@@ -238,6 +252,17 @@ def montar_payload_nfe(
     inf_cpl_partes = []
     if observacoes and str(observacoes).strip():
         inf_cpl_partes.append(str(observacoes).strip())
+
+    # Modalidade de frete (grupo transp/modFrete). NotaAs aceita 0..9.
+    # 0=CIF(Remetente) 1=FOB(Destinatário) 2=Terceiros 3=Próprio remetente
+    # 4=Próprio destinatário 9=Sem ocorrência de transporte (padrão NotaAs).
+    try:
+        mod_frete = int(modalidade_frete if modalidade_frete is not None else 9)
+    except (ValueError, TypeError):
+        mod_frete = 9
+    if mod_frete not in (0, 1, 2, 3, 4, 9):
+        mod_frete = 9
+    payload["transporte"] = {"modalidadeFrete": mod_frete}
 
     # Tributos aproximados IBPT (Lei 12.741/2012)
     # Converte para float: as colunas Numeric vêm como Decimal e 'float * Decimal'
