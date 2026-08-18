@@ -261,6 +261,15 @@ function getStatusCor(situacao) {
     return 'amber';
 }
 
+// Converte ISO (AAAA-MM-DD) para DD/MM/AAAA na exibição; mantém '-' para vazio.
+// Usado apenas em texto (não no <input type="date"> do modal de alteração).
+function fmtData(val) {
+    if (val === null || val === undefined || val === '' || val === '-' || val === 'None' || val === 'null') return '-';
+    const m = String(val).match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (m) return m[3] + '/' + m[2] + '/' + m[1];
+    return val;
+}
+
 function carregarBoletos() { paginaAtual = 1; filtrar(filtroAtual); }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -335,15 +344,15 @@ function filtrar(situacao) {
             }
             tbody.innerHTML = data.boletos.map(b => {
                 const cor = getStatusCor(b.situacao);
-                const receb = b.dataRecebimento || '-';
+                const receb = fmtData(b.dataRecebimento);
                 return `
                 <tr>
                     <td class="px-4 py-3 text-sm text-slate-100">${b.seuNumero || '-'}</td>
                     <td class="px-4 py-3 text-sm text-cyan-300">${b.nossoNumero || '-'}</td>
-                    <td class="px-4 py-3 text-sm text-slate-300">${b.dataEmissao || '-'}</td>
+                    <td class="px-4 py-3 text-sm text-slate-300">${fmtData(b.dataEmissao)}</td>
                     <td class="px-4 py-3 text-sm text-emerald-300">${b.pagador?.nome || b.cliente || '-'}</td>
                     <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ ${parseFloat(b.valor || 0).toFixed(2)}</td>
-                    <td class="px-4 py-3 text-sm text-cyan-300">${b.dataVencimento || '-'}</td>
+                    <td class="px-4 py-3 text-sm text-cyan-300">${fmtData(b.dataVencimento)}</td>
                     <td class="px-4 py-3 text-sm ${b.dataRecebimento ? 'text-emerald-300' : 'text-slate-600'}">${receb}</td>
                     <td class="px-4 py-3 text-center"><span class="px-2 py-1 text-xs font-medium bg-${cor}-950/50 text-${cor}-400 border border-${cor}-800/50 rounded-full">${(b.situacao || 'pendente').toUpperCase()}</span></td>
 <td class="px-4 py-3 align-middle" style="min-width: 8rem;">
@@ -421,7 +430,7 @@ function carregarInadimplencia() {
                         <td class="px-4 py-3 text-sm text-cyan-300">${b.nossoNumero}</td>
                         <td class="px-4 py-3 text-sm text-emerald-300">${b.cliente}</td>
                         <td class="px-4 py-3 text-right text-sm text-emerald-400">R$ ${b.valor.toFixed(2)}</td>
-                        <td class="px-4 py-3 text-sm text-cyan-300">${b.dataVencimento}</td>
+                        <td class="px-4 py-3 text-sm text-cyan-300">${fmtData(b.dataVencimento)}</td>
                         <td class="px-4 py-3 text-sm text-rose-400">${b.diasVencido}</td>
                     </tr>
             `).join('');
@@ -574,7 +583,7 @@ function renderizarBoletosSicoob() {
                 <td class="px-4 py-3 text-sm text-slate-100">${b.cliente || '-'}</td>
                 <td class="px-4 py-3 text-sm text-slate-300">${b.cpfCnpj || '-'}</td>
                 <td class="px-4 py-3 text-right text-sm text-emerald-400 font-medium">R$ ${(b.valor || 0).toFixed(2)}</td>
-                <td class="px-4 py-3 text-sm text-cyan-300">${b.dataVencimento || '-'}</td>
+                <td class="px-4 py-3 text-sm text-cyan-300">${fmtData(b.dataVencimento)}</td>
                 <td class="px-4 py-3 text-sm text-cyan-300">${b.nossoNumero || '-'}</td>
                 <td class="px-4 py-3 text-center"><span class="px-2 py-1 text-xs font-medium bg-${sit.color}-950/50 text-${sit.color}-400 border border-${sit.color}-800/50 rounded-full">${sit.label}</span></td>
                 <td class="px-4 py-3 text-center">
