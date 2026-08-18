@@ -102,6 +102,11 @@ Cria um **rascunho** `NFSe` (`status="rascunho"`) com:
 > (e o avanço do ciclo) só ocorre em `routers/nfse.py::gerar_cobranca_nfse`, que cria
 > um `ContaReceber` com observação `Cobrança automática - assinatura #<id> (NFSe #<id>)`.
 
+> **Gotcha:** `gerar_cobranca_nfse` **recusa NFSe em `rascunho`** (`routers/nfse.py:1197`):
+> só é possível gerar a cobrança após **emitir/transmitir** a nota (status passa a
+> `autorizada`). Portanto o fluxo real é: gerar NFSe (rascunho) → revisar → **emitir** →
+> gerar cobrança. Tentar gerar cobrança de um rascunho retorna erro e não cria `ContaReceber`.
+
 ---
 
 ## 4. Cálculo do Próximo Vencimento (núcleo do alerta)
@@ -241,5 +246,10 @@ Alternativas (menos precisas):
 
 - Testes em `tests/test_assinaturas_vencimento.py` (ordenação, ajuste de dia, badge de janela)
   e `tests/test_assinaturas_vinculo_nfse.py` (geração de NFSe + cobrança + avanço de ciclo).
-- Alterações sensíveis (excluir assinatura/histórico) exigem confirmação de senha e gravam
+- `test_assinaturas_vinculo_nfse.py` cobre o vínculo `NFSe ↔ assinatura` e o fato de a cobrança
+  gerada a partir da NFSe usar o próximo vencimento da assinatura. **Corrigido** para simular a
+  emissão (`status="autorizada"`) antes de chamar `gerar_cobranca_nfse`, pois a rota recusa
+  NFSe em `rascunho` (ver gotcha na seção 3). Após a correção, os 5 testes de assinatura passam.
+- Alterações sensíveis (excluir assinatura/histórico, **marcar ciclo externo**) exigem confirmação
+  de senha e gravam
   em `audit`.
