@@ -83,7 +83,7 @@ def _normalizar_status(valor):
     banco armazena em minusculas, entao atribuir a string maiuscula direto
     quebra o INSERT/UPDATE (InvalidTextRepresentation)."""
     ALIASES = {
-        "CONCLUIDA": "FINALIZADA", "CONCLUIDO": "FINALIZADA",
+        "CONCLUIDA": "CONCLUIDA", "CONCLUIDO": "CONCLUIDA",
         "FECHADA": "FINALIZADA", "FECHADO": "FINALIZADA",
         "ABERTA": "ABERTA", "CANCELADA": "CANCELADA",
         "EM_ANDAMENTO": "EM_ANDAMENTO", "FINALIZADA": "FINALIZADA",
@@ -862,9 +862,11 @@ def atualizar_status_ordem(
     ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
     if not ordem:
         return JSONResponse({"erro": "OS não encontrada"}, status_code=404)
-    try:
-        status = StatusOS(novo_status)
-    except ValueError:
+    # Normaliza o valor vindo do formulario (pode chegar em minusculas ou
+    # maiusculas/legado) para o membro StatusOS correto. Nunca grava o NOME
+    # do enum (ex.: 'CONCLUIDA') nem um valor ausente no banco.
+    status = _normalizar_status(novo_status)
+    if status is None or not isinstance(status, StatusOS):
         return JSONResponse({"erro": "Status inválido"}, status_code=400)
 
     # Transicao de status invalida (ex.: concluida -> finalizada, ou reabrir cancelada)
