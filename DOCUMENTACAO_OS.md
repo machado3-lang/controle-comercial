@@ -319,35 +319,94 @@ status diretamente, sem validar o fluxo.
 
 ---
 
-## 8. Bug corrigido: "Erro ao atualizar Status" ao concluir uma OS `finalizada`
+## 8. Bug corrigido: HTTP 500 ao concluir (entregar) uma OS — `invalid input value for enum statusos: "CONCLUIDA"`
 
-Ao clicar em **Concluir (Entregar)** numa OS que já estava `finalizada`, o
-frontend exibia **"Erro ao atualizar Status"** e a OS não era concluída.
+Ao clicar em **Concluir (Entregar)**, o `POST /ordens-servico/{id}/status`
+falhava com **HTTP 500** e a mensagem:
 
-**Causa raiz:** o enum nativo do PostgreSQL (`statusos`) não possuía o rótulo
-`concluida` (ou o *connection pool* da aplicação ainda mantinha em cache a
-versão antiga do enum, anterior à auto-migração que adiciona `concluida`).
-O fluxo `finalizada → concluida` é válido e passava na guarda de transição,
-mas o `db.commit()` falhava com `invalid input value for enum statusos:
-"concluida"` → **HTTP 500** → o `fetch` caía no `else` do JS e mostrava a
-mensagem genérica.
+```
+(psycopg2.errors.InvalidTextRepresentation) invalid input value for enum statusos: "CONCLUIDA"
+```
 
-**Correção (`routers/ordens_servico.py`):**
-- Novo helper `_garantir_valor_enum(tipo, valor)`: antes de gravar o status
-  `concluida`, ele confere se o rótulo existe no tipo `statusos` e, se não
-  existir, executa `ALTER TYPE statusos ADD VALUE IF NOT EXISTS 'concluida'`
-  numa conexão *autocommit* separada (o `ADD VALUE` não pode rodar dentro de
-  transação). Em seguida faz `db.rollback()` + `engine.dispose()` para liberar
-  a conexão atual (que pode ter cacheado o enum antigo) e forçar uma
-  reconexão limpa na gravação.
-- O `db.commit()` do status agora está envolto em `try/except`: em caso de
-  falha, o endpoint retorna `{"erro": "Não foi possível atualizar o status da
-  OS: <detalhe>"}` (JSON, 500) em vez de um 500 silencioso — assim o JS mostra
-  a **causa real** em vez da mensagem genérica.
-- A auto-migração de startup (`app/core/lifespan.py`, `_add_missing_enum_values`)
-  agora chama `engine.dispose()` após adicionar valores de enum, evitando que
-  conexões abertas antes da migração usem um enum obsoleto.
+### 8.1 Causa raiz (definitiva)
 
-**Como se manifesta / como testar:** concluir uma OS `finalizada` deve gravar
-`concluida` e registrar a `data_saida`, sem erro. Se o banco ainda não tiver o
-rótulo, o próprio endpoint o cria em tempo de execução.
+O modelo define `StatusOS` como `Enum(str)` com **nome** e **valor** distintos:
+
+```python
+class StatusOS(str, enum.Enum):
+    ABERTA = "aberta"
+    EM_ANDAMENTO = "em_andamento"
+    FINALIZADA = "finalizada"
+    CONCLUIDA = "concluida"      # nome="CONCLUIDA", valor="concluida"
+    CANCELADA = "cancelada"
+```
+
+A coluna usa `Enum(StatusOS, name="statusos", native_enum=True)`. Com
+`native_enum=True`, o SQLAlchemy **envia o NOME do membro** para o banco
+(`CONCLUIDA`), **não o valor** (`concluida`). Isso foi confirmado
+empiricamente: ao gravar `ordem.status = StatusOS.CONCLUIDA`, o parâmetro
+vinculado é `status='CONCLUIDA'`.
+
+O tipo enum nativo do PostgreSQL (`statusos`) foi criado pela migration inicial
+com os rótulos = **nomes** (`ABERTA`, `EM_ANDAMENTO`, `FINALIZADA`,
+`CANCELADA`). Por isso os 4 estados originais funcionavam: o nome enviado
+(`FINALIZADA`, etc.) batia com o rótulo existente.
+
+O membro `CONCLUIDA` foi adicionado **depois**, no modelo. Os helpers de
+auto-migração (`_add_missing_enum_values` e `_garantir_valor_enum`) inseriam
+apenas o **valor** (`concluida`) como rótulo — nunca o **nome** (`CONCLUIDA`).
+Como o SQLAlchemy envia o nome, o banco de produção não tinha o rótulo
+`CONCLUIDA` e rejeitava o `UPDATE` → **HTTP 500**. Os outros estados não
+quebravam justamente porque seus rótulos-nome já existiam na criação.
+
+Resumo do desencontro:
+
+| Membro            | Nome enviado pelo SQLAlchemy | Rótulo no banco (produção) | Resultado |
+|-------------------|------------------------------|----------------------------|-----------|
+| `ABERTA`          | `ABERTA`                     | existe (migration)         | OK        |
+| `EM_ANDAMENTO`    | `EM_ANDAMENTO`               | existe (migration)         | OK        |
+| `FINALIZADA`      | `FINALIZADA`                 | existe (migration)         | OK        |
+| `CONCLUIDA`       | `CONCLUIDA`                  | **FALTAVA** (só havia `concluida`) | **500** |
+| `CANCELADA`       | `CANCELADA`                  | existe (migration)         | OK        |
+
+### 8.2 Correção (commit `01c4bf5`)
+
+O ponto-chave é garantir que o **rótulo = NOME do membro** exista no enum
+nativo (e, por segurança, também o valor).
+
+**`app/core/lifespan.py` — `_add_missing_enum_values()` (startup):**
+- Agora itera cada membro do enum e insere **nome E valor** como rótulos:
+  `ALTER TYPE <tipo> ADD VALUE IF NOT EXISTS '<nome>'` e
+  `... '<valor>'`. Antes inseria só o valor.
+- Isso cobre `CONCLUIDA` (e qualquer membro adicionado futuramente) no
+  próprio *startup* da aplicação.
+
+**`routers/ordens_servico.py` — `_garantir_valor_enum` + endpoint `/status`:**
+- Antes de gravar, o endpoint garante **nome e valor** do status sendo escrito:
+  ```python
+  _garantir_valor_enum("statusos", status.name)
+  _garantir_valor_enum("statusos", status.value)
+  ```
+- Em seguida faz `db.rollback()` + `engine.dispose()` para liberar a conexão
+  atual (que pode ter cacheado a definição antiga do enum — o PostgreSQL
+  *cacheia* o enum por conexão) e forçar uma reconexão limpa na gravação.
+- O `db.commit()` continua envolto em `try/except`, retornando
+  `{"erro": "Não foi possível atualizar o status da OS: <detalhe>"}` (JSON, 500)
+  para o JS exibir a causa real.
+
+> Nota sobre cache de enum no PostgreSQL: conexões abertas antes de um
+> `ALTER TYPE ... ADD VALUE` mantêm a definição antiga do enum até serem
+> fechadas. Por isso o `engine.dispose()` (que zera o pool) é essencial — ele
+> obriga as próximas requisições a abrirem conexões novas que enxergam os
+> rótulos recém-adicionados.
+
+### 8.3 Como testar
+
+1. Concluir (entregar) uma OS `finalizada` → grava `StatusOS.CONCLUIDA`,
+   registra `data_saida` e não retorna erro.
+2. Se o rótulo ainda não existir no banco, o próprio endpoint o cria em tempo
+   de execução (e o `dispose()` garante que a gravação use uma conexão atualizada).
+3. `SELECT enumlabel FROM pg_enum WHERE enumtypid = (SELECT oid FROM pg_type
+   WHERE typname='statusos')` deve listar `ABERTA`, `EM_ANDAMENTO`,
+   `FINALIZADA`, `CONCLUIDA`, `CANCELADA` (e os valores, se presentes).
+
