@@ -380,8 +380,16 @@ def _add_missing_enum_values():
                 if not type_name or type_name not in existing_enums:
                     continue
                 existing_labels = set(existing_enums[type_name].get("labels", []))
+                # O SQLAlchemy, com native_enum=True, envia o NOME do membro
+                # (ex.: 'CONCLUIDA'), nao o seu valor (ex.: 'concluida'). Por isso
+                # garantimos que AMBOS (nome e valor) existam como rotulos, senao o
+                # INSERT/UPDATE falha com 'invalid input value for enum'.
+                candidatos = []
                 for member in enum_class:
-                    val = member.value if hasattr(member, "value") else str(member)
+                    candidatos.append(member.name)
+                    if hasattr(member, "value"):
+                        candidatos.append(str(member.value))
+                for val in candidatos:
                     if val in existing_labels:
                         continue
                     # Valor vem do modelo (controlado), mas sanitizamos por defesa.

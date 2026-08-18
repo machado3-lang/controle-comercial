@@ -907,18 +907,20 @@ def atualizar_status_ordem(
     if ordem.status == status and not (status == StatusOS.CONCLUIDA and data_saida):
         return JSONResponse({"ok": True, "status": status.value, "redirect": f"/ordens-servico/{ordem_id}"})
 
-    # Garante que o label do enum existe no banco antes de gravar (ex.:
-    # 'concluida'), evitando o erro 'invalid input value for enum' ao concluir.
-    if status == StatusOS.CONCLUIDA:
-        _garantir_valor_enum("statusos", "concluida")
-        # Libera a conexao atual (pode ter cacheado o enum antigo) e forca
-        # reconexao para enxergar o novo label.
-        try:
-            db.rollback()
-            from database import engine
-            engine.dispose()
-        except Exception:
-            pass
+    # Garante que o rotulo do enum existe no banco antes de gravar, evitando o
+    # erro 'invalid input value for enum'. O SQLAlchemy com native_enum=True
+    # envia o NOME do membro (ex.: 'CONCLUIDA'), entao garantimos nome E valor.
+    # Isso cobre o caso em que o rotulo ainda nao existe no banco (sem redeploy).
+    _garantir_valor_enum("statusos", status.name)
+    _garantir_valor_enum("statusos", status.value)
+    # Libera a conexao atual (pode ter cacheado o enum antigo) e forca
+    # reconexao para enxergar o novo label.
+    try:
+        db.rollback()
+        from database import engine
+        engine.dispose()
+    except Exception:
+        pass
 
     ordem.status = status
     # Ao concluir (entregar), registra a data de saida: a informada ou hoje.
