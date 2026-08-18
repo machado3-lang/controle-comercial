@@ -42,6 +42,10 @@ async def test_gerar_nfse_vincula_assinatura_e_cobranca_usa_vencimento(db_sessio
     # O vinculo foi estabelecido
     assert nfse.assinatura_id == a.id
 
+    # A rota de cobranca recusa NFSe em rascunho; simula a emissao (status apos transmissao)
+    nfse.status = "autorizada"
+    db_session.commit()
+
     # Vencimento esperado da PRIMEIRA cobranca (ainda nao ha conta gerada)
     esperado = proximo_vencimento_para_cobranca(db_session, a)
 
@@ -66,6 +70,9 @@ async def test_gerar_nfse_vincula_assinatura_e_cobranca_usa_vencimento(db_sessio
     nfse2 = db_session.query(NFSe).filter(
         NFSe.cliente_id == cliente.id, NFSe.origem == "assinatura"
     ).order_by(NFSe.id.desc()).first()
+    # Simula a emissao da segunda NFSe antes de gerar a cobranca
+    nfse2.status = "autorizada"
+    db_session.commit()
     req4 = _FakeRequest()
     gerar_cobranca_nfse(req4, nfse2.id, db_session, num_parcelas=1, primeiro_vencimento="", intervalo_dias=30)
 
