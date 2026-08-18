@@ -94,7 +94,10 @@
             </label>
         </div>
         {% if editavel %}
-        <div class="md:col-span-2"><button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button></div>
+        <div class="md:col-span-2 flex flex-wrap gap-3">
+            <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button>
+            <button type="button" onclick="abrirModalCicloExterno()" class="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10" title="Marca o ciclo atual como já emitido diretamente no portal da prefeitura/Betha, avançando o próximo vencimento"><i data-lucide="external-link" class="w-4 h-4 me-1"></i> Marcar ciclo como emitido externamente</button>
+        </div>
         {% else %}
         <div class="md:col-span-2 text-slate-400 text-sm"><i data-lucide="info" class="w-4 h-4 inline me-1"></i> Assinatura inativa - somente visualização</div>
         {% endif %}
@@ -172,7 +175,30 @@
          </form>
      </div>
  </div>
-{% endblock %}
+
+<div class="modal fade" id="modalCicloExterno" tabindex="-1">
+     <div class="modal-dialog modal-dialog-centered">
+         <form method="post" action="/assinaturas/{{ assinatura.id }}/marcar-ciclo-externo" class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl" id="formCicloExterno">
+             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+             <div class="modal-header border-b border-slate-800/50">
+                 <h5 class="modal-title text-amber-400"><i data-lucide="external-link" class="w-5 h-5 inline me-2"></i> Ciclo emitido externamente</h5>
+                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+             </div>
+             <div class="modal-body">
+                 <p class="text-slate-300 mb-3">Marca o ciclo de <span class="text-amber-300 font-semibold">{% if prox_vencimento %}{{ prox_vencimento }}{% else %}próximo vencimento{% endif %}</span> como já emitido diretamente no portal da prefeitura/Betha. Isso cria a cobrança como <span class="text-emerald-300">recebida</span> e avança o próximo vencimento para o período seguinte, eliminando o alerta "Emitir agora".</p>
+                 <div class="mb-3">
+                     <label class="form-label text-cyan-300">Senha de Administrador *</label>
+                     <input type="password" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="senha" required>
+                 </div>
+             </div>
+             <div class="modal-footer border-t border-slate-800/50">
+                 <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Cancelar</button>
+                 <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10"><i data-lucide="check" class="w-4 h-4 me-1"></i> Confirmar</button>
+             </div>
+         </form>
+     </div>
+ </div>
+ {% endblock %}
 
 {% block scripts %}
 <script>
@@ -330,6 +356,13 @@ function excluirHistorico(id) {
         console.error('modal not found');
         return;
     }
+    const modal = new bootstrap.Modal(modalEl);
+    modal.show();
+}
+
+function abrirModalCicloExterno() {
+    const modalEl = document.getElementById('modalCicloExterno');
+    if (!modalEl) return;
     const modal = new bootstrap.Modal(modalEl);
     modal.show();
 }

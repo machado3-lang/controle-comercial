@@ -432,6 +432,90 @@ def gerar_cobranca(request: Request, assinatura_id: int, db: Session = Depends(g
     return RedirectResponse(url="/assinaturas", status_code=303)
 
 
+@router.post("/{assinatura_id}/marcar-ciclo-externo")
+def marcar_ciclo_externo(
+    request: Request, assinatura_id: int, db: Session = Depends(get_db),
+    senha: str = Form(""),
+):
+    """Marca o ciclo atual como emitido externamente (NFSe emitida direto no portal da prefeitura/Betha).
+
+    Cria (ou marca como recebida) uma ContaReceber PAGA para o próximo vencimento exibido,
+    com observacao vinculada a assinatura. Isso desloca a 'ultima' cobranca para a frente e
+    faz proximo_vencimento_exibicao avancar para o proximo periodo, eliminando o falso
+    alerta 'Emitir agora' para um ciclo que ja foi pago fora do sistema.
+    """
+    if not confirma_senha_usuario(request, db, senha):
+        return JSONResponse(
+            {"success": False, "error": "Senha inválida ou usuário não autorizado"},
+            status_code=403,
+        )
+    assinatura = db.query(Assinatura).filter(Assinatura.id == assinatura_id).first()
+    if not assinatura:
+        request.session["error"] = "Assinatura não encontrada"
+        return RedirectResponse(url="/assinaturas", status_code=303)
+    if assinatura.situacao != 1:
+        request.session["error"] = "Somente assinaturas ativas podem ter ciclo marcado como emitido externamente"
+        return RedirectResponse(url=f"/assinaturas/{assinatura_id}/editar", status_code=303)
+
+    # Ciclo alvo = proximo vencimento exibido (o que aparece como 'Emitir agora')
+    prox = proximo_vencimento_exibicao(db, assinatura) or _proximo_vencimento(assinatura)
+    if not prox:
+        request.session["error"] = "Não foi possível determinar o próximo vencimento da assinatura"
+        return RedirectResponse(url=f"/assinaturas/{assinatura_id}/editar", status_code=303)
+
+    periodo = _periodo_meses(assinatura.periodicidade)
+    label = PERIODICIDADE_LABELS.get(assinatura.periodicidade, "Mensal")
+    if periodo >= 12:
+        desc = f"{label} - {assinatura.descricao} - {prox.year} (emitida externamente)"
+    else:
+        desc = f"{label} - {assinatura.descricao} - {prox.month:02d}/{prox.year} (emitida externamente)"
+
+    # Se ja existe cobranca para este ciclo, apenas marca como recebida
+    existente = db.query(ContaReceber).filter(
+        ContaReceber.cliente_id == assinatura.cliente_id,
+        ContaReceber.data_vencimento == prox,
+        ContaReceber.observacao.like(f"%assinatura #{assinatura.id}%"),
+        ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
+    ).first()
+    if existente:
+        if existente.status != StatusConta.PAGO:
+            existente.status = StatusConta.PAGO
+            existente.data_recebimento = date.today()
+            db.commit()
+            request.session["message"] = (
+                f"Ciclo de {prox.strftime('%d/%m/%Y')} já existia e foi marcado como recebido. "
+                f"Próximo vencimento avançado."
+            )
+        else:
+            request.session["message"] = (
+                f"Ciclo de {prox.strftime('%d/%m/%Y')} já estava registrado como recebido."
+            )
+    else:
+        conta = ContaReceber(
+            cliente_id=assinatura.cliente_id,
+            descricao=desc,
+            valor=assinatura.valor,
+            data_vencimento=prox,
+            data_recebimento=date.today(),
+            status=StatusConta.PAGO,
+            observacao=f"Cobrança automática - assinatura #{assinatura.id} (emitida externamente)",
+        )
+        db.add(conta)
+        db.commit()
+        request.session["message"] = (
+            f"Ciclo de {prox.strftime('%d/%m/%Y')} marcado como emitido externamente. "
+            f"Próximo vencimento avançado para o próximo período."
+        )
+
+    registrar_auditoria(
+        db, request.session.get("user_id"), "marcar_ciclo_externo",
+        "assinatura", assinatura_id,
+        f"Assinatura #{assinatura_id} - ciclo {prox.strftime('%d/%m/%Y')} emitido externamente",
+        request.client.host if request.client else None,
+    )
+    return RedirectResponse(url=f"/assinaturas/{assinatura_id}/editar", status_code=303)
+
+
 @router.post("/{assinatura_id}/gerar-nfse")
 def gerar_nfse_assinatura(request: Request, assinatura_id: int, db: Session = Depends(get_db)):
     assinatura = db.query(Assinatura).options(
@@ -514,17 +598,21 @@ def editar_assinatura(request: Request, assinatura_id: int, db: Session = Depend
     if categoria_padrao_id:
         query_servicos = query_servicos.filter(Produto.categoria_id == categoria_padrao_id)
     servicos = query_servicos.order_by(Produto.nome).all()
-    
+
+    prox = proximo_vencimento_exibicao(db, assinatura) if assinatura.situacao == 1 else None
+    prox_vencimento_str = prox.strftime("%d/%m/%Y") if prox else None
+
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     servicos_json = [{"id": s.id, "nome": s.nome, "codigo_lc116": s.codigo_lc116 or '',
                   "preco": float(s.preco or 0), "fornecedor_id": s.fornecedor_id} for s in servicos]
-    
+
     return request.app.state.templates.TemplateResponse(
         "assinaturas/form.html",
         {"request": request, "assinatura": assinatura, "clientes": clientes,
          "fornecedores": fornecedores, "servicos": servicos,
          "historico": historico,
+         "prox_vencimento": prox_vencimento_str,
          "clientes_json": clientes_json, "fornecedores_json": fornecedores_json, "servicos_json": servicos_json,
          "senha_definida": True}
     )
