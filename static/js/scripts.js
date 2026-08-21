@@ -76,6 +76,25 @@ document.addEventListener('DOMContentLoaded', function() {
             aplicarMascaraCep(this);
         });
     });
+
+    // Busca "ao vivo": ao digitar nos campos marcados, submete o form pai
+    // (com debounce) para filtrar a listagem sem precisar clicar em Buscar.
+    document.querySelectorAll('input[data-live-submit]').forEach(function(input) {
+        var form = input.closest('form');
+        if (!form) return;
+        var timer = null;
+        input.addEventListener('input', function() {
+            if (timer) clearTimeout(timer);
+            timer = setTimeout(function() {
+                var hidden = document.createElement('input');
+                hidden.type = 'hidden';
+                hidden.name = 'page';
+                hidden.value = '1';
+                form.appendChild(hidden);
+                form.submit();
+            }, 400);
+        });
+    });
 });
 
 function aplicarMascaraDoc(input, tipo) {

@@ -7,7 +7,7 @@
         <form class="flex items-center flex-wrap gap-2">
             <input type="date" class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" name="data_inicio" value="{{ data_inicio }}" onchange="this.form.submit()">
             <input type="date" class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 w-28" name="data_fim" value="{{ data_fim }}" onchange="this.form.submit()">
-            <input type="text" class="w-40 h-9 text-sm px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-l-xl text-slate-100 focus:border-cyan-500/50" name="busca" placeholder="Buscar nº..." value="{{ busca }}">
+            <input type="text" class="w-56 h-9 text-sm px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-l-xl text-slate-100 focus:border-cyan-500/50" name="busca" placeholder="Buscar nº ou fornecedor..." value="{{ busca }}" data-live-submit>
             <button class="flex items-center justify-center h-9 w-10 bg-slate-800 border border-white/10 rounded-r-md -ml-px text-cyan-400 transition" type="submit"><i data-lucide="search" class="w-4 h-4"></i></button>
         </form>
         <form action="/nfse/adn-listar" method="get" class="flex items-center gap-1">

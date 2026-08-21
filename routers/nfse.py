@@ -7,7 +7,7 @@ from datetime import datetime, date
 from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException, BackgroundTasks
 from fastapi.responses import RedirectResponse, JSONResponse, Response, FileResponse
 from sqlalchemy.orm import Session, joinedload, selectinload
-from sqlalchemy import desc, asc
+from sqlalchemy import desc, asc, or_
 from database import get_db
 from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ProdutoVariacao, ProdutoComposicao, ContaReceber, StatusConta, StatusPedido, OrdemServico, Assinatura, Fornecedor
 from models_nfe import NFSe, NFSeItem, NFSeRecebida
@@ -161,7 +161,14 @@ def listar_nfse_recebidas(
 
     q = db.query(NFSeRecebida)
     if busca:
-        q = q.filter(NFSeRecebida.numero.ilike(f"%{busca}%"))
+        like = f"%{busca}%"
+        q = q.filter(
+            or_(
+                NFSeRecebida.numero.ilike(like),
+                NFSeRecebida.emitente_nome.ilike(like),
+                NFSeRecebida.emitente_cnpj.ilike(like),
+            )
+        )
     if data_inicio:
         q = q.filter(NFSeRecebida.data_emissao >= datetime.strptime(data_inicio, "%Y-%m-%d"))
     if data_fim:
