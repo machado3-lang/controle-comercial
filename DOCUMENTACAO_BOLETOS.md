@@ -39,7 +39,7 @@ SICOOB_AUTH_URL = https://auth.sicoob.com.br/auth/realms/cooperado/protocol/open
 ### `ContaReceber` (`models.py:218-269`) — campos de boleto
 | Campo | Tipo | Papel |
 |-------|------|-------|
-| `nosso_numero` | String(30) unique | nosso número **local** (`AAAAMMDD` + id da conta, 8 dígitos) |
+| `nosso_numero` | String(30) unique | nosso número **local** (número do documento vinculado — nota fiscal, OS, pedido, consolidação; sufixo de parcela quando >1; fallback = id da conta) |
 | `api_nosso_numero` | String(30) | nosso número **retornado pela API Sicoob** (usado em consultas/PDF) |
 | `boleto_emitido` | Boolean (index) | marca se o boleto já foi emitido |
 | `boleto_url` | String(500) | código de barras / linha digitável retornados pela API |
@@ -79,7 +79,10 @@ SICOOB_AUTH_URL = https://auth.sicoob.com.br/auth/realms/cooperado/protocol/open
 Fluxo:
 1. `refresh_sicoob_token(db, "boletos_inclusao")`.
 2. Valida `sicoob_conta_corrente`, `sicoob_client_id` e existência de `conta.cliente`.
-3. Monta `nosso_numero = AAAAMMDD + id(8d)` e `seuNumero` (prioriza `numero_documento`).
+3. Monta o `nosso_numero` / `seuNumero` a partir do `numero_documento` da conta
+   (nota fiscal, OS, pedido, consolidação, etc.); parcelas da mesma nota recebem
+   sufixo (`NN01`, `NN02`...); sem documento, usa o `id` da conta (curto e único).
+   Não usa mais o padrão `AAAAMMDD + id` (número grande).
 4. Monta o body (`seuNumero`, `valor`, `dataVencimento`, `dataEmissao`,
    `codigoModalidade=1`, `codigoEspecieDocumento="DM"`, `numeroParcela`, pagador
    com CPF/CNPJ, endereço, etc.).

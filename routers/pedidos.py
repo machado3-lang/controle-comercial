@@ -194,7 +194,7 @@ async def finalizar_grupo(
     # Gera cobrança para o pedido agrupado (evita pedido "solta" sem
     # conta a receber) — mesmo padrão de finalizar_pedido.
     try:
-        from services.parcelamento import gerar_contas_receber, contas_receber_existentes
+        from services.parcelamento import gerar_contas_receber, contas_receber_existentes, numero_documento_para_cobranca
         if not contas_receber_existentes(db, pedido_id=novo_pedido.id):
             venc = novo_pedido.data or date.today()
             gerar_contas_receber(
@@ -206,6 +206,8 @@ async def finalizar_grupo(
                 num_parcelas=1,
                 intervalo_dias=0,
                 forma_pagamento="NFSe",
+                numero_documento=numero_documento_para_cobranca(pedido=novo_pedido)
+                or (str(novo_pedido.numero) if novo_pedido.numero else str(novo_pedido.id)),
                 pedido_id=novo_pedido.id,
             )
     except Exception:
@@ -549,7 +551,7 @@ def finalizar_pedido(
         contas_geradas = []
         contas_existentes = []
         if gerar_cobranca or forma_pagamento == "boleto":
-            from services.parcelamento import gerar_contas_receber, contas_receber_existentes
+            from services.parcelamento import gerar_contas_receber, contas_receber_existentes, numero_documento_para_cobranca
             contas_existentes = contas_receber_existentes(db, pedido_id=pedido.id)
             if contas_existentes:
                 # Evita cobranca em duplicidade (ex.: pedido finalizado 2x ou ja
@@ -572,6 +574,8 @@ def finalizar_pedido(
                     num_parcelas=num_parcelas,
                     intervalo_dias=intervalo_dias,
                     forma_pagamento=forma_pagamento or "NFSe",
+                    numero_documento=numero_documento_para_cobranca(pedido=pedido)
+                    or (str(pedido.numero) if pedido.numero else str(pedido.id)),
                     pedido_id=pedido.id,
                 )
         db.commit()

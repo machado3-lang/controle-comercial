@@ -635,6 +635,7 @@ def gerar_cobranca_os(
             primeiro_vencimento=venc, num_parcelas=num_parcelas,
             intervalo_dias=intervalo_dias,
             forma_pagamento=forma,
+            numero_documento=f"OS{ordem.id}",
             observacao=f"Cobrança/recibo da OS #{ordem_id} sem emissão de NFS-e/NFe.",
             nfe_id=None, nfse_id=None, os_id=ordem.id,
         )
@@ -662,6 +663,7 @@ def gerar_cobranca_os(
                 primeiro_vencimento=venc, num_parcelas=num_parcelas,
                 intervalo_dias=intervalo_dias,
                 forma_pagamento=forma_pagamento or "NFSe",
+                numero_documento=str(nfse.numero) if nfse.numero else None,
                 observacao=f"Gerado da NFSe #{nfse.id} (OS #{ordem_id})",
                 nfse_id=nfse.id, os_id=ordem.id,
             )
@@ -679,6 +681,10 @@ def gerar_cobranca_os(
             descricao = f"NFe #{nfe.numero or nfe.id} (OS #{ordem_id})"
         else:
             descricao = f"NFSe #{nfse.numero or nfse.id} (OS #{ordem_id})"
+        numero_documento = (
+            str(nfe.numero) if (nfe and nfe.numero)
+            else (str(nfse.numero) if (nfse and nfse.numero) else None)
+        )
         contas = gerar_contas_receber(
             db, cliente_id=ordem.cliente_id,
             descricao=descricao,
@@ -686,6 +692,7 @@ def gerar_cobranca_os(
             primeiro_vencimento=venc, num_parcelas=num_parcelas,
             intervalo_dias=intervalo_dias,
             forma_pagamento=forma_pagamento or "boleto",
+            numero_documento=numero_documento,
             observacao=f"Cobrança agrupada da OS #{ordem_id}",
             nfe_id=nfe.id if nfe else None,
             nfse_id=nfse.id if nfse else None,

@@ -191,10 +191,21 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
     if not conta.cliente:
         return {"success": False, "error": "Cliente não associado à conta"}
 
-    nosso_numero = f"{date.today().strftime('%Y%m%d')}{conta.id:08d}"
-    # seuNumero: prioriza o numero do documento da conta; senao usa o nosso_numero automatico
-    seu_numero_doc = ''.join(filter(str.isdigit, str(conta.numero_documento or '')))
-    seu_numero = seu_numero_doc if seu_numero_doc else nosso_numero
+    # "nosso numero" / "seuNumero": usa o numero do documento (nota fiscal, OS,
+    # pedido, consolidacao, etc.) quando houver, para facilitar a identificacao no
+    # boleto e no retorno de recebimentos. Nao usa mais o padrao AAAAMMDD+id
+    # (numero grande), que dificultava o rastreio da cobranca.
+    doc = ''.join(filter(str.isdigit, str(conta.numero_documento or '')))
+    total_parcelas = conta.total_parcelas or 1
+    numero_parcela = conta.numero_parcela or 1
+    if doc:
+        # parcelas da mesma nota recebem sufixo para garantir unicidade (evita
+        # colisao no campo unico nosso_numero e no seuNumero da API do Sicoob)
+        nosso_numero = f"{doc}{numero_parcela:02d}" if total_parcelas > 1 else doc
+    else:
+        # fallback sem documento: id da conta (curto e unico), sem prefixo de data
+        nosso_numero = str(conta.id)
+    seu_numero = nosso_numero
     cpf_cnpj = ''.join(filter(str.isdigit, conta.cliente.cpf_cnpj or ''))
 
     beneficiario = int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820

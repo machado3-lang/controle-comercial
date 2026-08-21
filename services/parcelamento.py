@@ -20,6 +20,33 @@ from sqlalchemy import or_
 
 logger = logging.getLogger(__name__)
 
+# Status considerados "emitidos" para NFe/NFSe ao decidir o numero do documento
+# da cobranca (devem espelhar os usados na geracao de cobranca da OS).
+_STATUS_EMITIDOS_NFE = {"issued", "queued", "pendente"}
+_STATUS_EMITIDOS_NFSE = {"autorizada", "pendente", "em_processamento"}
+
+
+def numero_documento_para_cobranca(pedido=None, consolidacao=None):
+    """Retorna o numero do documento a ser usado no boleto da cobranca.
+
+    Prioriza a nota fiscal (NFe/NFSe) vinculada ao pedido/consolidacao. So usa o
+    numero do proprio pedido/consolidacao quando nao ha nota emitida (caso em que
+    esse identificador faz mais sentido para rastrear a cobranca).
+    """
+    nfe = None
+    nfse = None
+    if pedido is not None:
+        nfe = next((n for n in (pedido.nfes or []) if n.status in _STATUS_EMITIDOS_NFE and n.numero), None)
+        nfse = pedido.nfse if (pedido.nfse and pedido.nfse.status in _STATUS_EMITIDOS_NFSE and pedido.nfse.numero) else None
+    elif consolidacao is not None:
+        nfe = next((n for n in (consolidacao.nfes or []) if n.status in _STATUS_EMITIDOS_NFE and n.numero), None)
+        nfse = consolidacao.nfse if (consolidacao.nfse and consolidacao.nfse.status in _STATUS_EMITIDOS_NFSE and consolidacao.nfse.numero) else None
+    if nfe:
+        return str(nfe.numero)
+    if nfse:
+        return str(nfse.numero)
+    return None
+
 
 def calcular_parcelas(valor_total, num_parcelas, primeiro_vencimento, intervalo_dias=30):
     """Divide valor_total em num_parcelas com vencimentos escalonados.

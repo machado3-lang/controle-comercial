@@ -2007,6 +2007,7 @@ def _garantir_cobranca_nfe(db, nfe):
         num_parcelas=1,
         intervalo_dias=0,
         forma_pagamento=nfe.forma_pagamento or "NFSe",
+        numero_documento=str(nfe.numero) if nfe.numero else None,
         pedido_id=nfe.pedido_id,
         nfe_id=nfe.id,
     )

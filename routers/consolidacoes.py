@@ -695,7 +695,7 @@ def finalizar_consolidacao(
 
     # Cria conta(s) a receber com suporte a parcelamento, independente da
     # forma de pagamento (à vista/cartão também geram o registro financeiro).
-    from services.parcelamento import gerar_contas_receber, contas_receber_existentes
+    from services.parcelamento import gerar_contas_receber, contas_receber_existentes, numero_documento_para_cobranca
     contas_geradas = contas_receber_existentes(db, consolidacao_id=consolidacao.id)
     if contas_geradas:
         logger.info(
@@ -716,6 +716,8 @@ def finalizar_consolidacao(
             num_parcelas=num_parcelas,
             intervalo_dias=intervalo_dias,
             forma_pagamento=forma_pagamento or "NFSe",
+            numero_documento=numero_documento_para_cobranca(consolidacao=consolidacao)
+            or (str(consolidacao.numero) if consolidacao.numero else None),
             consolidacao_id=consolidacao.id,
         )
 
