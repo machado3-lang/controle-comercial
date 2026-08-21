@@ -134,30 +134,145 @@ da consolidação (`nfe.py:918`, `nfse.py:668`) fica vinculada por
 
 ## 5. Impressão (Térmica e A4)
 
-- Pedido: `imprimir_pedido` (`pedidos.py:608`) — escolhe
-  `imprimir_termica.html` (param `?termica=1`) ou `imprimir.html`
-  (A4). Carrega os filhos de composição (`item.filhos`) e passa `now`.
-  Params: `tipo` (orcamento/faturado) e `termica`.
-- **Botões de impressão na lista (`pedidos/listar.html`):** foram adicionados
-  dois botões de ação por pedido — **Imprimir A4** (`/pedidos/{id}/imprimir`)
-  e **Imprimir Térmica** (`/pedidos/{id}/imprimir?termica=1`) — abrindo em
-  nova aba, além dos existentes Ver/Excluir.
-- **Templates reconstruídos no padrão da Ordem de Serviço** (limpos, sem
-  dependência de CDN externo): `imprimir.html` (A4) e `imprimir_termica.html`
-  (80mm) agora exibem cabeçalho com logotipo/emitente, dados do cliente,
-  dados do pedido, itens (com composição de kit indentada), total, observações
-  e assinaturas — espelhando `ordens_servico/imprimir_a4.html` e
-  `ordens_servico/imprimir_termica.html`.
-- Consolidação: `imprimir_consolidacao` (`consolidacoes.py:785`) —
-  mesmo padrão (`imprimir_termica.html` / `imprimir.html`).
-- `pdf_pedido` (`pedidos.py:625`) gera PDF A4 real via WeasyPrint
-  (`pedidos/imprimir.html`); passa `now` e carrega `filhos` para consistência.
+A impressão de pedidos e consolidações foi **reformulada por completo** para
+seguir o mesmo padrão visual profissional da **Ordem de Serviço**
+(`ordens_servico/imprimir_a4.html` / `imprimir_termica.html`): cabeçalho com
+logotipo e dados do emitente, blocos de cliente/dados, tabela de itens,
+totais, observações e assinaturas. Os templates **não dependem de CDN
+externo** (o antigo A4 usava Tailwind via CDN, o que deixava o layout
+"desproporcional" e dependente de internet).
 
-**Melhorias:**
-- Implementar `pdf_pedido` real (usar `core/pdf_generator.py` já existente)
-  para download A4 e integração com e-mail/whatsapp.
-- Homogenizar os templates de térmica (pedido x consolidação) para evitar
-  divergência de layout.
+### 5.1. Onde imprimir
+
+| Tela | Ação | Destino |
+|------|------|---------|
+| `pedidos/listar.html` | Botão **Imprimir A4** (ícone printer) | `/pedidos/{id}/imprimir` |
+| `pedidos/listar.html` | Botão **Imprimir Térmica** (ícone receipt) | `/pedidos/{id}/imprimir?termica=1` |
+| `pedidos/detalhe.html` | Link **Imprimir** (visível p/ pedido faturado de venda) | `/pedidos/{id}/imprimir` |
+| `pedidos/detalhe.html` | Link **Térmica** | `/pedidos/{id}/imprimir?termica=1` |
+| `pedidos/form.html` | Ao salvar com `acao=emitir` | redireciona para `/pedidos/{id}/imprimir` |
+| `consolidacoes/listar.html` | Botões **Imprimir** / **Térmica** | `/consolidacoes/{id}/imprimir[?termica=1]` |
+| `consolidacoes/detalhe.html` | Links **Imprimir** / **Térmica** | `/consolidacoes/{id}/imprimir[?termica=1]` |
+
+Todos os botões/links abrem em **nova aba** (`target="_blank"` /
+`window.open`), preservando a tela de origem.
+
+### 5.2. Formatos suportados
+
+- **A4** (`pedidos/imprimir.html` / `consolidacoes/imprimir.html`): layout
+  paginável, ideal para impressão em impressora comum ou "Salvar como PDF".
+- **Térmica 80mm** (`pedidos/imprimir_termica.html` /
+  `consolidacoes/imprimir_termica.html`): layout compacto em fonte monoespaçada,
+  cortado por `size: 80mm auto`, ideal para impressoras térmicas de cupom.
+
+### 5.3. Botões de impressão na lista de pedidos
+
+Em `templates/pedidos/listar.html` foram adicionados dois botões de ação por
+linha (além dos existentes **Ver** e **Excluir**), acessíveis para **qualquer
+status** do pedido:
+
+```html
+<button onclick="window.open('/pedidos/{{ p.id }}/imprimir','_blank')"
+        title="Imprimir A4"><i data-lucide="printer"></i></button>
+<button onclick="window.open('/pedidos/{{ p.id }}/imprimir?termica=1','_blank')"
+        title="Imprimir Térmica"><i data-lucide="receipt"></i></button>
+```
+
+> Observação: na tela de **detalhe** do pedido, os links de impressão só
+> aparecem quando `status == 'faturado'` e `tipo_pedido == 'venda'` (mesmo
+> critério dos botões de NF). Para impidos em outros status, use os botões da
+> lista.
+
+### 5.4. Rotas e parâmetros
+
+- **`GET /pedidos/{pedido_id}/imprimir`** — `imprimir_pedido`
+  (`routers/pedidos.py`).
+  - `termica` (query, opcional): se presente, usa o template térmico; senão, A4.
+  - `tipo` (query): `"faturado"` (padrão) → título "Pedido de Venda";
+    `"orcamento"` → título "Orçamento".
+  - Carrega `PedidoVenda.itens` **+ `filhos`** (composição de kit) e
+    `PedidoVenda.cliente` via `selectinload`.
+- **`GET /pedidos/{pedido_id}/pdf`** — `pdf_pedido` (`routers/pedidos.py`).
+  Gera **PDF A4 real** via WeasyPrint a partir de `pedidos/imprimir.html`.
+  Em caso de falha no WeasyPrint, faz fallback redirecionando para a rota de
+  impressão no navegador.
+- **`GET /consolidacoes/{consolidacao_id}/imprimir`** — `imprimir_consolidacao`
+  (`routers/consolidacoes.py`).
+  - `termica` (query): igual ao pedido.
+  - `tipo` (query): `"consolidado"` (padrão).
+  - Carrega cliente, itens (com `produto`/`variacao`), `pedidos_origem` e `now`.
+
+### 5.5. Variáveis passadas aos templates
+
+| Variável | Conteúdo |
+|----------|----------|
+| `pedido` / `consolidacao` | objeto principal com itens, cliente, total, etc. |
+| `empresa` | primeiro registro de `Empresa` (logotipo, razão social, CNPJ, endereço, contatos) |
+| `STATUS_LABELS` | rótulos amigáveis do status (`STATUS_PEDIDO_LABELS` / `STATUS_CONSOLIDACAO_LABELS`) |
+| `FORMAS_PAGAMENTO` | mapa de `FormaPagamento` → rótulo ("À Vista", "Boleto", etc.) |
+| `now` | `datetime.now()` para o rodapé "Documento gerado em …" |
+| `tipo_impressao` | controla o título (Pedido de Venda / Orçamento / Consolidação) |
+
+### 5.6. Layout do template A4 (pedido)
+
+1. **Cabeçalho**: logo + nome fantasia/razão social, CNPJ/IE, endereço e
+   contatos do emitente (esquerda); título "Pedido de Venda"/"Orçamento" + nº
+   + badge de status (direita).
+2. **Bloco Cliente**: nome, CPF/CNPJ, telefone, e-mail e endereço completo.
+3. **Bloco Dados do Pedido**: número, data, tipo (Venda/Pré-venda), forma de
+   pagamento e flag de boleto.
+4. **Itens do Pedido**: tabela com colunas **Cód. · Descrição · UND · Qtd ·
+   Unitário · Total**; itens que são **kit/pai** mostram seus componentes
+   (`filhos`) indentados e em tom mais claro (a linha do pai já contém o total
+   do kit, então os filhos são exibidos apenas para conferência — o Total
+   Geral reflete `pedido.total`).
+5. **Total Geral**.
+6. **Observações** (se houver).
+7. **Assinaturas**: "Assinatura do Cliente" e "Emitente".
+8. **Rodapé**: "Documento gerado em … • <empresa>".
+
+### 5.7. Layout do template térmico (pedido)
+
+Cabeçalho compacto (logo opcional + emitente + CNPJ + endereço), título
+"PEDIDO DE VENDA"/"ORÇAMENTO" + nº + status + data, bloco **CLIENTE** (nome,
+doc, tel, endereço, pagamento), lista de **ITENS** (descrição + total, e
+abaixo a quantidade/UND × unitário; composição de kit indentada), **TOTAL**,
+**OBS** e assinatura do cliente.
+
+### 5.8. Composição de kit (filhos)
+
+Tanto no A4 quanto no térmico, os itens que possuem `item_pai_id` (componentes
+de um kit) são renderizados **abaixo** do item-pai, indentados e com tom
+reduzido (`↳`), garantindo fidelidade ao que é exibido na tela de detalhe do
+pedido. O carregamento dos filhos é feito no router via
+`selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.filhos)`.
+
+### 5.9. Consolidação
+
+Os templates de consolidação (`templates/consolidacoes/imprimir.html` e
+`imprimir_termica.html`) foram **alinhados** ao mesmo padrão do pedido/OS:
+incluem bloco Cliente + Dados da Consolidação (emissão, fechamento, período,
+forma de pagamento, boleto), tabela de **Pedidos Agrupados**, tabela de
+**Itens Consolidados** (com colunas Cód./UND) e assinaturas. Isso elimina a
+divergência de layout entre pedido e consolidação citada anteriormente.
+
+### 5.10. PDF (WeasyPrint)
+
+`pdf_pedido` renderiza `pedidos/imprimir.html` (contexto igual à rota de
+impressão, com `now` e `filhos`) e devolve um `FileResponse` `application/pdf`
+nomeado `pedido_<numero>.pdf`. Reutiliza o mesmo template do A4, mantendo
+visual idêntico entre "Imprimir/Salvar PDF" no navegador e o download PDF.
+
+### 5.11. Manutenção
+
+- Para alterar o cabeçalho/rodapé de todos os documentos, edite os seletores
+  `.cabecalho`, `.titulo-*`, `.assinaturas` e o bloco de rodapé nos templates
+  (padrão compartilhado entre pedido, consolidação e OS).
+- Para mudar colunas da tabela de itens, edite a `<thead>`/`<tbody>` em
+  `pedidos/imprimir.html` e `consolidacoes/imprimir.html` (mantenha ambos
+  consistentes).
+- O logo vem de `empresa.logo`; se nulo, o cabeçalho usa apenas o nome da
+  empresa.
 
 ---
 
