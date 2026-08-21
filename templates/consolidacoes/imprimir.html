@@ -2,13 +2,14 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Consolidação {{ consolidacao.numero or consolidacao.id }}</title>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #f1f5f9; color: #111827; }
   body { font-family: Arial, Helvetica, sans-serif; font-size: 12px; line-height: 1.45; }
   .cons-a4 { max-width: 210mm; margin: 12mm auto; padding: 12mm 14mm; background: #fff;
-             box-shadow: 0 1px 4px rgba(0,0,0,.15); color: #111827; }
+            box-shadow: 0 1px 4px rgba(0,0,0,.15); color: #111827; }
   .no-print { display: inline-block; }
   @media print {
     html, body { background: #fff; }
@@ -17,13 +18,13 @@
   }
   table { width: 100%; border-collapse: collapse; }
   .cabecalho { display: flex; align-items: center; justify-content: space-between; gap: 16px;
-                border-bottom: 3px solid #0f172a; padding-bottom: 10px; }
+               border-bottom: 3px solid #0f172a; padding-bottom: 10px; }
   .logo-empresa { max-height: 56px; max-width: 200px; object-fit: contain; }
   .empresa-nome { font-size: 17px; font-weight: 700; color: #0f172a; }
   .empresa-info { font-size: 11px; color: #374151; margin-top: 2px; }
-  .titulo { text-align: right; }
-  .titulo h1 { margin: 0; font-size: 18px; letter-spacing: .5px; color: #0f172a; text-transform: uppercase; }
-  .titulo .numero { font-size: 22px; font-weight: 800; color: #0f172a; }
+  .titulo-cons { text-align: right; }
+  .titulo-cons h1 { margin: 0; font-size: 18px; letter-spacing: .5px; color: #0f172a; text-transform: uppercase; }
+  .titulo-cons .numero { font-size: 22px; font-weight: 800; color: #0f172a; }
   .badge { display: inline-block; margin-top: 4px; padding: 2px 10px; border-radius: 9999px;
            font-size: 11px; font-weight: 700; text-transform: capitalize; background: #e2e8f0; color: #0f172a; }
   .secao { margin-top: 14px; }
@@ -38,16 +39,16 @@
   table.tabela th { background: #0f172a; color: #fff; font-size: 11px; text-transform: uppercase;
                     text-align: left; padding: 6px 8px; }
   table.tabela th.num, table.tabela td.num { text-align: right; }
-  table.tabela td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; }
+  table.tabela td { padding: 5px 8px; border-bottom: 1px solid #e2e8f0; vertical-align: top; }
   table.tabela tbody tr:nth-child(even) { background: #f8fafc; }
   .totais { margin-top: 10px; display: flex; justify-content: flex-end; }
-  .totais table { width: auto; min-width: 320px; }
+  .totais table { width: auto; min-width: 280px; }
   .totais td { padding: 4px 8px; }
   .totais .total-final { font-size: 14px; font-weight: 800; background: #0f172a; color: #fff; }
   .assinaturas { margin-top: 28px; display: flex; gap: 40px; }
   .assinaturas .linha-ass { flex: 1; }
-  .trilha { border-top: 1px solid #111827; margin-top: 34px; padding-top: 4px;
-            text-align: center; font-size: 11px; color: #374151; }
+  .linha-ass .trilha { border-top: 1px solid #111827; margin-top: 34px; padding-top: 4px;
+                       text-align: center; font-size: 11px; color: #374151; }
   .btn-imprimir { position: fixed; top: 16px; right: 16px; background: #0f172a; color: #fff;
                   border: 0; padding: 10px 18px; border-radius: 8px; font-size: 13px; cursor: pointer; }
 </style>
@@ -59,7 +60,9 @@
   <!-- Cabeçalho -->
   <div class="cabecalho">
     <div style="display:flex; align-items:center; gap:14px;">
-      {% if empresa and empresa.logo %}<img class="logo-empresa" src="/{{ empresa.logo }}" alt="Logotipo">{% endif %}
+      {% if empresa and empresa.logo %}
+        <img class="logo-empresa" src="/{{ empresa.logo }}" alt="Logotipo">
+      {% endif %}
       <div>
         <div class="empresa-nome">{{ (empresa.nome_fantasia or empresa.razao_social) if empresa else 'Sua Empresa' }}</div>
         <div class="empresa-info">
@@ -74,56 +77,33 @@
         </div>
       </div>
     </div>
-    <div class="titulo">
+    <div class="titulo-cons">
       <h1>Consolidação de Pedidos</h1>
       <div class="numero">Nº {{ consolidacao.numero or consolidacao.id }}</div>
-      <span class="badge">{{ STATUS_LABELS.get(consolidacao.status, consolidacao.status) }}</span>
+      <span class="badge">{{ STATUS_LABELS.get(consolidacao.status, consolidacao.status.value if consolidacao.status else '') }}</span>
     </div>
   </div>
 
-  <!-- Emitente / Cliente -->
+  <!-- Cliente e Dados da consolidação -->
   <div class="secao">
     <div class="grid-2">
-      <div class="box">
-        <div class="secao-titulo">Emitente</div>
-        {% if empresa %}
-          <div class="linha"><span class="rot">Nome:</span><span class="val">{{ empresa.razao_social or empresa.nome_fantasia }}</span></div>
-          {% if empresa.cnpj %}<div class="linha"><span class="rot">CNPJ:</span><span class="val">{{ empresa.cnpj }}</span></div>{% endif %}
-          {% if empresa.endereco %}<div class="linha"><span class="rot">End.:</span><span class="val">{{ [empresa.endereco, (empresa.bairro if empresa.bairro else none), (empresa.cidade ~ '/' ~ empresa.estado if empresa.cidade else none)]|select|join(' - ') }}</span></div>{% endif %}
-        {% else %}
-          <div class="linha"><span class="val">Empresa não configurada</span></div>
-        {% endif %}
-      </div>
       <div class="box">
         <div class="secao-titulo">Cliente</div>
-        {% if consolidacao.cliente %}
-          <div class="linha"><span class="rot">Nome:</span><span class="val">{{ consolidacao.cliente.nome }}</span></div>
-          {% if consolidacao.cliente.cpf_cnpj %}<div class="linha"><span class="rot">CPF/CNPJ:</span><span class="val">{{ consolidacao.cliente.cpf_cnpj }}</span></div>{% endif %}
-          {% if consolidacao.cliente.telefone %}<div class="linha"><span class="rot">Tel.:</span><span class="val">{{ consolidacao.cliente.telefone }}</span></div>{% endif %}
-          {% if consolidacao.cliente.endereco %}<div class="linha"><span class="rot">End.:</span><span class="val">{{ [consolidacao.cliente.endereco, (consolidacao.cliente.bairro if consolidacao.cliente.bairro else none), (consolidacao.cliente.cidade ~ '/' ~ consolidacao.cliente.estado if consolidacao.cliente.cidade else none)]|select|join(' - ') }}</span></div>{% endif %}
-        {% else %}
-          <div class="linha"><span class="val">Cliente não informado</span></div>
+        <div class="linha"><span class="rot">Nome:</span><span class="val">{{ consolidacao.cliente.nome if consolidacao.cliente else '-' }}</span></div>
+        {% if consolidacao.cliente and consolidacao.cliente.cpf_cnpj %}<div class="linha"><span class="rot">CPF/CNPJ:</span><span class="val">{{ consolidacao.cliente.cpf_cnpj }}</span></div>{% endif %}
+        {% if consolidacao.cliente and consolidacao.cliente.telefone %}<div class="linha"><span class="rot">Telefone:</span><span class="val">{{ consolidacao.cliente.telefone }}</span></div>{% endif %}
+        {% if consolidacao.cliente and consolidacao.cliente.email %}<div class="linha"><span class="rot">E-mail:</span><span class="val">{{ consolidacao.cliente.email }}</span></div>{% endif %}
+        {% if consolidacao.cliente and (consolidacao.cliente.endereco or consolidacao.cliente.cidade) %}
+        <div class="linha"><span class="rot">Endereço:</span><span class="val">{{ [consolidacao.cliente.endereco, (consolidacao.cliente.numero if consolidacao.cliente.numero else none), (consolidacao.cliente.bairro if consolidacao.cliente.bairro else none), (consolidacao.cliente.cidade ~ '/' ~ consolidacao.cliente.estado if consolidacao.cliente.cidade else none), (consolidacao.cliente.cep if consolidacao.cliente.cep else none)]|select|join(', ') }}</span></div>
         {% endif %}
       </div>
-    </div>
-  </div>
-
-  <!-- Datas / Pagamento -->
-  <div class="secao">
-    <div class="grid-2">
       <div class="box">
-        <div class="secao-titulo">Período / Datas</div>
+        <div class="secao-titulo">Dados da Consolidação</div>
         <div class="linha"><span class="rot">Emissão:</span><span class="val">{{ consolidacao.data.strftime('%d/%m/%Y') if consolidacao.data else '-' }}</span></div>
         {% if consolidacao.data_fechamento %}<div class="linha"><span class="rot">Fechamento:</span><span class="val">{{ consolidacao.data_fechamento.strftime('%d/%m/%Y') }}</span></div>{% endif %}
-        {% if consolidacao.periodo_inicio and consolidacao.periodo_fim %}
-          <div class="linha"><span class="rot">Período:</span><span class="val">{{ consolidacao.periodo_inicio.strftime('%d/%m/%Y') }} a {{ consolidacao.periodo_fim.strftime('%d/%m/%Y') }}</span></div>
-        {% endif %}
-      </div>
-      <div class="box">
-        <div class="secao-titulo">Pagamento</div>
-        {% if consolidacao.forma_pagamento %}<div class="linha"><span class="rot">Forma:</span><span class="val">{{ FORMAS_PAGAMENTO.get(consolidacao.forma_pagamento, consolidacao.forma_pagamento) }}</span></div>{% endif %}
+        {% if consolidacao.periodo_inicio and consolidacao.periodo_fim %}<div class="linha"><span class="rot">Período:</span><span class="val">{{ consolidacao.periodo_inicio.strftime('%d/%m/%Y') }} a {{ consolidacao.periodo_fim.strftime('%d/%m/%Y') }}</span></div>{% endif %}
+        {% if consolidacao.forma_pagamento %}<div class="linha"><span class="rot">Pagamento:</span><span class="val">{{ FORMAS_PAGAMENTO.get(consolidacao.forma_pagamento, consolidacao.forma_pagamento) }}</span></div>{% endif %}
         {% if consolidacao.gerar_boleto %}<div class="linha"><span class="rot">Boleto:</span><span class="val">Sim</span></div>{% endif %}
-        {% if consolidacao.finalizado_at %}<div class="linha"><span class="rot">Finaliz.:</span><span class="val">{{ consolidacao.finalizado_at.strftime('%d/%m/%Y %H:%M') }}</span></div>{% endif %}
       </div>
     </div>
   </div>
@@ -133,11 +113,18 @@
   <div class="secao">
     <div class="secao-titulo">Pedidos Agrupados ({{ consolidacao.qtd_pedidos_origem }})</div>
     <table class="tabela">
-      <thead><tr><th>Nº Pedido</th><th>Data</th><th class="num">Total</th><th class="num">Itens</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Nº Pedido</th>
+          <th>Data</th>
+          <th class="num">Total</th>
+          <th class="num">Itens</th>
+        </tr>
+      </thead>
       <tbody>
         {% for p in consolidacao.pedidos_origem %}
         <tr>
-          <td>{{ p.numero or '#' ~ p.id }}</td>
+          <td>{{ p.numero or ('#' ~ p.id|string) }}</td>
           <td>{{ p.data.strftime('%d/%m/%Y') if p.data else '-' }}</td>
           <td class="num">R$ {{ "%.2f"|format(p.total or 0) }}</td>
           <td class="num">{{ p.itens|length if p.itens else 0 }}</td>
@@ -152,15 +139,22 @@
   <div class="secao">
     <div class="secao-titulo">Itens Consolidados</div>
     <table class="tabela">
-      <thead><tr><th>Descrição</th><th class="num">Qtd</th><th class="num">Unitário</th><th class="num">Total</th></tr></thead>
+      <thead>
+        <tr>
+          <th>Cód.</th>
+          <th>Descrição</th>
+          <th class="num">UND</th>
+          <th class="num">Qtd</th>
+          <th class="num">Unitário</th>
+          <th class="num">Total</th>
+        </tr>
+      </thead>
       <tbody>
         {% for item in consolidacao.itens %}
         <tr>
-          <td>
-            {{ item.descricao or (item.produto.nome if item.produto else '') or '---' }}
-            {% if item.produto and item.produto.codigo %}<div style="font-size:10px;color:#64748b;">Cód: {{ item.produto.codigo }}</div>{% endif %}
-            {% if item.ncm %}<div style="font-size:10px;color:#64748b;">NCM: {{ item.ncm }}</div>{% endif %}
-          </td>
+          <td>{{ item.produto.codigo if item.produto and item.produto.codigo else '-' }}</td>
+          <td>{{ item.descricao or (item.produto.nome if item.produto else '') or '---' }}{% if item.ncm %}<div style="font-size:10px;color:#64748b;">NCM: {{ item.ncm }}</div>{% endif %}</td>
+          <td class="num">{{ item.unidade if item.unidade else 'UN' }}</td>
           <td class="num">{{ "%.3f"|format(item.quantidade or 0) }}</td>
           <td class="num">R$ {{ "%.2f"|format(item.preco_unitario or 0) }}</td>
           <td class="num">R$ {{ "%.2f"|format(item.total or 0) }}</td>

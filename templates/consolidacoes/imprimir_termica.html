@@ -2,13 +2,13 @@
 <html lang="pt-BR">
 <head>
 <meta charset="utf-8">
-<title>Consolidação {{ consolidacao.numero or consolidacao.id }}</title>
+<title>Consolidação #{{ consolidacao.numero or consolidacao.id }} - Térmica</title>
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #e5e7eb; }
   body { font-family: 'Courier New', Courier, monospace; }
   .cons-termica { width: 80mm; max-width: 80mm; margin: 6mm auto; padding: 3mm 2mm;
-                  background: #fff; color: #000; font-size: 11px; line-height: 1.35; }
+                 background: #fff; color: #000; font-size: 11px; line-height: 1.35; }
   .cons-termica, .cons-termica * { color: #000 !important; }
   .c { text-align: center; }
   .b { font-weight: 700; }
@@ -46,24 +46,22 @@
   <div class="sep-d"></div>
   <div class="c b" style="font-size:13px;">CONSOLIDAÇÃO DE PEDIDOS</div>
   <div class="c b" style="font-size:15px;">Nº {{ consolidacao.numero or consolidacao.id }}</div>
-  <div class="c">{{ STATUS_LABELS.get(consolidacao.status, consolidacao.status) }}</div>
+  <div class="c">{{ STATUS_LABELS.get(consolidacao.status, consolidacao.status.value if consolidacao.status else '')|upper }}</div>
+  <div class="c">{{ consolidacao.data.strftime('%d/%m/%Y') if consolidacao.data else '' }}</div>
   <div class="sep-d"></div>
 
   <div class="b">CLIENTE</div>
   <div>{{ consolidacao.cliente.nome if consolidacao.cliente else '-' }}</div>
   {% if consolidacao.cliente and consolidacao.cliente.cpf_cnpj %}<div>Doc: {{ consolidacao.cliente.cpf_cnpj }}</div>{% endif %}
   {% if consolidacao.cliente and consolidacao.cliente.telefone %}<div>Tel: {{ consolidacao.cliente.telefone }}</div>{% endif %}
-
-  <div class="sep"></div>
-  <div class="linha"><span>Emissão:</span><span class="r">{{ consolidacao.data.strftime('%d/%m/%Y') if consolidacao.data else '-' }}</span></div>
-  {% if consolidacao.forma_pagamento %}<div class="linha"><span>Pagamento:</span><span class="r">{{ FORMAS_PAGAMENTO.get(consolidacao.forma_pagamento, consolidacao.forma_pagamento) }}</span></div>{% endif %}
-  {% if consolidacao.periodo_inicio and consolidacao.periodo_fim %}<div class="linha"><span>Período:</span><span class="r">{{ consolidacao.periodo_inicio.strftime('%d/%m/%y') }}~{{ consolidacao.periodo_fim.strftime('%d/%m/%y') }}</span></div>{% endif %}
+  {% if consolidacao.cliente and (consolidacao.cliente.endereco or consolidacao.cliente.cidade) %}<div>{{ [consolidacao.cliente.endereco, (consolidacao.cliente.cidade ~ '/' ~ consolidacao.cliente.estado if consolidacao.cliente.cidade else none)]|select|join(' - ') }}</div>{% endif %}
+  {% if consolidacao.forma_pagamento %}<div>Pagamento: {{ FORMAS_PAGAMENTO.get(consolidacao.forma_pagamento, consolidacao.forma_pagamento) }}</div>{% endif %}
 
   {% if consolidacao.pedidos_origem %}
   <div class="sep"></div>
   <div class="b">PEDIDOS AGRUPADOS ({{ consolidacao.qtd_pedidos_origem }})</div>
   {% for p in consolidacao.pedidos_origem %}
-    <div class="item"><span class="n">{{ p.numero or '#' ~ p.id }}</span><span class="v">R$ {{ "%.2f"|format(p.total or 0) }}</span></div>
+    <div class="item"><span class="n">{{ p.numero or ('#' ~ p.id|string) }}</span><span class="v">R$ {{ "%.2f"|format(p.total or 0) }}</span></div>
   {% endfor %}
   {% endif %}
 
@@ -71,7 +69,7 @@
   <div class="b">ITENS CONSOLIDADOS</div>
   {% for item in consolidacao.itens %}
     <div class="item"><span class="n">{{ item.descricao or (item.produto.nome if item.produto else '') or '---' }}</span><span class="v">R$ {{ "%.2f"|format(item.total or 0) }}</span></div>
-    <div class="r" style="font-size:10px;">{{ "%.3f"|format(item.quantidade or 0) }} {{ item.unidade or 'UN' }} x R$ {{ "%.2f"|format(item.preco_unitario or 0) }}</div>
+    <div class="r" style="font-size:10px;">{{ "%.3f"|format(item.quantidade or 0) }} {{ item.unidade if item.unidade else 'UN' }} x R$ {{ "%.2f"|format(item.preco_unitario or 0) }}</div>
   {% endfor %}
 
   <div class="sep-d"></div>
@@ -86,7 +84,7 @@
   <div class="sep-d"></div>
   <div class="c" style="margin-top:18px;">_______________________</div>
   <div class="c">Assinatura do Cliente</div>
-  <div class="c" style="margin-top:10px; font-size:10px;">Via do Cliente</div>
+  <div class="c" style="margin-top:10px; font-size:10px;">{{ (empresa.nome_fantasia or empresa.razao_social) if empresa else 'Controle Comercial' }}</div>
 </div>
 </body>
 </html>

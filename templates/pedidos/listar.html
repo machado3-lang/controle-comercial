@@ -48,9 +48,11 @@
                     {% set cor = 'success' if p.status == 'aprovado' else 'warning' if p.status == 'pre_venda' else 'primary' if p.status == 'pendente' else 'info' if p.status == 'faturado' else 'danger' %}
                     <span class="px-2 py-1 text-xs font-medium{% if p.status == 'aprovado' %} bg-emerald-950/50 text-emerald-400 border border-emerald-800/50{% elif p.status == 'pre_venda' %} bg-amber-950/50 text-amber-400 border border-amber-800/50{% elif p.status == 'pendente' %} bg-cyan-950/50 text-cyan-400 border border-cyan-800/50{% elif p.status == 'faturado' %} bg-indigo-950/50 text-indigo-400 border border-indigo-800/50{% else %} bg-rose-950/50 text-rose-400 border border-rose-800/50{% endif %} rounded-full">{{ STATUS_LABELS.get(p.status, p.status) }}</span>
                 </td>
-                <td class="px-4 py-3 text-center align-middle" style="min-width: 7rem;">
+                <td class="px-4 py-3 text-center align-middle" style="min-width: 11rem;">
                     <div class="flex items-center justify-center gap-1">
                         <a href="/pedidos/{{ p.id }}" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Ver"><i data-lucide="eye" class="w-4 h-4"></i></a>
+                        <button type="button" class="inline-flex p-1.5 text-indigo-400 border border-slate-700 rounded hover:bg-indigo-950/30 transition" onclick="window.open('/pedidos/{{ p.id }}/imprimir','_blank')" title="Imprimir A4"><i data-lucide="printer" class="w-4 h-4"></i></button>
+                        <button type="button" class="inline-flex p-1.5 text-slate-300 border border-slate-700 rounded hover:bg-slate-800/50 transition" onclick="window.open('/pedidos/{{ p.id }}/imprimir?termica=1','_blank')" title="Imprimir Térmica"><i data-lucide="receipt" class="w-4 h-4"></i></button>
                         <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarExclusao('/pedidos/{{ p.id }}/excluir')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                     </div>
                 </td>

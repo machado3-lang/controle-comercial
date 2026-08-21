@@ -134,13 +134,24 @@ da consolidação (`nfe.py:918`, `nfse.py:668`) fica vinculada por
 
 ## 5. Impressão (Térmica e A4)
 
-- Pedido: `imprimir_pedido` (`pedidos.py:578`) — escolhe
+- Pedido: `imprimir_pedido` (`pedidos.py:608`) — escolhe
   `imprimir_termica.html` (param `?termica=1`) ou `imprimir.html`
-  (A4). Params: `tipo` (faturado) e `termica`.
+  (A4). Carrega os filhos de composição (`item.filhos`) e passa `now`.
+  Params: `tipo` (orcamento/faturado) e `termica`.
+- **Botões de impressão na lista (`pedidos/listar.html`):** foram adicionados
+  dois botões de ação por pedido — **Imprimir A4** (`/pedidos/{id}/imprimir`)
+  e **Imprimir Térmica** (`/pedidos/{id}/imprimir?termica=1`) — abrindo em
+  nova aba, além dos existentes Ver/Excluir.
+- **Templates reconstruídos no padrão da Ordem de Serviço** (limpos, sem
+  dependência de CDN externo): `imprimir.html` (A4) e `imprimir_termica.html`
+  (80mm) agora exibem cabeçalho com logotipo/emitente, dados do cliente,
+  dados do pedido, itens (com composição de kit indentada), total, observações
+  e assinaturas — espelhando `ordens_servico/imprimir_a4.html` e
+  `ordens_servico/imprimir_termica.html`.
 - Consolidação: `imprimir_consolidacao` (`consolidacoes.py:785`) —
   mesmo padrão (`imprimir_termica.html` / `imprimir.html`).
-- `pdf_pedido` (`pedidos.py:595`) é **stub**: apenas redireciona para
-  `/imprimir` (sem gerar PDF real via `core/pdf_generator.py`).
+- `pdf_pedido` (`pedidos.py:625`) gera PDF A4 real via WeasyPrint
+  (`pedidos/imprimir.html`); passa `now` e carrega `filhos` para consistência.
 
 **Melhorias:**
 - Implementar `pdf_pedido` real (usar `core/pdf_generator.py` já existente)

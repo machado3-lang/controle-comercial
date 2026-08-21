@@ -609,7 +609,7 @@ def finalizar_pedido(
 def imprimir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db), tipo: str = Query("faturado"), termica: str = Query("")):
     from sqlalchemy.orm import selectinload
     pedido = db.query(PedidoVenda).options(
-        selectinload(PedidoVenda.itens),
+        selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.filhos),
         selectinload(PedidoVenda.cliente)
     ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
@@ -618,7 +618,9 @@ def imprimir_pedido(request: Request, pedido_id: int, db: Session = Depends(get_
     template_name = "pedidos/imprimir_termica.html" if termica else "pedidos/imprimir.html"
     return request.app.state.templates.TemplateResponse(
         template_name,
-        {"request": request, "pedido": pedido, "empresa": empresa, "tipo_impressao": tipo, "STATUS_LABELS": STATUS_PEDIDO_LABELS, "FORMAS_PAGAMENTO": FORMAS_PAGAMENTO}
+        {"request": request, "pedido": pedido, "empresa": empresa, "tipo_impressao": tipo,
+         "STATUS_LABELS": STATUS_PEDIDO_LABELS, "FORMAS_PAGAMENTO": FORMAS_PAGAMENTO,
+         "now": datetime.now()}
     )
 
 
@@ -628,7 +630,7 @@ def pdf_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
     import os
     import tempfile
     pedido = db.query(PedidoVenda).options(
-        selectinload(PedidoVenda.itens),
+        selectinload(PedidoVenda.itens).selectinload(PedidoVendaItem.filhos),
         selectinload(PedidoVenda.cliente),
     ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
@@ -637,7 +639,7 @@ def pdf_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db)):
     context = {
         "request": request, "pedido": pedido, "empresa": empresa,
         "tipo_impressao": "faturado", "STATUS_LABELS": STATUS_PEDIDO_LABELS,
-        "FORMAS_PAGAMENTO": FORMAS_PAGAMENTO,
+        "FORMAS_PAGAMENTO": FORMAS_PAGAMENTO, "now": datetime.now(),
     }
     try:
         from weasyprint import HTML
