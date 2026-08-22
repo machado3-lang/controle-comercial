@@ -529,14 +529,31 @@ def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends
     conta = db.query(ContaReceber).filter(ContaReceber.id == conta_id).first()
     if not conta:
         return JSONResponse({"erro": "Conta não encontrada"}, status_code=404)
+
+    aviso = ""
+    # Se a conta possui boleto emitido e ainda está ativo, baixa automaticamente no Sicoob.
+    if conta.boleto_emitido and (conta.api_nosso_numero or conta.nosso_numero) and conta.status in (
+        StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA
+    ):
+        from routers.sicoob import baixar_boleto_sicoob
+        resultado = baixar_boleto_sicoob(db, conta, motivo="Exclusão da conta a receber")
+        if resultado.get("success"):
+            nn = conta.api_nosso_numero or conta.nosso_numero
+            aviso = f" Boleto {nn} baixado automaticamente no Sicoob."
+        else:
+            return JSONResponse(
+                {"erro": f"Não foi possível baixar o boleto no Sicoob ({resultado.get('error')}). A conta não foi excluída."},
+                status_code=400
+            )
+
     conta.status = StatusConta.EXCLUIDO
     db.commit()
     registrar_auditoria(
         db, request.session.get("user_id"), "excluir",
-        "conta_receber", conta_id, f"Conta: {conta.descricao}",
+        "conta_receber", conta_id, f"Conta: {conta.descricao}{aviso}",
         request.client.host if request.client else None
     )
-    return JSONResponse({"ok": True, "redirect": "/contas/receber"})
+    return JSONResponse({"ok": True, "redirect": "/contas/receber", "message": "Conta excluída." + aviso})
 
 
 @router.post("/pagar/{conta_id}/baixar")

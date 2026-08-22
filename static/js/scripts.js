@@ -163,7 +163,7 @@ function csrfFetch(url, options) {
     return fetch(url, options);
 }
 
-function confirmarExclusao(url) {
+function confirmarExclusao(url, avisoBoleto = false) {
     const form = document.getElementById('formExcluirModal');
     if (!form) {
         alert('Erro: formulário de exclusão não encontrado');
@@ -174,6 +174,8 @@ function confirmarExclusao(url) {
     const chk = document.getElementById('excluirContas');
     if (chk) chk.checked = false;
     if (aviso) aviso.classList.add('hidden');
+    const avisoB = document.getElementById('avisoBoletoReceber');
+    if (avisoB) avisoB.classList.toggle('hidden', !avisoBoleto);
     // Se for exclusão de pedido, verifica se há contas a receber vinculadas.
     const m = url.match(/\/pedidos\/(\d+)\/excluir$/);
     if (m && aviso) {

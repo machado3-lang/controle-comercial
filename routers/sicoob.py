@@ -602,13 +602,92 @@ def emitir_em_lote(request: Request, db: Session = Depends(get_db), background_t
     return RedirectResponse(url="/sicoob", status_code=303)
 
 
+def baixar_boleto_sicoob(db: Session, conta: ContaReceber, motivo: str = "") -> dict:
+    """Baixa (cancela) o boleto vinculado a uma ContaReceber diretamente no Sicoob.
+
+    Função síncrona reutilizável (usada pela rota de baixa manual e pela
+    exclusão de contas a receber). Retorna {"success", "error", "message"}.
+    É idempotente: se a conta já estiver CANCELADA/EXCLUÍDA, retorna sucesso.
+    """
+    if conta is None:
+        return {"success": False, "error": "Conta não encontrada"}
+    if conta.status in (StatusConta.CANCELADO, StatusConta.EXCLUIDO):
+        return {"success": True, "message": "Boleto já baixado", "ja_baixado": True}
+
+    emp = get_empresa(db)
+    if not emp:
+        return {"success": False, "error": "Empresa não configurada"}
+
+    # marca a baixa como solicitada (espelha o fluxo da rota de baixa)
+    if conta.status != StatusConta.BAIXA_SOLICITADA:
+        conta.status = StatusConta.BAIXA_SOLICITADA
+        if motivo:
+            conta.motivo_baixa = motivo
+        db.commit()
+
+    numero_busca = conta.api_nosso_numero or conta.nosso_numero or str(conta.id)
+
+    cert_config = get_cert_config(db)
+    client_args = {"timeout": 30}
+    if cert_config and "cert" in cert_config:
+        client_args["cert"] = cert_config["cert"]
+    token_busca = refresh_sicoob_token(db, "boletos_consulta")
+
+    numero_real = numero_busca
+    if token_busca:
+        try:
+            with httpx.Client(**client_args) as client:
+                resp = client.get(
+                    f"{SICOOO_API}/boletos",
+                    params={
+                        "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
+                        "codigoModalidade": 1,
+                        "nossoNumero": numero_busca
+                    },
+                    headers={"Authorization": f"Bearer {token_busca}"}
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    boletos = data.get("resultado", {}).get("boletos", [])
+                    if boletos:
+                        numero_real = str(boletos[0].get("nossoNumero", numero_busca))
+        except Exception as e:
+            logger.warning(f"Falha ao consultar boleto {numero_busca} para baixa: {e}")
+
+    token = refresh_sicoob_token(db, "boletos_alteracao")
+    if not token:
+        return {"success": False, "error": "Token Sicoob não configurado"}
+
+    cert_config = get_cert_config(db)
+    client_args = {"timeout": 30}
+    if cert_config and "cert" in cert_config:
+        client_args["cert"] = cert_config["cert"]
+
+    body = {
+        "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
+        "codigoModalidade": 1
+    }
+
+    try:
+        with httpx.Client(**client_args) as client:
+            resp = client.post(
+                f"{SICOOO_API}/boletos/{int(numero_real)}/baixar",
+                json=body,
+                headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            )
+            if resp.status_code in (200, 204):
+                conta.status = StatusConta.CANCELADO
+                db.commit()
+                return {"success": True, "message": "Boleto baixado com sucesso"}
+            return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+    except Exception as e:
+        return {"success": False, "error": f"Erro ao comunicar com o Sicoob: {e}"}
+
+
 @router.post("/baixar-boleto/{nosso_numero}", response_class=JSONResponse)
 async def baixar_boleto_route(request: Request, nosso_numero: str, db: Session = Depends(get_db)):
     if not request.session.get("user_id"):
         return {"success": False, "error": "Não autenticado"}
-    emp = get_empresa(db)
-    cert_config = get_cert_config(db)
-    
     try:
         body_req = await request.json()
         motivo = body_req.get("motivo", "")
@@ -616,76 +695,17 @@ async def baixar_boleto_route(request: Request, nosso_numero: str, db: Session =
         logger.warning(f"Falha ao decodificar JSON do corpo da requisição de baixa de boleto {nosso_numero}")
         motivo = ""
 
-    conta_inicial = None
+    conta = None
     if nosso_numero.isdigit():
-        conta_inicial = db.query(ContaReceber).filter(ContaReceber.id == int(nosso_numero)).first()
-    if not conta_inicial:
-        conta_inicial = db.query(ContaReceber).filter(
+        conta = db.query(ContaReceber).filter(ContaReceber.id == int(nosso_numero)).first()
+    if not conta:
+        conta = db.query(ContaReceber).filter(
             (ContaReceber.nosso_numero == nosso_numero) | (ContaReceber.api_nosso_numero == nosso_numero)
         ).first()
-    if conta_inicial and conta_inicial.status != StatusConta.CANCELADO:
-        conta_inicial.status = StatusConta.BAIXA_SOLICITADA
-        if motivo:
-            conta_inicial.motivo_baixa = motivo
-        db.commit()
-    elif conta_inicial and conta_inicial.status == StatusConta.CANCELADO:
-        return {"success": False, "error": "Boleto já cancelado"}
-    
-    numero_busca = None
-    if conta_inicial:
-        numero_busca = conta_inicial.api_nosso_numero or conta_inicial.nosso_numero
-    if not numero_busca:
-        numero_busca = nosso_numero
-    
-    client_args = {"timeout": 30}
-    if cert_config and "cert" in cert_config:
-        client_args["cert"] = cert_config["cert"]
-    token_busca = refresh_sicoob_token(db, "boletos_consulta")
-    
-    numero_real = numero_busca
-    if token_busca:
-        with httpx.Client(**client_args) as client:
-            resp = client.get(
-                f"{SICOOO_API}/boletos",
-                params={
-                    "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
-                    "codigoModalidade": 1,
-                    "nossoNumero": numero_busca
-                },
-                headers={"Authorization": f"Bearer {token_busca}"}
-            )
-            if resp.status_code == 200:
-                data = resp.json()
-                boletos = data.get("resultado", {}).get("boletos", [])
-                if boletos:
-                    numero_real = str(boletos[0].get("nossoNumero", numero_busca))
-    
-    token = refresh_sicoob_token(db, "boletos_alteracao")
-    if not token:
-        return {"success": False, "error": "Token Sicoob não configurado"}
-    
-    cert_config = get_cert_config(db)
-    client_args = {"timeout": 30}
-    if cert_config and "cert" in cert_config:
-        client_args["cert"] = cert_config["cert"]
-    
-    body = {
-        "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
-        "codigoModalidade": 1
-    }
-    
-    with httpx.Client(**client_args) as client:
-        resp = client.post(
-            f"{SICOOO_API}/boletos/{int(numero_real)}/baixar",
-            json=body,
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-        )
-        if resp.status_code in (200, 204):
-            if conta_inicial:
-                conta_inicial.status = StatusConta.CANCELADO
-                db.commit()
-            return {"success": True, "message": "Boleto baixado com sucesso"}
-        return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
+    if not conta:
+        return {"success": False, "error": "Boleto não encontrado"}
+
+    return baixar_boleto_sicoob(db, conta, motivo)
 
 
 @router.post("/sync-pagamentos", response_class=JSONResponse)

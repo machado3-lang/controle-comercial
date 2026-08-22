@@ -89,7 +89,7 @@
                          {% elif c.status.name.lower() not in ['cancelado', 'baixa_solicitada', 'pago'] %}
                            <button type="button" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Emitir Boleto" onclick="abrirEmitir({{ c.id }}, {{ c.valor }}, '{{ (c.numero_documento or '')|e }}')"><i data-lucide="credit-card" class="w-4 h-4"></i></button>
                          {% endif %}
-                         <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarExclusao('/contas/receber/{{ c.id }}/excluir')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
+                         <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarExclusao('/contas/receber/{{ c.id }}/excluir', {{ 'true' if (c.boleto_emitido and (c.api_nosso_numero or c.nosso_numero) and c.status.value in ['PENDENTE','VENCIDO','BAIXA_SOLICITADA']) else 'false' }})" title="Cancelar"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                      </div>
                  </td>
             </tr>
