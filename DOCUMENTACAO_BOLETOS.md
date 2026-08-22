@@ -11,7 +11,7 @@ boleto emitido, consultado, baixado, alterado e pago via Sicoob.
 
 - O boleto **não é uma entidade própria**: ele é o reflexo de uma
   `ContaReceber` (`models.py:218`) cujo campo `boleto_emitido` está `True`.
-- Toda a integração com o Sicoob vive em `routers/sicoob.py` (1122 linhas),
+- Toda a integração com o Sicoob vive em `routers/sicoob.py` (~1150 linhas),
   com apoio de:
   - `services/parcelamento.py` → emissão em lote das parcelas (`emitir_boletos_contas`).
   - `services/email_service.py` → envio do PDF do boleto por e-mail.
@@ -130,17 +130,45 @@ Fluxo:
 
 ## 6. Baixa, alteração e exclusão
 
-- **Baixar** — `POST /sicoob/baixar-boleto/{nosso_numero}` (`sicoob.py:594`):
-  marca a conta como `BAIXA_SOLICITADA`, consulta o nosso número real na API,
-  depois `POST {SICOOB_API_URL}/boletos/{nn}/baixar` (scope `boletos_alteracao`).
-  Em sucesso, status → `CANCELADO`.
+- **Helper de baixa** — `baixar_boleto_sicoob(db, conta, motivo="")`
+  (`sicoob.py:605`): função **síncrona e idempotente** que centraliza a baixa
+  de um boleto no Sicoob. Marca a conta como `BAIXA_SOLICITADA`, consulta o
+  nosso número real na API e faz `POST {SICOOB_API_URL}/boletos/{nn}/baixar`
+  (scope `boletos_alteracao`); em sucesso, status → `CANCELADO`. Se a conta já
+  estiver `CANCELADO`/`EXCLUIDO`, retorna sucesso sem chamar a API. Retorna
+  `{"success", "error", "message"}`. Tanto a rota manual de baixa quanto a
+  exclusão de conta a receber a reutilizam.
+- **Baixar (manual)** — `POST /sicoob/baixar-boleto/{nosso_numero}`
+  (`sicoob.py:729`): localiza a `ContaReceber` por `id`/`nosso_numero`/
+  `api_nosso_numero` e delega para `baixar_boleto_sicoob`. Em sucesso, status →
+  `CANCELADO`.
+- **Baixa automática ao excluir conta a receber** —
+  `POST /contas/receber/{conta_id}/excluir` (`contas.py:525`): antes de marcar a
+  conta como `EXCLUIDO`, se ela tiver `boleto_emitido=True` **e** um nosso número
+  (`api_nosso_numero` ou `nosso_numero`) **e** status ativo (`PENDENTE`/
+  `VENCIDO`/`BAIXA_SOLICITADA`), dispara `baixar_boleto_sicoob` com motivo
+  "Exclusão da conta a receber". Isso corrige a assimetria anterior: baixar o
+  boleto cancelava a conta, mas excluir a conta deixava o boleto **vivo** no
+  Sicoob (e o cliente ainda podia pagá-lo, sem vínculo).
+  - Se a baixa **falhar** (Sicoob indisponível, token inválido etc.), a exclusão
+    é **bloqueada** (HTTP 400) e a conta não é alterada — evita boleto órfão.
+  - Aviso ao usuário: o modal de exclusão exibe um alerta âmbar ("Esta conta
+    possui boleto vinculado que será baixado automaticamente") quando a conta tem
+    boleto ativo (`base.html` → `#avisoBoletoReceber`, `scripts.js` →
+    `confirmarExclusao(url, avisoBoleto)`); após a exclusão, o toast informa
+    "Conta excluída. Boleto X baixado automaticamente no Sicoob."
 - **Alterar** — `PATCH /sicoob/alterar-boleto/{nosso_numero}` (`sicoob.py:1044`):
   a API Sicoob exige **uma alteração por objeto PATCH**. Suporta
   `prorrogacaoVencimento` (data) e `valorNominal` (valor). Só então atualiza a
   `ContaReceber`.
-- **Excluir (lógico)** — `POST /sicoob/boleto/{nosso_numero}/excluir`
+- **Excluir (lógico) no Sicoob** — `POST /sicoob/boleto/{nosso_numero}/excluir`
   (`sicoob.py:1101`): exige confirmação de senha do usuário; define status
   `CANCELADO` e registra auditoria (`registrar_auditoria`).
+- **Rótulo da ação (UI)** — o botão de exclusão de contas a receber foi
+  renomeado de "Excluir" para "Cancelar" (`templates/contas/receber.html` e
+  `templates/contas/ver_receber.html`), refletindo que a operação é um
+  *soft-delete* (status `EXCLUIDO`) e, quando há boleto, também cancela o
+  título no Sicoob.
 
 ---
 
