@@ -60,6 +60,8 @@
                 </td>
                 <td class="px-4 py-3 text-center">
                     <a href="/ordens-servico/{{ o.id }}" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Detalhes"><i data-lucide="eye" class="w-4 h-4"></i></a>
+                    <a href="/ordens-servico/{{ o.id }}/imprimir?tipo=termica" target="_blank" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Imprimir Térmica"><i data-lucide="printer" class="w-4 h-4"></i></a>
+                    <a href="/ordens-servico/{{ o.id }}/imprimir?tipo=a4" target="_blank" class="inline-flex p-1.5 text-slate-300 border border-slate-700 rounded hover:bg-slate-800/40 transition" title="Imprimir A4"><i data-lucide="file-text" class="w-4 h-4"></i></a>
                     <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarExclusao('/ordens-servico/{{ o.id }}/excluir')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
                 </td>
             </tr>

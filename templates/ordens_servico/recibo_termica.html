@@ -6,7 +6,13 @@
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #e5e7eb; }
-  body { font-family: 'Courier New', Courier, monospace; }
+  @font-face {
+    font-family: 'TermicaFonte';
+    src: url('/static/fonts/SourceCodePro-Medium.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
+  body { font-family: 'TermicaFonte', 'Courier New', Courier, monospace; }
   .rec-termica { width: 80mm; max-width: 80mm; margin: 6mm auto; padding: 3mm 2mm;
                  background: #fff; color: #000; font-size: 11px; line-height: 1.35; }
   .rec-termica, .rec-termica * { color: #000 !important; }
@@ -37,23 +43,21 @@
   {% if empresa and empresa.logo %}
     <div class="c"><img src="/{{ empresa.logo }}" alt="Logo" style="max-height:38px; max-width:70mm; object-fit:contain;"></div>
   {% endif %}
-  <div class="c b" style="font-size:13px;">{{ (empresa.nome_fantasia or empresa.razao_social) if empresa else 'SUA EMPRESA' }}</div>
   {% if empresa and empresa.cnpj %}<div class="c">CNPJ: {{ empresa.cnpj }}</div>{% endif %}
-  {% if empresa and (empresa.endereco or empresa.cidade) %}
-    <div class="c">{{ [empresa.endereco, (empresa.cidade ~ '/' ~ empresa.estado if empresa.cidade else none)]|select|join(' - ') }}</div>
+  {% if empresa and (empresa.endereco or empresa.cidade or empresa.telefone) %}
+    <div class="c">{{ [empresa.endereco, (empresa.cidade ~ '/' ~ empresa.estado if empresa.cidade else none), ('Tel: ' ~ empresa.telefone if empresa.telefone else none)]|select|join(' - ') }}</div>
   {% endif %}
-  {% if empresa and empresa.telefone %}<div class="c">Tel: {{ empresa.telefone }}</div>{% endif %}
 
   <div class="sep-d"></div>
-  <div class="c b" style="font-size:14px;">RECIBO</div>
+  <div class="c b" style="font-size:13px;">RECIBO — OS Nº {{ ordem.id }}</div>
   <div class="c" style="font-size:10px;">Sem emissão de NFS-e / NFe</div>
-  <div class="c b" style="font-size:13px;">OS Nº {{ ordem.id }}</div>
   <div class="sep-d"></div>
 
   <div class="b">CLIENTE</div>
   <div>{{ cliente.nome if cliente else '-' }}</div>
-  {% if cliente and cliente.cpf_cnpj %}<div>Doc: {{ cliente.cpf_cnpj }}</div>{% endif %}
-  {% if cliente and cliente.telefone %}<div>Tel: {{ cliente.telefone }}</div>{% endif %}
+  {% if cliente and (cliente.cpf_cnpj or cliente.telefone) %}
+    <div>{{ ['Doc: ' ~ cliente.cpf_cnpj if cliente.cpf_cnpj else none, 'Tel: ' ~ cliente.telefone if cliente.telefone else none]|select|join('  |  ') }}</div>
+  {% endif %}
 
   <div class="sep"></div>
   <div class="b">EQUIPAMENTO</div>

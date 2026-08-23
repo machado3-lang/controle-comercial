@@ -6,7 +6,13 @@
 <style>
   * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #e5e7eb; }
-  body { font-family: 'Courier New', Courier, monospace; }
+  @font-face {
+    font-family: 'TermicaFonte';
+    src: url('/static/fonts/SourceCodePro-Medium.ttf') format('truetype');
+    font-weight: normal;
+    font-style: normal;
+  }
+  body { font-family: 'TermicaFonte', 'Courier New', Courier, monospace; }
   .os-termica { width: 80mm; max-width: 80mm; margin: 6mm auto; padding: 3mm 2mm;
                 background: #fff; color: #000; font-size: 11px; line-height: 1.35; }
   .os-termica, .os-termica * { color: #000 !important; }
@@ -37,23 +43,24 @@
   {% if empresa and empresa.logo %}
     <div class="c"><img src="/{{ empresa.logo }}" alt="Logo" style="max-height:38px; max-width:70mm; object-fit:contain;"></div>
   {% endif %}
-  <div class="c b" style="font-size:13px;">{{ (empresa.nome_fantasia or empresa.razao_social) if empresa else 'SUA EMPRESA' }}</div>
   {% if empresa and empresa.cnpj %}<div class="c">CNPJ: {{ empresa.cnpj }}</div>{% endif %}
-  {% if empresa and (empresa.endereco or empresa.cidade) %}
-    <div class="c">{{ [empresa.endereco, (empresa.cidade ~ '/' ~ empresa.estado if empresa.cidade else none)]|select|join(' - ') }}</div>
+  {% if empresa and (empresa.endereco or empresa.cidade or empresa.telefone) %}
+    <div class="c">{{ [empresa.endereco, (empresa.cidade ~ '/' ~ empresa.estado if empresa.cidade else none), ('Tel: ' ~ empresa.telefone if empresa.telefone else none)]|select|join(' - ') }}</div>
   {% endif %}
-  {% if empresa and empresa.telefone %}<div class="c">Tel: {{ empresa.telefone }}</div>{% endif %}
 
   <div class="sep-d"></div>
-  <div class="c b" style="font-size:13px;">{% if eh_orcamento %}ORÇAMENTO{% else %}ORDEM DE SERVIÇO{% endif %}</div>
-  <div class="c b" style="font-size:15px;">Nº {{ ordem.id }}</div>
-  <div class="c">{{ ordem.status.value|upper }}</div>
+  <div class="c b" style="font-size:13px;">{% if eh_orcamento %}ORÇAMENTO{% else %}ORDEM DE SERVIÇO{% endif %} Nº {{ ordem.id }}</div>
+  <div class="linha" style="align-items:stretch; margin:4px 0;">
+    <div class="b" style="flex:1; border:1px solid #000; border-radius:3px; padding:3px 4px; text-align:center;">{{ ordem.status.value|upper }}</div>
+    <div style="flex:1; border:1px solid #000; border-radius:3px; padding:3px 4px; text-align:center;">{{ ordem.data_entrada.strftime('%d/%m/%Y') if ordem.data_entrada else '' }}</div>
+  </div>
   <div class="sep-d"></div>
 
   <div class="b">CLIENTE</div>
   <div>{{ ordem.cliente.nome if ordem.cliente else '-' }}</div>
-  {% if ordem.cliente and ordem.cliente.cpf_cnpj %}<div>Doc: {{ ordem.cliente.cpf_cnpj }}</div>{% endif %}
-  {% if ordem.cliente and ordem.cliente.telefone %}<div>Tel: {{ ordem.cliente.telefone }}</div>{% endif %}
+  {% if ordem.cliente and (ordem.cliente.cpf_cnpj or ordem.cliente.telefone) %}
+    <div>{{ ['Doc: ' ~ ordem.cliente.cpf_cnpj if ordem.cliente.cpf_cnpj else none, 'Tel: ' ~ ordem.cliente.telefone if ordem.cliente.telefone else none]|select|join('  |  ') }}</div>
+  {% endif %}
 
   <div class="sep"></div>
   <div class="b">EQUIPAMENTO</div>
