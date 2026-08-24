@@ -157,12 +157,23 @@ Fluxo:
     boleto ativo (`base.html` → `#avisoBoletoReceber`, `scripts.js` →
     `confirmarExclusao(url, avisoBoleto)`); após a exclusão, o toast informa
     "Conta excluída. Boleto X baixado automaticamente no Sicoob."
-- **Alterar** — `PATCH /sicoob/alterar-boleto/{nosso_numero}` (`sicoob.py:1044`):
-  a API Sicoob exige **uma alteração por objeto PATCH**. Suporta
-  `prorrogacaoVencimento` (data) e `valorNominal` (valor). Só então atualiza a
-  `ContaReceber`.
+- **Alterar** — `PATCH /sicoob/alterar-boleto/{nosso_numero}` (`sicoob.py:1076`):
+  a API do Sicoob **não suporta a alteração do valor nominal** do boleto — enviar
+  `valorNominal` retorna HTTP 400 / código 5002 ("Ao menos um campo deve ser
+  alterado"). Os únicos objetos alteráveis são `prorrogacaoVencimento` (data de
+  vencimento), `desconto`, `abatimento`, `multa`, `jurosMora`, `rateioCredito`,
+  `pix` e `prorrogacaoLimitePagamento`. No sistema, o modal de alteração expõe
+  apenas a **prorrogação de vencimento**; para corrigir o **valor**, use a
+  **Reemissão** (veja abaixo).
+- **Reemitir** — `POST /sicoob/reemitir-boleto/{conta_id}` (`sicoob.py:711`):
+  baixa o boleto atual no Sicoob (se emitido) e emite um **novo boleto na mesma
+  `ContaReceber`**, preservando o vínculo `nfse_id` com a nota fiscal. Quando a
+  conta está vinculada a uma NFSe com `iss_retido`, o valor é corrigido
+  automaticamente para o **líquido** (`nfse.valor_liquido`). Botão "Reemitir" na
+  lista de boletos (desabilitado para `pago`/`baixa_solicitada`). Evita criar uma
+  ContaReceber solta ao corrigir o valor de um boleto emitido com valor total.
 - **Excluir (lógico) no Sicoob** — `POST /sicoob/boleto/{nosso_numero}/excluir`
-  (`sicoob.py:1101`): exige confirmação de senha do usuário; define status
+  (`sicoob.py:1132`): exige confirmação de senha do usuário; define status
   `CANCELADO` e registra auditoria (`registrar_auditoria`).
 - **Rótulo da ação (UI)** — o botão de exclusão de contas a receber foi
   renomeado de "Excluir" para "Cancelar" (`templates/contas/receber.html` e
