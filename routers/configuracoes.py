@@ -1,5 +1,6 @@
 import os
 import json
+import logging
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File, Query, HTTPException
 from fastapi.responses import RedirectResponse, Response, JSONResponse
 from sqlalchemy.orm import Session, selectinload
@@ -7,9 +8,15 @@ from datetime import datetime, timedelta
 from database import get_db
 from models import Empresa, Cliente, Fornecedor, Produto
 from services.backup import generate_backup, restore_backup
+from services.backup_scheduler import (
+    load_backup_config, save_backup_config, save_backup_to_disk,
+    run_auto_backup, list_backup_files, read_backup_file, delete_backup_file,
+)
 from services.cert_store import store_certificate
 from app.core.security import verificar_admin
 from services.audit import registrar_auditoria
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/configuracoes", tags=["Configuracoes"])
 
@@ -37,6 +44,8 @@ def configuracoes(request: Request, db: Session = Depends(get_db), aba: str = "e
             "bling_synced_clientes": db.query(Cliente).filter(Cliente.bling_id.isnot(None)).count(),
             "bling_synced_fornecedores": db.query(Fornecedor).filter(Fornecedor.bling_id.isnot(None)).count(),
             "bling_synced_produtos": db.query(Produto).filter(Produto.bling_id.isnot(None)).count(),
+            "backup_config": load_backup_config(),
+            "backups": list_backup_files(),
         },
     )
 
@@ -277,23 +286,136 @@ def download_backup(request: Request):
 
 
 @router.post("/restore")
-async def upload_restore(request: Request, arquivo: UploadFile = File(...)):
+async def upload_restore(request: Request, arquivo: UploadFile = File(...), modo: str = Form("sobrepor")):
     if not request.session.get("user_id"):
         return JSONResponse({"error": "Não autenticado"}, status_code=401)
     from database import get_db
     from models import Usuario
     db = next(get_db())
-    if not verificar_admin(request, db):
-        return JSONResponse({"error": "Acesso negado: apenas administradores"}, status_code=403)
+    try:
+        if not verificar_admin(request, db):
+            return JSONResponse({"error": "Acesso negado: apenas administradores"}, status_code=403)
+    finally:
+        # Fecha a sessão antes do restore pesado: uma transação ociosa seguraria
+        # locks (ACCESS SHARE) que bloqueiam o DROP CONSTRAINT (ACCESS EXCLUSIVE)
+        # do modo "limpar", causando espera infinita.
+        db.close()
+    if modo not in ("sobrepor", "limpar"):
+        return JSONResponse({"error": "modo deve ser 'sobrepor' ou 'limpar'"}, status_code=400)
     if not arquivo.filename or not arquivo.filename.endswith(".json"):
         return JSONResponse({"error": "Envie um arquivo .json válido"}, status_code=400)
     try:
         content = await arquivo.read()
+        if not content or not content.strip():
+            raise ValueError("Arquivo vazio ou não recebido (falha no upload multipart)")
         backup = json.loads(content)
-        stats = restore_backup(backup)
+        import asyncio
+        stats = await asyncio.to_thread(restore_backup, backup, modo=modo)
+        # Auditoria em sessão nova (a anterior foi fechada antes do restore).
+        db2 = next(get_db())
+        try:
+            registrar_auditoria(
+                db2, request.session.get("user_id"), "restore_backup",
+                "backup", None, f"modo={modo}; importados={stats.get('imported')}; erros={stats.get('erros')}",
+                request.client.host if request.client else None
+            )
+        finally:
+            db2.close()
         return JSONResponse(stats)
     except Exception as e:
+        import traceback as _tb
+        logger.error("[RESTORE] Falha no restore (modo=%s): %s\n%s", modo, e, _tb.format_exc())
         return JSONResponse({"error": str(e)}, status_code=500)
+
+@router.get("/backup-config")
+def backup_config(request: Request, db: Session = Depends(get_db)):
+    if not verificar_admin(request, db):
+        return JSONResponse({"error": "Acesso negado: apenas administradores"}, status_code=403)
+    return JSONResponse(load_backup_config())
+
+
+@router.post("/backup-config")
+async def salvar_backup_config(request: Request, db: Session = Depends(get_db)):
+    if not verificar_admin(request, db):
+        return JSONResponse({"error": "Acesso negado: apenas administradores"}, status_code=403)
+    form = await request.form()
+    novo = {}
+    if "enabled" in form:
+        novo["enabled"] = str(form.get("enabled")) in ("1", "true", "on", "True")
+    if "interval_hours" in form:
+        try:
+            novo["interval_hours"] = int(form.get("interval_hours"))
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "interval_hours deve ser um número"}, status_code=400)
+    if "retention" in form:
+        try:
+            novo["retention"] = int(form.get("retention"))
+        except (TypeError, ValueError):
+            return JSONResponse({"error": "retenção deve ser um número"}, status_code=400)
+    cfg = save_backup_config(novo)
+    registrar_auditoria(
+        db, request.session.get("user_id"), "config_backup",
+        "backup", None, f"enabled={cfg['enabled']}; intervalo={cfg['interval_hours']}h; retencao={cfg['retention']}",
+        request.client.host if request.client else None
+    )
+    return JSONResponse({"success": True, "config": cfg})
+
+
+@router.post("/backup-salvar")
+def salvar_backup_disco(request: Request, db: Session = Depends(get_db)):
+    if not verificar_admin(request, db):
+        return JSONResponse({"error": "Acesso negado: apenas administradores"}, status_code=403)
+    try:
+        result = save_backup_to_disk()
+        registrar_auditoria(
+            db, request.session.get("user_id"), "backup_disco",
+            "backup", None, f"arquivo={result['filename']}; registros={result['registros']}",
+            request.client.host if request.client else None
+        )
+        return JSONResponse({"success": True, **result})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=500)
+
+
+@router.get("/backups")
+def listar_backups(request: Request, db: Session = Depends(get_db)):
+    if not verificar_admin(request, db):
+        return JSONResponse({"error": "Acesso negado: apenas administradores"}, status_code=403)
+    return JSONResponse({"backups": list_backup_files()})
+
+
+@router.get("/backup-arquivo")
+def baixar_backup_arquivo(request: Request, nome: str = Query(...), db: Session = Depends(get_db)):
+    if not verificar_admin(request, db):
+        return JSONResponse({"error": "Acesso negado: apenas administradores"}, status_code=403)
+    try:
+        from fastapi.responses import FileResponse
+        _, path = read_backup_file(nome)
+        return FileResponse(
+            str(path), media_type="application/json",
+            filename=path.name,
+        )
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
+
+@router.post("/backup-arquivo-excluir")
+async def excluir_backup_arquivo(request: Request, db: Session = Depends(get_db)):
+    if not verificar_admin(request, db):
+        return JSONResponse({"error": "Acesso negado: apenas administradores"}, status_code=403)
+    form = await request.form()
+    nome = form.get("nome", "")
+    try:
+        delete_backup_file(nome)
+        registrar_auditoria(
+            db, request.session.get("user_id"), "excluir_backup",
+            "backup", None, f"arquivo={nome}",
+            request.client.host if request.client else None
+        )
+        return JSONResponse({"success": True, "nome": nome})
+    except Exception as e:
+        return JSONResponse({"error": str(e)}, status_code=400)
+
 
 @router.post("/testar-email")
 async def testar_email(request: Request, db: Session = Depends(get_db)):

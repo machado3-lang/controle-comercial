@@ -1,9 +1,12 @@
 import json
 import re
+import logging
 from datetime import datetime, date
 from decimal import Decimal
 from sqlalchemy import text, inspect as sa_inspect
 from database import engine
+
+logger = logging.getLogger(__name__)
 
 
 TABLES_IN_ORDER = [
@@ -84,6 +87,67 @@ def _build_enum_lookup():
 _ENUM_LOOKUP = _build_enum_lookup()
 
 
+def _pg_drop_fk_constraints(conn):
+    """No PostgreSQL, `DISABLE TRIGGER ALL` não contorna FKs sem superusuário e
+    o schema tem FKs cíclicas e também FKs vindas de tabelas não listadas no
+    backup (ex.: audit_log -> usuarios). A solução portável é REMOVER TODAS as
+    FKs do banco antes do restore e recriá-las ao final. Retorna (drop_sql, create_sql)."""
+    from sqlalchemy import text as _text
+    rows = conn.execute(_text("""
+        SELECT
+            tc.constraint_name,
+            tc.table_name,
+            kcu.column_name,
+            ccu.table_name AS referenced_table_name,
+            ccu.column_name AS referenced_column_name,
+            rc.delete_rule,
+            rc.update_rule,
+            kcu.ordinal_position
+        FROM information_schema.table_constraints tc
+        JOIN information_schema.key_column_usage kcu
+            ON tc.constraint_name = kcu.constraint_name
+            AND tc.table_schema = kcu.table_schema
+            AND tc.table_name = kcu.table_name
+        JOIN information_schema.constraint_column_usage ccu
+            ON tc.constraint_name = ccu.constraint_name
+            AND tc.table_schema = ccu.table_schema
+        JOIN information_schema.referential_constraints rc
+            ON tc.constraint_name = rc.constraint_name
+            AND tc.table_schema = rc.constraint_schema
+        WHERE tc.constraint_type = 'FOREIGN KEY'
+            AND tc.table_schema = 'public'
+        ORDER BY tc.table_name, tc.constraint_name, kcu.ordinal_position
+    """)).fetchall()
+
+    cons = {}
+    for r in rows:
+        cname, table, col, ref_table, ref_col, del_rule, upd_rule, pos = r
+        key = (table, cname)
+        entry = cons.setdefault(key, {
+            "ref": ref_table, "del": del_rule, "upd": upd_rule,
+            "cols": [], "refcols": [],
+        })
+        entry["cols"].append((pos, col))
+        entry["refcols"].append((pos, ref_col))
+
+    defs = []
+    for (table, cname), e in cons.items():
+        cols = ", ".join(c for _, c in sorted(e["cols"]))
+        refcols = ", ".join(c for _, c in sorted(e["refcols"]))
+        extra = ""
+        if e["del"] and e["del"] != "NO ACTION":
+            extra += " ON DELETE " + e["del"]
+        if e["upd"] and e["upd"] != "NO ACTION":
+            extra += " ON UPDATE " + e["upd"]
+        drop_sql = f"ALTER TABLE {table} DROP CONSTRAINT {cname}"
+        create_sql = (
+            f"ALTER TABLE {table} ADD CONSTRAINT {cname} "
+            f"FOREIGN KEY ({cols}) REFERENCES {e['ref']} ({refcols}){extra}"
+        )
+        defs.append((drop_sql, create_sql))
+    return defs
+
+
 def _normalize_enum_value(col_name: str, value):
     """Normaliza um valor de enum para o NOME canônico do membro em models.py
     (o que o SQLAlchemy espera com native_enum=False)."""
@@ -140,7 +204,10 @@ def _get_pg_columns(conn, table_name):
     return {row[0]: {"data_type": row[1], "udt_name": row[2]} for row in result}
 
 
-def restore_backup(backup_dict: dict) -> dict:
+def restore_backup(backup_dict: dict, modo: str = "sobrepor") -> dict:
+    if modo not in ("sobrepor", "limpar"):
+        raise ValueError("modo deve ser 'sobrepor' ou 'limpar'")
+    logger.info("[RESTORE] Iniciando restore (modo=%s)", modo)
     raw = backup_dict.get("tables")
     if isinstance(raw, dict):
         tables_data = raw
@@ -161,6 +228,36 @@ def restore_backup(backup_dict: dict) -> dict:
         tabelas[table_name] = {"backup": len(backup_rows), "importado": 0, "erros": 0, "ignorado": 0}
 
     is_pg = "postgresql" in str(engine.url)
+
+    # Modo "limpar": remove os registros atuais das tabelas presentes no backup
+    # antes de reinserir, garantindo um restore fiel ao ponto do backup.
+    # Em PostgreSQL, como `DISABLE TRIGGER ALL` não contorna FKs sem superusuário
+    # e o schema tem FKs cíclicas (ex.: pedidos_venda <-> assinaturas), removemos
+    # todas as FKs das tabelas antes e as recriamos ao final. Em SQLite o FK não
+    # é enforcement por padrão, então nenhuma ação extra é necessária.
+    fk_defs = []
+    fk_disabled = False
+    if modo == "limpar":
+        if is_pg:
+            with engine.connect() as conn:
+                trans = conn.begin()
+                fk_defs = _pg_drop_fk_constraints(conn)
+                for drop_sql, _ in fk_defs:
+                    conn.execute(text(drop_sql))
+                trans.commit()
+            fk_disabled = True
+            logger.info("[RESTORE] limpar: %d FKs removidas (PostgreSQL)", len(fk_defs))
+        with engine.connect() as conn:
+            trans = conn.begin()
+            try:
+                for table_name in tables_data:
+                    if table_name in ALLOWED_TABLES:
+                        _validate_table(table_name)
+                        conn.execute(text(f"DELETE FROM {table_name}"))
+                trans.commit()
+            except Exception as e:
+                trans.rollback()
+                raise RuntimeError(f"Falha ao limpar tabelas antes do restore: {e}") from e
 
     for table_name in TABLES_IN_ORDER:
         _validate_table(table_name)
@@ -251,6 +348,9 @@ def restore_backup(backup_dict: dict) -> dict:
 
                 trans.commit()
                 total_imported += tabelas[table_name]["importado"]
+                logger.info("[RESTORE] tabela %s: %d/%d importados, %d erros",
+                             table_name, tabelas[table_name]["importado"],
+                             tabelas[table_name]["backup"], tabelas[table_name]["erros"])
 
                 if is_pg and tabelas[table_name]["importado"] > 0:
                     try:
@@ -270,9 +370,21 @@ def restore_backup(backup_dict: dict) -> dict:
                 total_errors += 1
                 detalhes.append(f"{table_name}: TABELA NAO IMPORTADA - erro: {str(e)[:300]}")
 
+    if fk_disabled:
+        try:
+            with engine.connect() as conn:
+                trans = conn.begin()
+                logger.info("[RESTORE] limpar: recriando %d FKs", len(fk_defs))
+                for _, create_sql in fk_defs:
+                    conn.execute(text(create_sql))
+                trans.commit()
+        except Exception as e:
+            logger.error("Não foi possível recriar as FKs após o restore: %s", e)
+
     for tn, t in tabelas.items():
         t["nao_processado"] = t["backup"] - t["importado"] - t["erros"] - t["ignorado"]
 
+    logger.info("[RESTORE] concluído: %d importados, %d erros", total_imported, total_errors)
     return {
         "imported": total_imported,
         "erros": total_errors,

@@ -41,9 +41,15 @@ async def lifespan(app: FastAPI):
     print("[STARTUP] Iniciando aplicação...")
     run_migrations()
     print("[STARTUP] Migrações executadas")
+    if settings.ENVIRONMENT != "testing":
+        # Inicia o scheduler de backup automático (agendamento em disco).
+        from services.backup_scheduler import start_backup_scheduler
+        start_backup_scheduler()
     yield
     # Shutdown
-    # Any cleanup if needed
+    if settings.ENVIRONMENT != "testing":
+        from services.backup_scheduler import stop_backup_scheduler
+        stop_backup_scheduler()
 
 
 def run_migrations():

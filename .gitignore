@@ -18,4 +18,4 @@ SICOOB API/
 backup_*/
 backups/
 backup.json
-backup-rlw/
+backup-rlw/backup_config.json
