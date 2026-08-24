@@ -15,6 +15,21 @@ Sistema web completo para gestão comercial com integração Bling ERP v3.
 | NFe | API NotaAs + SEFAZ (certificado A1) |
 | NFSe | API Betha + ADN (certificado A1) |
 
+## Índice de Documentação
+
+| Documento | Assunto |
+|------------|---------|
+| [DOCUMENTACAO_BACKUP.md](DOCUMENTACAO_BACKUP.md) | Backup e restore: agendamento automático, modos `sobrepor`/`limpar`, retenção e UI. |
+| [DOCUMENTACAO_ASSINATURAS.md](DOCUMENTACAO_ASSINATURAS.md) | Assinaturas recorrentes, vencimento e histórico. |
+| [DOCUMENTACAO_BOLETOS.md](DOCUMENTACAO_BOLETOS.md) | Boletos Sicoob: emissão, reemissão e valor líquido. |
+| [DOCUMENTACAO_ITENS.md](DOCUMENTACAO_ITENS.md) | Produtos/serviços/kits (itens). |
+| [DOCUMENTACAO_NFE.md](DOCUMENTACAO_NFE.md) | NFe: NotaAs, distribuição SEFAZ e importação. |
+| [DOCUMENTACAO_OS.md](DOCUMENTACAO_OS.md) | Ordens de Serviço. |
+| [DOCUMENTACAO_PEDIDOS.md](DOCUMENTACAO_PEDIDOS.md) | Pedidos de Venda. |
+| [NFSe.md](NFSe.md) | Visão geral NFSe (Betha/ADN). |
+| [MIGRACAO_NFSE_AMBIENTE_NACIONAL.md](MIGRACAO_NFSE_AMBIENTE_NACIONAL.md) | Migração NFSe para Ambiente Nacional. |
+| [README.md](README.md) | Setup/visão geral do projeto. |
+
 ## Estrutura do Projeto
 
 ```
