@@ -155,8 +155,10 @@
             </div>
             <div class="modal-body">
                 <input type="hidden" id="alterar-nosso-numero">
-                <div class="mb-3"><label class="form-label text-cyan-300">Novo Valor (deixe vazio para não alterar)</label>
-                    <input type="number" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" id="alterar-valor" step="0.01"></div>
+                <div class="mb-3 rounded-xl bg-slate-800/40 border border-slate-700/60 p-3 text-xs text-slate-400">
+                    <i data-lucide="info" class="w-4 h-4 inline text-cyan-400 me-1"></i>
+                    O <b class="text-slate-200">valor do boleto não pode ser alterado</b> no Sicoob. Para corrigir o valor, edite a Conta a Receber, <b class="text-slate-200">baixe</b> este boleto e emita um novo.
+                </div>
                 <div class="mb-3"><label class="form-label text-cyan-300">Nova Data Vencimento (deixe vazio para não alterar)</label>
                     <input type="date" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" id="alterar-vencimento"></div>
             </div>
@@ -465,7 +467,6 @@ function syncPagamentos() {
 function abrirAlterar(nossoNumero, dataVencimento) {
     document.getElementById('alterar-nosso-numero').value = nossoNumero;
     document.getElementById('alterar-vencimento').value = dataVencimento;
-    document.getElementById('alterar-valor').value = '';
     new bootstrap.Modal(document.getElementById('alterarBoletoModal')).show();
 }
 
@@ -476,7 +477,6 @@ function salvarAlteracao() {
     btn.disabled = true;
     const nossoNumero = document.getElementById('alterar-nosso-numero').value;
     const dados = {};
-    if (document.getElementById('alterar-valor').value) dados.valor = parseFloat(document.getElementById('alterar-valor').value);
     if (document.getElementById('alterar-vencimento').value) dados.dataVencimento = document.getElementById('alterar-vencimento').value;
     if (Object.keys(dados).length === 0) {
         btn.innerHTML = originalHtml;

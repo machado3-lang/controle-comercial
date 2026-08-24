@@ -236,10 +236,17 @@ class BethaNfseService:
             m = re.search(rf'<[^:>]*:?{name}[^>]*>([^<]*)</[^:>]*:?{name}[^>]*>', text)
             return m.group(1).strip() if m else None
         
+        sit_val = _val('situacaoNfse') or _val('situacao') or ''
+        # <situacao> vem aninhado: <situacao><codigo>2</codigo><descricao>...
+        # Extrai o código (1=Normal, 2=Cancelada) para detectar cancelamento
+        # feito pelo portal Betha, que o SOAP ConsultarStatusDps reporta aqui.
+        m_cod = re.search(r'<codigo>\s*([^<]+)</codigo>', sit_val)
+        situacao_nfse = (m_cod.group(1).strip() if m_cod else sit_val.strip())
+
         result = {
             'status': _val('statusProcessamento') or 'DESCONHECIDO',
             'data_hora': _val('dataHoraRecebimento'),
-            'situacao_nfse': _val('situacaoNfse') or _val('situacao'),
+            'situacao_nfse': situacao_nfse,
         }
         
         msgs = re.findall(r'<[^:>]*:?mensagem[^>]*>([^<]+)</[^:>]*:?mensagem[^>]*>', text)
@@ -583,6 +590,80 @@ class BethaNfseService:
         logger.info(f"ADN DF-e: chave não localizada ({pagina} págs varridas, "
                     f"{docs_vistos} docs, NSU inicial {nsu_inicial}, NSU final {ultNSU})")
         return None
+
+    def _verificar_cancelamento_adn(self, chave: str, max_paginas: int = 200) -> bool:
+        """Verifica se há evento de cancelamento (tipoEvento 101101 / descEvento
+        Cancel) para a chave na distribuição DF-e do ADN.
+
+        Fonte autoritativa e INDEPENDENTE do SEFIN (que frequentemente está
+        indisponível/403) para detectar cancelamentos feitos pelo portal Betha
+        ou por outros meios — inclusive aqueles que o SOAP ConsultarStatusDps
+        não reflete (pois reporta apenas a situação do envio da DPS)."""
+        import base64, gzip, re, time
+        if not chave:
+            return False
+        session = self._get_adn_session()
+        ultNSU = 0
+        erros_seguidos = 0
+        pagina = 0
+        while pagina < max_paginas:
+            pagina += 1
+            url = f"{ADN_DFE_URL}/{ultNSU}"
+            try:
+                time.sleep(0.3)  # rate limit
+                r = session.get(url, timeout=60)
+                if r.status_code == 429:
+                    logger.info("ADN DF-e 429 (verificar cancelamento); aguardando 5s...")
+                    time.sleep(5)
+                    continue
+                if r.status_code != 200:
+                    erros_seguidos += 1
+                    logger.warning(
+                        f"ADN DF-e HTTP {r.status_code} (verificar cancelamento, NSU {ultNSU})"
+                    )
+                    if erros_seguidos >= 3:
+                        break
+                    time.sleep(2)
+                    continue
+                erros_seguidos = 0
+                data = r.json()
+                if data.get('StatusProcessamento') != 'DOCUMENTOS_LOCALIZADOS':
+                    break
+                lote = data.get('LoteDFe') or []
+                if not lote:
+                    break
+                nsu_max = max((int(df.get('NSU', 0)) for df in lote if df.get('NSU')),
+                              default=ultNSU)
+                for df in lote:
+                    if df.get('ChaveAcesso') != chave:
+                        continue
+                    xml_b64 = df.get('ArquivoXml')
+                    if not xml_b64:
+                        continue
+                    try:
+                        xml = gzip.decompress(base64.b64decode(xml_b64)).decode('utf-8')
+                    except Exception:
+                        try:
+                            xml = base64.b64decode(xml_b64).decode('utf-8')
+                        except Exception:
+                            continue
+                    if re.search(r'<tpEvento>\s*(110111|101101)\s*</tpEvento>', xml) \
+                       or re.search(r'<tipoEvento>[^<]*101101', xml) \
+                       or re.search(r'<descEvento>[^<]*Cancel', xml, re.IGNORECASE) \
+                       or re.search(r'<cDescEvento>[^<]*Cancel', xml, re.IGNORECASE):
+                        logger.info(f"Cancelamento confirmado via DF-e ADN para chave {chave[:10]}...")
+                        return True
+                if nsu_max == ultNSU:
+                    break
+                ultNSU = nsu_max
+            except Exception as e:
+                erros_seguidos += 1
+                logger.warning(f"Erro ADN DF-e (verificar cancelamento, NSU {ultNSU}): {e}")
+                if erros_seguidos >= 3:
+                    break
+                time.sleep(2)
+        logger.info(f"ADN DF-e: nenhum evento de cancelamento para chave {chave[:10]}...")
+        return False
 
     def _obter_xml_sefin(self, chave: str) -> Optional[str]:
         """Busca direta do XML nacional no SEFIN por chave de acesso:
@@ -1548,13 +1629,17 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
         raise NFSeBethaError(f"Erro inesperado: {e}")
 
 
-def sincronizar_nfse(protocolo: str, tpAmb: int = 1, numero_nfse: str = None) -> dict:
+def sincronizar_nfse(protocolo: str, tpAmb: int = 1, numero_nfse: str = None,
+                     chave_acesso: str = None) -> dict:
     try:
         service = BethaNfseService()
         status = service.consultar_status(protocolo, tpAmb)
         st = status.get('status', '')
         sit_raw = None
         adn_xml = None
+
+        # Chave de acesso: prefere a informada (banco) e cai para a do SOAP.
+        chave = chave_acesso or status.get('chave_acesso')
 
         # Cancelamento detectado via Betha (SOAP consultar_status) — fonte primária,
         # independente do SEFIN (que está indisponível/403).
@@ -1563,19 +1648,19 @@ def sincronizar_nfse(protocolo: str, tpAmb: int = 1, numero_nfse: str = None) ->
             return {
                 'status_processamento': 'cancelada',
                 'numero': numero_nfse,
-                'codigo_verificacao': status.get('chave_acesso'),
+                'codigo_verificacao': chave,
                 'erros': [],
             }
 
-        if numero_nfse:
-            sit_resp = service.consultar_situacao_nfse(numero_nfse, status.get('chave_acesso'))
+        if numero_nfse and chave:
+            sit_resp = service.consultar_situacao_nfse(numero_nfse, chave)
             eventos = sit_resp.get('eventos')
             ev_debug = sit_resp.get('eventos_debug') or ''
             sit_raw = f"sit={sit_resp.get('situacao')} eventos:{ev_debug[:400]}"
             sit = (sit_resp.get('situacao') or '').lower()
             codigo = sit_resp.get('codigo', '')
             adn_xml = sit_resp.get('xml')
-            chave_adn = sit_resp.get('chaveAcesso') or status.get('chave_acesso')
+            chave_adn = sit_resp.get('chaveAcesso') or chave
             if codigo == '2' or 'cancelada' in sit or 'cancelado' in sit:
                 return {
                     'status_processamento': 'cancelada',
@@ -1583,6 +1668,26 @@ def sincronizar_nfse(protocolo: str, tpAmb: int = 1, numero_nfse: str = None) ->
                     'codigo_verificacao': chave_adn,
                     'erros': [],
                 }
+
+        # Fallback independente do SEFIN: varre a distribuição DF-e do ADN em
+        # busca do evento de cancelamento (tipoEvento 101101). Captura tanto
+        # cancelamentos feitos pelo portal Betha quanto por outros meios — mesmo
+        # quando o SOAP ConsultarStatusDps e o SEFIN não refletem a situação.
+        # Só executa quando o SEFIN não respondeu de forma conclusiva (evita
+        # varrer a distribuição a cada sincronização de notas autorizadas).
+        sefin_conclusivo = bool(sit_resp.get('situacao')) if (numero_nfse and chave) else False
+        if chave and not sefin_conclusivo:
+            try:
+                if service._verificar_cancelamento_adn(chave):
+                    return {
+                        'status_processamento': 'cancelada',
+                        'numero': numero_nfse,
+                        'codigo_verificacao': chave,
+                        'erros': [],
+                    }
+            except Exception as e:
+                logger.warning(f"Falha ao verificar cancelamento no DF-e (sync): {e}")
+
         if st == 'Processado com sucesso':
             return {
                 'status_processamento': 'sucesso',

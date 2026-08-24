@@ -202,17 +202,20 @@ def emitir_avulsa_form(request: Request, db: Session = Depends(get_db)):
         Produto.tipo == "servico", Produto.situacao == "A"
     ).order_by(Produto.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "cpf_cnpj": c.cpf_cnpj,
-                       "cidade": c.cidade, "estado": c.estado} for c in clientes]
+                       "cidade": c.cidade, "estado": c.estado,
+                       "iss_retido": bool(getattr(c, 'iss_retido', False))} for c in clientes]
     servicos_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0),
-                       "codigo_lc116": p.codigo_lc116 or "",
-                       "codigo_tributacao_municipal": p.codigo_tributacao_municipal or "",
-                       "unidade": p.unidade or "UN",
-                       "tem_variacao": _servico_contem_variacao(p)} for p in servicos]
+                      "codigo_lc116": p.codigo_lc116 or "",
+                      "codigo_tributacao_municipal": p.codigo_tributacao_municipal or "",
+                      "unidade": p.unidade or "UN",
+                      "tem_variacao": _servico_contem_variacao(p)} for p in servicos]
+    aliquota_iss = float(getattr(empresa, 'aliquota_iss', None) or 2.0)
     return request.app.state.templates.TemplateResponse(request, 
         "nfse/emissao_avulsa.html",
         {"request": request, "empresa": empresa, "clientes": clientes,
          "servicos": servicos, "clientes_json": clientes_json,
-         "servicos_json": servicos_json, "messages": _get_messages(request)}
+         "servicos_json": servicos_json, "aliquota_iss": aliquota_iss,
+         "messages": _get_messages(request)}
     )
 
 
@@ -1473,7 +1476,8 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
 
     from services.nfse_betha import sincronizar_nfse as sync_func
     try:
-        resultado = sync_func(nfse.protocolo, tpAmb=1, numero_nfse=nfse.numero)
+        resultado = sync_func(nfse.protocolo, tpAmb=1, numero_nfse=nfse.numero,
+                             chave_acesso=nfse.chave_acesso)
         sp = resultado.get('status_processamento', 'erro')
 
         if sp == 'cancelada':

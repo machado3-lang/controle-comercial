@@ -1083,16 +1083,18 @@ async def alterar_boleto(request: Request, nosso_numero: str, db: Session = Depe
     if not token:
         return {"success": False, "error": "Token Sicoob não configurado"}
 
-    # A API do Sicoob exige a alteração de apenas UM objeto do boleto por requisição PATCH.
-    # Cada tipo de alteração deve ir num objeto próprio (prorrogacaoVencimento, valorNominal, etc.)
+    # A API do Sicoob NÃO suporta a alteração do valor nominal (valorNominal) de um
+    # boleto já registrado — enviá-lo retorna HTTP 400 / código 5002 ("Ao menos um
+    # campo deve ser alterado"). Os objetos alteráveis são: seuNumero, desconto,
+    # abatimento, multa, jurosMora, rateioCredito, pix, prorrogacaoVencimento e
+    # prorrogacaoLimitePagamento. Para corrigir o VALOR, o boleto deve ser baixado e
+    # reemitido. Aqui só tratamos a prorrogação de vencimento.
     alteracoes = []
     if "dataVencimento" in body and body["dataVencimento"]:
         alteracoes.append({"prorrogacaoVencimento": {"dataVencimento": body["dataVencimento"]}})
-    if "valor" in body and body["valor"] is not None:
-        alteracoes.append({"valorNominal": {"valor": float(body["valor"])}})
 
     if not alteracoes:
-        return {"success": False, "error": "Nenhuma alteração informada"}
+        return {"success": False, "error": "Nenhuma alteração suportada informada (o valor do boleto não pode ser alterado pelo Sicoob; baixe e reemita para corrigir o valor)"}
 
     client_args = {"timeout": 30}
     if cert_config and "cert" in cert_config:
@@ -1118,8 +1120,6 @@ async def alterar_boleto(request: Request, nosso_numero: str, db: Session = Depe
             (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
         ).first()
         if conta:
-            if "valor" in body and body["valor"] is not None:
-                conta.valor = float(body["valor"])
             if "dataVencimento" in body and body["dataVencimento"]:
                 try:
                     conta.data_vencimento = datetime.strptime(body["dataVencimento"], "%Y-%m-%d").date()

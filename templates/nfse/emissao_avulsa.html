@@ -183,6 +183,14 @@
                         <span class="text-slate-400 font-medium">Total:</span>
                         <span class="text-emerald-400 font-bold text-lg">R$ <span id="total">0.00</span></span>
                     </div>
+                    <div class="flex justify-between text-amber-400 text-sm" id="linhaIss" style="display:none;">
+                        <span>ISS Retido (<span id="issPct">0</span>%):</span>
+                        <span>- R$ <span id="valorIss">0.00</span></span>
+                    </div>
+                    <div class="flex justify-between border-t border-slate-700 pt-3" id="linhaLiquido" style="display:none;">
+                        <span class="text-slate-300 font-medium">Valor Líquido (a receber):</span>
+                        <span class="text-cyan-400 font-bold text-lg">R$ <span id="valorLiquido">0.00</span></span>
+                    </div>
                 </div>
             </div>
         </div>
@@ -194,6 +202,8 @@
 <script>
 const servicosData = {{ servicos_json|tojson }};
 const clientes = {{ clientes_json|tojson }};
+const aliquotaIss = {{ aliquota_iss }};
+let clienteSelecionado = null;
 
 function atualizarTotais() {
     let subtotal = 0;
@@ -211,6 +221,28 @@ function atualizarTotais() {
     document.getElementById('total').textContent = total.toFixed(2);
     document.getElementById('descontoHidden').value = descontoValor.toFixed(2);
     atualizarItensJson();
+    atualizarResumoIss();
+}
+
+function atualizarResumoIss() {
+    const subtotal = parseFloat(document.getElementById('subtotal').textContent) || 0;
+    const desconto = parseFloat(document.getElementById('valorDesconto').textContent) || 0;
+    const total = Math.max(0, subtotal - desconto);
+    const linhaIss = document.getElementById('linhaIss');
+    const linhaLiquido = document.getElementById('linhaLiquido');
+    const issRetido = clienteSelecionado && clienteSelecionado.iss_retido;
+    if (issRetido && total > 0) {
+        const iss = Math.round(total * (aliquotaIss / 100) * 100) / 100;
+        const liquido = Math.round((total - iss) * 100) / 100;
+        document.getElementById('issPct').textContent = aliquotaIss.toFixed(2).replace('.', ',');
+        document.getElementById('valorIss').textContent = iss.toFixed(2);
+        document.getElementById('valorLiquido').textContent = liquido.toFixed(2);
+        linhaIss.style.display = '';
+        linhaLiquido.style.display = '';
+    } else {
+        linhaIss.style.display = 'none';
+        linhaLiquido.style.display = 'none';
+    }
 }
 
 function recalcularDesconto() {
@@ -416,7 +448,9 @@ document.addEventListener('DOMContentLoaded', function() {
             if (item) {
                 clienteSearch.value = item.textContent.trim();
                 document.getElementById('clienteId').value = item.dataset.id;
+                clienteSelecionado = clientes.find(c => String(c.id) === String(item.dataset.id)) || null;
                 this.classList.add('hidden');
+                atualizarResumoIss();
             }
         });
     }
