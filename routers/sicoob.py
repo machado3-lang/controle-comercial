@@ -10,7 +10,7 @@ from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File, BackgroundTasks
 from fastapi.responses import RedirectResponse, JSONResponse, Response
 from sqlalchemy import func, desc as sql_desc, asc as sql_asc
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 from database import get_db
 from models import Empresa, ContaReceber, StatusConta, Cliente
 from routers.contas import conta_vencida
@@ -706,6 +706,57 @@ async def baixar_boleto_route(request: Request, nosso_numero: str, db: Session =
         return {"success": False, "error": "Boleto não encontrado"}
 
     return baixar_boleto_sicoob(db, conta, motivo)
+
+
+@router.post("/reemitir-boleto/{conta_id}", response_class=JSONResponse)
+async def reemitir_boleto_route(request: Request, conta_id: int, db: Session = Depends(get_db)):
+    """Baixa o boleto atual (se emitido) e emite um novo na MESMA ContaReceber.
+
+    Mantém o vínculo com a NFSe (nfse_id não é alterado) e, quando a conta está
+    vinculada a uma NFSe com ISS retido, corrige o valor para o líquido antes de
+    reemitir. Evita criar uma ContaReceber solta (sem nota) ao corrigir valor.
+    """
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
+    conta = db.query(ContaReceber).options(
+        selectinload(ContaReceber.nfse)
+    ).filter(ContaReceber.id == conta_id).first()
+    if not conta:
+        return {"success": False, "error": "Conta não encontrada"}
+    if conta.status == StatusConta.PAGO:
+        return {"success": False, "error": "Boleto já liquidado não pode ser reemitido"}
+
+    # 1) Baixa o boleto antigo no Sicoob (se houver um emitido e ativo)
+    if conta.boleto_emitido and (conta.api_nosso_numero or conta.nosso_numero):
+        res = baixar_boleto_sicoob(db, conta, motivo="Reemissão de boleto")
+        if not res.get("success"):
+            return {"success": False, "error": f"Falha ao baixar boleto antigo: {res.get('error')}"}
+
+    # 2) Prepara a mesma conta para nova emissão
+    conta.boleto_emitido = False
+    conta.nosso_numero = None
+    conta.api_nosso_numero = None
+    conta.status = StatusConta.PENDENTE
+
+    # 3) Corrige o valor para o líquido quando vinculado a NFSe com ISS retido
+    if conta.nfse_id and conta.nfse and conta.nfse.iss_retido:
+        try:
+            conta.valor = conta.nfse.valor_liquido
+        except Exception:
+            logger.warning("Falha ao calcular valor líquido da NFSe %s na reemissão", conta.nfse_id)
+
+    db.commit()
+
+    # 4) Emite o novo boleto na mesma ContaReceber
+    resultado = emitir_boleto(db, conta)
+    if resultado.get("success"):
+        registrar_auditoria(
+            db, request.session.get("user_id"), "reemitir",
+            "boleto", conta.id, f"Reemissão de boleto (conta {conta.id})",
+            request.client.host if request.client else None,
+        )
+        return {"success": True, "message": "Boleto reemitido com sucesso"}
+    return {"success": False, "error": f"Falha ao emitir novo boleto: {resultado.get('error')}"}
 
 
 @router.post("/sync-pagamentos", response_class=JSONResponse)
