@@ -175,6 +175,15 @@ Fluxo:
 - **Excluir (lógico) no Sicoob** — `POST /sicoob/boleto/{nosso_numero}/excluir`
   (`sicoob.py:1132`): exige confirmação de senha do usuário; define status
   `CANCELADO` e registra auditoria (`registrar_auditoria`).
+- **Valor líquido na NFSe avulsa (ISS retido)** — na emissão de NFSe avulsa
+  (`templates/nfse/emissao_avulsa.html`), ao selecionar um cliente com
+  `iss_retido=True` no cadastro, o Resumo exibe `ISS Retido (X%)` e o
+  **Valor Líquido (a receber)**. Ao salvar, a NFSe é criada com `iss_retido=True`
+  e a cobrança/boleto é gerada com `nfse.valor_liquido` (bruto − ISS), nunca com o
+  valor bruto. A alíquota vem de `empresa.aliquota_iss` (default 2,0%). Requisito:
+  o cliente deve ter o flag **ISS Retido** marcado no cadastro — o Resumo torna
+  isso visível antes de salvar. (Se o flag não estiver marcado e o Sicoob exigir o
+  ISS na transmissão, corrija o cadastro e use a **Reemissão** do boleto.)
 - **Rótulo da ação (UI)** — o botão de exclusão de contas a receber foi
   renomeado de "Excluir" para "Cancelar" (`templates/contas/receber.html` e
   `templates/contas/ver_receber.html`), refletindo que a operação é um
