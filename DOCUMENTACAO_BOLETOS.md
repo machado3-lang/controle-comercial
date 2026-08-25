@@ -271,3 +271,56 @@ Fluxo:
 | `routers/configuracoes.py` | salvamento de credenciais Sicoob |
 | `templates/sicoob/*.html` | telas de credenciais e boletos |
 | `386bf6bc...Sicoob-V3-3.postman_collection` | coleção Postman de referência da API |
+
+---
+
+## 13. Regra anti-duplicação de cobrança e boletos
+
+A cobrança a receber (`ContaReceber`) pode ser originada em **diferentes
+fluxos** de faturamento: finalização de **pedido**, **consolidação**,
+emissão de **NFSe** (do pedido) e emissão de **NFe** (do pedido). Para evitar
+cobranças/boletos duplicados, todos os fluxos usam um único ponto de verdade:
+`contas_receber_existentes_para(db, *, pedido=, consolidacao=, nfse=, nfe=)`
+em `services/parcelamento.py`.
+
+### Como funciona
+
+A função resolve os **vínculos cruzados** de uma entidade e busca contas já
+existentes (exceto canceladas/excluídas) em qualquer um desses vínculos:
+
+| Entidade informada | IDs considerados na busca |
+|--------------------|---------------------------|
+| `pedido`           | `pedido_id`, `consolidacao_id` (se houver), `nfse_id` e `nfe_id` do pedido |
+| `consolidacao`     | `consolidacao_id` + todos os `pedido_id`/`nfse_id`/`nfe_id` dos pedidos de origem |
+| `nfse`             | `nfse_id` + `pedido_id`/`consolidacao_id` vinculados |
+| `nfe`              | `nfe_id` + `pedido_id`/`consolidacao_id` vinculados |
+
+Ou seja: gerar cobrança pela NFe **não** duplica a cobrança já gerada pelo
+pedido ou pela consolidação, e **vice-versa**.
+
+### Fluxos protegidos
+
+- `routers/pedidos.py` → `finalizar_pedido` e agrupamento de pré-venda.
+- `routers/nfse.py` → emissão de NFSe de pedido e `gerar_cobranca_nfse` (manual).
+- `routers/nfe.py` → `gerar_cobranca_nfe` (manual) e `_garantir_cobranca_nfe`
+  (automático na transmissão).
+- `routers/consolidacoes.py` → `finalizar_consolidacao`.
+
+Quando uma cobrança já existe, o fluxo a **reaproveita** (e a NFSe a vincula)
+em vez de criar uma nova. O boleto também não duplica: `emitir_boletos_contas`
+ignora contas com `boleto_emitido=True` e, como a conta duplicada nem chega a
+ser criada, não há segunda emissão.
+
+### Aviso ao marcar "Faturado" pelo status
+
+Mudar o status para **Faturado** diretamente no `<select>` de status
+(`templates/pedidos/detalhe.html`) **não** gera cobrança. Para evitar
+confusão, há duas defesas:
+
+1. **Cliente:** `confirmarFaturamento()` pede confirmação e avisa que o
+   faturamento via status não gera cobrança; quem cancela volta ao status atual.
+2. **Servidor:** `atualizar_status` (`routers/pedidos.py`) grava um flash do
+   tipo `warning` ("esta ação NÃO gera a cobrança; use Finalizar Pedido").
+
+Para gerar contas a receber/boleto de fato, deve-se usar o botão
+**"Finalizar Pedido"** (que expõe Gerar Boleto / Gerar Cobrança).

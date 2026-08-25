@@ -250,6 +250,88 @@ def contas_receber_existentes(db, *, pedido_id=None, consolidacao_id=None, nfse_
     )
 
 
+def _ids_vinculados(*, pedido=None, consolidacao=None, nfse=None, nfe=None):
+    """Resolve, a partir das entidades de faturamento, o conjunto de IDs de
+    pedido/consolidacao/notas fiscais relacionados. Usado para detectar cobrancas
+    ja emitidas em QUALQUER um dos fluxos (pedido, consolidacao, NFe, NFSe) e
+    evitar duplicidade entre eles.
+    """
+    pedido_ids, consolidacao_ids, nfe_ids, nfse_ids = set(), set(), set(), set()
+
+    if pedido is not None:
+        pedido_ids.add(pedido.id)
+        if pedido.consolidacao_id:
+            consolidacao_ids.add(pedido.consolidacao_id)
+        if pedido.nfse is not None:
+            nfse_ids.add(pedido.nfse.id)
+        for n in (pedido.nfes or []):
+            nfe_ids.add(n.id)
+
+    if consolidacao is not None:
+        consolidacao_ids.add(consolidacao.id)
+        for p in (consolidacao.pedidos_origem or []):
+            pedido_ids.add(p.id)
+            if p.nfse is not None:
+                nfse_ids.add(p.nfse.id)
+            for n in (p.nfes or []):
+                nfe_ids.add(n.id)
+        if consolidacao.nfse is not None:
+            nfse_ids.add(consolidacao.nfse.id)
+        for n in (consolidacao.nfes or []):
+            nfe_ids.add(n.id)
+
+    if nfe is not None:
+        nfe_ids.add(nfe.id)
+        pedido = getattr(nfe, "pedido", None)
+        if pedido is not None:
+            pedido_ids.add(pedido.id)
+            if pedido.consolidacao_id:
+                consolidacao_ids.add(pedido.consolidacao_id)
+
+    if nfse is not None:
+        nfse_ids.add(nfse.id)
+        pedido = getattr(nfse, "pedido", None)
+        if pedido is not None:
+            pedido_ids.add(pedido.id)
+            if pedido.consolidacao_id:
+                consolidacao_ids.add(pedido.consolidacao_id)
+        consolidacao = getattr(nfse, "consolidacao", None)
+        if consolidacao is not None:
+            consolidacao_ids.add(consolidacao.id)
+
+    return pedido_ids, consolidacao_ids, nfe_ids, nfse_ids
+
+
+def contas_receber_existentes_para(db, *, pedido=None, consolidacao=None, nfse=None, nfe=None):
+    """Retorna as ContaReceber ja geradas para o documento informado OU para
+    qualquer um de seus vinculos (pedido, consolidacao, NFe, NFSe).
+
+    Centraliza a regra anti-duplicidade entre os fluxos de faturamento: gerar
+    cobranca pela NFe/NFSe nao deve duplicar a cobranca ja gerada pelo pedido ou
+    pela consolidacao, e vice-versa. Contas canceladas/excluidas nao contam.
+    """
+    p_ids, c_ids, n_ids, s_ids = _ids_vinculados(
+        pedido=pedido, consolidacao=consolidacao, nfse=nfse, nfe=nfe
+    )
+    filtros = []
+    if p_ids:
+        filtros.append(ContaReceber.pedido_id.in_(p_ids))
+    if c_ids:
+        filtros.append(ContaReceber.consolidacao_id.in_(c_ids))
+    if n_ids:
+        filtros.append(ContaReceber.nfe_id.in_(n_ids))
+    if s_ids:
+        filtros.append(ContaReceber.nfse_id.in_(s_ids))
+    if not filtros:
+        return []
+    return (
+        db.query(ContaReceber)
+        .filter(or_(*filtros))
+        .filter(ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]))
+        .all()
+    )
+
+
 def emitir_boletos_contas(db, contas, forcar=False):
     """Emite boletos Sicoob para todas as contas informadas.
 

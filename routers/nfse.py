@@ -490,10 +490,11 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
 
         # Gera cobranÃ§a automaticamente â€” com suporte a parcelamento
         try:
-            from services.parcelamento import gerar_contas_receber, contas_receber_existentes
-            # Nao duplica cobranca: se o pedido ja gerou contas (ex.: finalizado
-            # com "Gerar Cobranca"), apenas vincula a NFSe as contas existentes.
-            existentes = contas_receber_existentes(db, pedido_id=pedido.id)
+            from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para
+            # Nao duplica cobranca: se o pedido/consolidacao ja gerou contas
+            # (ex.: finalizado com "Gerar Cobranca" ou consolidacao finalizada),
+            # apenas vincula a NFSe as contas existentes.
+            existentes = contas_receber_existentes_para(db, pedido=pedido)
             if existentes:
                 for conta in existentes:
                     if not conta.nfse_id:
@@ -520,6 +521,7 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
                     observacao=f"Gerado automaticamente da NFSe #{nfse.id} (Pedido #{pedido.id})",
                     nfse_id=nfse.id,
                     pedido_id=pedido.id,
+                    consolidacao_id=pedido.consolidacao_id,
                 )
             db.commit()
         except Exception:
@@ -1218,6 +1220,11 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         request.session["error"] = "CobranÃ§a jÃ¡ existe para esta NFSe"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
+    from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para
+    if contas_receber_existentes_para(db, nfse=nfse):
+        request.session["error"] = "Cobrança já existe para esta NFSe (ou para o pedido/consolidação vinculado)"
+        return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
+
     cliente_id = None
     if nfse.pedido:
         cliente_id = nfse.pedido.cliente_id
@@ -1247,7 +1254,6 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
     if nfse.assinatura_id:
         observacao = f"CobranÃ§a automÃ¡tica - assinatura #{nfse.assinatura_id} (NFSe #{nfse.id})"
 
-    from services.parcelamento import gerar_contas_receber
     contas = gerar_contas_receber(
         db,
         cliente_id=cliente_id,
@@ -1261,6 +1267,7 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         observacao=observacao,
         nfse_id=nfse.id,
         pedido_id=nfse.pedido_id,
+        consolidacao_id=nfse.consolidacao_id if nfse.consolidacao else None,
     )
     db.commit()
     request.session["message"] = f"{len(contas)} cobranÃ§a(s) gerada(s) com sucesso para NFSe #{nfse.numero}!"

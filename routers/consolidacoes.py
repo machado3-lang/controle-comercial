@@ -695,8 +695,8 @@ def finalizar_consolidacao(
 
     # Cria conta(s) a receber com suporte a parcelamento, independente da
     # forma de pagamento (à vista/cartão também geram o registro financeiro).
-    from services.parcelamento import gerar_contas_receber, contas_receber_existentes, numero_documento_para_cobranca
-    contas_geradas = contas_receber_existentes(db, consolidacao_id=consolidacao.id)
+    from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para, numero_documento_para_cobranca
+    contas_geradas = contas_receber_existentes_para(db, consolidacao=consolidacao)
     if contas_geradas:
         logger.info(
             "Consolidação %s já possui %s conta(s) a receber; nenhuma nova será gerada",

@@ -939,7 +939,7 @@ def create_app() -> FastAPI:
     def add_to_context(request):
         messages = []
         # "message"/"success"/"info" => sucesso; "error" => erro.
-        for chave, tipo_padrao in (("message", "success"), ("success", "success"), ("info", "info")):
+        for chave, tipo_padrao in (("message", "success"), ("success", "success"), ("info", "info"), ("warning", "warning")):
             if chave in request.session:
                 raw = request.session.pop(chave)
                 if isinstance(raw, dict):

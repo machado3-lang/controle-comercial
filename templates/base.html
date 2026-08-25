@@ -166,6 +166,8 @@
                     <div class="bg-emerald-950/30 border border-emerald-800/50 text-emerald-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
                 {% elif msg_type == 'danger' or msg_type == 'error' %}
                     <div class="bg-red-950/30 border border-red-800/50 text-red-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
+                {% elif msg_type == 'warning' %}
+                    <div class="bg-amber-950/30 border border-amber-800/50 text-amber-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
                 {% else %}
                     <div class="bg-cyan-950/30 border border-cyan-800/50 text-cyan-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
                 {% endif %}

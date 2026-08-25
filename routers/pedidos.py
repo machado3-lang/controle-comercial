@@ -194,8 +194,8 @@ async def finalizar_grupo(
     # Gera cobrança para o pedido agrupado (evita pedido "solta" sem
     # conta a receber) — mesmo padrão de finalizar_pedido.
     try:
-        from services.parcelamento import gerar_contas_receber, contas_receber_existentes, numero_documento_para_cobranca
-        if not contas_receber_existentes(db, pedido_id=novo_pedido.id):
+        from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para, numero_documento_para_cobranca
+        if not contas_receber_existentes_para(db, pedido=novo_pedido):
             venc = novo_pedido.data or date.today()
             gerar_contas_receber(
                 db,
@@ -494,6 +494,15 @@ def atualizar_status(
         except Exception:
             logger.exception("Erro ao atualizar status do pedido %s", pedido_id)
             request.session["error"] = "Erro ao atualizar status"
+            return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
+        if novo == StatusPedido.FATURADO:
+            # Apenas informa: mudar o status para Faturado NAO gera cobranca.
+            # Para gerar contas a receber/boleto, deve-se usar "Finalizar Pedido".
+            request.session["warning"] = (
+                "Pedido marcado como Faturado. Atenção: esta ação NÃO gera a cobrança "
+                "(contas a receber/boleto). Para gerar a cobrança, use o botão "
+                "\"Finalizar Pedido\" antes de faturar."
+            )
     return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
 
 
@@ -551,8 +560,8 @@ def finalizar_pedido(
         contas_geradas = []
         contas_existentes = []
         if gerar_cobranca or forma_pagamento == "boleto":
-            from services.parcelamento import gerar_contas_receber, contas_receber_existentes, numero_documento_para_cobranca
-            contas_existentes = contas_receber_existentes(db, pedido_id=pedido.id)
+            from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para, numero_documento_para_cobranca
+            contas_existentes = contas_receber_existentes_para(db, pedido=pedido)
             if contas_existentes:
                 # Evita cobranca em duplicidade (ex.: pedido finalizado 2x ou ja
                 # faturado via NFSe/NFe). Reaproveita as contas existentes.

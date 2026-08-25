@@ -2046,6 +2046,11 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
         request.session["error"] = "Cobrança já existe para esta NFe"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
+    from services.parcelamento import contas_receber_existentes_para
+    if contas_receber_existentes_para(db, nfe=nfe):
+        request.session["error"] = "Cobrança já existe para esta NFe (ou para o pedido/consolidação vinculado)"
+        return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
+
     cliente_id = nfe.cliente_id
     if not cliente_id and nfe.pedido:
         cliente_id = nfe.pedido.cliente_id
@@ -2053,7 +2058,7 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
         request.session["error"] = "Não foi possível identificar o cliente para gerar cobrança"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
-    from services.parcelamento import gerar_contas_receber
+    from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para
     try:
         venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (
             nfe.data_emissao.date() if nfe.data_emissao else date.today())
@@ -2071,6 +2076,8 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
         observacao=f"Gerado manualmente da NFe #{nfe.id}",
         numero_documento=str(nfe.numero),
         nfe_id=nfe.id,
+        pedido_id=nfe.pedido_id,
+        consolidacao_id=nfe.pedido.consolidacao_id if (nfe.pedido and nfe.pedido.consolidacao_id) else None,
     )
     db.commit()
     request.session["message"] = f"{len(contas)} cobrança(s) gerada(s) com sucesso para NFe #{nfe.numero}!"
@@ -2105,9 +2112,8 @@ def _garantir_cobranca_nfe(db, nfe):
     mas a NFe de pedido não gerava (documento fiscal sem conta a receber)."""
     if not nfe.pedido_id:
         return
-    from services.parcelamento import contas_receber_existentes, gerar_contas_receber
-    if contas_receber_existentes(db, nfe_id=nfe.id) or \
-       contas_receber_existentes(db, pedido_id=nfe.pedido_id):
+    from services.parcelamento import contas_receber_existentes_para, gerar_contas_receber
+    if contas_receber_existentes_para(db, nfe=nfe):
         return
     cliente_id = nfe.cliente_id or (nfe.pedido.cliente_id if nfe.pedido else None)
     if not cliente_id:
@@ -2126,6 +2132,7 @@ def _garantir_cobranca_nfe(db, nfe):
         numero_documento=str(nfe.numero) if nfe.numero else None,
         pedido_id=nfe.pedido_id,
         nfe_id=nfe.id,
+        consolidacao_id=nfe.pedido.consolidacao_id if (nfe.pedido and nfe.pedido.consolidacao_id) else None,
     )
 
 
