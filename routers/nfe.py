@@ -197,10 +197,12 @@ def excluir_cfop(
 def listar_nfe(
     request: Request, db: Session = Depends(get_db),
     status: str = Query(""), busca: str = Query(""),
+    data_inicio: str = Query(""), data_fim: str = Query(""),
     sort: str = Query("id"), ordem: str = Query("desc"),
     page: int = Query(1, ge=1), per_page: int = Query(20, ge=10, le=100),
     page_sefaz: int = Query(1, ge=1), per_page_sefaz: int = Query(20, ge=5, le=100),
 ):
+    from datetime import timedelta
     empresa = db.query(Empresa).first()
     query = db.query(NFe).options(
         joinedload(NFe.pedido), joinedload(NFe.os), joinedload(NFe.itens),
@@ -208,6 +210,18 @@ def listar_nfe(
     )
     if status:
         query = query.filter(NFe.status == status)
+    if data_inicio:
+        try:
+            dt_ini = datetime.strptime(data_inicio, '%Y-%m-%d')
+            query = query.filter(NFe.data_emissao >= dt_ini)
+        except ValueError:
+            pass
+    if data_fim:
+        try:
+            dt_fim = datetime.strptime(data_fim, '%Y-%m-%d') + timedelta(days=1)
+            query = query.filter(NFe.data_emissao < dt_fim)
+        except ValueError:
+            pass
     if busca:
         query = query.filter(
             NFe.numero.cast(String).ilike(f"%{busca}%") |
@@ -286,6 +300,7 @@ def listar_nfe(
     return request.app.state.templates.TemplateResponse(request, 
         "nfe/lista.html",
         {"request": request, "notas": notas, "status": status, "busca": busca,
+         "data_inicio": data_inicio, "data_fim": data_fim,
          "messages": _get_messages(request), "empresa": empresa,
          "STATUS_LABELS": STATUS_LABELS,
          "sort": sort, "ordem": ordem,
@@ -328,7 +343,11 @@ def listar_nfe_recebidas(
             recebidas.append(n)
     if busca:
         busca_l = busca.lower()
-        recebidas = [n for n in recebidas if (n.numero or '').lower().find(busca_l) >= 0]
+        recebidas = [n for n in recebidas if (
+            (n.numero or '').lower().find(busca_l) >= 0 or
+            (n.emitente_nome or '').lower().find(busca_l) >= 0 or
+            (n.emitente_cnpj or '').lower().find(busca_l) >= 0
+        )]
     if data_inicio:
         recebidas = [n for n in recebidas if (n.dh_emi or '')[:10] >= data_inicio]
     if data_fim:

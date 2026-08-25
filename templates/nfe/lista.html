@@ -8,6 +8,8 @@
             <input type="hidden" name="sort" value="{{ sort }}">
             <input type="hidden" name="ordem" value="{{ ordem }}">
             <input type="text" class="w-40 h-9 text-sm px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-l-xl text-slate-100 focus:border-cyan-500/50" name="busca" placeholder="Buscar nº..." value="{{ busca }}">
+            <input type="date" class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 text-slate-100" name="data_inicio" value="{{ data_inicio }}" title="Data inicial">
+            <input type="date" class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 text-slate-100" name="data_fim" value="{{ data_fim }}" title="Data final">
             <button class="flex items-center justify-center h-9 w-10 bg-slate-800 border border-white/10 rounded-r-md -ml-px text-cyan-400 transition" type="submit"><i data-lucide="search" class="w-4 h-4"></i></button>
             <select class="h-9 text-sm px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="status" onchange="this.form.submit()">
                 <option value="">Status</option>
