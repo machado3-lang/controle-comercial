@@ -104,6 +104,7 @@ async def salvar_configuracoes(
     aliquota_municipal: float = Form(0.0),
     nfe_aliquota_federal: float = Form(0.0),
     nfe_aliquota_estadual: float = Form(0.0),
+    crt: int = Form(3),
     ultimo_numero_nfse: int = Form(0),
     fuso_horario: int = Form(-4),
 ):
@@ -165,6 +166,7 @@ async def salvar_configuracoes(
         empresa.aliquota_municipal = aliquota_municipal
         empresa.nfe_aliquota_federal = nfe_aliquota_federal
         empresa.nfe_aliquota_estadual = nfe_aliquota_estadual
+        empresa.crt = crt
         empresa.ultimo_numero_nfse = ultimo_numero_nfse
         empresa.fuso_horario = fuso_horario
     else:
@@ -193,6 +195,7 @@ async def salvar_configuracoes(
             ultimo_numero_nfe=ultimo_numero_nfe,
             nfe_aliquota_federal=nfe_aliquota_federal,
             nfe_aliquota_estadual=nfe_aliquota_estadual,
+            crt=crt,
             ultimo_numero_nfse=ultimo_numero_nfse,
             fuso_horario=fuso_horario,
         )

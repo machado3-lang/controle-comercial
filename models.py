@@ -432,6 +432,14 @@ class Produto(Base):
     eh_insumo = Column(Boolean, default=False)  # True: consumido em servicos (baixa como SAIDA_INSUMO na NFSe)
     codigo_lc116 = Column(String(10), nullable=True)
     codigo_tributacao_municipal = Column(String(20), nullable=True)
+    # Tributação ICMS/IPI/PIS/COFINS (usada na montagem da NF-e)
+    cst = Column(String(2), nullable=True)  # CST do ICMS (CRT 2/3): 00,10,20,40,41,50,51,60,70,90
+    csosn = Column(String(3), nullable=True)  # CSOSN do ICMS (CRT 1/4 - Simples Nacional/MEI)
+    aliquota_icms = Column(Numeric(5, 2), nullable=True)  # % ICMS (pICMS)
+    aliquota_pis = Column(Numeric(5, 2), nullable=True)  # % PIS
+    aliquota_cofins = Column(Numeric(5, 2), nullable=True)  # % COFINS
+    cest = Column(String(7), nullable=True)  # Código Especificador da Substituição Tributária
+    codigo_beneficio_fiscal = Column(String(10), nullable=True)  # cBenef (ex.: SP070130)
 
     @property
     def preco_padrao(self):
@@ -704,11 +712,30 @@ class Empresa(Base):
     cert_validade = Column(Date, nullable=True)  # Data de validade do certificado
     nfe_ultnsu = Column(String(20), nullable=True)  # Último NSU consultado na SEFAZ
     cfop_padrao = Column(String(4), nullable=False, default="5102")
+    crt = Column(Integer, nullable=False, default=3)  # Código Regime Tributário: 1=SN, 2=SN Excesso, 3=Normal, 4=MEI
     fuso_horario = Column(Integer, nullable=False, default=-4)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
     categoria_servico_padrao = relationship("CategoriaProduto", back_populates="empresas")
+
+
+class Transportadora(Base):
+    """Transportadora para o grupo transp/transportadora da NF-e."""
+    __tablename__ = "transportadoras"
+
+    id = Column(Integer, primary_key=True, index=True)
+    empresa_id = Column(Integer, ForeignKey("empresa.id"), nullable=True, index=True)
+    nome = Column(String(200), nullable=False)
+    cpf_cnpj = Column(String(20), nullable=True)  # CNPJ (14) ou CPF (11), apenas números
+    inscricao_estadual = Column(String(20), nullable=True)  # IE ou "ISENTO"
+    endereco = Column(String(300), nullable=True)
+    cidade = Column(String(100), nullable=True)
+    estado = Column(String(2), nullable=True)
+    cep = Column(String(10), nullable=True)
+    ativo = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=datetime.now)
+    updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
 
 
 class TipoDocumento(Base):

@@ -760,6 +760,14 @@ def emitir_pedido_submit(
                 quantidade=item.get("quantidade", 1),
                 preco_unitario=item.get("preco_unitario", 0),
                 total=item.get("quantidade", 1) * item.get("preco_unitario", 0),
+                desconto=item.get("desconto") or 0,
+                cst=item.get("cst"),
+                csosn=item.get("csosn"),
+                aliquota_icms=item.get("aliquota_icms"),
+                aliquota_pis=item.get("aliquota_pis"),
+                aliquota_cofins=item.get("aliquota_cofins"),
+                cest=item.get("cest"),
+                codigo_beneficio_fiscal=item.get("codigo_beneficio_fiscal"),
             )
             db.add(nfe_item)
 
@@ -915,6 +923,14 @@ def emitir_os_submit(
                 quantidade=item.get("quantidade", 1),
                 preco_unitario=item.get("preco_unitario", 0),
                 total=item.get("quantidade", 1) * item.get("preco_unitario", 0),
+                desconto=item.get("desconto") or 0,
+                cst=item.get("cst"),
+                csosn=item.get("csosn"),
+                aliquota_icms=item.get("aliquota_icms"),
+                aliquota_pis=item.get("aliquota_pis"),
+                aliquota_cofins=item.get("aliquota_cofins"),
+                cest=item.get("cest"),
+                codigo_beneficio_fiscal=item.get("codigo_beneficio_fiscal"),
             )
             db.add(nfe_item)
 
@@ -1026,6 +1042,14 @@ def emitir_consolidacao_submit(
                 quantidade=item.get("quantidade", 1),
                 preco_unitario=item.get("preco_unitario", 0),
                 total=item.get("quantidade", 1) * item.get("preco_unitario", 0),
+                desconto=item.get("desconto") or 0,
+                cst=item.get("cst"),
+                csosn=item.get("csosn"),
+                aliquota_icms=item.get("aliquota_icms"),
+                aliquota_pis=item.get("aliquota_pis"),
+                aliquota_cofins=item.get("aliquota_cofins"),
+                cest=item.get("cest"),
+                codigo_beneficio_fiscal=item.get("codigo_beneficio_fiscal"),
             )
             db.add(nfe_item)
 
@@ -1101,11 +1125,16 @@ def emitir_avulsa_form(
     clientes_json = [{"id": c.id, "nome": c.nome, "cpf_cnpj": c.cpf_cnpj,
                        "cidade": c.cidade, "estado": c.estado} for c in clientes]
     produtos_json = [{"id": p.id, "nome": p.nome, "preco": float(p.preco or 0),
-                       "ncm": p.ncm, "unidade": p.unidade or "UN",
-                       "estoque": p.estoque or 0, "codigo": p.codigo or "",
-                       "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao or "Padrão",
-                                     "sku": v.sku or "", "estoque_atual": float(v.estoque_atual or 0)}
-                                    for v in (p.variacoes or [])]} for p in produtos]
+                        "ncm": p.ncm, "unidade": p.unidade or "UN",
+                        "estoque": p.estoque or 0, "codigo": p.codigo or "",
+                        "cst": p.cst, "csosn": p.csosn,
+                        "aliquota_icms": float(p.aliquota_icms or 0) if p.aliquota_icms is not None else None,
+                        "aliquota_pis": float(p.aliquota_pis or 0) if p.aliquota_pis is not None else None,
+                        "aliquota_cofins": float(p.aliquota_cofins or 0) if p.aliquota_cofins is not None else None,
+                        "cest": p.cest, "codigo_beneficio_fiscal": p.codigo_beneficio_fiscal,
+                        "variacoes": [{"id": v.id, "nome_variacao": v.nome_variacao or "Padrão",
+                                      "sku": v.sku or "", "estoque_atual": float(v.estoque_atual or 0)}
+                                     for v in (p.variacoes or [])]} for p in produtos]
 
     saved_editar_id = request.session.pop("nfe_avulsa_editar_id", None)
     editar = saved_editar_id or editar
@@ -1125,11 +1154,15 @@ def emitir_avulsa_form(
     saved_modalidade_frete = request.session.pop("nfe_avulsa_modalidade_frete", None)
     erro_ie_cliente_id = request.session.pop("nfe_avulsa_erro_ie", None)
 
+    from models import Transportadora
+    transportadoras = db.query(Transportadora).order_by(Transportadora.nome).all()
+
     return request.app.state.templates.TemplateResponse(request, 
         "nfe/emissao_avulsa.html",
         {"request": request, "empresa": empresa, "clientes": clientes,
          "produtos": produtos, "clientes_json": clientes_json,
          "produtos_json": produtos_json,
+         "transportadoras": transportadoras,
          "messages": _get_messages(request),
          "editar": editar,
          "saved_cliente_id": saved_cliente_id,
@@ -1181,6 +1214,8 @@ def emitir_avulsa_submit(
     intervalo_dias: int = Form(30),
     observacoes: str = Form(""),
     modalidade_frete: int = Form(9),
+    valor_frete: float = Form(0.0),
+    transportadora_id: int = Form(None),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -1224,10 +1259,20 @@ def emitir_avulsa_submit(
     for item in itens_data:
         prod_id = item.get("produto_id")
         origem = 0
+        tributos = {}
         if prod_id:
             prod = db.query(Produto).filter(Produto.id == prod_id).first()
             if prod:
                 origem = prod.origem or 0
+                tributos = {
+                    "cst": prod.cst,
+                    "csosn": prod.csosn,
+                    "aliquota_icms": prod.aliquota_icms,
+                    "aliquota_pis": prod.aliquota_pis,
+                    "aliquota_cofins": prod.aliquota_cofins,
+                    "cest": prod.cest,
+                    "codigo_beneficio_fiscal": prod.codigo_beneficio_fiscal,
+                }
         itens_nfe.append({
             "produto_id": prod_id,
             "variacao_id": item.get("variacao_id"),
@@ -1237,14 +1282,25 @@ def emitir_avulsa_submit(
             "quantidade": Decimal(str(item.get("quantidade", 1))),
             "preco_unitario": Decimal(str(item.get("preco_unitario", 0))),
             "origem": origem,
+            "desconto": Decimal("0"),
+            **tributos,
         })
 
+    # Desconto global: distribui proporcionalmente como vDesc de cada item,
+    # mantendo o preço unitário intacto (antes "enterrava" o desconto no preço).
     if desconto > 0:
         total_bruto = sum(i["preco_unitario"] * i["quantidade"] for i in itens_nfe)
         if total_bruto > 0:
-            fator = Decimal("1") - (Decimal(str(desconto)) / total_bruto)
-            for item in itens_nfe:
-                item["preco_unitario"] = round(item["preco_unitario"] * fator, 2)
+            restante = Decimal(str(desconto))
+            n = len(itens_nfe)
+            for idx, item in enumerate(itens_nfe):
+                if n == 1 or idx == n - 1:
+                    v_desc = restante
+                else:
+                    proporcao = (item["preco_unitario"] * item["quantidade"]) / total_bruto
+                    v_desc = (Decimal(str(desconto)) * proporcao).quantize(Decimal("0.01"))
+                    restante -= v_desc
+                item["desconto"] = v_desc
 
     try:
         numero_nfe = _proximo_numero(empresa, db)
@@ -1263,6 +1319,8 @@ def emitir_avulsa_submit(
             indicador_presenca=indicador_presenca,
             forma_pagamento=forma_pagamento or None,
             modalidade_frete=modalidade_frete,
+            valor_frete=Decimal(str(valor_frete or 0)),
+            transportadora_id=transportadora_id or None,
             observacoes=observacoes or None,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
@@ -1282,6 +1340,14 @@ def emitir_avulsa_submit(
                 quantidade=item["quantidade"],
                 preco_unitario=item["preco_unitario"],
                 total=item["preco_unitario"] * item["quantidade"],
+                desconto=item.get("desconto") or Decimal("0"),
+                cst=item.get("cst"),
+                csosn=item.get("csosn"),
+                aliquota_icms=item.get("aliquota_icms"),
+                aliquota_pis=item.get("aliquota_pis"),
+                aliquota_cofins=item.get("aliquota_cofins"),
+                cest=item.get("cest"),
+                codigo_beneficio_fiscal=item.get("codigo_beneficio_fiscal"),
             )
             db.add(nfe_item)
             if item.get("produto_id"):
@@ -1732,12 +1798,35 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
     erros = _validar_rascunho(nfe, nfe.cliente or (nfe.pedido.cliente if nfe.pedido else None), empresa)
+    from models import Transportadora
+    transportadoras = db.query(Transportadora).order_by(Transportadora.nome).all()
     return request.app.state.templates.TemplateResponse(request, 
         "nfe/previa.html",
         {"request": request, "nfe": nfe, "empresa": empresa,
+         "transportadoras": transportadoras,
          "erros": erros, "STATUS_LABELS": STATUS_LABELS,
          "messages": _get_messages(request)}
     )
+
+
+@router.post("/{nfe_id}/transporte")
+def atualizar_transporte_nfe(
+    request: Request, nfe_id: int, db: Session = Depends(get_db),
+    valor_frete: float = Form(0.0),
+    transportadora_id: int = Form(None),
+):
+    nfe = db.query(NFe).filter(NFe.id == nfe_id).first()
+    if not nfe:
+        request.session["error"] = "NFe não encontrada"
+        return RedirectResponse(url="/nfe", status_code=303)
+    if nfe.status in ("issued", "cancelled", "queued"):
+        request.session["error"] = "NFe já transmitida; não é possível alterar o transporte."
+        return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
+    nfe.valor_frete = Decimal(str(valor_frete or 0))
+    nfe.transportadora_id = transportadora_id or None
+    db.commit()
+    request.session["message"] = "Frete/Transportadora atualizados!"
+    return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
 
 
 @router.get("/{nfe_id}/editar")
@@ -1909,6 +1998,14 @@ def editar_nfe_submit(
                 quantidade=item["quantidade"],
                 preco_unitario=item["preco_unitario"],
                 total=item["preco_unitario"] * item["quantidade"],
+                desconto=item.get("desconto") or Decimal("0"),
+                cst=item.get("cst"),
+                csosn=item.get("csosn"),
+                aliquota_icms=item.get("aliquota_icms"),
+                aliquota_pis=item.get("aliquota_pis"),
+                aliquota_cofins=item.get("aliquota_cofins"),
+                cest=item.get("cest"),
+                codigo_beneficio_fiscal=item.get("codigo_beneficio_fiscal"),
             )
             db.add(nfe_item)
             if item.get("produto_id"):
@@ -2045,7 +2142,8 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
     db.query(NFe).filter(NFe.id == nfe_id).with_for_update().first()
 
     nfe = db.query(NFe).options(
-        joinedload(NFe.itens), joinedload(NFe.pedido), joinedload(NFe.cliente)
+        joinedload(NFe.itens), joinedload(NFe.pedido), joinedload(NFe.cliente),
+        joinedload(NFe.transportadora),
     ).filter(NFe.id == nfe_id).first()
     if not nfe:
         request.session["error"] = "NFe não encontrada"
@@ -2071,6 +2169,14 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         "quantidade": i.quantidade,
         "preco_unitario": i.preco_unitario,
         "origem": getattr(db.query(Produto).filter(Produto.id == i.produto_id).first(), 'origem', 0) if i.produto_id else 0,
+        "cst": i.cst,
+        "csosn": i.csosn,
+        "aliquota_icms": i.aliquota_icms,
+        "aliquota_pis": i.aliquota_pis,
+        "aliquota_cofins": i.aliquota_cofins,
+        "cest": i.cest,
+        "codigo_beneficio_fiscal": i.codigo_beneficio_fiscal,
+        "desconto": i.desconto or 0,
     } for i in nfe.itens]
 
     # Marca como em processamento ANTES da chamada à API. O with_for_update()
@@ -2130,6 +2236,16 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
             duplicatas=duplicatas,
             observacoes=getattr(nfe, 'observacoes', None),
             modalidade_frete=getattr(nfe, 'modalidade_frete', 9),
+            frete_valor=getattr(nfe, 'valor_frete', 0) or 0,
+            transportadora={
+                "nome": nfe.transportadora.nome,
+                "cpf_cnpj": nfe.transportadora.cpf_cnpj,
+                "inscricao_estadual": nfe.transportadora.inscricao_estadual,
+                "endereco": nfe.transportadora.endereco,
+                "cidade": nfe.transportadora.cidade,
+                "estado": nfe.transportadora.estado,
+            } if getattr(nfe, 'transportadora', None) else None,
+            crt=getattr(empresa, 'crt', None),
         )
 
         result = emitir_nfe(empresa, payload)

@@ -61,6 +61,8 @@
               <th class="px-4 py-2 text-right text-xs font-semibold text-cyan-400 uppercase">Qtd</th>
               <th class="px-4 py-2 text-right text-xs font-semibold text-cyan-400 uppercase">Vl Unit</th>
               <th class="px-4 py-2 text-right text-xs font-semibold text-cyan-400 uppercase">Total</th>
+              <th class="px-4 py-2 text-right text-xs font-semibold text-cyan-400 uppercase">Desc.</th>
+              <th class="px-4 py-2 text-center text-xs font-semibold text-cyan-400 uppercase">Trib.</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-slate-800/60">
@@ -74,16 +76,55 @@
               <td class="px-4 py-2 text-right text-slate-100">{{ item.quantidade }}</td>
               <td class="px-4 py-2 text-right text-emerald-400">R$ {{ "%.2f"|format(item.preco_unitario) }}</td>
               <td class="px-4 py-2 text-right text-emerald-400 font-medium">R$ {{ "%.2f"|format(item.total) }}</td>
+              <td class="px-4 py-2 text-right text-rose-400">{% if item.desconto %}R$ {{ "%.2f"|format(item.desconto) }}{% else %}-{% endif %}</td>
+              <td class="px-4 py-2 text-center text-slate-300 text-xs">{{ item.cst or item.csosn or '-' }}{% if item.aliquota_icms %} ({{ item.aliquota_icms }}%){% endif %}</td>
             </tr>
             {% endfor %}
           </tbody>
           <tfoot class="bg-slate-900/60">
+            {% set desconto_total = nfe.itens|sum(attribute='desconto') %}
+            {% if desconto_total %}
             <tr>
-              <td colspan="7" class="px-4 py-3 text-right text-sm font-semibold text-slate-300">Valor Total da Nota:</td>
+              <td colspan="9" class="px-4 py-2 text-right text-sm font-semibold text-rose-300">Desconto Total:</td>
+              <td class="px-4 py-2 text-right text-sm font-bold text-rose-400">- R$ {{ "%.2f"|format(desconto_total) }}</td>
+            </tr>
+            {% endif %}
+            {% if nfe.valor_frete %}
+            <tr>
+              <td colspan="9" class="px-4 py-2 text-right text-sm font-semibold text-slate-300">Frete:</td>
+              <td class="px-4 py-2 text-right text-sm font-bold text-slate-100">R$ {{ "%.2f"|format(nfe.valor_frete) }}</td>
+            </tr>
+            {% endif %}
+            {% if nfe.transportadora %}
+            <tr>
+              <td colspan="9" class="px-4 py-2 text-right text-sm font-semibold text-slate-300">Transportadora:</td>
+              <td class="px-4 py-2 text-right text-sm text-slate-100">{{ nfe.transportadora.nome }}</td>
+            </tr>
+            {% endif %}
+            <tr>
+              <td colspan="9" class="px-4 py-3 text-right text-sm font-semibold text-slate-300">Valor Total da Nota:</td>
               <td class="px-4 py-3 text-right text-base font-bold text-emerald-400">R$ {{ "%.2f"|format(nfe.valor_total) }}</td>
             </tr>
           </tfoot>
         </table>
+      </div>
+      <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5">
+        <h5 class="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3"><i data-lucide="truck" class="w-4 h-4 inline me-1"></i> Frete / Transportadora</h5>
+        <form method="post" action="/nfe/{{ nfe.id }}/transporte" class="flex flex-wrap items-end gap-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <div>
+            <label class="block text-xs text-cyan-400 mb-1">Valor do Frete (R$)</label>
+            <input type="number" step="0.01" min="0" name="valor_frete" value="{{ nfe.valor_frete or 0 }}" class="w-36 px-3 py-2 bg-slate-900/60 border border-slate-700 rounded-xl text-slate-100">
+          </div>
+          <div>
+            <label class="block text-xs text-cyan-400 mb-1">Transportadora</label>
+            <select name="transportadora_id" class="w-64 px-3 py-2 bg-slate-900/60 border border-slate-700 rounded-xl text-slate-100">
+              <option value="">Sem transportadora</option>
+              {% for t in transportadoras %}<option value="{{ t.id }}" {% if nfe.transportadora_id == t.id %}selected{% endif %}>{{ t.nome }}</option>{% endfor %}
+            </select>
+          </div>
+          <button type="submit" class="px-4 py-2 rounded-xl bg-cyan-500 text-slate-900 text-sm font-semibold">Salvar</button>
+        </form>
       </div>
       <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5">
         <h5 class="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3"><i data-lucide="credit-card" class="w-4 h-4 inline me-1"></i> Pagamento</h5>

@@ -33,6 +33,8 @@ class NFe(Base):
     # 0=CIF(Remetente) 1=FOB(Destinatário) 2=Terceiros 3=Próprio remetente
     # 4=Próprio destinatário 9=Sem ocorrência de transporte
     modalidade_frete = Column(Integer, default=9, nullable=False)
+    valor_frete = Column(Numeric(12, 2), default=0)
+    transportadora_id = Column(Integer, ForeignKey("transportadoras.id"), nullable=True, index=True)
     valor_total = Column(Numeric(12, 2), default=0)
     base_calculo = Column(Numeric(12, 2), default=0)
     valor_icms = Column(Numeric(12, 2), default=0)
@@ -51,6 +53,7 @@ class NFe(Base):
     consolidacao = relationship("PedidoConsolidado", back_populates="nfes")
     itens = relationship("NFeItem", back_populates="nfe", cascade="all, delete-orphan")
     cartas_correcao = relationship("NFeCartaCorrecao", back_populates="nfe", cascade="all, delete-orphan")
+    transportadora = relationship("Transportadora")
 
 
 class NFeItem(Base):
@@ -67,6 +70,15 @@ class NFeItem(Base):
     quantidade = Column(Numeric(12, 2), nullable=False)
     preco_unitario = Column(Numeric(12, 2), nullable=False)
     total = Column(Numeric(12, 2), nullable=False)
+    desconto = Column(Numeric(12, 2), default=0)  # vDesc do item (não entra no preço unitário)
+    # Tributação enviada à NotaAS (grupo det/impostos)
+    cst = Column(String(2), nullable=True)
+    csosn = Column(String(3), nullable=True)
+    aliquota_icms = Column(Numeric(5, 2), nullable=True)
+    aliquota_pis = Column(Numeric(5, 2), nullable=True)
+    aliquota_cofins = Column(Numeric(5, 2), nullable=True)
+    cest = Column(String(7), nullable=True)
+    codigo_beneficio_fiscal = Column(String(10), nullable=True)
     
     nfe = relationship("NFe", back_populates="itens")
     produto = relationship("Produto", back_populates="itens_nfe")

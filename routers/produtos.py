@@ -235,6 +235,13 @@ def criar_produto(
     insumos: str = Form(""),
     codigo_lc116: str = Form(""),
     codigo_tributacao_municipal: str = Form(""),
+    cst: str = Form(""),
+    csosn: str = Form(""),
+    aliquota_icms: str = Form(""),
+    aliquota_pis: str = Form(""),
+    aliquota_cofins: str = Form(""),
+    cest: str = Form(""),
+    codigo_beneficio_fiscal: str = Form(""),
     foto: UploadFile = File(None),
 ):
     if not codigo:
@@ -283,6 +290,13 @@ def criar_produto(
         tipo=tipo,
         codigo_lc116=codigo_lc116_val,
         codigo_tributacao_municipal=codigo_tributacao_val,
+        cst=cst or None,
+        csosn=csosn or None,
+        aliquota_icms=to_decimal(aliquota_icms) if aliquota_icms and aliquota_icms.strip() else None,
+        aliquota_pis=to_decimal(aliquota_pis) if aliquota_pis and aliquota_pis.strip() else None,
+        aliquota_cofins=to_decimal(aliquota_cofins) if aliquota_cofins and aliquota_cofins.strip() else None,
+        cest=cest or None,
+        codigo_beneficio_fiscal=codigo_beneficio_fiscal or None,
         situacao=situacao,
         foto=foto_path,
         bling_pending_sync=True,
@@ -397,6 +411,13 @@ def atualizar_produto(
     insumos: str = Form(""),
     codigo_lc116: str = Form(""),
     codigo_tributacao_municipal: str = Form(""),
+    cst: str = Form(""),
+    csosn: str = Form(""),
+    aliquota_icms: str = Form(""),
+    aliquota_pis: str = Form(""),
+    aliquota_cofins: str = Form(""),
+    cest: str = Form(""),
+    codigo_beneficio_fiscal: str = Form(""),
     foto: UploadFile = File(None),
 ):
     produto = db.query(Produto).filter(Produto.id == produto_id).first()
@@ -437,6 +458,13 @@ def atualizar_produto(
         produto.tipo = tipo
         produto.codigo_lc116 = codigo_lc116 if tipo == 'servico' else None
         produto.codigo_tributacao_municipal = codigo_tributacao_municipal if tipo == 'servico' else None
+        produto.cst = cst or None
+        produto.csosn = csosn or None
+        produto.aliquota_icms = to_decimal(aliquota_icms) if aliquota_icms and aliquota_icms.strip() else None
+        produto.aliquota_pis = to_decimal(aliquota_pis) if aliquota_pis and aliquota_pis.strip() else None
+        produto.aliquota_cofins = to_decimal(aliquota_cofins) if aliquota_cofins and aliquota_cofins.strip() else None
+        produto.cest = cest or None
+        produto.codigo_beneficio_fiscal = codigo_beneficio_fiscal or None
         produto.situacao = situacao
         produto.bling_pending_sync = True
         db.commit()

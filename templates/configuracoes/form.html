@@ -210,7 +210,15 @@
                         </select>
                     </div>
                     <div>
-                        <label class="block text-xs font-medium text-cyan-400 mb-1">Série NFe</label>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">CRT - Regime Tributário</label>
+                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="crt">
+                            <option value="1" {{ 'selected' if empresa.crt == 1 }}>1 - Simples Nacional</option>
+                            <option value="2" {{ 'selected' if empresa.crt == 2 }}>2 - SN Excesso de Sublimite</option>
+                            <option value="3" {{ 'selected' if (empresa.crt == 3 or not empresa.crt) }}>3 - Regime Normal (Lucro Presumido/Real)</option>
+                            <option value="4" {{ 'selected' if empresa.crt == 4 }}>4 - Simples Nacional (MEI)</option>
+                        </select>
+                        <p class="text-xs text-slate-500 mt-1">Define se os itens usam CST (2/3) ou CSOSN (1/4).</p>
+                    </div>
                         <input type="number" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="serie_nfe" value="{{ empresa.serie_nfe or 1 }}" min="1" max="889">
                     </div>
                     <div>

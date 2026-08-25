@@ -967,7 +967,7 @@ def create_app() -> FastAPI:
         clientes, fornecedores, nfse, contas, assinaturas,
         ordens_servico, configuracoes, bling, sicoob, produtos,
         pedidos, auth, nfe, tipos_documento, planocontas, consolidacoes,
-        estoque, consultas, condicoes_pagamento
+        estoque, consultas, condicoes_pagamento, transportadoras
     )
 
     app.include_router(auth.router)
@@ -989,5 +989,6 @@ def create_app() -> FastAPI:
     app.include_router(consolidacoes.router)
     app.include_router(estoque.router)
     app.include_router(consultas.router)
+    app.include_router(transportadoras.router)
 
     return app

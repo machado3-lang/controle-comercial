@@ -120,6 +120,9 @@ def montar_payload_nfe(
     duplicatas: list = None,
     observacoes: str = None,
     modalidade_frete: int = 9,
+    frete_valor: float = 0,
+    transportadora: dict = None,
+    crt: int = None,
 ) -> dict:
     cfop = cfop or empresa.cfop_padrao or "5102"
     destino_operacao = 1
@@ -199,7 +202,9 @@ def montar_payload_nfe(
         total_item = round(preco * qtd, 2)
         codigo = str(item.get("produto_id", i + 1))
 
-        payload["items"].append({
+        # Tributação: CST (CRT 2/3) ou CSOSN (CRT 1/4). Enviamos o que o
+        # produto traz; a NotaAS valida conforme o CRT da empresa.
+        item_payload = {
             "codigo": codigo,
             "descricao": descricao,
             "ncm": ncm,
@@ -209,7 +214,38 @@ def montar_payload_nfe(
             "valorUnitario": preco,
             "valorTotal": total_item,
             "origem": item.get("origem", 0),
-        })
+        }
+        cst = item.get("cst")
+        csosn = item.get("csosn")
+        # Consistência com o CRT da empresa: SN (1/4) usa CSOSN; Normal (2/3) usa CST.
+        # Remove o campo incompatível para evitar rejeição da SEFAZ.
+        if crt in (1, 4):
+            cst = None
+        elif crt in (2, 3):
+            csosn = None
+        if cst:
+            item_payload["cst"] = str(cst)
+        if csosn:
+            item_payload["csosn"] = str(csosn)
+        ali_icms = item.get("aliquota_icms")
+        if ali_icms is not None and ali_icms != "":
+            item_payload["aliquotaIcms"] = float(ali_icms)
+        ali_pis = item.get("aliquota_pis")
+        if ali_pis is not None and ali_pis != "":
+            item_payload["aliquotaPis"] = float(ali_pis)
+        ali_cofins = item.get("aliquota_cofins")
+        if ali_cofins is not None and ali_cofins != "":
+            item_payload["aliquotaCofins"] = float(ali_cofins)
+        if item.get("cest"):
+            item_payload["cest"] = str(item.get("cest"))
+        if item.get("codigo_beneficio_fiscal"):
+            item_payload["codigoBeneficioFiscal"] = str(item.get("codigo_beneficio_fiscal"))
+        # Desconto real do item (vDesc) — NÃO enterra no preço unitário
+        v_desc = item.get("desconto")
+        if v_desc is not None and float(v_desc or 0) > 0:
+            item_payload["desconto"] = round(float(v_desc), 2)
+
+        payload["items"].append(item_payload)
 
     if data_emissao:
         payload["dataEmissao"] = data_emissao
@@ -262,7 +298,27 @@ def montar_payload_nfe(
         mod_frete = 9
     if mod_frete not in (0, 1, 2, 3, 4, 9):
         mod_frete = 9
-    payload["transporte"] = {"modalidadeFrete": mod_frete}
+    transporte = {"modalidadeFrete": mod_frete}
+    # Transportadora (grupo transp/transportadora)
+    if transportadora:
+        t = {
+            "nome": transportadora.get("nome"),
+            "ie": transportadora.get("inscricao_estadual") or None,
+            "endereco": transportadora.get("endereco") or None,
+            "cidade": transportadora.get("cidade") or None,
+            "uf": transportadora.get("estado") or None,
+        }
+        doc = _limpar_doc(transportadora.get("cpf_cnpj"))
+        if doc and len(doc) == 14:
+            t["cnpj"] = doc
+        elif doc and len(doc) == 11:
+            t["cpf"] = doc
+        transporte["transportadora"] = t
+    payload["transporte"] = transporte
+
+    # Valor total do frete da nota (distribuído proporcionalmente pela NotaAS)
+    if frete_valor and float(frete_valor or 0) > 0:
+        payload["valorFrete"] = round(float(frete_valor), 2)
 
     # Tributos aproximados IBPT (Lei 12.741/2012)
     # Converte para float: as colunas Numeric vêm como Decimal e 'float * Decimal'
@@ -305,6 +361,28 @@ def _obter_ncm(item: dict) -> str:
     return item.get("ncm") or "99999999"
 
 
+def _tributos_do_produto(produto) -> dict:
+    """Extrai os campos de tributação do produto para o payload do item."""
+    if not produto:
+        return {}
+    return {
+        "cst": getattr(produto, "cst", None),
+        "csosn": getattr(produto, "csosn", None),
+        "aliquota_icms": getattr(produto, "aliquota_icms", None),
+        "aliquota_pis": getattr(produto, "aliquota_pis", None),
+        "aliquota_cofins": getattr(produto, "aliquota_cofins", None),
+        "cest": getattr(produto, "cest", None),
+        "codigo_beneficio_fiscal": getattr(produto, "codigo_beneficio_fiscal", None),
+    }
+
+
+def _mesclar_tributos(item: dict, tributos: dict) -> dict:
+    for k, v in tributos.items():
+        if v is not None and item.get(k) is None:
+            item[k] = v
+    return item
+
+
 def explodir_itens(pedido=None, os=None, db=None) -> tuple:
     itens_nfe = []
     itens_nfse = []
@@ -319,7 +397,7 @@ def explodir_itens(pedido=None, os=None, db=None) -> tuple:
             if not produto:
                 continue
             if produto.tipo == "produto":
-                itens_nfe.append({
+                item_nfe = {
                     "produto_id": produto.id,
                     "descricao": item.descricao or produto.nome,
                     "ncm": produto.ncm,
@@ -328,7 +406,9 @@ def explodir_itens(pedido=None, os=None, db=None) -> tuple:
                     "preco_unitario": item.preco_unitario or 0,
                     "origem": produto.origem or 0,
                     "variacao_id": item.variacao_id,
-                })
+                }
+                _mesclar_tributos(item_nfe, _tributos_do_produto(produto))
+                itens_nfe.append(item_nfe)
             elif produto.tipo == "servico":
                 itens_nfse.append(item)
             elif produto.tipo == "kit" and db:
@@ -360,6 +440,7 @@ def explodir_itens(pedido=None, os=None, db=None) -> tuple:
                         "preco_unitario": preco,
                         "origem": (prod.origem if (prod and prod.origem is not None) else 0),
                     })
+                    _mesclar_tributos(itens_nfe[-1], _tributos_do_produto(prod))
             else:
                 itens_nfe.append({
                     "produto_id": None,
@@ -391,7 +472,7 @@ def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse, valor_kit=None
             continue
         qtd = float(comp.quantidade_padrao or 1) * float(quantidade)
         if insumo.tipo == "produto":
-            folhas_nfe.append({
+            folha = {
                 "produto_id": insumo.id,
                 "descricao": insumo.nome,
                 "ncm": insumo.ncm,
@@ -399,7 +480,9 @@ def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse, valor_kit=None
                 "quantidade": qtd,
                 "preco_unitario": insumo.preco,
                 "origem": insumo.origem or 0,
-            })
+            }
+            _mesclar_tributos(folha, _tributos_do_produto(insumo))
+            folhas_nfe.append(folha)
         elif insumo.tipo == "servico":
             itens_nfse.append(insumo)
         elif insumo.tipo == "kit":
@@ -424,7 +507,7 @@ def explodir_itens_consolidacao(consolidacao=None, db=None) -> tuple:
             if not produto:
                 continue
             if produto.tipo == "produto":
-                itens_nfe.append({
+                item_nfe = {
                     "produto_id": produto.id,
                     "descricao": item.descricao or produto.nome,
                     "ncm": produto.ncm,
@@ -433,7 +516,9 @@ def explodir_itens_consolidacao(consolidacao=None, db=None) -> tuple:
                     "preco_unitario": item.preco_unitario or 0,
                     "origem": produto.origem or 0,
                     "variacao_id": item.variacao_id,
-                })
+                }
+                _mesclar_tributos(item_nfe, _tributos_do_produto(produto))
+                itens_nfe.append(item_nfe)
             elif produto.tipo == "servico":
                 itens_nfse.append(item)
             elif produto.tipo == "kit" and db:

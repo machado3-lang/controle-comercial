@@ -180,3 +180,50 @@ migration Alembic manual é necessária para essas duas alterações.
 - A CC-e é síncrona e **sem retry** (reatualizar a página não reenvia — evita duplicata).
 - O cancelamento segue o mesmo padrão (sem retry) e exige `invoice_id`.
 - Toda NFe autorizada gera/atualiza `ContaReceber` (cobrança) quando aplicável.
+
+---
+
+## 10. Regras de Impostos, Desconto, Frete e Transportadora (Atualizado)
+
+A emissão NFe é feita via **API NotaAs** (`services/nfe_notaas.py` → `montar_payload_nfe`). O XML
+é gerado pela NotaAs a partir do payload JSON; o DANFE é desenhado por `brazilfiscalreport` a partir
+do XML. Não há uso de biblioteca `erpbrasil`.
+
+### 10.1 Tributos por item (ICMS / PIS / COFINS / CST / CSOSN / CEST)
+Antes, os itens eram enviados sem nó fiscal → "não saía nada nos cálculos de impostos". Agora:
+
+- **`Empresa.crt`** (1=Simples Nacional, 2=SN Excesso, 3=Regime Normal, 4=MEI) define se o item
+  usa **CST** (CRT 2/3) ou **CSOSN** (CRT 1/4).
+- **`Produto`** ganhou: `cst`, `csosn`, `aliquota_icms`, `aliquota_pis`, `aliquota_cofins`,
+  `cest`, `codigo_beneficio_fiscal`. Preenchidos no cadastro de itens.
+- `montar_payload_nfe` envia por item: `cst`/`csosn`, `aliquotaIcms`, `aliquotaPis`, `aliquotaCofins`,
+  `cest`, `codigoBeneficioFiscal`. Há consistência com o CRT da empresa (remove o campo incompatível)
+  para evitar rejeição da SEFAZ.
+
+### 10.2 Desconto (vDesc real)
+O desconto global não é mais "enterrado" no preço unitário de cada item. Agora vira
+`items[].desconto` (alias `vDesc`), distribuído proporcionalmente entre os itens, mantendo o
+preço unitário intacto. Válido em avulsa, pedido, OS e consolidação.
+
+### 10.3 Frete
+- `NFe.valor_frete` + `NFe.modalidade_frete` (0=CIF, 1=FOB, 2=Terceiros, 3=Próprio Remetente,
+  4=Próprio Destinatário, 9=Sem transporte).
+- Enviado como `valorFrete` na raiz (a NotaAs distribui proporcionalmente nos itens).
+- Na emissão avulsa há campo manual de frete; em pedido/OS/consolidação o frete é informado na
+  **prévia** da NFe (card "Frete / Transportadora" → `POST /nfe/{id}/transporte`).
+
+### 10.4 Transportadoras
+- Nova tabela **`transportadoras`** (cadastro em `/transportadoras`) e `Transportadora` em `models.py`.
+- `NFe.transportadora_id` relaciona a nota à transportadora.
+- Enviado como `transporte.transportadora.{cnpj/cpf, nome, ie, endereco, cidade, uf}`.
+- Selecionada no formulário de emissão avulsa ou na prévia da NFe.
+
+### 10.5 Prévia
+A `previa.html` exibe por item: Trib. (CST/CSOSN + %ICMS), Desconto, e no rodapé: Desconto Total,
+Frete e Transportadora.
+
+### 10.6 Migração
+`alembic/versions/b2c3d4e5f6a7_tributos_nfe_frete_transportadora.py` cria as colunas/tabelas acima.
+Obs.: a migration antiga `7a1b2c3d4e5f_vinculo_variacao_notas.py` foi removida deste repositório
+pois estava quebrada e nunca havia sido aplicada (o `alembic_version` estava em `a1b2c3d4e5f6`);
+sua função (FK de `variacao_id`) foi incorporada à nova migration.

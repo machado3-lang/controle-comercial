@@ -83,6 +83,17 @@
                                 <option value="9" {{ 'selected' if (saved_modalidade_frete is none or saved_modalidade_frete == 9) }}>9 - Sem Transporte</option>
                             </select>
                         </div>
+                        <div class="col-span-1">
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Valor do Frete (R$)</label>
+                            <input type="number" step="0.01" min="0" name="valor_frete" id="inputValorFrete" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" value="{{ saved_valor_frete or 0 }}">
+                        </div>
+                        <div class="col-span-2">
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Transportadora</label>
+                            <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="transportadora_id" id="inputTransportadora">
+                                <option value="">Sem transportadora</option>
+                                {% for t in transportadoras %}<option value="{{ t.id }}" {% if saved_transportadora_id == t.id %}selected{% endif %}>{{ t.nome }}{% if t.cpf_cnpj %} ({{ t.cpf_cnpj }}){% endif %}</option>{% endfor %}
+                            </select>
+                        </div>
                         <div>
                             <label class="block text-xs font-medium text-cyan-400 mb-1">Data Emissão</label>
                             <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="data_emissao" id="inputDataEmissao" value="{{ saved_data_emissao or '' }}">
@@ -297,6 +308,13 @@ function atualizarItensJson() {
             unidade: row.querySelector('.item-un')?.textContent || 'UN',
             quantidade: parseFloat(row.querySelector('.item-qtd')?.value) || 1,
             preco_unitario: parseFloat(row.querySelector('.item-valor')?.value) || 0,
+            cst: row.dataset.cst || '',
+            csosn: row.dataset.csosn || '',
+            aliquota_icms: row.dataset.aliquotaIcms || '',
+            aliquota_pis: row.dataset.aliquotaPis || '',
+            aliquota_cofins: row.dataset.aliquotaCofins || '',
+            cest: row.dataset.cest || '',
+            codigo_beneficio_fiscal: row.dataset.codigoBeneficioFiscal || '',
         });
     });
     document.getElementById('itensJson').value = JSON.stringify(itens);
@@ -308,6 +326,13 @@ function adicionarItem(produto, quantidade) {
     const tr = document.createElement('tr');
     tr.className = 'item-row border-b border-slate-800/30';
     tr.dataset.produtoId = produto.id || '';
+    tr.dataset.cst = produto.cst || '';
+    tr.dataset.csosn = produto.csosn || '';
+    tr.dataset.aliquotaIcms = produto.aliquota_icms != null ? produto.aliquota_icms : '';
+    tr.dataset.aliquotaPis = produto.aliquota_pis != null ? produto.aliquota_pis : '';
+    tr.dataset.aliquotaCofins = produto.aliquota_cofins != null ? produto.aliquota_cofins : '';
+    tr.dataset.cest = produto.cest || '';
+    tr.dataset.codigoBeneficioFiscal = produto.codigo_beneficio_fiscal || '';
     const estoque = produto.estoque || 0;
     const warning = estoque <= 0 ? '<span class="text-rose-400 text-xs ms-1">(sem estoque)</span>' : '';
     const preco = produto.preco || 0;
@@ -475,6 +500,13 @@ document.getElementById('formNfeAvulsa').addEventListener('submit', function(e) 
             unidade: row.querySelector('.item-un')?.textContent || 'UN',
             quantidade: parseFloat(row.querySelector('.item-qtd')?.value) || 1,
             preco_unitario: parseFloat(row.querySelector('.item-valor')?.value) || 0,
+            cst: row.dataset.cst || '',
+            csosn: row.dataset.csosn || '',
+            aliquota_icms: row.dataset.aliquotaIcms || '',
+            aliquota_pis: row.dataset.aliquotaPis || '',
+            aliquota_cofins: row.dataset.aliquotaCofins || '',
+            cest: row.dataset.cest || '',
+            codigo_beneficio_fiscal: row.dataset.codigoBeneficioFiscal || '',
         });
     });
     if (itens.length === 0) {
