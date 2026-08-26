@@ -418,8 +418,18 @@ class BethaNfseService:
                         if m: numero_nfse = m.group(1)
                         m = re.search(r'<[^:>]*:?dhEmi[^>]*>([^<]+)</', xml_nfse)
                         if m: dh_emi = m.group(1)
-                        m = re.search(r'<[^:>]*:?vBC[^>]*>([\d.]+)</', xml_nfse)
-                        if m: valor = float(m.group(1))
+                        # Valor total da NFSe: preferir a tag de valor da nota
+                        # (vNF/ValorTotal/vServico/...) em vez de vBC (base de calculo
+                        # do ISS, que pode ser 0 em notas de terceiros/recebidas).
+                        valor = None
+                        for _tag in ('vNF', 'ValorTotal', 'vServico', 'vServ', 'valorServicos', 'vLiquido', 'vBC'):
+                            m = re.search(r'<[^:>]*:?' + _tag + r'[^>]*>([\d.]+)</', xml_nfse)
+                            if m:
+                                try:
+                                    valor = float(m.group(1))
+                                    break
+                                except ValueError:
+                                    continue
                         # Tomador: <toma><CNPJ>...</CNPJ><xNome>...</xNome></toma>
                         toma_match = re.search(r'<toma>(.*?)</toma>', xml_nfse, re.DOTALL)
                         if toma_match:

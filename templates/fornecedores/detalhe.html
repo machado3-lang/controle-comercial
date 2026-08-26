@@ -9,6 +9,26 @@
             <a href="/fornecedores" class="flex items-center px-3 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition"><i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar</a>
         </div>
     </div>
+
+    {% set transp = fornecedor.transportadoras[0] if fornecedor.transportadoras else None %}
+    <div class="p-3 border-b border-slate-800/60 flex items-center justify-between gap-3 flex-wrap">
+        <div class="text-sm text-slate-400">
+            {% if transp %}
+            <span class="px-2 py-1 text-xs font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded-full"><i data-lucide="truck" class="w-3.5 h-3.5 inline me-1"></i> Já é transportadora</span>
+            <a href="/transportadoras" class="ms-2 text-cyan-400 hover:underline">Ver transportadoras</a>
+            {% else %}
+            <span class="text-slate-500">Este fornecedor ainda não é uma transportadora.</span>
+            {% endif %}
+        </div>
+        {% if not transp %}
+        <form action="/transportadoras/criar-de-fornecedor" method="post" class="inline">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="fornecedor_id" value="{{ fornecedor.id }}">
+            <button type="submit" class="flex items-center px-3 py-2 text-sm bg-gradient-to-r from-cyan-500 to-indigo-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="truck" class="w-4 h-4 me-1"></i> Registrar como transportadora</button>
+        </form>
+        {% endif %}
+    </div>
+    </div>
     
     <div class="p-4 grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
         <div><small class="text-slate-500">Código</small><div class="text-slate-100 font-medium">{{ fornecedor.codigo or '-' }}</div></div>

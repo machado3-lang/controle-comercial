@@ -1922,6 +1922,24 @@ def listar_nfse_adn(
                 if n.get('cancelada') and existente.status != 'cancelada':
                     existente.status = 'cancelada'
                     atualizados_rec += 1
+                # Backfill de campos que podem ter ficado zerados/ausentes em importacoes
+                # anteriores (ex.: valor_total extraido de tag errada). Atualiza apenas
+                # quando a fonte ADN traz valor valido, para nao sobrescrever manual.
+                v = n.get('valor')
+                if v:
+                    try:
+                        vf = float(v)
+                        if vf > 0 and (not existente.valor_total or float(existente.valor_total or 0) == 0):
+                            existente.valor_total = vf
+                            atualizados_rec += 1
+                    except (ValueError, TypeError):
+                        pass
+                if not existente.emitente_nome and n.get('emitente_nome'):
+                    existente.emitente_nome = n.get('emitente_nome')
+                    atualizados_rec += 1
+                if not existente.emitente_cnpj and n.get('emitente_cnpj'):
+                    existente.emitente_cnpj = n.get('emitente_cnpj')
+                    atualizados_rec += 1
                 continue
             rec = NFSeRecebida()
             rec.chave_acesso = chave

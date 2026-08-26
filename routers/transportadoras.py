@@ -92,6 +92,45 @@ def criar_transportadora(
     return RedirectResponse(url="/transportadoras", status_code=303)
 
 
+@router.post("/criar-de-fornecedor")
+def criar_transportadora_de_fornecedor(
+    request: Request, db: Session = Depends(get_db),
+    fornecedor_id: int = Form(...),
+):
+    """Registra um fornecedor como transportadora, vinculando os dois cadastros
+    (evita cadastro duplicado). Copia os dados ja existentes do fornecedor."""
+    if not verificar_admin(request, db):
+        return RedirectResponse(url="/dashboard", status_code=303)
+    f = db.query(Fornecedor).filter(Fornecedor.id == fornecedor_id).first()
+    if not f:
+        request.session["error"] = "Fornecedor não encontrado"
+        return RedirectResponse(url="/fornecedores", status_code=303)
+    # Ja existe transportadora vinculada a este fornecedor?
+    existente = db.query(Transportadora).filter(Transportadora.fornecedor_id == f.id).first()
+    if existente:
+        request.session["message"] = {
+            "tipo": "warning",
+            "texto": f"O fornecedor '{f.nome}' já está registrado como transportadora.",
+        }
+        return RedirectResponse(url=f"/fornecedores/{f.id}", status_code=303)
+    empresa = db.query(Empresa).first()
+    t = Transportadora(
+        empresa_id=empresa.id if empresa else None,
+        nome=f.nome,
+        cpf_cnpj=f.cpf_cnpj,
+        inscricao_estadual=f.inscricao_estadual or None,
+        endereco=f.endereco or None,
+        cidade=f.cidade or None,
+        estado=f.estado or None,
+        cep=f.cep or None,
+        fornecedor_id=f.id,
+    )
+    db.add(t)
+    db.commit()
+    request.session["message"] = f"Fornecedor '{f.nome}' registrado como transportadora!"
+    return RedirectResponse(url=f"/fornecedores/{f.id}", status_code=303)
+
+
 @router.post("/{transportadora_id}/editar")
 def editar_transportadora(
     request: Request, transportadora_id: int, db: Session = Depends(get_db),
