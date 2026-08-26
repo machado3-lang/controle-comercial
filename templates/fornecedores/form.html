@@ -76,6 +76,27 @@
                 <span class="text-sm">Também cadastrar como Cliente</span>
             </label>
         </div>
+        {% if fornecedor %}
+        {% set transp = fornecedor.transportadoras[0] if fornecedor.transportadoras else None %}
+        {% if transp %}
+        <div class="flex items-end pb-2">
+            <span class="text-xs text-emerald-400"><i data-lucide="truck" class="w-3.5 h-3.5 inline me-1"></i> Já registrado como transportadora</span>
+            <a href="/transportadoras" class="ms-2 text-cyan-400 hover:underline text-xs">Ver transportadoras</a>
+        </div>
+        {% else %}
+        <div class="flex items-end pb-2">
+            <form action="/transportadoras/criar-de-fornecedor" method="post" class="inline">
+                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                <input type="hidden" name="fornecedor_id" value="{{ fornecedor.id }}">
+                <button type="submit" class="flex items-center px-3 py-2 text-sm bg-gradient-to-r from-cyan-500 to-indigo-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="truck" class="w-4 h-4 me-1"></i> Registrar como Transportadora</button>
+            </form>
+        </div>
+        {% endif %}
+        {% else %}
+        <div class="flex items-end pb-2">
+            <span class="text-xs text-slate-500">Após salvar o cadastro, será possível registrá-lo também como transportadora.</span>
+        </div>
+        {% endif %}
     </div>
 
     <div class="glass-card p-4">
