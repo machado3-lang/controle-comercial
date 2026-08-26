@@ -19,6 +19,7 @@
                     <th class="text-left px-4 py-3">CNPJ/CPF</th>
                     <th class="text-left px-4 py-3">IE</th>
                     <th class="text-left px-4 py-3">Cidade/UF</th>
+                    <th class="text-left px-4 py-3">Fornecedor vinculado</th>
                     <th class="text-right px-4 py-3">Ações</th>
                 </tr>
             </thead>
@@ -29,8 +30,15 @@
                     <td class="px-4 py-3">{{ t.cpf_cnpj or '-' }}</td>
                     <td class="px-4 py-3">{{ t.inscricao_estadual or '-' }}</td>
                     <td class="px-4 py-3">{{ t.cidade or '' }}{% if t.estado %}/{{ t.estado }}{% endif %}</td>
+                    <td class="px-4 py-3">
+                        {% if t.fornecedor %}
+                            <span class="px-1.5 py-0.5 text-[10px] font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded-full">{{ t.fornecedor.nome }}</span>
+                        {% else %}
+                            <span class="text-slate-600">—</span>
+                        {% endif %}
+                    </td>
                     <td class="px-4 py-3 text-right">
-                        <button onclick="abrirModal('{{ t.id }}', '{{ t.nome }}', '{{ t.cpf_cnpj or '' }}', '{{ t.inscricao_estadual or '' }}', '{{ t.endereco or '' }}', '{{ t.cidade or '' }}', '{{ t.estado or '' }}', '{{ t.cep or '' }}')" class="text-cyan-400 hover:text-cyan-300 me-3"><i data-lucide="edit-3" class="w-4 h-4 inline"></i></button>
+                        <button onclick="abrirModal('{{ t.id }}', '{{ t.nome }}', '{{ t.cpf_cnpj or '' }}', '{{ t.inscricao_estadual or '' }}', '{{ t.endereco or '' }}', '{{ t.cidade or '' }}', '{{ t.estado or '' }}', '{{ t.cep or '' }}', '{{ t.fornecedor_id or '' }}')" class="text-cyan-400 hover:text-cyan-300 me-3"><i data-lucide="edit-3" class="w-4 h-4 inline"></i></button>
                         <form method="post" action="/transportadoras/{{ t.id }}/excluir" class="inline" onsubmit="return confirm('Excluir esta transportadora?');">
                             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
                             <button type="submit" class="text-rose-400 hover:text-rose-300"><i data-lucide="trash-2" class="w-4 h-4 inline"></i></button>
@@ -81,6 +89,16 @@
                     <label class="block text-xs text-cyan-400 mb-1">CEP</label>
                     <input type="text" name="cep" id="tCep" class="w-full px-3 py-2 bg-slate-800/60 border border-slate-700 rounded-xl text-slate-100">
                 </div>
+                <div class="col-span-2">
+                    <label class="block text-xs text-cyan-400 mb-1">Vincular Fornecedor (opcional)</label>
+                    <select name="fornecedor_id" id="tFornecedor" class="w-full px-3 py-2 bg-slate-800/60 border border-slate-700 rounded-xl text-slate-100">
+                        <option value="">— Nenhum (cadastro independente) —</option>
+                        {% for f in fornecedores %}
+                        <option value="{{ f.id }}">{{ f.nome }}{% if f.cpf_cnpj %} ({{ f.cpf_cnpj }}){% endif %}</option>
+                        {% endfor %}
+                    </select>
+                    <p class="text-[10px] text-slate-500 mt-1">Se esta transportadora já é um fornecedor (ex.: para gerar Contas a Pagar), vincule para não duplicar o cadastro. Ao escolher, os dados são pré-preenchidos.</p>
+                </div>
             </div>
             <div class="flex justify-end gap-2 mt-5">
                 <button type="button" onclick="fecharModal()" class="px-4 py-2 rounded-xl bg-slate-700 text-slate-200 text-sm">Cancelar</button>
@@ -90,9 +108,11 @@
     </div>
 </div>
 
+<script type="application/json" id="fornecedoresJson">{{ fornecedores_json | tojson | safe }}</script>
 <script>
-function abrirModal(id, nome, cpf, ie, endereco, cidade, estado, cep) {
+function abrirModal(id, nome, cpf, ie, endereco, cidade, estado, cep, fornecedorId) {
     const m = document.getElementById('modal');
+    const selForn = document.getElementById('tFornecedor');
     if (id) {
         document.getElementById('modalTitulo').textContent = 'Editar Transportadora';
         document.getElementById('formTransp').action = '/transportadoras/' + id + '/editar';
@@ -104,15 +124,36 @@ function abrirModal(id, nome, cpf, ie, endereco, cidade, estado, cep) {
         document.getElementById('tCidade').value = cidade || '';
         document.getElementById('tEstado').value = estado || '';
         document.getElementById('tCep').value = cep || '';
+        if (selForn) selForn.value = fornecedorId || '';
     } else {
         document.getElementById('modalTitulo').textContent = 'Nova Transportadora';
         document.getElementById('formTransp').action = '/transportadoras/criar';
         document.getElementById('tId').value = '';
         document.getElementById('formTransp').reset();
+        if (selForn) selForn.value = '';
     }
     m.classList.remove('hidden');
     m.classList.add('flex');
 }
+
+// Ao escolher um fornecedor, pré-preenche os dados da transportadora a partir dele
+document.addEventListener('DOMContentLoaded', function () {
+    const selForn = document.getElementById('tFornecedor');
+    if (!selForn) return;
+    const fornecedores = JSON.parse(document.getElementById('fornecedoresJson').textContent || '[]');
+    selForn.addEventListener('change', function () {
+        const f = fornecedores.find(x => String(x.id) === String(this.value));
+        if (!f) return;
+        if (!document.getElementById('tNome').value) document.getElementById('tNome').value = f.nome || '';
+        if (!document.getElementById('tCpfCnpj').value) document.getElementById('tCpfCnpj').value = f.cpf_cnpj || '';
+        if (!document.getElementById('tIe').value) document.getElementById('tIe').value = f.inscricao_estadual || '';
+        if (!document.getElementById('tEndereco').value) document.getElementById('tEndereco').value = f.endereco || '';
+        if (!document.getElementById('tCidade').value) document.getElementById('tCidade').value = f.cidade || '';
+        if (!document.getElementById('tEstado').value) document.getElementById('tEstado').value = f.estado || '';
+        if (!document.getElementById('tCep').value) document.getElementById('tCep').value = f.cep || '';
+    });
+});
+</script>
 function fecharModal() {
     const m = document.getElementById('modal');
     m.classList.add('hidden');

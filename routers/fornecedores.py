@@ -219,6 +219,7 @@ def atualizar_fornecedor(
     cidade: str = Form(""),
     estado: str = Form(""),
     cep: str = Form(""),
+    codigo_ibge: str = Form(""),
     contato: str = Form(""),
     fantasia: str = Form(""),
     inscricao_estadual: str = Form(""),
@@ -239,6 +240,7 @@ def atualizar_fornecedor(
         "celular": fornecedor.celular, "contato": fornecedor.contato, "endereco": fornecedor.endereco,
         "numero": fornecedor.numero, "complemento": fornecedor.complemento, "bairro": fornecedor.bairro,
         "cidade": fornecedor.cidade, "estado": fornecedor.estado, "cep": fornecedor.cep,
+        "codigo_ibge": fornecedor.codigo_ibge,
         "inscricao_estadual": fornecedor.inscricao_estadual, "inscricao_municipal": fornecedor.inscricao_municipal,
         "situacao": fornecedor.situacao, "observacao": fornecedor.observacao,
     }
@@ -255,6 +257,7 @@ def atualizar_fornecedor(
     fornecedor.cidade = cidade
     fornecedor.estado = estado
     fornecedor.cep = cep
+    fornecedor.codigo_ibge = codigo_ibge or None
     fornecedor.contato = contato
     fornecedor.fantasia = fantasia
     fornecedor.inscricao_estadual = inscricao_estadual
@@ -274,6 +277,7 @@ def atualizar_fornecedor(
         "celular": celular, "contato": contato, "endereco": endereco,
         "numero": numero, "complemento": complemento, "bairro": bairro,
         "cidade": cidade, "estado": estado, "cep": cep,
+        "codigo_ibge": codigo_ibge,
         "inscricao_estadual": inscricao_estadual, "inscricao_municipal": inscricao_municipal,
         "situacao": situacao, "observacao": observacao,
     }
