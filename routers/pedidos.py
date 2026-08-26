@@ -591,7 +591,7 @@ def finalizar_pedido(
         # Emissão imediata de TODOS os boletos das parcelas (Sicoob).
         # Contas que ja possuem boleto sao ignoradas dentro do servico.
         contas_para_boleto = contas_geradas or contas_existentes
-        if contas_para_boleto and (gerar_boleto or forma_pagamento == "boleto"):
+        if contas_para_boleto and gerar_boleto:
             from services.parcelamento import emitir_boletos_contas
             ok, erros = emitir_boletos_contas(db, contas_para_boleto)
             if erros:

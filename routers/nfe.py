@@ -736,7 +736,7 @@ def emitir_pedido_submit(
         now = _agora_local(empresa)
         nfe = NFe(
             pedido_id=pedido_id,
-            origem="assinatura" if pedido.assinatura_id else "pedido",
+            origem="pedido",
             cliente_id=cliente.id,
             numero=numero_nfe,
             serie=empresa.serie_nfe or 1,

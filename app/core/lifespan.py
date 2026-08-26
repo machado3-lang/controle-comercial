@@ -11,7 +11,7 @@ from starlette.responses import RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware as StarletteSessionMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
-from sqlalchemy import func
+from sqlalchemy import func, inspect as sa_inspect
 from sqlalchemy.orm import sessionmaker, Session, joinedload
 from database import engine, Base, SessionLocal, get_db
 from models import TipoDocumento, PlanoDeContas, Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda
@@ -231,10 +231,6 @@ def _backfill_origem():
     updates = [
         # NFe importadas via SEFAZ/XML
         "UPDATE nfe SET origem='importada' WHERE origem='sefaz'",
-        # NFe de assinatura (pedido vinculado a uma assinatura)
-        "UPDATE nfe SET origem='assinatura' WHERE pedido_id IN "
-        "(SELECT id FROM pedidos_venda WHERE assinatura_id IS NOT NULL) "
-        "AND origem IN ('pedido','avulsa')",
         # NFe de pedido
         "UPDATE nfe SET origem='pedido' WHERE pedido_id IS NOT NULL AND origem='avulsa'",
         # NFe de ordem de servico
@@ -244,15 +240,30 @@ def _backfill_origem():
         "AND invoice_id IS NULL AND origem='avulsa'",
         # NFSe importada via ADN
         "UPDATE nfse SET origem='importada' WHERE origem='adn'",
-        # NFSe de assinatura
-        "UPDATE nfse SET origem='assinatura' WHERE pedido_id IN "
-        "(SELECT id FROM pedidos_venda WHERE assinatura_id IS NOT NULL) "
-        "AND origem IN ('pedido','avulsa')",
         # NFSe de pedido
         "UPDATE nfse SET origem='pedido' WHERE pedido_id IS NOT NULL AND origem='avulsa'",
         # NFSe de consolidação
         "UPDATE nfse SET origem='consolidacao' WHERE consolidacao_id IS NOT NULL AND origem='avulsa'",
     ]
+
+    # As notas originadas de assinatura já gravam origem='assinatura' diretamente
+    # (models_nfe.NFSe.assinatura_id / NFe.assinatura_id). A tabela pedidos_venda
+    # nunca teve a coluna assinatura_id, portanto os UPDATEs abaixo não se aplicam
+    # e seriam descartados por erro de coluna inexistente.
+    try:
+        insp = sa_inspect(engine)
+        cols = [c["name"] for c in insp.get_columns("pedidos_venda")]
+        if "assinatura_id" in cols:
+            updates += [
+                "UPDATE nfe SET origem='assinatura' WHERE pedido_id IN "
+                "(SELECT id FROM pedidos_venda WHERE assinatura_id IS NOT NULL) "
+                "AND origem IN ('pedido','avulsa')",
+                "UPDATE nfse SET origem='assinatura' WHERE pedido_id IN "
+                "(SELECT id FROM pedidos_venda WHERE assinatura_id IS NOT NULL) "
+                "AND origem IN ('pedido','avulsa')",
+            ]
+    except Exception:
+        pass
     with engine.connect() as conn:
         for sql in updates:
             try:
