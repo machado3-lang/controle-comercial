@@ -76,27 +76,6 @@
                 <span class="text-sm">Também cadastrar como Cliente</span>
             </label>
         </div>
-        {% if fornecedor %}
-        {% set transp = fornecedor.transportadoras[0] if fornecedor.transportadoras else None %}
-        {% if transp %}
-        <div class="flex items-end pb-2">
-            <span class="text-xs text-emerald-400"><i data-lucide="truck" class="w-3.5 h-3.5 inline me-1"></i> Já registrado como transportadora</span>
-            <a href="/transportadoras" class="ms-2 text-cyan-400 hover:underline text-xs">Ver transportadoras</a>
-        </div>
-        {% else %}
-        <div class="flex items-end pb-2">
-            <form action="/transportadoras/criar-de-fornecedor" method="post" class="inline">
-                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-                <input type="hidden" name="fornecedor_id" value="{{ fornecedor.id }}">
-                <button type="submit" class="flex items-center px-3 py-2 text-sm bg-gradient-to-r from-cyan-500 to-indigo-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="truck" class="w-4 h-4 me-1"></i> Registrar como Transportadora</button>
-            </form>
-        </div>
-        {% endif %}
-        {% else %}
-        <div class="flex items-end pb-2">
-            <span class="text-xs text-slate-500">Após salvar o cadastro, será possível registrá-lo também como transportadora.</span>
-        </div>
-        {% endif %}
     </div>
 
     <div class="glass-card p-4">
@@ -184,6 +163,26 @@
             <input type="email" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="email" value="{{ fornecedor.email if fornecedor else '' }}">
         </div>
     </div>
+
+    {% if fornecedor %}
+    <div class="glass-card p-4 lg:col-span-2">
+        <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="link" class="w-4 h-4 inline me-1"></i> Vínculos</h5>
+        {% set transp = fornecedor.transportadoras[0] if fornecedor.transportadoras else None %}
+        {% if transp %}
+        <div class="flex items-center gap-2">
+            <span class="px-2 py-1 text-xs font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded-full"><i data-lucide="truck" class="w-3.5 h-3.5 inline me-1"></i> Já registrado como transportadora</span>
+            <a href="/transportadoras" class="text-cyan-400 hover:underline text-sm">Ver transportadoras</a>
+        </div>
+        {% else %}
+        <form action="/transportadoras/criar-de-fornecedor" method="post" class="inline-flex items-center gap-3">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="fornecedor_id" value="{{ fornecedor.id }}">
+            <button type="submit" class="flex items-center px-3 py-2 text-sm bg-gradient-to-r from-cyan-500 to-indigo-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="truck" class="w-4 h-4 me-1"></i> Registrar como Transportadora</button>
+            <span class="text-xs text-slate-500">Cria uma transportadora vinculada a este fornecedor (não duplica o cadastro).</span>
+        </form>
+        {% endif %}
+    </div>
+    {% endif %}
 
     <div class="lg:col-span-2 flex items-center gap-3">
         <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar</button>
