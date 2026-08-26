@@ -419,14 +419,19 @@ class BethaNfseService:
                         m = re.search(r'<[^:>]*:?dhEmi[^>]*>([^<]+)</', xml_nfse)
                         if m: dh_emi = m.group(1)
                         # Valor total da NFSe: preferir a tag de valor da nota
-                        # (vNF/ValorTotal/vServico/...) em vez de vBC (base de calculo
-                        # do ISS, que pode ser 0 em notas de terceiros/recebidas).
+                        # (ValorTotal/ValorServicos/vNF/vServico/...) em vez de vBC
+                        # (base de calculo do ISS, que pode ser 0 em notas de
+                        # terceiros/recebidas). Busca case-insensitive e tolera
+                        # separador decimal em virgula.
                         valor = None
-                        for _tag in ('vNF', 'ValorTotal', 'vServico', 'vServ', 'valorServicos', 'vLiquido', 'vBC'):
-                            m = re.search(r'<[^:>]*:?' + _tag + r'[^>]*>([\d.]+)</', xml_nfse)
+                        for _tag in ('ValorTotal', 'ValorServicos', 'vNF', 'vServico', 'vServ', 'vPrestacao', 'vTotal', 'vLiquido', 'vBC'):
+                            m = re.search(r'<[^:>]*:?' + _tag + r'[^>]*>([\d.,]+)</', xml_nfse, re.IGNORECASE)
                             if m:
                                 try:
-                                    valor = float(m.group(1))
+                                    raw = m.group(1).strip()
+                                    raw = raw.replace('.', '') if ',' in raw else raw
+                                    raw = raw.replace(',', '.')
+                                    valor = float(raw)
                                     break
                                 except ValueError:
                                     continue
