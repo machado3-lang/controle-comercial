@@ -154,6 +154,115 @@ def gerar_xml_dps(dps: Dict, assinatura: Optional[str] = None) -> str:
     return etree.tostring(root, pretty_print=True, xml_declaration=True, encoding='UTF-8', standalone=False).decode('utf-8')
 
 
+def extrair_fatura_nfse(xml: str) -> list:
+    """Extrai fatura/duplicatas e respectivos vencimentos do XML da NFSe recebida.
+
+    O layout da NFSe varia bastante entre municípios (ABRASF, Ginfes, Betha,
+    Padrão Nacional, etc.) e nem sempre traz vencimento. Esta função faz uma
+    varredura tolerante (namespace-agnóstica) em busca de blocos de fatura/
+    duplicata/parcela e das tags de vencimento/valor, retornando o que encontrar.
+
+    Retorna lista de dicts: {"numero": str, "vencimento": date|None,
+    "valor": Decimal|None}. Lista vazia = sem informação de vencimento no XML
+    (o usuário informará manualmente no popup).
+    """
+    from datetime import datetime as _dt
+    from decimal import Decimal, InvalidOperation
+    import re
+    import xml.etree.ElementTree as ET
+
+    if not xml:
+        return []
+
+    try:
+        root = ET.fromstring(xml)
+    except Exception:
+        return []
+
+    def local(tag: str) -> str:
+        return tag.split('}')[-1].lower()
+
+    def parse_data(s):
+        s = (s or '').strip()[:10]
+        if not s:
+            return None
+        for fmt in ("%Y-%m-%d", "%d/%m/%Y", "%Y%m%d"):
+            try:
+                return _dt.strptime(s, fmt).date()
+            except ValueError:
+                continue
+        return None
+
+    def parse_valor(s):
+        if not s or not s.strip():
+            return None
+        raw = s.strip()
+        raw = raw.replace(".", "").replace(",", ".") if "," in raw else raw
+        try:
+            return Decimal(raw)
+        except (InvalidOperation, ValueError):
+            return None
+
+    def coletar(elem) -> dict:
+        campos = {}
+        for e in elem.iter():
+            txt = (e.text or '').strip()
+            if not txt:
+                continue
+            campos.setdefault(local(e.tag), txt)
+        return campos
+
+    parcelas = []
+    blocos_tags = ("fat", "fatura", "dup", "duplicata", "parcela", "cobr")
+    for elem in root.iter():
+        if local(elem.tag) in blocos_tags:
+            c = coletar(elem)
+            # numero: chave com num/fat/dup/parcela
+            numero = None
+            for k in c:
+                if re.search(r'num|fat|dup|parcela', k) and 'venc' not in k:
+                    numero = c[k]
+                    break
+            # vencimento: chave contendo venc
+            venc_raw = next((c[k] for k in c if 'venc' in k), None)
+            # valor: chave contendo val (mas não venc), ou padrões vDup/vFat/vParcela
+            val_raw = next((
+                c[k] for k in c
+                if (('val' in k) or (k[:2] in ('vd', 'vf', 'vp') and 'venc' not in k))
+                and 'venc' not in k
+            ), None)
+            parcelas.append({
+                "numero": (numero or str(len(parcelas) + 1)).strip(),
+                "vencimento": parse_data(venc_raw),
+                "valor": parse_valor(val_raw),
+            })
+
+    # Fallback: sem blocos, mas há uma tag de vencimento em nível de documento
+    if not parcelas:
+        for elem in root.iter():
+            if 'venc' in local(elem.tag):
+                txt = (elem.text or '').strip()
+                if txt:
+                    parcelas.append({
+                        "numero": "1",
+                        "vencimento": parse_data(txt),
+                        "valor": None,
+                    })
+                    break
+
+    # Ordena por vencimento (quando houver) e remove duplicatas idênticas
+    parcelas.sort(key=lambda d: (d["vencimento"] or _dt.max.date(), d["numero"]))
+    unicas = []
+    vistos = set()
+    for p in parcelas:
+        chave = (p["numero"], str(p["vencimento"]), str(p["valor"]))
+        if chave in vistos:
+            continue
+        vistos.add(chave)
+        unicas.append(p)
+    return unicas
+
+
 # Exemplo de uso (remover em produção)
 if __name__ == '__main__':
     # Dados de teste

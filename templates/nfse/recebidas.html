@@ -53,6 +53,7 @@
                 <tr class="hover:bg-slate-800/40 transition">
                     <td class="px-4 py-3 text-sm text-amber-300 max-w-[280px] truncate" title="{{ r.emitente_nome or '' }}">{{ r.emitente_nome or '-' }}
                         <span class="text-xs text-slate-500 block">{{ r.emitente_cnpj or '' }}</span>
+                        {% if r.fornecedor %}<span class="mt-1 inline-block px-1.5 py-0.5 text-[10px] font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded-full">Fornec. vinculado</span>{% endif %}
                     </td>
                     <td class="px-4 py-3 text-sm text-slate-100">{{ r.numero or '-' }}</td>
                     <td class="px-4 py-3 text-sm text-emerald-400 text-right">R$ {{ '%.2f'|format(r.valor_total or 0) }}</td>
@@ -70,6 +71,11 @@
                             <a href="/nfse/adn-danfse/{{ r.chave_acesso }}" class="p-1.5 rounded-lg hover:bg-indigo-500/20 text-indigo-400 transition" title="Baixar DANFSe (PDF)" target="_blank"><i data-lucide="file-text" class="w-4 h-4"></i></a>
                             <a href="/nfse/adn-xml/{{ r.chave_acesso }}" class="p-1.5 rounded-lg hover:bg-emerald-500/20 text-emerald-400 transition" title="Baixar XML" target="_blank"><i data-lucide="code" class="w-4 h-4"></i></a>
                             {% endif %}
+                            <form action="/nfse/recebidas/{{ r.id }}/vincular-fornecedor" method="post" class="inline">
+                                <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                                <button type="submit" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Vincular Fornecedor"><i data-lucide="link" class="w-4 h-4"></i></button>
+                            </form>
+                            <button type="button" onclick="abrirGerarConta({{ r.id }})" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Gerar Conta a Pagar"><i data-lucide="banknote" class="w-4 h-4"></i></button>
                         </div>
                     </td>
                 </tr>
@@ -103,4 +109,265 @@
     </div>
 </div>
 {% endif %}
+
+<!-- Modal Gerar Conta a Pagar (NFSe recebida) -->
+<div class="modal fade" id="modalGerarConta" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form method="post" id="formGerarConta" class="modal-content bg-slate-900/90 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+            <input type="hidden" name="confirmar" id="gcConfirmar" value="">
+            <div class="modal-header border-b border-slate-800/50">
+                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 font-semibold"><i data-lucide="banknote" class="w-5 h-5 inline me-1"></i> Gerar Conta a Pagar</h5>
+                <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="gcLoading" class="py-8 text-center text-slate-400">Carregando dados da NFSe...</div>
+                <div id="gcContent" class="hidden">
+                    <div class="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4 text-sm">
+                        <div><span class="text-slate-500 block text-xs">Fornecedor (Prestador)</span><span id="gcFornecedor" class="text-amber-300"></span></div>
+                        <div><span class="text-slate-500 block text-xs">NFSe nº</span><span id="gcNumero" class="text-slate-100"></span></div>
+                        <div><span class="text-slate-500 block text-xs">Valor Total</span><span id="gcValorTotal" class="text-emerald-400 font-semibold"></span></div>
+                    </div>
+
+                    <div id="gcAvisoExistente" class="hidden mb-3 px-3 py-2 rounded-lg bg-amber-950/40 border border-amber-800/50 text-amber-300 text-xs"><i data-lucide="alert-triangle" class="w-4 h-4 inline me-1"></i> Já existe conta a pagar pendente para esta NFSe. Gerar novamente pode duplicar lançamentos.</div>
+
+                    <div id="gcNaoCadastrado" class="hidden mb-3 px-4 py-3 rounded-xl bg-rose-950/40 border border-rose-800/50 text-rose-200 text-sm">
+                        <div class="flex items-start gap-2">
+                            <i data-lucide="user-x" class="w-5 h-5 mt-0.5 flex-shrink-0"></i>
+                            <div class="flex-1">
+                                <p class="font-medium mb-1">Fornecedor ainda não cadastrado</p>
+                                <p class="text-xs text-rose-300/80 mb-3">O prestador <span id="gcEmitenteNome" class="font-semibold"></span> não está no cadastro de fornecedores. Cadastre-o primeiro (os dados da nota já vão pré-preenchidos) para gerar a conta a pagar.</p>
+                                <a id="gcBtnCadastrar" href="#" class="inline-flex items-center h-9 px-3 text-xs bg-gradient-to-r from-rose-500 to-pink-600 text-white rounded-xl font-medium transition-all shadow-lg shadow-rose-500/10"><i data-lucide="user-plus" class="w-4 h-4 me-1"></i> Cadastrar Fornecedor</a>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div id="gcOrigem" class="mb-3 text-xs"></div>
+
+                    <div id="gcParcelasSection">
+                        <div id="gcDivisor" class="mb-3 flex flex-wrap items-end gap-2 p-3 bg-slate-950/40 border border-slate-800/60 rounded-xl">
+                            <div>
+                                <label class="block text-xs text-cyan-300 mb-1">Nº de parcelas</label>
+                                <input type="number" id="gcNumParcelas" min="1" max="60" value="1" class="w-24 px-3 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-lg text-slate-100">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-cyan-300 mb-1">1º vencimento</label>
+                                <input type="date" id="gcPrimeiroVenc" class="px-3 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-lg text-slate-100">
+                            </div>
+                            <div>
+                                <label class="block text-xs text-cyan-300 mb-1">Intervalo (dias)</label>
+                                <input type="number" id="gcIntervalo" min="1" value="30" class="w-24 px-3 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-lg text-slate-100">
+                            </div>
+                            <button type="button" id="gcBtnDividir" class="h-9 px-3 text-sm bg-slate-700 hover:bg-slate-600 text-slate-100 rounded-lg transition"><i data-lucide="split" class="w-4 h-4 inline me-1"></i> Recalcular parcelas</button>
+                        </div>
+
+                        <table class="w-full text-sm">
+                            <thead>
+                                <tr class="text-left text-xs text-slate-500 border-b border-slate-800/60">
+                                    <th class="py-2 w-16">Parcela</th>
+                                    <th class="py-2">Vencimento</th>
+                                    <th class="py-2 text-right">Valor (R$)</th>
+                                    <th class="py-2 w-10"></th>
+                                </tr>
+                            </thead>
+                            <tbody id="gcParcelasBody"></tbody>
+                        </table>
+                        <div class="flex items-center justify-between mt-3">
+                            <button type="button" id="gcAddParcela" class="text-xs text-cyan-400 hover:text-cyan-300"><i data-lucide="plus" class="w-3.5 h-3.5 inline"></i> Adicionar parcela</button>
+                            <div class="text-sm">
+                                <span class="text-slate-500">Soma das parcelas:</span>
+                                <strong id="gcSoma" class="text-emerald-400 ms-1">R$ 0,00</strong>
+                                <span id="gcDiff" class="ms-2 text-xs"></span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-t border-slate-800/50">
+                <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Cancelar</button>
+                <button type="submit" id="gcSubmit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-emerald-500/10"><i data-lucide="save" class="w-4 h-4 me-1"></i> Gerar Contas</button>
+            </div>
+        </form>
+    </div>
+</div>
+
+{% block scripts %}
+<script>
+let gcModal = null;
+let gcEmissao = null;
+
+function gcFmtMoney(v) {
+    return 'R$ ' + (Number(v) || 0).toLocaleString('pt-BR', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+}
+
+function gcAddRow(numero, vencimento, valor) {
+    const tbody = document.getElementById('gcParcelasBody');
+    const idx = tbody.children.length + 1;
+    const tr = document.createElement('tr');
+    tr.className = 'border-b border-slate-800/40';
+    tr.innerHTML =
+        '<td class="py-1.5"><input type="text" name="parcela_numero" value="' + (numero || idx) + '" class="w-14 px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-slate-100 text-xs"></td>' +
+        '<td class="py-1.5 pe-2"><input type="date" name="parcela_vencimento" value="' + (vencimento || '') + '" class="w-full px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-slate-100 text-xs"></td>' +
+        '<td class="py-1.5"><input type="number" step="0.01" min="0" name="parcela_valor" value="' + (valor != null ? Number(valor).toFixed(2) : '') + '" class="w-full px-2 py-1 bg-slate-900/60 border border-slate-800/80 rounded text-slate-100 text-xs text-right gc-valor"></td>' +
+        '<td class="py-1.5 text-center"><button type="button" class="text-rose-400 hover:text-rose-300 gc-del"><i data-lucide="trash-2" class="w-3.5 h-3.5"></i></button></td>';
+    tbody.appendChild(tr);
+    tr.querySelector('.gc-del').addEventListener('click', function() { tr.remove(); gcRenumerar(); gcAtualizarSoma(); });
+    tr.querySelector('.gc-valor').addEventListener('input', gcAtualizarSoma);
+    if (window.lucide) lucide.createIcons();
+}
+
+function gcRenumerar() {
+    document.querySelectorAll('#gcParcelasBody tr').forEach(function(tr, i) {
+        tr.querySelector('input[name="parcela_numero"]').value = i + 1;
+    });
+}
+
+function gcAtualizarSoma() {
+    let soma = 0;
+    document.querySelectorAll('#gcParcelasBody .gc-valor').forEach(function(inp) {
+        soma += Number(inp.value) || 0;
+    });
+    document.getElementById('gcSoma').textContent = gcFmtMoney(soma);
+    const total = Number(document.getElementById('gcContent').dataset.total) || 0;
+    const diff = Math.round((soma - total) * 100) / 100;
+    const el = document.getElementById('gcDiff');
+    if (Math.abs(diff) < 0.005) {
+        el.textContent = '✓ confere';
+        el.className = 'ms-2 text-xs text-emerald-400';
+    } else {
+        el.textContent = '(difere do total em ' + gcFmtMoney(diff) + ')';
+        el.className = 'ms-2 text-xs text-amber-400';
+    }
+}
+
+function gcCalcularParcelas() {
+    const total = Number(document.getElementById('gcContent').dataset.total) || 0;
+    let n = parseInt(document.getElementById('gcNumParcelas').value) || 1;
+    if (n < 1) n = 1;
+    const intervalo = parseInt(document.getElementById('gcIntervalo').value) || 30;
+    const primeiro = document.getElementById('gcPrimeiroVenc').value || gcEmissao;
+    const base = Math.floor((total / n) * 100) / 100;
+    let acumulado = 0;
+    document.getElementById('gcParcelasBody').innerHTML = '';
+    for (let i = 1; i <= n; i++) {
+        const valor = (i === n) ? Math.round((total - acumulado) * 100) / 100 : base;
+        acumulado += valor;
+        let venc = '';
+        if (primeiro) {
+            const d = new Date(primeiro + 'T00:00:00');
+            d.setDate(d.getDate() + intervalo * (i - 1));
+            venc = d.toISOString().slice(0, 10);
+        }
+        gcAddRow(i, venc, valor);
+    }
+    gcAtualizarSoma();
+}
+
+function abrirGerarConta(id) {
+    if (!gcModal) gcModal = new bootstrap.Modal(document.getElementById('modalGerarConta'));
+    document.getElementById('gcLoading').classList.remove('hidden');
+    document.getElementById('gcContent').classList.add('hidden');
+    document.getElementById('gcParcelasBody').innerHTML = '';
+    document.getElementById('formGerarConta').action = '/nfse/recebidas/' + id + '/gerar-conta';
+    gcModal.show();
+
+    fetch('/nfse/recebidas/' + id + '/parcelas-info')
+        .then(function(r) { return r.json(); })
+        .then(function(d) {
+            if (d.error) { alert(d.error); gcModal.hide(); return; }
+            gcEmissao = d.emissao;
+            const content = document.getElementById('gcContent');
+            content.dataset.total = d.valor_total;
+            content.dataset.jaExiste = d.ja_existe_conta ? '1' : '';
+            content.dataset.cadastrado = d.fornecedor_cadastrado ? '1' : '';
+            document.getElementById('gcFornecedor').textContent = d.fornecedor_cadastrado ? d.fornecedor_nome : '(não cadastrado)';
+            document.getElementById('gcNumero').textContent = d.numero || '-';
+            document.getElementById('gcValorTotal').textContent = gcFmtMoney(d.valor_total);
+            document.getElementById('gcAvisoExistente').classList.toggle('hidden', !d.ja_existe_conta);
+            document.getElementById('gcPrimeiroVenc').value = d.emissao;
+
+            const naoCad = document.getElementById('gcNaoCadastrado');
+            const parcelasSection = document.getElementById('gcParcelasSection');
+            const submitBtn = document.getElementById('gcSubmit');
+            const origem = document.getElementById('gcOrigem');
+            const divisor = document.getElementById('gcDivisor');
+
+            if (!d.fornecedor_cadastrado) {
+                document.getElementById('gcEmitenteNome').textContent = d.emitente || '';
+                const btn = document.getElementById('gcBtnCadastrar');
+                if (d.cadastro_url) {
+                    btn.href = d.cadastro_url;
+                    btn.classList.remove('hidden');
+                } else {
+                    btn.classList.add('hidden');
+                }
+                naoCad.classList.remove('hidden');
+                origem.classList.add('hidden');
+                parcelasSection.classList.add('hidden');
+                submitBtn.classList.add('hidden');
+            } else {
+                naoCad.classList.add('hidden');
+                origem.classList.remove('hidden');
+                parcelasSection.classList.remove('hidden');
+                submitBtn.classList.remove('hidden');
+                if (d.tem_duplicatas && d.duplicatas.length) {
+                    origem.innerHTML = '<span class="px-2 py-0.5 rounded-full bg-emerald-950/50 text-emerald-400 border border-emerald-800/50">' + d.duplicatas.length + ' parcela(s)/vencimento lida(s) do XML</span>';
+                    divisor.classList.add('hidden');
+                    d.duplicatas.forEach(function(dup) {
+                        gcAddRow(dup.numero, dup.vencimento, dup.valor);
+                    });
+                } else {
+                    // NFSe sem vencimento no XML: informar manualmente
+                    origem.innerHTML = '<span class="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700">NFSe sem vencimento no XML — informe as parcelas e o vencimento manualmente</span>';
+                    divisor.classList.remove('hidden');
+                    gcAddRow(1, d.emissao, d.valor_total);
+                }
+                gcAtualizarSoma();
+            }
+            document.getElementById('gcLoading').classList.add('hidden');
+            content.classList.remove('hidden');
+            if (window.lucide) lucide.createIcons();
+        })
+        .catch(function() { alert('Erro ao carregar dados da NFSe.'); gcModal.hide(); });
+}
+
+document.addEventListener('DOMContentLoaded', function() {
+    document.getElementById('gcBtnDividir').addEventListener('click', gcCalcularParcelas);
+    document.getElementById('gcAddParcela').addEventListener('click', function() {
+        gcAddRow(null, gcEmissao, 0);
+        gcRenumerar();
+        gcAtualizarSoma();
+    });
+    document.getElementById('gcNumParcelas').addEventListener('change', gcCalcularParcelas);
+    document.getElementById('formGerarConta').addEventListener('submit', function(e) {
+        const content = document.getElementById('gcContent');
+        const rows = document.querySelectorAll('#gcParcelasBody tr');
+        if (rows.length === 0) {
+            e.preventDefault();
+            alert('Adicione ao menos uma parcela.');
+            return;
+        }
+        let soma = 0;
+        document.querySelectorAll('#gcParcelasBody .gc-valor').forEach(function(inp) {
+            soma += Number(inp.value) || 0;
+        });
+        const total = Number(content.dataset.total) || 0;
+        const diff = Math.round((soma - total) * 100) / 100;
+        if (Math.abs(diff) >= 0.005) {
+            if (!confirm('A soma das parcelas (' + gcFmtMoney(soma) + ') é diferente do valor total da NFSe (' + gcFmtMoney(total) + '), diferença de ' + gcFmtMoney(diff) + ').\n\nDeseja gerar mesmo assim?')) {
+                e.preventDefault();
+                return;
+            }
+        }
+        if (content.dataset.jaExiste === '1') {
+            if (!confirm('Já existe conta a pagar pendente para esta NFSe. Gerar novamente pode duplicar lançamentos.\n\nDeseja continuar mesmo assim?')) {
+                e.preventDefault();
+                return;
+            }
+            document.getElementById('gcConfirmar').value = '1';
+        }
+    });
+});
+</script>
+{% endblock %}
 {% endblock %}

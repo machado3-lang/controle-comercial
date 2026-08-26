@@ -9,7 +9,7 @@ from fastapi.responses import RedirectResponse, JSONResponse, Response, FileResp
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc, asc, or_
 from database import get_db
-from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ProdutoVariacao, ProdutoComposicao, ContaReceber, StatusConta, StatusPedido, OrdemServico, Assinatura, Fornecedor
+from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ProdutoVariacao, ProdutoComposicao, ContaReceber, ContaPagar, StatusConta, StatusPedido, OrdemServico, Assinatura, Fornecedor
 from models_nfe import NFSe, NFSeItem, NFSeRecebida
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
 from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional
@@ -144,8 +144,19 @@ def listar_nfse_recebidas(
     data_inicio: str = Query(""), data_fim: str = Query(""),
     busca: str = Query(""), page: int = Query(1),
     ordenar: str = Query("data_emissao"), direcao: str = Query("desc"),
+    vincular: int = Query(0),
 ):
     """Lista as NFSe recebidas (somos o tomador), filtrÃ¡veis por perÃ­odo e nÂº, com ordenaÃ§Ã£o e paginaÃ§Ã£o."""
+    # Auto-vinculo apos cadastrar o fornecedor a partir da NFSe (fluxo do cadastro)
+    if vincular:
+        rec_vinc = db.query(NFSeRecebida).filter(NFSeRecebida.id == vincular).first()
+        if rec_vinc:
+            fornecedor = _resolver_fornecedor_nfse_recebida(db, rec_vinc)
+            if fornecedor:
+                rec_vinc.fornecedor_id = fornecedor.id
+                db.commit()
+                request.session["message"] = f"Fornecedor '{fornecedor.nome}' cadastrado e vinculado à NFSe {rec_vinc.numero}."
+        return RedirectResponse(url="/nfse/recebidas", status_code=303)
     sort_map = {
         "emitente_nome": NFSeRecebida.emitente_nome,
         "numero": NFSeRecebida.numero,
@@ -189,6 +200,200 @@ def listar_nfse_recebidas(
          "messages": _get_messages(request), "empresa": db.query(Empresa).first(),
          "STATUS_LABELS": STATUS_LABELS}
     )
+
+
+def _resolver_fornecedor_nfse_recebida(db, rec, criar=False):
+    """Busca o Fornecedor (prestador) da NFSe recebida pelo CNPJ do emitente.
+
+    Reaproveita o vinculo ja existente em `rec.fornecedor_id` quando presente.
+    Por padrao apenas BUSCA (nao cria). Retorna o Fornecedor ou None.
+    """
+    if rec.fornecedor_id:
+        return db.query(Fornecedor).filter(Fornecedor.id == rec.fornecedor_id).first()
+    empresa = db.query(Empresa).first()
+    cnpj_empresa = re.sub(r'\D', '', empresa.cnpj) if empresa and empresa.cnpj else ''
+    cnpj_emit = re.sub(r'\D', '', rec.emitente_cnpj or '')
+    if not cnpj_emit or cnpj_emit == cnpj_empresa:
+        return None
+    fornecedor = db.query(Fornecedor).filter(Fornecedor.cpf_cnpj == rec.emitente_cnpj).first()
+    if not fornecedor and criar:
+        fornecedor = Fornecedor(nome=rec.emitente_nome or 'Fornecedor', cpf_cnpj=rec.emitente_cnpj)
+        db.add(fornecedor)
+        db.flush()
+    return fornecedor
+
+
+def _emitente_valido_nfse_recebida(db, rec) -> bool:
+    """True quando o emitente tem CNPJ valido e nao e a propria empresa."""
+    empresa = db.query(Empresa).first()
+    cnpj_empresa = re.sub(r'\D', '', empresa.cnpj) if empresa and empresa.cnpj else ''
+    cnpj_emit = re.sub(r'\D', '', rec.emitente_cnpj or '')
+    return bool(cnpj_emit) and cnpj_emit != cnpj_empresa
+
+
+def _url_cadastro_fornecedor_nfse(rec) -> str:
+    """Monta a URL do cadastro de fornecedor pre-preenchido com dados da NFSe."""
+    from urllib.parse import urlencode
+    dados = {"nome": rec.emitente_nome or "", "cpf_cnpj": rec.emitente_cnpj or ""}
+    if dados["cpf_cnpj"]:
+        dados["tipo_pessoa"] = "juridica" if len(re.sub(r'\D', '', dados["cpf_cnpj"])) > 11 else "fisica"
+    params = {k: v for k, v in dados.items() if v}
+    params["next"] = f"/nfse/recebidas?vincular={rec.id}"
+    return "/fornecedores/novo?" + urlencode(params)
+
+
+@router.post("/recebidas/{recebida_id}/vincular-fornecedor")
+def vincular_fornecedor_nfse_recebida(request: Request, recebida_id: int, db: Session = Depends(get_db)):
+    rec = db.query(NFSeRecebida).filter(NFSeRecebida.id == recebida_id).first()
+    if not rec:
+        request.session["error"] = "NFSe recebida não encontrada"
+        return RedirectResponse(url="/nfse/recebidas", status_code=303)
+    fornecedor = _resolver_fornecedor_nfse_recebida(db, rec)
+    if not fornecedor:
+        if _emitente_valido_nfse_recebida(db, rec):
+            request.session["message"] = {
+                "tipo": "warning",
+                "texto": f"Fornecedor '{rec.emitente_nome or ''}' ainda não cadastrado. Preencha e salve o cadastro para vincular à NFSe.",
+            }
+            return RedirectResponse(url=_url_cadastro_fornecedor_nfse(rec), status_code=303)
+        request.session["error"] = "Não foi possível vincular fornecedor (emitente sem CNPJ ou é a própria empresa)."
+        return RedirectResponse(url="/nfse/recebidas", status_code=303)
+    rec.fornecedor_id = fornecedor.id
+    db.commit()
+    request.session["message"] = f"Fornecedor '{fornecedor.nome}' vinculado à NFSe."
+    return RedirectResponse(url="/nfse/recebidas", status_code=303)
+
+
+@router.get("/recebidas/{recebida_id}/parcelas-info")
+def parcelas_info_nfse_recebida(request: Request, recebida_id: int, db: Session = Depends(get_db)):
+    """Retorna dados para o popup de geracao de conta a pagar da NFSe recebida.
+
+    Diferente da NFe, a NFSe nao traz duplicatas/vencimento no padrao, entao o
+    vencimento e informado manualmente pelo usuario no popup.
+    """
+    from services.nfse_service import extrair_fatura_nfse
+
+    rec = db.query(NFSeRecebida).filter(NFSeRecebida.id == recebida_id).first()
+    if not rec:
+        return JSONResponse({"error": "NFSe recebida não encontrada"}, status_code=404)
+
+    fornecedor = _resolver_fornecedor_nfse_recebida(db, rec)
+    descricao = f"NFSe {rec.numero} - {rec.emitente_nome or ''}".strip()
+    ja_existe = False
+    if fornecedor:
+        ja_existe = db.query(ContaPagar).filter(
+            ContaPagar.descricao.like(descricao + "%"),
+            ContaPagar.fornecedor_id == fornecedor.id,
+            ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]),
+        ).first() is not None
+
+    emissao = rec.data_emissao.date() if rec.data_emissao else date.today()
+
+    faturas = extrair_fatura_nfse(rec.xml_text) if rec.xml_text else []
+    fat_json = [
+        {
+            "numero": f["numero"],
+            "vencimento": f["vencimento"].isoformat() if f["vencimento"] else "",
+            "valor": float(f["valor"]) if f["valor"] else None,
+        }
+        for f in faturas
+    ]
+
+    return JSONResponse({
+        "recebida_id": rec.id,
+        "numero": rec.numero,
+        "emitente": rec.emitente_nome or "",
+        "valor_total": float(rec.valor_total or 0),
+        "emissao": emissao.isoformat(),
+        "fornecedor_cadastrado": fornecedor is not None,
+        "fornecedor_vinculado": fornecedor is not None,
+        "fornecedor_nome": fornecedor.nome if fornecedor else "",
+        "cadastro_url": None if fornecedor else (
+            _url_cadastro_fornecedor_nfse(rec) if _emitente_valido_nfse_recebida(db, rec) else None
+        ),
+        "emitente_invalido": fornecedor is None and not _emitente_valido_nfse_recebida(db, rec),
+        "ja_existe_conta": ja_existe,
+        "tem_duplicatas": len(fat_json) > 0,
+        "duplicatas": fat_json,
+    })
+
+
+@router.post("/recebidas/{recebida_id}/gerar-conta")
+def gerar_conta_nfse_recebida(
+    request: Request,
+    recebida_id: int,
+    db: Session = Depends(get_db),
+    parcela_numero: list[str] = Form(default=None),
+    parcela_vencimento: list[str] = Form(default=None),
+    parcela_valor: list[str] = Form(default=None),
+    confirmar: str = Form(default=None),
+):
+    from services.parcelamento import gerar_contas_pagar_parcelas
+
+    rec = db.query(NFSeRecebida).filter(NFSeRecebida.id == recebida_id).first()
+    if not rec:
+        request.session["error"] = "NFSe recebida não encontrada"
+        return RedirectResponse(url="/nfse/recebidas", status_code=303)
+    fornecedor = _resolver_fornecedor_nfse_recebida(db, rec)
+    if not fornecedor:
+        if _emitente_valido_nfse_recebida(db, rec):
+            request.session["message"] = {
+                "tipo": "warning",
+                "texto": f"Fornecedor '{rec.emitente_nome or ''}' ainda não cadastrado. Cadastre-o para gerar a conta a pagar.",
+            }
+            return RedirectResponse(url=_url_cadastro_fornecedor_nfse(rec), status_code=303)
+        request.session["error"] = "Não foi possível identificar o fornecedor (emitente sem CNPJ ou é a própria empresa)."
+        return RedirectResponse(url="/nfse/recebidas", status_code=303)
+    rec.fornecedor_id = fornecedor.id
+    descricao = f"NFSe {rec.numero} - {rec.emitente_nome or ''}".strip()
+    existente = db.query(ContaPagar).filter(
+        ContaPagar.descricao.like(descricao + "%"),
+        ContaPagar.fornecedor_id == fornecedor.id,
+        ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]),
+    ).first()
+    if existente and not confirmar:
+        request.session["error"] = "Já existe conta a pagar para esta NFSe."
+        db.commit()
+        return RedirectResponse(url="/nfse/recebidas", status_code=303)
+
+    emissao = rec.data_emissao.date() if rec.data_emissao else date.today()
+
+    parcelas = []
+    if parcela_valor:
+        for i, valor_raw in enumerate(parcela_valor):
+            valor_raw = (valor_raw or "").strip().replace(",", ".")
+            if not valor_raw:
+                continue
+            try:
+                valor = Decimal(valor_raw)
+            except Exception:
+                request.session["error"] = "Valor de parcela inválido."
+                return RedirectResponse(url="/nfse/recebidas", status_code=303)
+            venc_raw = (parcela_vencimento[i] if parcela_vencimento and i < len(parcela_vencimento) else "").strip()
+            try:
+                venc = datetime.strptime(venc_raw[:10], '%Y-%m-%d').date() if venc_raw else emissao
+            except Exception:
+                venc = emissao
+            num_raw = (parcela_numero[i] if parcela_numero and i < len(parcela_numero) else "").strip()
+            parcelas.append({"numero": num_raw or (i + 1), "valor": valor, "vencimento": venc})
+
+    if not parcelas:
+        parcelas = [{"numero": 1, "valor": Decimal(str(rec.valor_total or 0)), "vencimento": emissao}]
+
+    contas = gerar_contas_pagar_parcelas(
+        db,
+        fornecedor_id=fornecedor.id,
+        descricao=descricao,
+        parcelas=parcelas,
+        numero_documento=rec.numero,
+    )
+    db.commit()
+
+    if len(contas) > 1:
+        request.session["message"] = f"{len(contas)} parcelas (contas a pagar) criadas com sucesso!"
+    else:
+        request.session["message"] = "Conta a pagar criada com sucesso!"
+    return RedirectResponse(url="/nfse/recebidas", status_code=303)
 
 
 @router.get("/emitir/avulsa")
