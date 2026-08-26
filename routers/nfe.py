@@ -404,6 +404,8 @@ def _resolver_fornecedor_nfe_recebida(db, nfe_dist, criar=False):
 
     Por padrao apenas BUSCA (nao cria). Se `criar=True` e o emitente for valido
     mas ainda nao cadastrado, cria um registro minimo (uso legado/fallback).
+    A busca por CNPJ usa a versao NORMALIZADA (apenas digitos) para tolerar
+    diferencas de formatacao (com/sem pontuacao) entre a nota e o cadastro.
     Retorna o Fornecedor ou None.
     """
     from models import Fornecedor
@@ -412,8 +414,11 @@ def _resolver_fornecedor_nfe_recebida(db, nfe_dist, criar=False):
     cnpj_emit = re.sub(r'\D', '', nfe_dist.emitente_cnpj or '')
     if not cnpj_emit or cnpj_emit == cnpj_empresa:
         return None
-    fornecedor = db.query(Fornecedor).filter(Fornecedor.cpf_cnpj == nfe_dist.emitente_cnpj).first()
-    if not fornecedor and criar:
+    for f in db.query(Fornecedor).filter(Fornecedor.cpf_cnpj.isnot(None), Fornecedor.cpf_cnpj != "").all():
+        if re.sub(r'\D', '', f.cpf_cnpj or '') == cnpj_emit:
+            return f
+    fornecedor = None
+    if criar:
         fornecedor = Fornecedor(nome=nfe_dist.emitente_nome or 'Fornecedor', cpf_cnpj=nfe_dist.emitente_cnpj)
         db.add(fornecedor)
         db.flush()

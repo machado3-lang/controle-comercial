@@ -202,21 +202,32 @@ def listar_nfse_recebidas(
     )
 
 
+def _normalizar_doc(doc):
+    """Remove caracteres nao alfanumericos (pontos, barra, traco, espacos)."""
+    return re.sub(r'[^A-Za-z0-9]', '', doc or '').upper()
+
+
 def _resolver_fornecedor_nfse_recebida(db, rec, criar=False):
     """Busca o Fornecedor (prestador) da NFSe recebida pelo CNPJ do emitente.
 
     Reaproveita o vinculo ja existente em `rec.fornecedor_id` quando presente.
-    Por padrao apenas BUSCA (nao cria). Retorna o Fornecedor ou None.
+    A busca por CNPJ e feita com a versao NORMALIZADA (apenas digitos), pois o
+    CNPJ do emitente (vindo da NFSe/ADN) pode estar em formato diferente do
+    cadastrado (com/sem pontuacao), o que antes impedia o match e forçava um
+    cadastro duplicado. Por padrao apenas BUSCA (nao cria). Retorna o Fornecedor ou None.
     """
     if rec.fornecedor_id:
         return db.query(Fornecedor).filter(Fornecedor.id == rec.fornecedor_id).first()
     empresa = db.query(Empresa).first()
-    cnpj_empresa = re.sub(r'\D', '', empresa.cnpj) if empresa and empresa.cnpj else ''
-    cnpj_emit = re.sub(r'\D', '', rec.emitente_cnpj or '')
+    cnpj_empresa = _normalizar_doc(empresa.cnpj) if empresa and empresa.cnpj else ''
+    cnpj_emit = _normalizar_doc(rec.emitente_cnpj)
     if not cnpj_emit or cnpj_emit == cnpj_empresa:
         return None
-    fornecedor = db.query(Fornecedor).filter(Fornecedor.cpf_cnpj == rec.emitente_cnpj).first()
-    if not fornecedor and criar:
+    for f in db.query(Fornecedor).filter(Fornecedor.cpf_cnpj.isnot(None), Fornecedor.cpf_cnpj != "").all():
+        if _normalizar_doc(f.cpf_cnpj) == cnpj_emit:
+            return f
+    fornecedor = None
+    if criar:
         fornecedor = Fornecedor(nome=rec.emitente_nome or 'Fornecedor', cpf_cnpj=rec.emitente_cnpj)
         db.add(fornecedor)
         db.flush()

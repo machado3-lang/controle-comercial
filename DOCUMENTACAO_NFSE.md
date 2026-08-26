@@ -70,7 +70,9 @@ A detecção de duplicidade usa `descricao LIKE 'NFSe {numero} - {emitente}%'` +
 ### Funções auxiliares (em `routers/nfse.py`)
 
 - `_resolver_fornecedor_nfse_recebida(db, rec, criar=False)` — resolve o `Fornecedor`
-  pelo `rec.fornecedor_id` (se já vinculado) ou pelo `emitente_cnpj`. Não cria por padrão.
+  pelo `rec.fornecedor_id` (se já vinculado) ou pelo `emitente_cnpj` **normalizado**
+  (apenas dígitos). A normalização evita que um CNPJ já cadastrado (mas com formatação
+  diferente da NFSe) passe despercebido e force um cadastro duplicado.
 - `_emitente_valido_nfse_recebida(db, rec)` — True se o emitente tem CNPJ válido e
   não é a própria empresa.
 - `_url_cadastro_fornecedor_nfse(rec)` — monta `/fornecedores/novo?nome=...&cpf_cnpj=...&tipo_pessoa=...&next=/nfse/recebidas?vincular={id}`
