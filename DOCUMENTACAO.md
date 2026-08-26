@@ -24,6 +24,7 @@ Sistema web completo para gestão comercial com integração Bling ERP v3.
 | [DOCUMENTACAO_BOLETOS.md](DOCUMENTACAO_BOLETOS.md) | Boletos Sicoob: emissão, reemissão e valor líquido. |
 | [DOCUMENTACAO_ITENS.md](DOCUMENTACAO_ITENS.md) | Produtos/serviços/kits (itens). |
 | [DOCUMENTACAO_NFE.md](DOCUMENTACAO_NFE.md) | NFe: NotaAs, distribuição SEFAZ e importação. |
+| [DOCUMENTACAO_NFSE.md](DOCUMENTACAO_NFSE.md) | NFSe recebidas: vincular fornecedor e gerar Conta a Pagar (com vencimento manual/XML). |
 | [DOCUMENTACAO_OS.md](DOCUMENTACAO_OS.md) | Ordens de Serviço. |
 | [DOCUMENTACAO_PEDIDOS.md](DOCUMENTACAO_PEDIDOS.md) | Pedidos de Venda. |
 | [NFSe.md](NFSe.md) | Visão geral NFSe (Betha/ADN). |
