@@ -20,7 +20,7 @@
         <div class="w-80 relative">
             <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente</label>
             <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 cliente-search" placeholder="Digite para buscar cliente..." autocomplete="off" value="{% if cliente_id %}{{ clientes | selectattr('id', 'equalto', cliente_id) | first | map(attribute='nome') | first }}{% endif %}">
-            <div id="clientes-dropdown" class="absolute z-[100] w-full bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto shadow-lg"></div>
+            <div id="clientes-dropdown" class="absolute z-[1000] w-full bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto shadow-lg"></div>
             <input type="hidden" name="cliente_id" id="clienteId" value="{{ cliente_id }}">
         </div>
         <div class="w-40">
@@ -264,7 +264,7 @@ document.addEventListener('DOMContentLoaded', function() {
         clientesDropdown.addEventListener('click', function(e) {
             var item = e.target.closest('[data-id]');
             if (item) {
-                clienteSearch.value = item.querySelector('.font-medium').textContent;
+                clienteSearch.value = item.textContent.trim();
                 clienteIdInput.value = item.dataset.id;
                 clientesDropdown.classList.add('hidden');
             }

@@ -51,6 +51,13 @@
                 <td class="px-4 py-3 text-center align-middle" style="min-width: 11rem;">
                     <div class="flex items-center justify-center gap-1">
                         <a href="/pedidos/{{ p.id }}" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Ver"><i data-lucide="eye" class="w-4 h-4"></i></a>
+                        {% if p.status == 'pendente' %}
+                        <form method="post" action="/pedidos/{{ p.id }}/status" class="inline" onsubmit="return confirm('Tornar este pedido Pré-venda para permitir consolidação?')">
+                            <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+                            <input type="hidden" name="status" value="pre_venda">
+                            <button type="submit" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Tornar Pré-venda"><i data-lucide="arrow-up-circle" class="w-4 h-4"></i></button>
+                        </form>
+                        {% endif %}
                         <button type="button" class="inline-flex p-1.5 text-indigo-400 border border-slate-700 rounded hover:bg-indigo-950/30 transition" onclick="window.open('/pedidos/{{ p.id }}/imprimir','_blank')" title="Imprimir A4"><i data-lucide="printer" class="w-4 h-4"></i></button>
                         <button type="button" class="inline-flex p-1.5 text-slate-300 border border-slate-700 rounded hover:bg-slate-800/50 transition" onclick="window.open('/pedidos/{{ p.id }}/imprimir?termica=1','_blank')" title="Imprimir Térmica"><i data-lucide="receipt" class="w-4 h-4"></i></button>
                         <button type="button" class="inline-flex p-1.5 text-rose-400 border border-slate-700 rounded hover:bg-rose-950/30 transition" onclick="confirmarExclusao('/pedidos/{{ p.id }}/excluir')" title="Excluir"><i data-lucide="trash-2" class="w-4 h-4"></i></button>
