@@ -27,6 +27,12 @@
             <input type="text" name="numero_serial" value="{{ relogio.numero_serial or '' }}" placeholder="Nº de série do aparelho" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
         </div>
 
+        <!-- Nº Nota / OS / Pedido -->
+        <div>
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Nº Nota / OS / Pedido</label>
+            <input type="text" name="documento_referencia" value="{{ relogio.documento_referencia or '' }}" placeholder="Número da NF-e, OS ou Pedido de referência" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+        </div>
+
         <!-- Cliente -->
         <div class="md:col-span-2 relative">
             <label class="block text-xs font-medium text-emerald-400 mb-1">Cliente (vínculo)</label>

@@ -51,6 +51,7 @@ Tabela: `relogios_ponto`
 | `fornecedor_nome_cache` | String | Cache do nome do fornecedor |
 | `data_venda` | Date (índice) | Data da venda (coluna B) |
 | `numero_serial` | String **único** | Nº de série (coluna E) |
+| `documento_referencia` | String | Nº da Nota (NF-e/NFSe), OS ou Pedido de referência (livre) |
 | `valor` | Numeric(12,2) | Valor da venda (coluna H) |
 | `atestado_tecnico` | Boolean | Atestado técnico emitido (coluna A "X") |
 | `observacao` | Text | Observação (coluna I) |

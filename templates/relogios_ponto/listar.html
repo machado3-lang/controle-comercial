@@ -63,6 +63,7 @@
                     <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">Marca</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">Serial</th>
                     <th class="px-4 py-3 text-left text-xs font-semibold text-cyan-400 uppercase">Fornecedor</th>
+                    <th class="px-4 py-3 text-left text-xs font-semibold text-indigo-400 uppercase">Doc. Ref.</th>
                     <th class="px-4 py-3 text-right text-xs font-semibold text-emerald-400 uppercase">Valor</th>
                     <th class="px-4 py-3 text-center text-xs font-semibold text-amber-400 uppercase">Atestado</th>
                     <th class="px-4 py-3 text-center text-xs font-semibold text-cyan-400 uppercase">Ações</th>
@@ -77,6 +78,7 @@
                     <td class="px-4 py-3 text-sm text-cyan-300">{{ r.marca_cache or '-' }}</td>
                     <td class="px-4 py-3 text-sm text-indigo-300">{{ r.numero_serial or '-' }}</td>
                     <td class="px-4 py-3 text-sm text-slate-300">{{ r.fornecedor_nome_cache or '-' }}</td>
+                    <td class="px-4 py-3 text-sm text-indigo-300">{{ r.documento_referencia or '-' }}</td>
                     <td class="px-4 py-3 text-sm text-emerald-300 text-right">{{ r.valor|format_reais if r.valor else '-' }}</td>
                     <td class="px-4 py-3 text-center">
                         {% if r.atestado_tecnico %}

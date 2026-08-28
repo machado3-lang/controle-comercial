@@ -179,6 +179,7 @@ def criar_relogio(
     produto_id: int = Form(None),
     fornecedor_id: int = Form(None),
     numero_serial: str = Form(""),
+    documento_referencia: str = Form(""),
     valor: str = Form(""),
     atestado_tecnico: str = Form(""),
     observacao: str = Form(""),
@@ -194,6 +195,7 @@ def criar_relogio(
     r.produto_id = produto_id or None
     r.fornecedor_id = fornecedor_id or None
     r.numero_serial = numero_serial.strip() or None
+    r.documento_referencia = documento_referencia.strip() or None
     r.valor = _parse_valor_br(valor)
     r.atestado_tecnico = (atestado_tecnico == "1" or atestado_tecnico == "on")
     r.observacao = observacao or None
@@ -304,6 +306,7 @@ def atualizar_relogio(
     produto_id: int = Form(None),
     fornecedor_id: int = Form(None),
     numero_serial: str = Form(""),
+    documento_referencia: str = Form(""),
     valor: str = Form(""),
     atestado_tecnico: str = Form(""),
     observacao: str = Form(""),
@@ -321,6 +324,7 @@ def atualizar_relogio(
     relogio.produto_id = produto_id or None
     relogio.fornecedor_id = fornecedor_id or None
     relogio.numero_serial = numero_serial.strip() or None
+    relogio.documento_referencia = documento_referencia.strip() or None
     relogio.valor = _parse_valor_br(valor)
     relogio.atestado_tecnico = (atestado_tecnico == "1" or atestado_tecnico == "on")
     relogio.observacao = observacao or None
