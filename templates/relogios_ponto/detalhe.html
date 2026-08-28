@@ -1,0 +1,89 @@
+{% extends "base.html" %}
+{% block title %}Detalhe do Equipamento Vendido - Controle Comercial{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between w-full mb-6 gap-4">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">
+        <i data-lucide="clock" class="w-6 h-6 inline me-2"></i> Detalhe do Equipamento Vendido
+    </h4>
+    <div class="flex items-center gap-2">
+        <a href="/relogios-ponto/{{ relogio.id }}/editar" class="flex items-center h-9 px-3 text-sm bg-slate-800 border border-white/10 rounded-xl text-cyan-400 transition hover:bg-slate-700/50">
+            <i data-lucide="pencil" class="w-4 h-4 me-1"></i> Editar
+        </a>
+        <button type="button" class="flex items-center h-9 px-3 text-sm bg-rose-950/40 border border-rose-800/60 rounded-xl text-rose-400 transition hover:bg-rose-900/40" onclick="confirmarExclusao('/relogios-ponto/{{ relogio.id }}/excluir')">
+            <i data-lucide="trash-2" class="w-4 h-4 me-1"></i> Excluir
+        </button>
+        <a href="/relogios-ponto" class="flex items-center h-9 px-3 text-sm bg-slate-800 border border-white/10 rounded-xl text-slate-300 transition hover:bg-slate-700/50">
+            <i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar
+        </a>
+    </div>
+</div>
+
+<div class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl shadow-xl p-5">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div>
+            <p class="text-xs text-cyan-400">Data da Venda</p>
+            <p class="text-slate-100">{{ relogio.data_venda.strftime('%d/%m/%Y') if relogio.data_venda else '-' }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-cyan-400">Número de Série</p>
+            <p class="text-slate-100">{{ relogio.numero_serial or '-' }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-emerald-400">Cliente</p>
+            {% if relogio.cliente %}
+            <p class="text-slate-100"><a href="/clientes/{{ relogio.cliente.id }}" class="text-cyan-300 hover:underline">{{ relogio.cliente.nome }}</a></p>
+            {% else %}
+            <p class="text-slate-100">{{ relogio.cliente_nome_cache or '-' }}</p>
+            {% endif %}
+        </div>
+        <div>
+            <p class="text-xs text-cyan-400">CPF/CNPJ</p>
+            <p class="text-slate-100">{{ relogio.cpf_cnpj_cache|format_cpf_cnpj if relogio.cpf_cnpj_cache else '-' }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-cyan-400">Modelo</p>
+            {% if relogio.produto %}
+            <p class="text-slate-100"><a href="/produtos/{{ relogio.produto.id }}" class="text-cyan-300 hover:underline">{{ relogio.produto.nome }}</a></p>
+            {% else %}
+            <p class="text-slate-100">{{ relogio.modelo_cache or '-' }}</p>
+            {% endif %}
+        </div>
+        <div>
+            <p class="text-xs text-cyan-400">Marca</p>
+            <p class="text-slate-100">{{ relogio.marca_cache or '-' }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-cyan-400">Fornecedor</p>
+            {% if relogio.fornecedor %}
+            <p class="text-slate-100"><a href="/fornecedores/{{ relogio.fornecedor.id }}" class="text-cyan-300 hover:underline">{{ relogio.fornecedor.nome }}</a></p>
+            {% else %}
+            <p class="text-slate-100">{{ relogio.fornecedor_nome_cache or '-' }}</p>
+            {% endif %}
+        </div>
+        <div>
+            <p class="text-xs text-emerald-400">Valor</p>
+            <p class="text-slate-100">{{ relogio.valor|format_reais if relogio.valor else '-' }}</p>
+        </div>
+        <div>
+            <p class="text-xs text-amber-400">Atestado Técnico</p>
+            <p class="text-slate-100">{% if relogio.atestado_tecnico %}Emitido{% else %}Pendente{% endif %}</p>
+        </div>
+        <div class="md:col-span-2">
+            <p class="text-xs text-cyan-400">Contato</p>
+            <p class="text-slate-100">{{ relogio.contato_cache or '-' }}</p>
+        </div>
+        <div class="md:col-span-2">
+            <p class="text-xs text-cyan-400">Observação</p>
+            <p class="text-slate-100 whitespace-pre-line">{{ relogio.observacao or '-' }}</p>
+        </div>
+        <div class="md:col-span-2">
+            <p class="text-xs text-cyan-400">Observação 2</p>
+            <p class="text-slate-100 whitespace-pre-line">{{ relogio.observacao2 or '-' }}</p>
+        </div>
+        <div class="md:col-span-2 text-xs text-slate-500">
+            Cadastrado em {{ relogio.created_at.strftime('%d/%m/%Y %H:%M') if relogio.created_at else '-' }}
+            {% if relogio.updated_at %} · Atualizado em {{ relogio.updated_at.strftime('%d/%m/%Y %H:%M') }}{% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

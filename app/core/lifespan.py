@@ -17,6 +17,7 @@ from database import engine, Base, SessionLocal, get_db
 from models import TipoDocumento, PlanoDeContas, Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda
 import models_nfe  # registra modelos NFe/NFSe no Base.metadata para migração automática
 import models_estoque  # registra modelos de estoque (movimentacoes, os_pecas)
+import models_relogios  # registra modelos de Relógios de Ponto (REPs) vendidos
 
 from datetime import date as date_func, timedelta
 from app.core.config import settings
@@ -978,7 +979,7 @@ def create_app() -> FastAPI:
         clientes, fornecedores, nfse, contas, assinaturas,
         ordens_servico, configuracoes, bling, sicoob, produtos,
         pedidos, auth, nfe, tipos_documento, planocontas, consolidacoes,
-        estoque, consultas, condicoes_pagamento, transportadoras
+        estoque, consultas, condicoes_pagamento, transportadoras, relogios_ponto
     )
 
     app.include_router(auth.router)
@@ -1001,5 +1002,6 @@ def create_app() -> FastAPI:
     app.include_router(estoque.router)
     app.include_router(consultas.router)
     app.include_router(transportadoras.router)
+    app.include_router(relogios_ponto.router)
 
     return app

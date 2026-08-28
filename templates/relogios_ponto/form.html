@@ -1,0 +1,152 @@
+{% extends "base.html" %}
+{% block title %}{% if relogio %}Editar Equipamento Vendido{% else %}Novo Equipamento Vendido{% endif %} - Controle Comercial{% endblock %}
+{% block content %}
+<div class="flex items-center justify-between w-full mb-6 gap-4">
+    <h4 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">
+        <i data-lucide="clock" class="w-6 h-6 inline me-2"></i>
+        {% if relogio %}Editar Equipamento Vendido{% else %}Novo Equipamento Vendido{% endif %}
+    </h4>
+    <a href="/relogios-ponto" class="flex items-center h-9 px-3 text-sm bg-slate-800 border border-white/10 rounded-xl text-slate-300 transition hover:bg-slate-700/50">
+        <i data-lucide="arrow-left" class="w-4 h-4 me-1"></i> Voltar
+    </a>
+</div>
+
+<form method="post" action="{% if relogio %}/relogios-ponto/{{ relogio.id }}/editar{% else %}/relogios-ponto/novo{% endif %}" class="bg-slate-900/60 backdrop-blur-md border border-slate-800/80 rounded-2xl shadow-xl p-5">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Data da venda -->
+        <div>
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Data da Venda</label>
+            <input type="date" name="data_venda" value="{% if relogio and relogio.data_venda %}{{ relogio.data_venda.isoformat() }}{% else %}{{ hoje }}{% endif %}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+        </div>
+
+        <!-- Número de série -->
+        <div>
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Número de Série</label>
+            <input type="text" name="numero_serial" value="{{ relogio.numero_serial or '' }}" placeholder="Nº de série do aparelho" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+        </div>
+
+        <!-- Cliente -->
+        <div class="md:col-span-2 relative">
+            <label class="block text-xs font-medium text-emerald-400 mb-1">Cliente (vínculo)</label>
+            <input type="text" id="clienteSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50" placeholder="Digite para buscar cliente..." autocomplete="off" value="{{ relogio.cliente.nome if relogio and relogio.cliente else (relogio.cliente_nome_cache or '') }}">
+            <div id="clienteDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+            <input type="hidden" name="cliente_id" id="clienteId" value="{{ relogio.cliente_id or '' }}">
+        </div>
+
+        <!-- Produto / Modelo -->
+        <div class="md:col-span-2 relative">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Modelo (vínculo com cadastro de Itens)</label>
+            <input type="text" id="produtoSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar item (relógio, catraca, controlador)..." autocomplete="off" value="{{ relogio.produto.nome if relogio and relogio.produto else (relogio.modelo_cache or '') }}">
+            <div id="produtoDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+            <input type="hidden" name="produto_id" id="produtoId" value="{{ relogio.produto_id or '' }}">
+        </div>
+
+        <!-- Fornecedor -->
+        <div class="md:col-span-2 relative">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Fornecedor (vínculo)</label>
+            <input type="text" id="fornecedorSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar fornecedor..." autocomplete="off" value="{{ relogio.fornecedor.nome if relogio and relogio.fornecedor else (relogio.fornecedor_nome_cache or '') }}">
+            <div id="fornecedorDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
+            <input type="hidden" name="fornecedor_id" id="fornecedorId" value="{{ relogio.fornecedor_id or '' }}">
+        </div>
+
+        <!-- Valor -->
+        <div>
+            <label class="block text-xs font-medium text-emerald-400 mb-1">Valor (R$)</label>
+            <input type="text" name="valor" value="{{ '%.2f'|format(relogio.valor) if relogio and relogio.valor else '' }}" placeholder="0,00" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+        </div>
+
+        <!-- Atestado técnico -->
+        <div class="flex items-end">
+            <label class="flex items-center gap-2 text-emerald-300 cursor-pointer px-3 py-2 bg-slate-900/40 border border-slate-800/60 rounded-xl">
+                <input type="checkbox" name="atestado_tecnico" value="1" {% if relogio and relogio.atestado_tecnico %}checked{% endif %} class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded">
+                <span class="text-sm">Atestado técnico emitido</span>
+            </label>
+        </div>
+
+        <!-- Observação -->
+        <div class="md:col-span-2">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
+            <textarea name="observacao" rows="2" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">{{ relogio.observacao or '' }}</textarea>
+        </div>
+
+        <!-- Observação 2 -->
+        <div class="md:col-span-2">
+            <label class="block text-xs font-medium text-cyan-400 mb-1">Observação 2</label>
+            <textarea name="observacao2" rows="2" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">{{ relogio.observacao2 or '' }}</textarea>
+        </div>
+    </div>
+
+    <div class="flex items-center gap-2 mt-5">
+        <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10">
+            <i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar
+        </button>
+        <a href="/relogios-ponto" class="px-4 py-2 border border-slate-700 rounded-xl text-slate-300 transition hover:bg-slate-800/50">Cancelar</a>
+    </div>
+</form>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // ---- Cliente ----
+    const cInput = document.getElementById('clienteSearch');
+    const cDropdown = document.getElementById('clienteDropdown');
+    const cId = document.getElementById('clienteId');
+    cInput.addEventListener('input', function(e) {
+        const term = e.target.value;
+        if (term.length >= 2) {
+            fetch(`/clientes/buscar?q=${encodeURIComponent(term)}`).then(r => r.json()).then(d => {
+                if (d.clientes && d.clientes.length) {
+                    cDropdown.innerHTML = d.clientes.map(c => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${c.id}">${formatPessoaItem(c)}</div>`).join('');
+                    cDropdown.classList.remove('hidden');
+                } else { cDropdown.classList.add('hidden'); }
+            });
+        } else { cDropdown.classList.add('hidden'); cId.value=''; }
+    });
+    cDropdown.addEventListener('click', function(e) {
+        const item = e.target.closest('[data-id]');
+        if (item) { cInput.value = item.textContent.trim(); cId.value = item.dataset.id; this.classList.add('hidden'); }
+    });
+
+    // ---- Produto / Modelo ----
+    const pInput = document.getElementById('produtoSearch');
+    const pDropdown = document.getElementById('produtoDropdown');
+    const pId = document.getElementById('produtoId');
+    pInput.addEventListener('input', function(e) {
+        const term = e.target.value;
+        if (term.length >= 2) {
+            fetch(`/produtos/buscar?q=${encodeURIComponent(term)}`).then(r => r.json()).then(d => {
+                if (d.itens && d.itens.length) {
+                    pDropdown.innerHTML = d.itens.map(s => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${s.id}">${formatProdutoItem(s)}</div>`).join('');
+                    pDropdown.classList.remove('hidden');
+                } else { pDropdown.classList.add('hidden'); }
+            });
+        } else { pDropdown.classList.add('hidden'); pId.value=''; }
+    });
+    pDropdown.addEventListener('click', function(e) {
+        const item = e.target.closest('[data-id]');
+        if (item) { pInput.value = item.textContent.trim(); pId.value = item.dataset.id; this.classList.add('hidden'); }
+    });
+
+    // ---- Fornecedor ----
+    const fInput = document.getElementById('fornecedorSearch');
+    const fDropdown = document.getElementById('fornecedorDropdown');
+    const fId = document.getElementById('fornecedorId');
+    fInput.addEventListener('input', function(e) {
+        const term = e.target.value;
+        if (term.length >= 2) {
+            fetch(`/fornecedores/buscar?q=${encodeURIComponent(term)}`).then(r => r.json()).then(d => {
+                if (d.fornecedores && d.fornecedores.length) {
+                    fDropdown.innerHTML = d.fornecedores.map(f => `<div class="p-2.5 hover:bg-slate-800/50 cursor-pointer transition" data-id="${f.id}">${formatPessoaItem(f)}</div>`).join('');
+                    fDropdown.classList.remove('hidden');
+                } else { fDropdown.classList.add('hidden'); }
+            });
+        } else { fDropdown.classList.add('hidden'); fId.value=''; }
+    });
+    fDropdown.addEventListener('click', function(e) {
+        const item = e.target.closest('[data-id]');
+        if (item) { fInput.value = item.textContent.trim(); fId.value = item.dataset.id; this.classList.add('hidden'); }
+    });
+});
+</script>
+{% endblock %}
