@@ -95,6 +95,25 @@ Inclui: `modelo`, `serie`, `numero`, `finalidade`, `naturezaOperacao`, `destinoO
 "transporte": { "modalidadeFrete": 9 }
 ```
 
+#### Cobrança / duplicatas (`<cobr>` do XML)
+O contrato da NotaAs é **exatamente** este (nomes divergentes são ignorados em
+silêncio: o XML sai com `<fat>` e **nenhum** `<dup>`/`<dVenc>`):
+
+```json
+"cobranca": {
+  "fatura":   { "numero": "4439", "valorOriginal": 1790.00, "desconto": 0, "valorLiquido": 1790.00 },
+  "parcelas": [ { "numero": "001", "vencimento": "2026-09-24", "valor": 596.68 } ]
+}
+```
+
+- A chave é `parcelas` (**não** `duplicatas`) e a data é `vencimento` (**não** `dataVencimento`);
+  o desconto da fatura é `desconto` (**não** `valorDesconto`).
+- As parcelas vêm do `ContaReceber` vinculado (`nfe_id` → `pedido_id` → `consolidacao_id`).
+  Sem conta a receber, nenhum grupo `<cobr>` é enviado (venda à vista).
+- `valorOriginal`/`valorLiquido` são a **soma das parcelas**, para não cair na
+  rejeição 617 (somatório das duplicatas difere do valor líquido da fatura).
+- `indPag` não existe no contrato da NotaAs — é inferido pela API a partir do `tipoPagamento`.
+
 ---
 
 ## 4. Rotas (`routers/nfe.py`)

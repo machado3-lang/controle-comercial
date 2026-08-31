@@ -257,8 +257,11 @@ def montar_payload_nfe(
 
     # Cobrança / duplicatas (grupo <cobr>/<dup> — obrigatório em venda a prazo).
     # Cada duplicata = uma parcela do contas a receber gerada no faturamento.
+    # Contrato NotaAs: cobranca.fatura{numero,valorOriginal,desconto,valorLiquido}
+    # e cobranca.parcelas[]{numero,vencimento,valor}. Nomes divergentes (ex.
+    # "duplicatas"/"dataVencimento") são ignorados silenciosamente pela API e o
+    # XML sai com <fat> sem nenhum <dup>/<dVenc>.
     if duplicatas:
-        payload["pagamentos"][0]["indicadorPagamento"] = 1  # 1 = a prazo
         # Vencimento de fallback: data de emissão (ou hoje) quando a parcela
         # não traz data explícita — evita descartar a duplicata e silenciar o
         # vencimento/parcelas no DANFE.
@@ -267,22 +270,28 @@ def montar_payload_nfe(
             _venc_fallback = str(data_emissao)[:10]
         if not _venc_fallback:
             _venc_fallback = date.today().strftime("%Y-%m-%d")
-        payload["cobranca"] = {
-            "fatura": {
-                "numero": str(numero_nfe or ""),
-                "valorOriginal": round(total_nota, 2),
-                "valorDesconto": 0,
-                "valorLiquido": round(total_nota, 2),
-            },
-            "duplicatas": [
-                {
-                    "numero": d.get("numero") or (idx + 1),
-                    "dataVencimento": d.get("vencimento") or _venc_fallback,
-                    "valor": round(float(d.get("valor") or 0), 2),
-                }
-                for idx, d in enumerate(duplicatas) if (d.get("numero") or d.get("vencimento"))
-            ],
-        }
+        parcelas = []
+        for idx, d in enumerate(duplicatas):
+            valor_parc = round(float(d.get("valor") or 0), 2)
+            if valor_parc <= 0:
+                continue
+            numero_parc = d.get("numero") or (idx + 1)
+            parcelas.append({
+                "numero": f"{int(numero_parc):03d}" if str(numero_parc).isdigit() else str(numero_parc),
+                "vencimento": str(d.get("vencimento") or _venc_fallback)[:10],
+                "valor": valor_parc,
+            })
+        if parcelas:
+            total_parcelas = round(sum(p["valor"] for p in parcelas), 2)
+            payload["cobranca"] = {
+                "fatura": {
+                    "numero": str(numero_nfe or ""),
+                    "valorOriginal": total_parcelas,
+                    "desconto": 0,
+                    "valorLiquido": total_parcelas,
+                },
+                "parcelas": parcelas,
+            }
 
     # Informações complementares (infCpl): observações do usuário + tributos IBPT
     inf_cpl_partes = []
