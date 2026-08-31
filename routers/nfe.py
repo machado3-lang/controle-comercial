@@ -1,6 +1,7 @@
 import logging
 import os
 import json
+from typing import Optional
 import re
 import secrets
 from decimal import Decimal, ROUND_HALF_UP
@@ -1220,7 +1221,7 @@ def emitir_avulsa_submit(
     observacoes: str = Form(""),
     modalidade_frete: int = Form(9),
     valor_frete: float = Form(0.0),
-    transportadora_id: int = Form(None),
+    transportadora_id: Optional[str] = Form(None),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -1325,7 +1326,7 @@ def emitir_avulsa_submit(
             forma_pagamento=forma_pagamento or None,
             modalidade_frete=modalidade_frete,
             valor_frete=Decimal(str(valor_frete or 0)),
-            transportadora_id=transportadora_id or None,
+            transportadora_id=int(transportadora_id) if transportadora_id else None,
             observacoes=observacoes or None,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
@@ -1818,7 +1819,7 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
 def atualizar_transporte_nfe(
     request: Request, nfe_id: int, db: Session = Depends(get_db),
     valor_frete: float = Form(0.0),
-    transportadora_id: int = Form(None),
+    transportadora_id: Optional[str] = Form(None),
 ):
     nfe = db.query(NFe).filter(NFe.id == nfe_id).first()
     if not nfe:
@@ -1828,7 +1829,7 @@ def atualizar_transporte_nfe(
         request.session["error"] = "NFe já transmitida; não é possível alterar o transporte."
         return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
     nfe.valor_frete = Decimal(str(valor_frete or 0))
-    nfe.transportadora_id = transportadora_id or None
+    nfe.transportadora_id = int(transportadora_id) if transportadora_id else None
     db.commit()
     request.session["message"] = "Frete/Transportadora atualizados!"
     return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
