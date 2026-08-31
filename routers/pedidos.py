@@ -62,7 +62,7 @@ def listar_pedidos(
     request: Request, db: Session = Depends(get_db),
     busca: str = Query(""), status: str = Query(""), cliente_id: int = Query(0),
     page: int = Query(1), per_page: int = Query(20),
-    sort: str = Query("data"), ordem: str = Query("desc"),
+    sort: str = Query("numero"), ordem: str = Query("desc"),
 ):
     query = db.query(PedidoVenda).join(Cliente)
     if busca:
