@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func, cast, Integer, nullif
+from sqlalchemy import func, cast, Integer
 from datetime import date, datetime
 from database import get_db
 from models import Produto, PedidoVenda, PedidoVendaItem, Cliente, StatusPedido, Fornecedor, FormaPagamento, ContaReceber, StatusConta, ProdutoVariacao, ProdutoComposicao, Empresa, PedidoConsolidadoItemOrigem
@@ -80,7 +80,7 @@ def listar_pedidos(
         dialect = (db.bind.dialect.name if db.bind is not None else "")
         if dialect == "postgresql":
             num_digit = func.regexp_replace(PedidoVenda.numero, r"\D.*", "", "g")
-            sort_attr = cast(nullif(num_digit, ""), Integer)
+            sort_attr = cast(func.nullif(num_digit, ""), Integer)
         else:
             sort_attr = cast(PedidoVenda.numero, Integer)
     elif sort == "cliente":
