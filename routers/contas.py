@@ -670,6 +670,132 @@ def contas_pagar_pdf(request: Request, db: Session = Depends(get_db)):
                     headers={"Content-Disposition": "inline; filename=contas_pagar.pdf"})
 
 
+@router.get("/pagar/exportar")
+def exportar_contas_pagar(
+    request: Request, db: Session = Depends(get_db),
+    busca: str = Query(""), status_filtro: str = Query(""),
+    data_inicio: str = Query(""), data_fim: str = Query(""),
+    sort: str = Query("data_vencimento"), ordem: str = Query("asc"),
+):
+    query = db.query(ContaPagar).options(
+        joinedload(ContaPagar.fornecedor),
+    )
+    if status_filtro == "pendente":
+        query = query.filter(ContaPagar.status == StatusConta.PENDENTE)
+    elif status_filtro == "pago":
+        query = query.filter(ContaPagar.status == StatusConta.PAGO)
+    elif status_filtro == "vencido":
+        query = query.filter(ContaPagar.status == StatusConta.VENCIDO)
+    elif status_filtro == "cancelado":
+        query = query.filter(ContaPagar.status == StatusConta.CANCELADO)
+    elif status_filtro == "baixa_solicitada":
+        query = query.filter(ContaPagar.status == StatusConta.BAIXA_SOLICITADA)
+    else:
+        query = query.filter(ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA]))
+    if busca:
+        query = query.filter(
+            or_(
+                ContaPagar.descricao.ilike(f"%{busca}%"),
+                ContaPagar.fornecedor.has(Fornecedor.nome.ilike(f"%{busca}%"))
+            )
+        )
+    if data_inicio:
+        try:
+            query = query.filter(ContaPagar.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
+        except ValueError:
+            logger.warning(f"Data de início inválida no filtro de exportação: {data_inicio}")
+    if data_fim:
+        try:
+            query = query.filter(ContaPagar.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
+        except ValueError:
+            logger.warning(f"Data de fim inválida no filtro de exportação: {data_fim}")
+    order_func = sql_desc if ordem == "desc" else sql_asc
+    sort_col = getattr(ContaPagar, sort, ContaPagar.data_vencimento)
+    contas = query.order_by(order_func(sort_col), ContaPagar.id).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Descricao", "Fornecedor", "Valor", "Vencimento", "Pagamento", "Status"])
+    for c in contas:
+        writer.writerow([
+            c.descricao,
+            c.fornecedor.nome if c.fornecedor else "-",
+            f"R$ {c.valor:.2f}".replace(".", ","),
+            str(c.data_vencimento),
+            str(c.data_pagamento) if c.data_pagamento else "-",
+            c.status.name.lower() if hasattr(c.status, 'name') else str(c.status),
+        ])
+    csv_content = output.getvalue()
+    output.close()
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=contas_pagar.csv"}
+    )
+
+
+@router.get("/receber/exportar")
+def exportar_contas_receber(
+    request: Request, db: Session = Depends(get_db),
+    busca: str = Query(""), status_filtro: str = Query(""),
+    data_inicio: str = Query(""), data_fim: str = Query(""),
+    sort: str = Query("data_vencimento"), ordem: str = Query("asc"),
+):
+    query = db.query(ContaReceber).options(
+        joinedload(ContaReceber.cliente),
+    )
+    if status_filtro == "pendente":
+        query = query.filter(ContaReceber.status == StatusConta.PENDENTE)
+    elif status_filtro == "pago":
+        query = query.filter(ContaReceber.status == StatusConta.PAGO)
+    elif status_filtro == "vencido":
+        query = query.filter(ContaReceber.status == StatusConta.VENCIDO)
+    elif status_filtro == "cancelado":
+        query = query.filter(ContaReceber.status == StatusConta.CANCELADO)
+    elif status_filtro == "baixa_solicitada":
+        query = query.filter(ContaReceber.status == StatusConta.BAIXA_SOLICITADA)
+    else:
+        query = query.filter(ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA]))
+    if busca:
+        query = query.filter(
+            or_(
+                ContaReceber.descricao.ilike(f"%{busca}%"),
+                ContaReceber.cliente.has(Cliente.nome.ilike(f"%{busca}%"))
+            )
+        )
+    if data_inicio:
+        try:
+            query = query.filter(ContaReceber.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
+        except ValueError:
+            logger.warning(f"Data de início inválida no filtro de exportação: {data_inicio}")
+    if data_fim:
+        try:
+            query = query.filter(ContaReceber.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
+        except ValueError:
+            logger.warning(f"Data de fim inválida no filtro de exportação: {data_fim}")
+    order_func = sql_desc if ordem == "desc" else sql_asc
+    sort_col = getattr(ContaReceber, sort, ContaReceber.data_vencimento)
+    contas = query.order_by(order_func(sort_col), ContaReceber.id).all()
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["Descricao", "Cliente", "Valor", "Vencimento", "Recebimento", "Status"])
+    for c in contas:
+        writer.writerow([
+            c.descricao,
+            c.cliente.nome if c.cliente else "-",
+            f"R$ {c.valor:.2f}".replace(".", ","),
+            str(c.data_vencimento),
+            str(c.data_recebimento) if c.data_recebimento else "-",
+            c.status.name.lower() if hasattr(c.status, 'name') else str(c.status),
+        ])
+    csv_content = output.getvalue()
+    output.close()
+    return Response(
+        content=csv_content,
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=contas_receber.csv"}
+    )
+
+
 @router.get("/pagar/{conta_id}")
 def ver_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_db)):
     conta = db.query(ContaPagar).options(
@@ -852,132 +978,6 @@ def dre(
         {"request": request, "receitas": receitas, "despesas": despesas,
          "total_receitas": total_receitas, "total_despesas": total_despesas,
          "saldo": saldo, "data_inicio": data_inicio, "data_fim": data_fim}
-    )
-
-
-@router.get("/pagar/exportar")
-def exportar_contas_pagar(
-    request: Request, db: Session = Depends(get_db),
-    busca: str = Query(""), status_filtro: str = Query(""),
-    data_inicio: str = Query(""), data_fim: str = Query(""),
-    sort: str = Query("data_vencimento"), ordem: str = Query("asc"),
-):
-    query = db.query(ContaPagar).options(
-        joinedload(ContaPagar.fornecedor),
-    )
-    if status_filtro == "pendente":
-        query = query.filter(ContaPagar.status == StatusConta.PENDENTE)
-    elif status_filtro == "pago":
-        query = query.filter(ContaPagar.status == StatusConta.PAGO)
-    elif status_filtro == "vencido":
-        query = query.filter(ContaPagar.status == StatusConta.VENCIDO)
-    elif status_filtro == "cancelado":
-        query = query.filter(ContaPagar.status == StatusConta.CANCELADO)
-    elif status_filtro == "baixa_solicitada":
-        query = query.filter(ContaPagar.status == StatusConta.BAIXA_SOLICITADA)
-    else:
-        query = query.filter(ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA]))
-    if busca:
-        query = query.filter(
-            or_(
-                ContaPagar.descricao.ilike(f"%{busca}%"),
-                ContaPagar.fornecedor.has(Fornecedor.nome.ilike(f"%{busca}%"))
-            )
-        )
-    if data_inicio:
-        try:
-            query = query.filter(ContaPagar.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
-        except ValueError:
-            logger.warning(f"Data de início inválida no filtro de exportação: {data_inicio}")
-    if data_fim:
-        try:
-            query = query.filter(ContaPagar.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
-        except ValueError:
-            logger.warning(f"Data de fim inválida no filtro de exportação: {data_fim}")
-    order_func = sql_desc if ordem == "desc" else sql_asc
-    sort_col = getattr(ContaPagar, sort, ContaPagar.data_vencimento)
-    contas = query.order_by(order_func(sort_col), ContaPagar.id).all()
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Descricao", "Fornecedor", "Valor", "Vencimento", "Pagamento", "Status"])
-    for c in contas:
-        writer.writerow([
-            c.descricao,
-            c.fornecedor.nome if c.fornecedor else "-",
-            f"R$ {c.valor:.2f}".replace(".", ","),
-            str(c.data_vencimento),
-            str(c.data_pagamento) if c.data_pagamento else "-",
-            c.status.name.lower() if hasattr(c.status, 'name') else str(c.status),
-        ])
-    csv_content = output.getvalue()
-    output.close()
-    return Response(
-        content=csv_content,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=contas_pagar.csv"}
-    )
-
-
-@router.get("/receber/exportar")
-def exportar_contas_receber(
-    request: Request, db: Session = Depends(get_db),
-    busca: str = Query(""), status_filtro: str = Query(""),
-    data_inicio: str = Query(""), data_fim: str = Query(""),
-    sort: str = Query("data_vencimento"), ordem: str = Query("asc"),
-):
-    query = db.query(ContaReceber).options(
-        joinedload(ContaReceber.cliente),
-    )
-    if status_filtro == "pendente":
-        query = query.filter(ContaReceber.status == StatusConta.PENDENTE)
-    elif status_filtro == "pago":
-        query = query.filter(ContaReceber.status == StatusConta.PAGO)
-    elif status_filtro == "vencido":
-        query = query.filter(ContaReceber.status == StatusConta.VENCIDO)
-    elif status_filtro == "cancelado":
-        query = query.filter(ContaReceber.status == StatusConta.CANCELADO)
-    elif status_filtro == "baixa_solicitada":
-        query = query.filter(ContaReceber.status == StatusConta.BAIXA_SOLICITADA)
-    else:
-        query = query.filter(ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA]))
-    if busca:
-        query = query.filter(
-            or_(
-                ContaReceber.descricao.ilike(f"%{busca}%"),
-                ContaReceber.cliente.has(Cliente.nome.ilike(f"%{busca}%"))
-            )
-        )
-    if data_inicio:
-        try:
-            query = query.filter(ContaReceber.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
-        except ValueError:
-            logger.warning(f"Data de início inválida no filtro de exportação: {data_inicio}")
-    if data_fim:
-        try:
-            query = query.filter(ContaReceber.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
-        except ValueError:
-            logger.warning(f"Data de fim inválida no filtro de exportação: {data_fim}")
-    order_func = sql_desc if ordem == "desc" else sql_asc
-    sort_col = getattr(ContaReceber, sort, ContaReceber.data_vencimento)
-    contas = query.order_by(order_func(sort_col), ContaReceber.id).all()
-    output = io.StringIO()
-    writer = csv.writer(output)
-    writer.writerow(["Descricao", "Cliente", "Valor", "Vencimento", "Recebimento", "Status"])
-    for c in contas:
-        writer.writerow([
-            c.descricao,
-            c.cliente.nome if c.cliente else "-",
-            f"R$ {c.valor:.2f}".replace(".", ","),
-            str(c.data_vencimento),
-            str(c.data_recebimento) if c.data_recebimento else "-",
-            c.status.name.lower() if hasattr(c.status, 'name') else str(c.status),
-        ])
-    csv_content = output.getvalue()
-    output.close()
-    return Response(
-        content=csv_content,
-        media_type="text/csv",
-        headers={"Content-Disposition": "attachment; filename=contas_receber.csv"}
     )
 
 

@@ -1,4 +1,4 @@
-import os
+﻿import os
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from decimal import Decimal
@@ -11,6 +11,34 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # Namespace da NFS-e Nacional (Sefin Nacional / Portal ADN) esperado pelo
 # leiaute padronizado do DANFSe (NT 008/2026).
 NFSE_NACIONAL_NS = "http://www.sped.fazenda.gov.br/nfse"
+
+
+# Substitui caracteres fora do conjunto da fonte core (latin-1) por equivalentes
+# seguros, evitando o FPDFUnicodeEncodingException ao gerar PDFs.
+_PDF_CHAR_REPLACEMENTS = {
+    "\u2014": "-", "\u2013": "-", "\u2012": "-", "\u2011": "-", "\u2212": "-",
+    "\u2022": "*", "\u2023": "*", "\u25cf": "*", "\u00b7": "*",
+    "\u2018": "'", "\u2019": "'", "\u201a": "'", "\u0060": "'",
+    "\u201c": '"', "\u201d": '"', "\u201e": '"',
+    "\u2026": "...", "\u00a0": " ", "\u200b": "", "\u00ad": "-",
+    "\u00e7": "c",  # fallback raro (já coberto por latin-1)
+}
+
+
+class FPDFSafe(FPDF):
+    """FPDF que tolera caracteres Unicode nao suportados pela fonte core."""
+
+    def normalize_text(self, txt):
+        if txt is None:
+            return super().normalize_text(txt)
+        s = str(txt)
+        for k, v in _PDF_CHAR_REPLACEMENTS.items():
+            s = s.replace(k, v)
+        try:
+            return super().normalize_text(s)
+        except Exception:
+            safe = s.encode("latin-1", "replace").decode("latin-1")
+            return super().normalize_text(safe)
 
 
 def is_xml_nfse_nacional(xml_string: str) -> bool:
@@ -48,7 +76,7 @@ def gerar_danfse_pdf(xml_string: str, output_path: str, cancelada: bool = False)
 
 
 def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf = FPDFSafe(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=20)
 
     empresa_nome = (empresa.razao_social or empresa.nome_fantasia or "Empresa") if empresa else "Empresa"
@@ -265,7 +293,7 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
 
 
 def gerar_pdf_contas(contas, empresa, tipo="receber", filtros=None) -> bytes:
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf = FPDFSafe(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
@@ -334,7 +362,7 @@ def gerar_pdf_estoque(produtos, empresa, titulo="Posição de Estoque",
                       filtros=None, valor_total=0.0, valor_venda=0.0,
                       qtd_zerados=0, qtd_abaixo=0) -> bytes:
     """Gera PDF da posicao de estoque (tambem usado para abaixo do minimo)."""
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf = FPDFSafe(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
@@ -406,7 +434,7 @@ def gerar_pdf_estoque(produtos, empresa, titulo="Posição de Estoque",
 
 def gerar_pdf_movimentacoes(movs, empresa, filtros=None) -> bytes:
     """Gera PDF do relatorio consolidado de movimentacoes de estoque."""
-    pdf = FPDF(orientation="P", unit="mm", format="A4")
+    pdf = FPDFSafe(orientation="P", unit="mm", format="A4")
     pdf.set_auto_page_break(auto=True, margin=12)
     pdf.add_page()
     pdf.set_font("Helvetica", "B", 14)
