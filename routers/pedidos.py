@@ -2,7 +2,7 @@ import logging
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, cast, Integer, nullif
 from datetime import date, datetime
 from database import get_db
 from models import Produto, PedidoVenda, PedidoVendaItem, Cliente, StatusPedido, Fornecedor, FormaPagamento, ContaReceber, StatusConta, ProdutoVariacao, ProdutoComposicao, Empresa, PedidoConsolidadoItemOrigem
@@ -74,7 +74,15 @@ def listar_pedidos(
 
     # Ordenação
     if sort == "numero":
-        sort_attr = PedidoVenda.numero
+        # numero e' String; ordena por valor numerico (nao lexicografico).
+        # SQLite: CAST de texto com digitos iniciais extrai o inteiro.
+        # PostgreSQL: extrai os digitos com regexp_replace (trata nao-numericos).
+        dialect = (db.bind.dialect.name if db.bind is not None else "")
+        if dialect == "postgresql":
+            num_digit = func.regexp_replace(PedidoVenda.numero, r"\D.*", "", "g")
+            sort_attr = cast(nullif(num_digit, ""), Integer)
+        else:
+            sort_attr = cast(PedidoVenda.numero, Integer)
     elif sort == "cliente":
         sort_attr = Cliente.nome
     elif sort == "total":
@@ -247,7 +255,6 @@ def salvar_pedido(
     acao: str = Form("emitir")
 ):
     import json
-    from sqlalchemy import func
     cliente_id_int = int(cliente_id) if cliente_id else None
     if not cliente_id_int:
         return RedirectResponse(url="/pedidos/", status_code=303)
