@@ -777,52 +777,54 @@ def emitir_pedido_submit(
             )
             db.add(nfe_item)
 
-        # Criar NFSe se houver itens de serviço
-        codigos_lc116 = set()
-        for item in itens_nfse:
-            if item.produto and item.produto.codigo_lc116:
-                codigos_lc116.add(item.produto.codigo_lc116)
-        if len(codigos_lc116) > 1:
-            db.rollback()
-            request.session["error"] = f"Pedido possui itens de serviço com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura de Dourados-MS não aceita múltiplos códigos na mesma NFS-e. Remova ou separe os itens em pedidos diferentes."
-            return RedirectResponse(url=f"/nfe/emitir/pedido/{pedido_id}", status_code=303)
+        # Criar NFSe somente se houver itens de serviço no pedido
+        numero_nfse = None
+        if itens_nfse:
+            codigos_lc116 = set()
+            for item in itens_nfse:
+                if item.produto and item.produto.codigo_lc116:
+                    codigos_lc116.add(item.produto.codigo_lc116)
+            if len(codigos_lc116) > 1:
+                db.rollback()
+                request.session["error"] = f"Pedido possui itens de serviço com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura de Dourados-MS não aceita múltiplos códigos na mesma NFS-e. Remova ou separe os itens em pedidos diferentes."
+                return RedirectResponse(url=f"/nfe/emitir/pedido/{pedido_id}", status_code=303)
 
-        numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
-        empresa.ultimo_numero_nfse = int(numero_nfse)
-        valor_servicos = sum(
-            Decimal(str(item.total or item.preco_unitario or 0)) * Decimal(str(item.quantidade or 1))
-            for item in itens_nfse
-        )
-
-        iss_retido = getattr(cliente, 'iss_retido', False) or False
-        nfse = NFSe(
-            pedido_id=pedido_id,
-            numero=numero_nfse,
-            status="rascunho",
-            valor_total=valor_servicos,
-            data_emissao=now,
-            iss_retido=iss_retido,
-            aliquota_iss=empresa.aliquota_iss or 2.0,
-            aliquota_federal=empresa.aliquota_federal or 0.0,
-            aliquota_estadual=empresa.aliquota_estadual or 0.0,
-            aliquota_municipal=empresa.aliquota_municipal or 0.0,
-        )
-        db.add(nfse)
-        db.flush()
-
-        for item in itens_nfse:
-            nfse_item = NFSeItem(
-                nfse_id=nfse.id,
-                produto_id=item.produto_id,
-                variacao_id=item.variacao_id,
-                descricao=item.descricao or item.produto.nome,
-                quantidade=Decimal(str(item.quantidade or 1)),
-                valor_unitario=Decimal(str(item.preco_unitario or 0)),
-                valor_total=Decimal(str(item.total or (item.preco_unitario or 0) * (item.quantidade or 1))),
-                codigo_servico=item.produto.codigo_lc116 or "",
-                tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
+            numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
+            empresa.ultimo_numero_nfse = int(numero_nfse)
+            valor_servicos = sum(
+                Decimal(str(item.total or item.preco_unitario or 0)) * Decimal(str(item.quantidade or 1))
+                for item in itens_nfse
             )
-            db.add(nfse_item)
+
+            iss_retido = getattr(cliente, 'iss_retido', False) or False
+            nfse = NFSe(
+                pedido_id=pedido_id,
+                numero=numero_nfse,
+                status="rascunho",
+                valor_total=valor_servicos,
+                data_emissao=now,
+                iss_retido=iss_retido,
+                aliquota_iss=empresa.aliquota_iss or 2.0,
+                aliquota_federal=empresa.aliquota_federal or 0.0,
+                aliquota_estadual=empresa.aliquota_estadual or 0.0,
+                aliquota_municipal=empresa.aliquota_municipal or 0.0,
+            )
+            db.add(nfse)
+            db.flush()
+
+            for item in itens_nfse:
+                nfse_item = NFSeItem(
+                    nfse_id=nfse.id,
+                    produto_id=item.produto_id,
+                    variacao_id=item.variacao_id,
+                    descricao=item.descricao or item.produto.nome,
+                    quantidade=Decimal(str(item.quantidade or 1)),
+                    valor_unitario=Decimal(str(item.preco_unitario or 0)),
+                    valor_total=Decimal(str(item.total or (item.preco_unitario or 0) * (item.quantidade or 1))),
+                    codigo_servico=item.produto.codigo_lc116 or "",
+                    tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
+                )
+                db.add(nfse_item)
 
         db.commit()
         msg = f"Rascunho NFe #{numero_nfe} salvo! Revise antes de transmitir."
