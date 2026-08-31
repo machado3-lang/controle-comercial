@@ -19,7 +19,7 @@ import os
 import logging
 from database import get_db
 from models import Produto, Fornecedor, CategoriaProduto, PedidoVenda, MarcaProduto, ProdutoVariacao
-from models import ProdutoComposicao, Empresa
+from models import ProdutoComposicao, Empresa, Assinatura, PedidoVendaItem, PedidoConsolidadoItem
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
 
@@ -524,21 +524,75 @@ def atualizar_produto(
     return RedirectResponse(url="/produtos", status_code=303)
 
 
+def _produto_possui_vinculos(db: Session, produto: Produto) -> bool:
+    """Verifica se o produto já foi utilizado em algum documento/movimento.
+
+    Retorna True quando existe qualquer vínculo que impeça a exclusão física
+    (vendas, notas fiscais, ordens de serviço, assinaturas, movimentações de
+    estoque, composições de outros produtos ou relógios de ponto vinculados).
+    """
+    pid = produto.id
+    if db.query(Assinatura).filter(Assinatura.produto_id == pid).first():
+        return True
+    if db.query(PedidoVendaItem).filter(PedidoVendaItem.produto_id == pid).first():
+        return True
+    if db.query(PedidoConsolidadoItem).filter(PedidoConsolidadoItem.produto_id == pid).first():
+        return True
+    from models_nfe import NFeItem, NFSeItem
+    if db.query(NFeItem).filter(NFeItem.produto_id == pid).first():
+        return True
+    if db.query(NFSeItem).filter(NFSeItem.produto_id == pid).first():
+        return True
+    from models_estoque import MovimentacaoEstoque, OSPeca
+    if db.query(MovimentacaoEstoque).filter(MovimentacaoEstoque.produto_id == pid).first():
+        return True
+    if db.query(OSPeca).filter(OSPeca.produto_id == pid).first():
+        return True
+    if db.query(ProdutoComposicao).filter(ProdutoComposicao.insumo_id == pid).first():
+        return True
+    from models_relogios import RelogioPonto
+    if db.query(RelogioPonto).filter(RelogioPonto.produto_id == pid).first():
+        return True
+    return False
+
+
 @router.post("/{produto_id}/excluir")
 def excluir_produto(request: Request, produto_id: int, db: Session = Depends(get_db), senha: str = Form("")):
     if not confirma_senha_usuario(request, db, senha):
         return JSONResponse({"erro": "Senha inválida ou usuário não autorizado"}, status_code=403)
     produto = db.query(Produto).filter(Produto.id == produto_id).first()
-    if produto:
+    if not produto:
+        return JSONResponse({"erro": "Produto não encontrado"}, status_code=404)
+    if produto.situacao == "I":
+        return JSONResponse({"ok": True, "message": "Produto já está inativo."})
+
+    # Produto com estoque ou qualquer vínculo: apenas inativa (não exclui).
+    if (produto.estoque or 0) > 0 or _produto_possui_vinculos(db, produto):
         produto_nome = produto.nome
         produto.situacao = "I"
         db.commit()
         registrar_auditoria(
-            db, request.session.get("user_id"), "excluir",
+            db, request.session.get("user_id"), "inativar",
             "produto", produto_id, f"Produto: {produto_nome}",
             request.client.host if request.client else None
         )
-    return RedirectResponse(url="/produtos", status_code=303)
+        return JSONResponse({
+            "ok": True,
+            "message": "Produto possui vínculos (ou estoque) e foi apenas inativado para preservar o histórico.",
+        })
+
+    # Sem vínculos e sem estoque: exclusão física.
+    produto_nome = produto.nome
+    # Remove composições onde este produto é insumo (evita violação de FK).
+    db.query(ProdutoComposicao).filter(ProdutoComposicao.insumo_id == produto_id).delete()
+    db.delete(produto)  # cascade remove variações e composições como pai
+    db.commit()
+    registrar_auditoria(
+        db, request.session.get("user_id"), "excluir",
+        "produto", produto_id, f"Produto: {produto_nome}",
+        request.client.host if request.client else None
+    )
+    return JSONResponse({"ok": True, "message": "Produto excluído definitivamente."})
 
 
 # Rotas de categoria

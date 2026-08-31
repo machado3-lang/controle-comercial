@@ -1,7 +1,7 @@
 import logging
 import re
 from fastapi import APIRouter, Depends, Request, Form
-from fastapi.responses import RedirectResponse
+from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Empresa, Transportadora, Fornecedor
@@ -164,10 +164,17 @@ def editar_transportadora(
 @router.post("/{transportadora_id}/excluir")
 def excluir_transportadora(request: Request, transportadora_id: int, db: Session = Depends(get_db)):
     if not verificar_admin(request, db):
-        return RedirectResponse(url="/dashboard", status_code=303)
+        return JSONResponse({"erro": "Acesso negado"}, status_code=403)
     t = db.query(Transportadora).filter(Transportadora.id == transportadora_id).first()
-    if t:
-        db.delete(t)
+    if not t:
+        return JSONResponse({"erro": "Transportadora não encontrada"}, status_code=404)
+    # Transportadora vinculada a NF-e: não pode ser excluída (FK sem cascade),
+    # apenas inativa para preservar a integridade.
+    from models_nfe import NFe
+    if db.query(NFe).filter(NFe.transportadora_id == transportadora_id).first():
+        t.ativo = False
         db.commit()
-        request.session["message"] = "Transportadora excluída!"
-    return RedirectResponse(url="/transportadoras", status_code=303)
+        return JSONResponse({"ok": True, "message": "Transportadora possui NF-e vinculada e foi inativada."})
+    db.delete(t)
+    db.commit()
+    return JSONResponse({"ok": True, "redirect": "/transportadoras", "message": "Transportadora excluída."})
