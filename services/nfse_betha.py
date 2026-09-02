@@ -1611,9 +1611,9 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
             # O app armazena as datas em horario local (sem tz); interpreta
             # como o fuso da empresa, nao como UTC, para nao deslocar o dhEmi.
             raw = raw.replace(tzinfo=FUSO_LOCAL)
-        data_emissao = raw.astimezone(FUSO_LOCAL).replace(tzinfo=None)
+        data_emissao = (raw.astimezone(FUSO_LOCAL).replace(tzinfo=None) - timedelta(minutes=3))
     else:
-        data_emissao = (datetime.fromtimestamp(time.time(), tz=timezone.utc) + timedelta(hours=offset_fuso)).replace(tzinfo=None)
+        data_emissao = (datetime.fromtimestamp(time.time(), tz=timezone.utc) + timedelta(hours=offset_fuso) - timedelta(minutes=3)).replace(tzinfo=None)
 
     cod_serv = "010101"
     desc_serv = "Servicos"
@@ -1808,9 +1808,9 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
             # O app armazena as datas em horario local (sem tz); interpreta
             # como o fuso da empresa, nao como UTC, para nao deslocar o dhEmi.
             raw = raw.replace(tzinfo=FUSO_LOCAL)
-        data_emissao = raw.astimezone(FUSO_LOCAL).replace(tzinfo=None)
+        data_emissao = (raw.astimezone(FUSO_LOCAL).replace(tzinfo=None) - timedelta(minutes=3))
     else:
-        data_emissao = (datetime.fromtimestamp(time.time(), tz=timezone.utc) + timedelta(hours=offset_fuso)).replace(tzinfo=None)
+        data_emissao = (datetime.fromtimestamp(time.time(), tz=timezone.utc) + timedelta(hours=offset_fuso) - timedelta(minutes=3)).replace(tzinfo=None)
 
     cod_serv = "010101"
     desc_serv = "Servicos"
