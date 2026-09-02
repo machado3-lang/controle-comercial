@@ -245,7 +245,8 @@ document.addEventListener('DOMContentLoaded', function() {
         cepInput.addEventListener('blur', function() {
             const cep = this.value.replace(/\D/g, '');
             if (cep.length !== 8) return;
-            fetch(`/api/consultas/cep?cep=${cep}`)
+            // ViaCEP direto no navegador (o backend no Railway nao tem saida de rede)
+            fetch(`https://viacep.com.br/ws/${cep}/json/`)
                 .then(r => r.json())
                 .then(d => {
                     if (d.erro) return;
