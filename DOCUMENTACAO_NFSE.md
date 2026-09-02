@@ -158,5 +158,50 @@ A submissão vai para `POST /nfse/recebidas/{id}/gerar-conta`, que cria as
 Se uma NFSe trouxer o vencimento em tags diferentes das reconhecidas, ajuste:
 
 - `blocos_tags` em `extrair_fatura_nfse` (adicionar o nome do bloco);
-- os critérios de detecção de `numero`, `vencimento` (`'venc' in k`) e `valor`
+- os critérios de detação de `numero`, `vencimento` (`'venc' in k`) e `valor`
   (`'val' in k` ou prefixos `vd/vf/vp`).
+
+---
+
+## 8. Manutenção de CEP / IBGE do Tomador (emissão)
+
+A emissão de NFSe (Ambiente Nacional SEFIN) **rejeita com "CEP do cliente não é
+válido"** quando o CEP não bate com o município. O ponto que falta na prática é o
+**`codigo_ibge`** do tomador (cliente/fornecedor/empresa): quando ele está vazio, o
+sistema cai no fallback do município da própria empresa (Dourados) e o CEP passa a
+não bater. O formato do CEP em si (com ou sem máscara) não é o gatilho — o código de
+emissão normaliza para 8 dígitos.
+
+### Preencher em massa (`scripts/corrigir_ceps.py`)
+
+Corrige CEP (máscara `00000-000`) e preenche `codigo_ibge` em `clientes`,
+`fornecedores`, `empresa` e `transportadoras`:
+
+```powershell
+# Da máquina local (precisa de internet p/ ViaCEP + IBGE), apontando p/ o banco do Railway:
+python scripts/corrigir_ceps.py --apply --enriquecer-ibge --db "postgresql://USUARIO:SENHA@HOST:PORTA/railway?sslmode=require"
+```
+
+- Tenta primeiro o **ViaCEP** pelo CEP; se não achar (CEP geral / logradouro novo),
+  usa **cidade+estado** cruzando com a base de municípios do IBGE.
+- Idempotente: rodar de novo não duplica nem sobrescreve o que já está certo.
+- Dry-run sem `--apply` mostra o que seria alterado.
+
+### Autocomplete de CEP no cadastro (ViaCEP)
+
+O backend no Railway **não tem saída de rede** (egress bloqueado), então as rotas
+`/api/consultas/cep` e `/api/consultas/cnpj` falham. Os formulários de cliente e
+fornecedor (`templates/clientes/form.html`, `templates/fornecedores/form.html`)
+chamam o **ViaCEP direto do navegador** (`https://viacep.com.br/ws/{cep}/json/`), que
+preenche endereço e `codigo_ibge` ao sair do campo de CEP.
+
+> Atenção: qualquer lógica de enriquecer dados externos (ViaCEP, CNPJ, IBGE) que
+> rode **no servidor** vai falhar no Railway por falta de internet. Faça no browser
+> ou em script executado localmente.
+
+### Gotcha da API do IBGE
+
+No endpoint completo `GET /api/v1/localidades/municipios`, o `uf` **não** vem no
+nível superior do município — ele está aninhado em
+`microrregiao.mesorregiao.UF.sigla` (ou `regiao-imediata.regiao-intermediaria.UF.sigla`).
+Quem baixar a base para cruzar nome→IBGE precisa extrair a UF desse caminho.
