@@ -2002,9 +2002,6 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
         # Evita varrer o ADN (em homologação a nota de teste não aparece na
         # distribuição e a consulta ficaria em loop até estourar o timeout).
         if nfse_emissao_nacional() and resultado.get('xml_documento'):
-            if getattr(nfse, 'origem', None) != 'nacional':
-                nfse.origem = 'nacional'
-                db.commit()
             return {
                 'status_processamento': 'sucesso',
                 'protocolo': protocolo,
@@ -2021,9 +2018,6 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
             status = service.consultar_status(protocolo, tpAmb)
             st = status.get('status', '')
             if st == 'Processado com sucesso':
-                if nfse_emissao_nacional() and getattr(nfse, 'origem', None) != 'nacional':
-                    nfse.origem = 'nacional'
-                    db.commit()
                 return {
                     'status_processamento': 'sucesso',
                     'protocolo': protocolo,
