@@ -33,7 +33,6 @@
     <button type="submit" class="flex items-center px-3 py-2 text-sky-400 border border-sky-800/50 rounded-xl hover:bg-sky-950/30 transition text-sm"><i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Sinc.</button>
             </form>
             <button type="button" onclick="confirmCancelar({{ nfse.id }}, '{{ nfse.numero }}')" class="flex items-center px-3 py-2 text-rose-400 border border-rose-800/50 rounded-xl hover:bg-rose-950/30 transition text-sm"><i data-lucide="x-circle" class="w-4 h-4 me-1"></i> Cancelar</button>
-            <a href="https://e-gov.betha.com.br/e-nota/contribuinte/pro_cancelarnota.faces" target="_blank" class="flex items-center px-3 py-2 text-rose-400 border border-rose-800/50 rounded-xl hover:bg-rose-950/30 transition text-sm"><i data-lucide="external-link" class="w-4 h-4 me-1"></i> Portal</a>
             <a href="/nfse/{{ nfse.id }}/pdf" target="_blank" class="flex items-center px-3 py-2 text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition text-sm"><i data-lucide="file-text" class="w-4 h-4 me-1"></i> PDF</a>
             <a href="/nfse/{{ nfse.id }}/xml" target="_blank" class="flex items-center px-3 py-2 text-cyan-400 border border-cyan-800/50 rounded-xl hover:bg-cyan-950/30 transition text-sm"><i data-lucide="file-code" class="w-4 h-4 me-1"></i> XML</a>
             {% endif %}
@@ -219,7 +218,7 @@
             </div>
             <div class="modal-body">
                 <p class="text-slate-300">Transmitir a <strong>NFSe #<span id="transmitirNumero"></span></strong> para a prefeitura?</p>
-                <p class="text-sm text-slate-400 mt-2">A NFSe será enviada ao sistema da prefeitura via Betha Cloud para processamento.</p>
+                <p class="text-sm text-slate-400 mt-2">A NFSe será enviada ao Portal Nacional da NFSe (Ambiente Nacional / SEFIN) para processamento.</p>
             </div>
             <div class="modal-footer border-t border-slate-800/50">
                 <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Voltar</button>
@@ -266,7 +265,7 @@
             </div>
             <div class="modal-body">
                 <p class="text-slate-300">Reenviar a <strong>NFSe #<span id="reenviarNumero"></span></strong> para a prefeitura?</p>
-                <p class="text-sm text-slate-400 mt-2">A NFSe será reenviada ao sistema da prefeitura via Betha Cloud para processamento.</p>
+                <p class="text-sm text-slate-400 mt-2">A NFSe será reenviada ao Portal Nacional da NFSe (Ambiente Nacional / SEFIN) para processamento.</p>
             </div>
             <div class="modal-footer border-t border-slate-800/50">
                 <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Voltar</button>

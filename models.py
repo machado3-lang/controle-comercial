@@ -710,6 +710,19 @@ class Empresa(Base):
     cert_base64 = deferred(Column(Text, nullable=True))  # DEPRECATED: use cert_store.py instead
     cert_id = Column(Integer, nullable=True)   # ID do certificado no armazenamento seguro
     cert_validade = Column(Date, nullable=True)  # Data de validade do certificado
+    # --- Configuração de emissão NFS-e no Ambiente Nacional (SEFIN) ---
+    nfse_emissao_ambiente = Column(String(20), nullable=False, default="producao")  # 'producao' | 'homologacao'
+    nfse_url_producao = Column(String(500), nullable=True)   # base SEFIN produção (ex.: https://sefin.nfse.gov.br/SefinNacional)
+    nfse_url_homologacao = Column(String(500), nullable=True)  # base SEFIN restrita (ex.: https://sefin.producaorestrita.nfse.gov.br/SefinNacional)
+    nfse_namespace = Column(String(200), nullable=True, default="http://www.sped.fazenda.gov.br/nfse")  # xmlns do DPS/Evento
+    nfse_ver_aplic = Column(String(100), nullable=True)  # identificador do sistema no Ambiente Nacional (verAplic)
+    # Regime de tributação do prestador (Simples Nacional) — usado no DPS/Evento
+    # nacional. Necessário porque o SEFIN valida contra o cadastro do Simples
+    # Nacional (E0160/E0166).
+    op_simp_nac = Column(Integer, nullable=False, default=1)  # 1=Não Optante, 2=MEI, 3=ME/EPP
+    reg_esp_trib = Column(Integer, nullable=False, default=0)  # 0=Nenhum, 1..9
+    reg_ap_trib_sn = Column(Integer, nullable=True, default=1)  # apuração tributos SN p/ optante ME/EPP
+    p_tot_trib_sn = Column(Float, nullable=True, default=0.0)  # % aprox. total trib. SN (Lei 12.741)
     nfe_ultnsu = Column(String(20), nullable=True)  # Último NSU consultado na SEFAZ
     cfop_padrao = Column(String(4), nullable=False, default="5102")
     crt = Column(Integer, nullable=False, default=3)  # Código Regime Tributário: 1=SN, 2=SN Excesso, 3=Normal, 4=MEI

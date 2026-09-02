@@ -2,6 +2,7 @@
 import json
 import re
 import logging
+import xml.etree.ElementTree as ET
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date
 from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException, BackgroundTasks
@@ -12,7 +13,7 @@ from database import get_db
 from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ProdutoVariacao, ProdutoComposicao, ContaReceber, ContaPagar, StatusConta, StatusPedido, OrdemServico, Assinatura, Fornecedor
 from models_nfe import NFSe, NFSeItem, NFSeRecebida
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
-from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional
+from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional, NFSE_NACIONAL_NS
 from services.nfe_notaas import explodir_itens_consolidacao
 
 logger = logging.getLogger(__name__)
@@ -685,6 +686,18 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
         except Exception:
             pass
 
+        # XML nacional autorizado (emissão síncrona SEFIN) — fonte do DANFSe.
+        # Em homologação o ADN não disponibiliza a nota de teste, então usamos
+        # o próprio retorno do envio para gerar o DANFSe imediatamente.
+        try:
+            xml_doc = resultado.get('xml_documento')
+            chave = (resultado.get('codigo_verificacao')
+                     or nfse.chave_acesso or nfse.codigo_verificacao)
+            if xml_doc and chave:
+                _salvar_xml_nacional_e_danfse(nfse, db, chave, xml=xml_doc)
+        except Exception:
+            logger.warning("Falha ao gerar DANFSe a partir do XML síncrono", exc_info=True)
+
         db.commit()
 
         # NF emitida => pedido FATURADO (amarra o estado fiscal do pedido à
@@ -1250,24 +1263,108 @@ def _salvar_xml_arquivo(nfse: NFSe, xml: str) -> str | None:
         return None
 
 
+def _injetar_valores_issqn(xml: str, nfse: NFSe) -> str:
+    """Em homologação o SEFIN pode não devolver o ISSQN apurado (vISSQN), a
+    alíquota aplicada (pAliqAplic) nem os Totais Aproximados dos Tributos
+    (vTotTribFed/Est/Mun) — ele costuma remover o grupo totTrib da resposta.
+    Como temos a base (valor do serviço) e os percentuais de Config.NFSe,
+    injetamos esses valores no XML para que o DANFSe os exiba. Não altera nada
+    se já vierem preenchidos (ambiente de produção)."""
+    if not xml:
+        return xml
+    try:
+        vserv = float(nfse.valor_total or 0)
+        aliq = float(nfse.aliquota_iss if nfse.aliquota_iss is not None else 0) or 0.0
+        ali_fed = float(nfse.aliquota_federal or 0) or 0.0
+        ali_est = float(nfse.aliquota_estadual or 0) or 0.0
+        ali_mun = float(nfse.aliquota_municipal or 0) or 0.0
+        if vserv <= 0:
+            return xml
+        ET.register_namespace('', NFSE_NACIONAL_NS)
+        root = ET.fromstring(xml)
+        NS = NFSE_NACIONAL_NS
+        D = f".//{{{NS}}}"  # busca por descendente (o DPS pode estar aninhado)
+
+        # ISSQN apurado + alíquota aplicada em infNFSe/valores
+        inf = root.find(f"{D}infNFSe")
+        if inf is not None:
+            valores = inf.find(f"{{{NS}}}valores")
+            if valores is None:
+                valores = ET.SubElement(inf, f"{{{NS}}}valores")
+            if aliq > 0:
+                vissqn = vserv * aliq / 100.0
+                if valores.find(f"{{{NS}}}vISSQN") is None:
+                    ET.SubElement(valores, f"{{{NS}}}vISSQN").text = f"{vissqn:.2f}"
+                if valores.find(f"{{{NS}}}pAliqAplic") is None:
+                    ET.SubElement(valores, f"{{{NS}}}pAliqAplic").text = f"{aliq:.2f}"
+
+        # Totais Aproximados dos Tributos no DPS (donde o DANFSe os lê)
+        dps = root.find(f"{D}DPS")
+        if dps is not None and (ali_fed > 0 or ali_est > 0 or ali_mun > 0):
+            tot = dps.find(f"{{{NS}}}totTrib")
+            if tot is None:
+                tot = ET.SubElement(dps, f"{{{NS}}}totTrib")
+            if tot.find(f"{{{NS}}}vTotTribFed") is None:
+                v_fed = vserv * ali_fed / 100.0
+                v_est = vserv * ali_est / 100.0
+                v_mun = vserv * ali_mun / 100.0
+                ET.SubElement(tot, f"{{{NS}}}vTotTribFed").text = f"{v_fed:.2f}"
+                ET.SubElement(tot, f"{{{NS}}}vTotTribEst").text = f"{v_est:.2f}"
+                ET.SubElement(tot, f"{{{NS}}}vTotTribMun").text = f"{v_mun:.2f}"
+                ptrib = ET.SubElement(tot, f"{{{NS}}}pTotTrib")
+                ET.SubElement(ptrib, f"{{{NS}}}pTotTribFed").text = f"{ali_fed:.2f}"
+                ET.SubElement(ptrib, f"{{{NS}}}pTotTribEst").text = f"{ali_est:.2f}"
+                ET.SubElement(ptrib, f"{{{NS}}}pTotTribMun").text = f"{ali_mun:.2f}"
+
+        return ET.tostring(root, encoding='unicode')
+    except Exception:
+        logger.warning("Falha ao injetar valores no XML nacional", exc_info=True)
+        return xml
+
+
+
 def _salvar_xml_nacional_e_danfse(nfse: NFSe, db: Session, chave: str,
-                                  cancelada: bool = False) -> bool:
+                                  cancelada: bool = False,
+                                  xml: str = None) -> bool:
     """Tenta obter o XML nacional (Ambiente Nacional) pela chave, armazena em
     nfse.xml_text/xml_path e gera o DANFSe padronizado. Retorna True se obteve o
     XML nacional (e o persiste); False caso contrário (ex.: ADN ainda não
-    propagou). Não faz commit — o chamador deve commitar."""
+    propagou). Não faz commit — o chamador deve commitar.
+
+    Em homologação (e emissão síncrona SEFIN) o XML autorizado já vem na própria
+    resposta do envio: passe-o em `xml` para evitar a consulta ao ADN, que não
+    disponibiliza a nota de teste na distribuição DF-e."""
     from services.nfse_pdf import gerar_danfse_pdf, is_xml_nfse_nacional
-    if not chave:
+    if not chave and not xml:
         return False
-    try:
-        empresa = db.query(Empresa).first()
-        svc = BethaNfseService(empresa=empresa)
-        xml = svc.obter_xml_nacional_por_chave(chave, tentativas=3, intervalo=15)
-    except Exception as e:
-        logger.warning(f"Erro ao buscar XML nacional no ADN: {e}")
+
+    def _tem_inf_nfse(x: str) -> bool:
+        if not x:
+            return False
+        try:
+            root = ET.fromstring(x)
+        except Exception:
+            return False
+        return root.find(f".//{{{NFSE_NACIONAL_NS}}}infNFSe") is not None
+
+    # XML síncrono fornecido (emissão SEFIN): use-o direto. Em homologação o ADN
+    # não disponibiliza a nota de teste, então essa é a única fonte viável. Basta
+    # conter o infNFSe (o DPS é opcional para a geração do DANFSe).
+    xml_sincrono = bool(xml and (is_xml_nfse_nacional(xml) or _tem_inf_nfse(xml)))
+    if not xml_sincrono:
+        if not chave:
+            return False
+        try:
+            empresa = db.query(Empresa).first()
+            svc = BethaNfseService(empresa=empresa)
+            xml = svc.obter_xml_nacional_por_chave(chave, tentativas=3, intervalo=15)
+        except Exception as e:
+            logger.warning(f"Erro ao buscar XML nacional no ADN: {e}")
+            return False
+    if not (xml and (is_xml_nfse_nacional(xml) or _tem_inf_nfse(xml))):
         return False
-    if not (xml and is_xml_nfse_nacional(xml)):
-        return False
+    # Homologação: garante que o ISSQN apurado e a alíquota apareçam no DANFSe.
+    xml = _injetar_valores_issqn(xml, nfse)
     nfse.xml_text = xml
     nfse.xml_path = _salvar_xml_arquivo(nfse, xml)
     try:
@@ -1591,12 +1688,16 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
             nfse.mensagem_retorno = None
             # XML oficial deve ser o da NFS-e Nacional (Ambiente Nacional), fonte
             # exclusiva do DANFSe padronizado. Nunca usamos o XML da Betha.
+            # Emissão síncrona SEFIN já devolve o XML autorizado (xml_documento);
+            # usa-o direto para não depender do ADN (que em homologação não
+            # disponibiliza a nota de teste na distribuição DF-e).
+            xml_doc = resultado.get('xml_documento')
             chave = (resultado.get('codigo_verificacao')
                      or nfse.chave_acesso or nfse.codigo_verificacao)
-            if not _salvar_xml_nacional_e_danfse(nfse, db, chave):
-                # ADN ainda não propagou: mantém a DPS como referência e gera PDF
-                # proprietário temporário. O XML nacional poderá ser obtido depois
-                # pela sincronização ou rota /pdf (que persiste na base).
+            if not _salvar_xml_nacional_e_danfse(nfse, db, chave, xml=xml_doc):
+                # ADN ainda não propagou (ou sem XML síncrono): mantém a DPS como
+                # referência e gera PDF proprietário temporário. O XML nacional
+                # poderá ser obtido depois pela sincronização ou rota /pdf.
                 from services.nfse_betha import gerar_dps_xml_nfse
                 from services.nfse_pdf import gerar_pdf_nfse
                 numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
@@ -1718,7 +1819,10 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
             nfse.mensagem_retorno = None
 
             chave = nfse.chave_acesso or nfse.codigo_verificacao
-            if not _salvar_xml_nacional_e_danfse(nfse, db, chave):
+            # Se já temos o XML nacional salvo (emissão síncrona), reaproveita-o
+            # em vez de consultar o ADN (que em homologação não tem a nota de teste).
+            xml_ja = nfse.xml_text if is_xml_nfse_nacional(nfse.xml_text or '') else None
+            if not _salvar_xml_nacional_e_danfse(nfse, db, chave, xml=xml_ja):
                 # ADN ainda não propagou: mantém DPS como referência e PDF proprietário.
                 from services.nfse_betha import gerar_dps_xml_nfse
                 from services.nfse_pdf import gerar_pdf_nfse

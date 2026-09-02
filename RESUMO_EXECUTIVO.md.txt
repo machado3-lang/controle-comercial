@@ -1,0 +1,35 @@
+Resumo Executivo — Emissão NFS-e Ambiente Nacional (SEFIN)
+1) Objetivo principal
+Migrar a emissão de NFS-e de Betha (Dourados-MS) para o Ambiente Nacional / SEFIN, que desligou o portal Betha em 01/09/2026. O sistema deve emitir e cancelar NFS-e nacionais sem quebrar o que já existe (Betha legado + leitura ADN).
+2) O que já foi implementado / decidido
+- Descoberta da arquitetura (via swagger com o certificado):
+- SEFIN = emissão/cancelamento (sefin.nfse.gov.br/SefinNacional). Emissão é síncrona: POST /SefinNacional/nfse com {"dpsXmlGZipB64":"<gzip+base64 do XML DPS>"} e responde já com chaveAcesso + nfseXmlGZipB64.
+- ADN = consulta/distribuição (já implementado antes).
+- Autenticação mTLS com o certificado A1 do emissor (sem token extra aparente).
+- Namespace oficial do XML: http://www.sped.fazenda.gov.br/nfse.
+- Código em services/nfse_betha.py:
+- Roteamento por NFSE_EMISSAO (betha | nacional).
+- enviar_dps_nacional → POST {SEFIN}/nfse; cancelar_nfse_nacional → POST {SEFIN}/nfse/{chave}/eventos; consultar_status_nacional busca a NFS-e pela chave.
+- _gzip_b64_xml garante declaração <?xml encoding="UTF-8"?>.
+- infDPS com Id maiúsculo; nDPS sem zeros à esquerda; cNBS com 9 dígitos; verAplic curto.
+- Em modo nacional, o serviço carrega automaticamente o certificado cadastrado em Config.NFSe (mantém fallback de arquivo).
+- Configuração via UI: adicionados campos no modelo Empresa (nfse_emissao_ambiente, nfse_url_producao, nfse_url_homologacao, nfse_namespace, nfse_ver_aplic), migração Alembic c3d4e5f6a7b8 aplicada, formulário configuracoes.py e aba Config. NFSe no template.
+- Teste em homologação (restrita) alcançável do sandbox: validamos o pipeline inteiro; erros corrigidos: E1229 (UTF-8), identificador infDPS[Id], tamanho de verAplic, padrão de nDPS e cNBS.
+3) Estado atual do código
+- Funcional: handshake mTLS, endpoint SEFIN, namespace, encoding, Id, nDPS, cNBS — todos validados contra sefin.producaorestrita.nfse.gov.br.
+- Bloqueador atual: o corpo do DPS não bate com o schema oficial SPED. O SEFIN rejeita o bloco <tribMun> por ordem de elementos e por faltar <tribISSQN> obrigatório. Correção necessária (do XSD tiposComplexos_v1.01.xsd, tipo TCTribMunicipal): tribMun deve conter, nesta ordem:
+<tribMun>
+  <tribISSQN>1</tribISSQN>        <!-- obrigatório: 1=tributável -->
+  <tpRetISSQN>1</tpRetISSQN>       <!-- obrigatório: 1=não retido -->
+  <pAliq>2.00</pAliq>             <!-- opcional, SÓ DEPOIS de tpRetISSQN -->
+</tribMun>
+(atualmente o código gera <pAliq> antes de <tpRetISSQN> e não gera <tribISSQN>).
+- Arquivos de schema disponíveis em notas/ (e extraídos em notas/esquemas_extracted/): DPS_v1.01.xsd, NFSe_v1.01.xsd, evento_v1.01.xsd, pedRegEvento_v1.01.xsd, tiposComplexos_v1.01.xsd, tiposSimples_v1.01.xsd, tiposEventos_v1.01.xsd, anexo_i-...-snnfse-prodrest-v1-01.xlsx.
+- Pendente de validação: cancelamento (XML de evento ainda não testado contra evento_v1.01.xsd/pedRegEvento_v1.01.xsd); verAplic definitivo; certificado do banco (neste sandbox o cert do DB estava corrompido — usamos certs/certificado.pfx com senha 008853).
+4) Próximos passos exatos
+1. Reescrever a geração do DPS (em gerar_dps_xml/gerar_dps_xml_nfse) para o layout SPED conforme o XSD — foco imediato: mover <tribISSQN> para antes e <pAliq> para depois de <tpRetISSQN> dentro de <tribMun> (e confirmar, no TCInfDPS, que tribMun está no lugar certo; o validador aceitou onde está, então provavelmente só a ordem interna precisa de ajuste).
+2. Testar em homologação a partir do sandbox (host de restrita alcançável): com NFSE_EMISSAO=nacional + NACIONAL_NFSE_URL=https://sefin.producaorestrita.nfse.gov.br/SefinNacional, emitir uma nota de teste e iterar até chaveAcesso + nfseXmlGZipB64 serem retornados.
+3. Validar o cancelamento: montar o evento conforme pedRegEvento_v1.01.xsd/evento_v1.01.xsd e testar POST /nfse/{chave}/eventos em restrita.
+4. Configurar em Config.NFSe (URL deve terminar em /SefinNacional; exemplo já corrigido no banco de teste) e definir verAplic oficial.
+5. Virar produção: após homologação OK, NFSE_EMISSAO=nacional no .env (manter betha até então) e apontar NACIONAL_NFSE_URL para https://sefin.nfse.gov.br/SefinNacional.
+Nota: durante esta sessão removi acidentalmente scripts em scripts/debug/ (não meus); restaurei todos via git checkout -- scripts/debug (23 arquivos, status limpo).

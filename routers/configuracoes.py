@@ -107,6 +107,15 @@ async def salvar_configuracoes(
     crt: int = Form(3),
     ultimo_numero_nfse: int = Form(0),
     fuso_horario: int = Form(-4),
+    nfse_emissao_ambiente: str = Form("producao"),
+    nfse_url_producao: str = Form(""),
+    nfse_url_homologacao: str = Form(""),
+    nfse_namespace: str = Form(""),
+    nfse_ver_aplic: str = Form(""),
+    op_simp_nac: int = Form(1),
+    reg_esp_trib: int = Form(0),
+    reg_ap_trib_sn: int = Form(1),
+    p_tot_trib_sn: float = Form(0.0),
 ):
     # CSRF already validated by middleware
     if not verificar_admin(request, db):
@@ -169,6 +178,15 @@ async def salvar_configuracoes(
         empresa.crt = crt
         empresa.ultimo_numero_nfse = ultimo_numero_nfse
         empresa.fuso_horario = fuso_horario
+        empresa.nfse_emissao_ambiente = (nfse_emissao_ambiente or "producao")
+        empresa.nfse_url_producao = nfse_url_producao or None
+        empresa.nfse_url_homologacao = nfse_url_homologacao or None
+        empresa.nfse_namespace = nfse_namespace or None
+        empresa.nfse_ver_aplic = nfse_ver_aplic or None
+        empresa.op_simp_nac = op_simp_nac
+        empresa.reg_esp_trib = reg_esp_trib
+        empresa.reg_ap_trib_sn = reg_ap_trib_sn
+        empresa.p_tot_trib_sn = p_tot_trib_sn
     else:
         empresa = Empresa(
             razao_social=razao_social, nome_fantasia=nome_fantasia,
@@ -198,6 +216,15 @@ async def salvar_configuracoes(
             crt=crt,
             ultimo_numero_nfse=ultimo_numero_nfse,
             fuso_horario=fuso_horario,
+            nfse_emissao_ambiente=(nfse_emissao_ambiente or "producao"),
+            nfse_url_producao=nfse_url_producao or None,
+            nfse_url_homologacao=nfse_url_homologacao or None,
+            nfse_namespace=nfse_namespace or None,
+            nfse_ver_aplic=nfse_ver_aplic or None,
+            op_simp_nac=op_simp_nac,
+            reg_esp_trib=reg_esp_trib,
+            reg_ap_trib_sn=reg_ap_trib_sn,
+            p_tot_trib_sn=p_tot_trib_sn,
         )
         db.add(empresa)
 

@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # NFSe Rest
     BETHA_NFSE_REST_URL: str = "https://nota-eletronica.betha.cloud/api/v1/nfse"
     
+    # NFSe emissão
+    NFSE_EMISSAO: str = "nacional"
+    
     # ADN (Ambiente Nacional)
     ADN_NFSE_URL: str = "https://sefin.nfse.gov.br/SefinNacional"
     ADN_DANFSE_URL: str = "https://adn.nfse.gov.br/danfse"

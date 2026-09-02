@@ -13,6 +13,7 @@ import os
 import logging
 import warnings
 import tempfile
+import time
 from typing import Optional
 from requests import Session
 from requests.auth import HTTPBasicAuth
@@ -38,6 +39,90 @@ ADN_DFE_URL = os.getenv('ADN_DFE_URL', 'https://adn.nfse.gov.br/contribuintes/df
 # Portal Nacional da NFS-e (consulta por chave de acesso; exige mTLS)
 PORTAL_NFSE_URL = os.getenv('PORTAL_NFSE_URL', 'https://nfse.gov.br')
 
+# ---------------------------------------------------------------------------
+# Ambiente Nacional (Emissor Nacional / webservice empresarial)
+# Migração Betha -> Nacional (Dourados-MS manteve o prazo de 01/09/2026).
+# ATENÇÃO: os valores oficiais (URL, namespace, operações, token) devem ser
+# confirmados no manual do Ambiente Nacional e preenchidos no .env. Enquanto
+# NFSE_EMISSAO != 'nacional', todo este bloco é ignorado (mantém-se o Betha).
+# ---------------------------------------------------------------------------
+NACIONAL_NFSE_URL = os.getenv('NACIONAL_NFSE_URL', 'https://sefin.nfse.gov.br/SefinNacional')  # base SEFIN (emissão)
+NACIONAL_DPS_NS = os.getenv('NACIONAL_DPS_NS', 'http://www.sped.fazenda.gov.br/nfse')  # namespace do XML DPS/Evento
+NACIONAL_OP_ENVIO = os.getenv('NACIONAL_OP_ENVIO', 'RecepcionarDps')
+NACIONAL_OP_STATUS = os.getenv('NACIONAL_OP_STATUS', 'ConsultarStatusDps')
+NACIONAL_OP_CANCELA = os.getenv('NACIONAL_OP_CANCELA', 'RecepcionarEventoCancelamentoEnvio')
+NACIONAL_VER_APPLIC = os.getenv('NACIONAL_VER_APPLIC', 'fly_WS_1.1.0')
+NACIONAL_DPS_VERSAO = os.getenv('NACIONAL_DPS_VERSAO', '1.01')
+NACIONAL_TOKEN = os.getenv('NACIONAL_TOKEN', '')               # opcional (mTLS costuma bastar)
+NFSE_EMISSAO = os.getenv('NFSE_EMISSAO', 'betha').strip().lower()
+
+
+def nfse_emissao_nacional() -> bool:
+    return NFSE_EMISSAO == 'nacional'
+
+
+def nfse_tp_amb() -> int:
+    """Retorna o tpAmb efetivo (1=produção, 2=homologação) com base na
+    configuração da empresa (nfse_emissao_ambiente) e no modo de emissão.
+    No modo Betha a homologação está suspensa, então sempre 1."""
+    if not nfse_emissao_nacional():
+        return 1
+    return _nacional_cfg()['tpAmb']
+
+
+def _gzip_b64_xml(xml: str) -> str:
+    """Compacta o XML (GZip) e codifica em base64, conforme exigido pelo
+    Ambiente Nacional (dpsXmlGZipB64 / pedidoRegistroEventoXmlGZipB64).
+    Garante a declaracao <?xml ... encoding="UTF-8"?> (exigida pelo SEFIN)."""
+    import gzip, base64
+    stripped = xml.lstrip()
+    if not stripped.startswith('<?xml'):
+        xml = '<?xml version="1.0" encoding="UTF-8"?>\n' + stripped
+    return base64.b64encode(gzip.compress(xml.encode('utf-8'))).decode('ascii')
+
+
+def _nacional_cfg() -> dict:
+    """Lê a configuração de emissão nacional (SEFIN) da empresa cadastrada no
+    sistema (Configurações -> Config. NFSe), com fallback para constantes/.env.
+    Retorna url base, namespace do XML, verAplic e tpAmb (1=prod, 2=homolog)."""
+    cfg = {
+        'url': NACIONAL_NFSE_URL,
+        'ns': NACIONAL_DPS_NS,
+        'ver': NACIONAL_VER_APPLIC,
+        'tpAmb': 1,
+    }
+    try:
+        from database import SessionLocal
+        from models import Empresa
+        db = SessionLocal()
+        try:
+            emp = db.query(Empresa).first()
+        finally:
+            db.close()
+        if emp:
+            amb = (getattr(emp, 'nfse_emissao_ambiente', 'producao') or 'producao').lower()
+            cfg['tpAmb'] = 2 if amb == 'homologacao' else 1
+            cfg['url'] = (emp.nfse_url_homologacao if amb == 'homologacao' else emp.nfse_url_producao) or cfg['url']
+            if emp.nfse_namespace:
+                cfg['ns'] = emp.nfse_namespace
+            if emp.nfse_ver_aplic:
+                cfg['ver'] = emp.nfse_ver_aplic
+    except Exception as e:
+        logger.warning(f"Não foi possível ler config nacional da empresa: {e}")
+    return cfg
+
+
+def _dps_xmlns() -> str:
+    if not nfse_emissao_nacional():
+        return 'http://www.betha.com.br/e-nota-dps'
+    return _nacional_cfg()['ns']
+
+
+def _dps_ver_aplic() -> str:
+    if not nfse_emissao_nacional():
+        return 'fly_WS_1.1.0'
+    return _nacional_cfg()['ver']
+
 # Cache (por processo) do último NSU visto na distribuição DF-e do ADN.
 # Permite varredura incremental — notas recém-autorizadas têm NSU recente,
 # então não é preciso varrer desde o NSU 0 a cada busca.
@@ -52,7 +137,24 @@ class BethaNfseService:
         self._temp_pfx_path = None
         if empresa:
             self.load_cert_from_empresa(empresa)
-        if not self.usuario or not self.senha:
+        elif nfse_emissao_nacional():
+            # Em modo nacional, usa o certificado cadastrado no sistema
+            # (Configurações -> Config. NFSe / certificado A1 da empresa).
+            try:
+                from database import SessionLocal
+                from models import Empresa
+                db_s = SessionLocal()
+                try:
+                    emp = db_s.query(Empresa).first()
+                    if emp:
+                        # Mantém a sessão aberta: load_cert_from_empresa pode acessar
+                        # atributos deferred (ex.: cert_base64) do empresa.
+                        self.load_cert_from_empresa(emp)
+                finally:
+                    db_s.close()
+            except Exception as e:
+                logger.warning(f"Não foi possível carregar certificado da empresa para modo nacional: {e}")
+        if NFSE_EMISSAO == 'betha' and (not self.usuario or not self.senha):
             raise NFSeBethaError("Credenciais Betha não configuradas no .env")
 
     def load_cert_from_empresa(self, empresa):
@@ -114,6 +216,240 @@ class BethaNfseService:
         session.auth = HTTPBasicAuth(self.usuario, self.senha)
         return session
 
+    # ------------------------------------------------------------------
+    # Caminho NACIONAL (Emissor Nacional / webservice empresarial)
+    # Reutiliza o DPS já gerado em layout nacional; troca apenas destino,
+    # namespace, autenticação (mTLS) e nome de operação.
+    # ------------------------------------------------------------------
+    def _is_nacional(self) -> bool:
+        return nfse_emissao_nacional()
+
+    def _get_session_nacional(self) -> Session:
+        """Sessão para o Ambiente Nacional: mTLS com o certificado do emissor
+        (sem HTTP Basic Auth). Token opcional via NACIONAL_TOKEN."""
+        session = Session()
+        session.verify = False
+        if os.path.exists(self.cert_path):
+            pem_path = self._get_pem_combined()
+            session.cert = pem_path
+        if NACIONAL_TOKEN:
+            session.headers.update({'Authorization': f'Bearer {NACIONAL_TOKEN}'})
+        return session
+
+    @staticmethod
+    def _parse_sefin_nfse(resp_json: dict) -> dict:
+        """Interpreta a resposta JSON síncrona de POST /nfse (SEFIN).
+        Sucesso: traz chaveAcesso + nfseXmlGZipB64 (NFS-e já gerada).
+        Erro: traz 'erros' ([{codigo, descricao, complemento}])."""
+        if not isinstance(resp_json, dict):
+            return {'protocolo': None, 'erros': [{'mensagem': str(resp_json)[:300]}]}
+        if resp_json.get('erros'):
+            return {'protocolo': None, 'erros': [
+                {'codigo': e.get('codigo', 'N/A'), 'mensagem': e.get('descricao', '')}
+                for e in resp_json['erros']
+            ]}
+        import re, gzip, base64
+        chave = resp_json.get('chaveAcesso')
+        nfse_b64 = resp_json.get('nfseXmlGZipB64')
+        xml = None
+        numero = None
+        if nfse_b64:
+            try:
+                xml = gzip.decompress(base64.b64decode(nfse_b64)).decode('utf-8')
+                m = (re.search(r'<[^:>]*:?numeroNfse[^>]*>([^<]*)<', xml)
+                     or re.search(r'<[^:>]*:?nNFSe[^>]*>([^<]*)<', xml))
+                numero = m.group(1).strip() if m else None
+            except Exception:
+                pass
+        return {
+            'protocolo': chave,
+            'chave_acesso': chave,
+            'xml_documento': xml,
+            'numero_nfse': numero,
+            'status': 'sucesso',
+        }
+
+    def _assinar_xml(self, xml: str) -> str:
+        """Assina um documento XML (XML-DSig enveloped, rsa-sha256) conforme exigido
+        pelo SEFIN para submissão via Web Service (E0717). A assinatura é inserida
+        como último filho do elemento raiz, referenciando o primeiro atributo Id
+        encontrado (infDPS, infPedReg, etc.). Emitida sem prefixo de namespace."""
+        from lxml import etree
+        from signxml import XMLSigner, methods
+        from cryptography.hazmat.primitives.serialization import pkcs12, Encoding
+        import re
+        m = re.search(r'\sId="([^"]+)"', xml)
+        if not m:
+            raise NFSeBethaError("Não foi possível localizar o Id do documento para assinar")
+        ref_id = m.group(1)
+        with open(self.cert_path, 'rb') as f:
+            pfx_data = f.read()
+        private_key, cert, _ = pkcs12.load_key_and_certificates(
+            pfx_data, password=self.cert_password.encode() if self.cert_password else None)
+        cert_pem = cert.public_bytes(Encoding.PEM).decode()
+        root = etree.fromstring(xml.encode('utf-8'))
+        signer = XMLSigner(method=methods.enveloped, signature_algorithm='rsa-sha256',
+                           digest_algorithm='sha256',
+                           c14n_algorithm='http://www.w3.org/2001/10/xml-exc-c14n#')
+        # SEFIN rejeita prefixos de namespace (E1228): emitir a assinatura sem prefixo,
+        # usando o namespace ds como default no escopo do <Signature>.
+        signer.namespaces = {None: 'http://www.w3.org/2000/09/xmldsig#'}
+        signed = signer.sign(root, key=private_key, cert=cert_pem, reference_uri='#'+ref_id)
+        return etree.tostring(signed, encoding='unicode', pretty_print=False)
+
+    def _assinar_dps(self, dps_xml: str) -> str:
+        """Compatibilidade: assina o DPS (delega em _assinar_xml)."""
+        return self._assinar_xml(dps_xml)
+
+    def enviar_dps_nacional(self, dps_xml: str, tpAmb: int = 1) -> dict:
+        """Emissão síncrona no SEFIN Nacional (REST): POST /SefinNacional/nfse com
+        {'dpsXmlGZipB64': '<gzip base64 do XML DPS>'}. Resposta já traz a NFS-e
+        (nfseXmlGZipB64) e a chaveAcesso. Autenticação mTLS."""
+        import json
+        cfg = _nacional_cfg()
+        if not cfg['url']:
+            raise NFSeBethaError("URL do SEFIN Nacional não configurada (Config. NFSe ou NACIONAL_NFSE_URL)")
+        logger.info(f"Enviando DPS para SEFIN Nacional (tpAmb={tpAmb})...")
+        session = self._get_session_nacional()
+        dps_xml = self._assinar_dps(dps_xml)
+        payload = {"dpsXmlGZipB64": _gzip_b64_xml(dps_xml)}
+        url = f"{cfg['url'].rstrip('/')}/nfse"
+        logger.info(f"URL: {url}")
+        try:
+            response = session.post(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={'Content-Type': 'application/json; charset=utf-8'},
+                timeout=60,
+            )
+            logger.info(f"Response HTTP {response.status_code}")
+            if response.status_code >= 400:
+                body_err = response.text[:1500]
+                logger.error(f"Erro HTTP {response.status_code} do SEFIN: {body_err}")
+                raise NFSeBethaError(f"Erro HTTP {response.status_code} do SEFIN: {body_err}")
+            response.raise_for_status()
+            logger.info(f"HTTP {response.status_code}, raw:\n{response.text[:2000]}")
+            return self._parse_sefin_nfse(response.json())
+        except NFSeBethaError:
+            raise
+        except Exception as e:
+            logger.error(f"Erro emissão SEFIN: {e}")
+            raise NFSeBethaError(f"Erro emissão SEFIN: {e}")
+
+    def consultar_status_nacional(self, protocolo: str, tpAmb: int = 1) -> dict:
+        """No Ambiente Nacional não há 'consultar status' SOAP: após a recepção, a
+        NFS-e é obtida pela distribuição. Usa a chave (protocolo) para buscar o XML
+        nacional e extrair número/chave. Retorna 'processando' se indisponível
+        (o chamador deve repetir)."""
+        import re
+        logger.info(f"Consultando NFS-e nacional pela chave {str(protocolo)[:20]}...")
+        if not protocolo:
+            return {'status': 'processando', 'erros': []}
+        try:
+            xml = self.obter_xml_nacional_por_chave(protocolo)
+        except Exception as e:
+            logger.warning(f"Falha ao obter XML nacional: {e}")
+            return {'status': 'processando', 'erros': []}
+        if not xml:
+            return {'status': 'processando', 'erros': []}
+        m_num = (re.search(r'<[^:>]*:?numeroNfse[^>]*>([^<]*)<', xml)
+                 or re.search(r'<[^:>]*:?nNFSe[^>]*>([^<]*)<', xml))
+        m_chave = re.search(r'<[^:>]*:?chaveAcesso[^>]*>([^<]*)<', xml)
+        numero = m_num.group(1).strip() if m_num else None
+        chave = m_chave.group(1).strip() if m_chave else protocolo
+        if numero:
+            return {
+                'status': 'Processado com sucesso',
+                'numero_nfse': numero,
+                'chave_acesso': chave,
+                'xml_documento': xml,
+            }
+        return {'status': 'processando', 'erros': []}
+
+    def cancelar_nfse_nacional(self, numero_nfse: str, tpAmb: int = 1,
+                               dak_empresa=None,
+                               motivo: str = "Cancelamento solicitado",
+                               chave_acesso: str = None,
+                               protocolo_dps: str = None) -> dict:
+        """Cancela NFS-e no SEFIN Nacional: o evento de cancelamento é recebido via
+        POST /SefinNacional/nfse/{chaveAcesso}/eventos (pedidoRegistroEventoXmlGZipB64),
+        gzip+base64, autenticado por mTLS."""
+        import re, json
+        from datetime import datetime, timezone, timedelta
+        from database import SessionLocal
+        from models import Empresa
+
+        logger.info(f"Cancelando NFS-e {numero_nfse} no Ambiente Nacional via evento...")
+        if not chave_acesso:
+            raise NFSeBethaError("chave_acesso é obrigatória para cancelamento nacional")
+        cfg = _nacional_cfg()
+        if not cfg['url']:
+            raise NFSeBethaError("URL do SEFIN Nacional não configurada (Config. NFSe ou NACIONAL_NFSE_URL)")
+
+        cnpj = os.getenv('BETHA_CNPJ', '13133714000110')
+        ns_e = cfg['ns']
+        ver_aplic = cfg['ver']
+        db_s = SessionLocal()
+        emp = db_s.query(Empresa).first()
+        offset_fuso = int(emp.fuso_horario if emp and emp.fuso_horario is not None else -4)
+        db_s.close()
+
+        FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
+        now_local = (datetime.fromtimestamp(time.time(), tz=timezone.utc) + timedelta(hours=offset_fuso)).replace(tzinfo=None)
+        sign = "+" if offset_fuso >= 0 else "-"
+        abs_off = abs(offset_fuso)
+        fuso_str = f"{sign}{abs_off:02d}:00"
+        agora_s = now_local.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')
+        # Id do infPedReg: PRE + AAAAMMDD(8) + (1+14 dígitos) + 33 dígitos (PNEvento)
+        data8 = now_local.strftime('%Y%m%d')
+        seq33 = f"{int(now_local.timestamp() * 1000):033d}"
+        pre_id = f"PRE{data8}1{cnpj}{seq33}"
+
+        evento_xml = f'''<pedRegEvento xmlns="{ns_e}" versao="1.01">
+  <infPedReg Id="{pre_id}">
+    <tpAmb>{tpAmb}</tpAmb>
+    <verAplic>{ver_aplic}</verAplic>
+    <dhEvento>{agora_s}</dhEvento>
+    <CNPJAutor>{cnpj}</CNPJAutor>
+    <chNFSe>{chave_acesso}</chNFSe>
+    <e101101>
+      <xDesc>Cancelamento de NFS-e</xDesc>
+      <cMotivo>1</cMotivo>
+      <xMotivo>{motivo}</xMotivo>
+    </e101101>
+  </infPedReg>
+</pedRegEvento>'''
+
+        evento_xml = self._assinar_xml(evento_xml)
+
+        session = self._get_session_nacional()
+        url = f"{cfg['url'].rstrip('/')}/nfse/{chave_acesso}/eventos"
+        payload = {"pedidoRegistroEventoXmlGZipB64": _gzip_b64_xml(evento_xml)}
+        try:
+            response = session.post(
+                url,
+                data=json.dumps(payload).encode('utf-8'),
+                headers={'Content-Type': 'application/json; charset=utf-8'},
+                timeout=60,
+            )
+            if response.status_code >= 400:
+                logger.error(f"Erro HTTP {response.status_code} do SEFIN: {response.text[:1500]}")
+                raise NFSeBethaError(f"Erro HTTP {response.status_code} do SEFIN: {response.text[:1500]}")
+            response.raise_for_status()
+            logger.info(f"Cancelamento SEFIN response: {response.text[:2000]}")
+            data = response.json()
+            if data.get('erros'):
+                return {'sucesso': False, 'erros': [
+                    {'codigo': e.get('codigo', 'N/A'), 'mensagem': e.get('descricao', '')}
+                    for e in data['erros']
+                ]}
+            return {'sucesso': True, 'protocolo': None}
+        except NFSeBethaError:
+            raise
+        except Exception as e:
+            logger.error(f"Erro cancelamento SEFIN: {e}")
+            raise NFSeBethaError(f"Erro cancelamento SEFIN: {e}")
+
     def __del__(self):
         # Limpa arquivo temporário se criado
         if self._temp_pfx_path and os.path.exists(self._temp_pfx_path):
@@ -135,6 +471,8 @@ class BethaNfseService:
         return f'DPS{cmun}{tipo_insc}{doc}0000{serie}{ndps}'
 
     def enviar_dps(self, dps_xml: str, tpAmb: int = 1) -> dict:
+        if self._is_nacional():
+            return self.enviar_dps_nacional(dps_xml, tpAmb)
         from lxml import etree
         try:
             logger.info(f"Enviando DPS para Betha (tpAmb={tpAmb})...")
@@ -198,6 +536,8 @@ class BethaNfseService:
             raise NFSeBethaError(f"Erro SOAP: {e}")
 
     def consultar_status(self, protocolo: str, tpAmb: int = 1) -> dict:
+        if self._is_nacional():
+            return self.consultar_status_nacional(protocolo, tpAmb)
         import re
         """Consulta status da DPS enviada"""
         logger.info(f"Consultando status da DPS {protocolo}...")
@@ -989,6 +1329,11 @@ class BethaNfseService:
                                 chave_acesso: str = None,
                                 protocolo_dps: str = None) -> dict:
         """Cancela NFS-e via RecepcionarEventoCancelamentoEnvio (DPS cloud)"""
+        if nfse_emissao_nacional():
+            tpAmb = nfse_tp_amb()
+        if self._is_nacional():
+            return self.cancelar_nfse_nacional(numero_nfse, tpAmb, dak_empresa,
+                                               motivo, chave_acesso, protocolo_dps)
         import re
         from datetime import datetime, timezone, timedelta
 
@@ -1008,7 +1353,7 @@ class BethaNfseService:
         db_s.close()
 
         FUSO_LOCAL = timezone(timedelta(hours=offset_fuso))
-        now_local = datetime.now(FUSO_LOCAL).replace(tzinfo=None)
+        now_local = (datetime.fromtimestamp(time.time(), tz=timezone.utc) + timedelta(hours=offset_fuso)).replace(tzinfo=None)
         sign = "+" if offset_fuso >= 0 else "-"
         abs_off = abs(offset_fuso)
         fuso_str = f"{sign}{abs_off:02d}:00"
@@ -1190,12 +1535,20 @@ def _esc(valor) -> str:
     return escape(str(valor), {'"': '&quot;', "'": '&apos;'})
 
 
-def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1') -> str:
+def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1',
+                xmlns: str = None, ver_aplic: str = None) -> str:
     """Gera XML DPS Nacional - formato ID 45 chars - filtra apenas serviços.
     O parâmetro `serie` (1 caractere) é variado nas retentativas para gerar um ID
-    distinto mantendo o nDPS (número da nota) inalterado."""
+    distinto mantendo o nDPS (número da nota) inalterado.
+    `xmlns`/`ver_aplic` permitem trocar para o namespace do Ambiente Nacional."""
+    xmlns = xmlns or 'http://www.betha.com.br/e-nota-dps'
+    ver_aplic = ver_aplic or 'fly_WS_1.1.0'
     from models import Empresa
     empresa = db.query(Empresa).first()
+    op_simp_nac = int(getattr(empresa, 'op_simp_nac', 1) or 1)
+    reg_esp_trib = int(getattr(empresa, 'reg_esp_trib', 0) or 0)
+    reg_ap_trib_sn = int(getattr(empresa, 'reg_ap_trib_sn', 1) or 1)
+    reg_ap_tag = f'<regApTribSN>{reg_ap_trib_sn}</regApTribSN>' if op_simp_nac != 1 else ''
 
     itens_servico = [i for i in pedido.itens if i.produto and i.produto.tipo == 'servico']
 
@@ -1250,10 +1603,12 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
     raw = pedido.data
     if raw:
         if raw.tzinfo is None:
-            raw = raw.replace(tzinfo=timezone.utc)
-        data_emissao = raw.astimezone(FUSO_LOCAL)
+            # O app armazena as datas em horario local (sem tz); interpreta
+            # como o fuso da empresa, nao como UTC, para nao deslocar o dhEmi.
+            raw = raw.replace(tzinfo=FUSO_LOCAL)
+        data_emissao = raw.astimezone(FUSO_LOCAL).replace(tzinfo=None)
     else:
-        data_emissao = datetime.now(FUSO_LOCAL)
+        data_emissao = (datetime.fromtimestamp(time.time(), tz=timezone.utc) + timedelta(hours=offset_fuso)).replace(tzinfo=None)
 
     cod_serv = "010101"
     desc_serv = "Servicos"
@@ -1280,6 +1635,10 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
     aliquota = float(empresa.aliquota_iss or 2.0)
     iss_retido = getattr(pedido.cliente, 'iss_retido', False) or False
     tp_ret = 2 if iss_retido else 1
+    # No Ambiente Nacional, municípios conveniados (ativos) têm a alíquota
+    # parametrizada pelo SEFIN; nesses casos não se informa pAliq (E0625).
+    inclui_paliq = (tp_ret != 1) or (not nfse_emissao_nacional())
+    pAliq_tag = f'<pAliq>{aliquota:.2f}</pAliq>' if inclui_paliq else ''
 
     ali_fed = float(empresa.aliquota_federal or 0.0)
     ali_est = float(empresa.aliquota_estadual or 0.0)
@@ -1288,8 +1647,21 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
 
     desc_serv = _esc(discriminacao)
 
-    if ali_fed > 0 or ali_est > 0 or ali_mun > 0:
+    if op_simp_nac in (2, 3):
+        # MEI/ME-EPP: não se informa o indicador indTotTrib (E0712). Usa-se o
+        # percentual aproximado total de tributos do Simples Nacional.
+        p_tot_trib_sn = float(getattr(empresa, 'p_tot_trib_sn', 0.0) or 0.0)
         tot_trib = f"""         <totTrib>
+               <pTotTribSN>{p_tot_trib_sn:.2f}</pTotTribSN>
+            </totTrib>"""
+    elif ali_fed > 0 or ali_est > 0 or ali_mun > 0:
+        v_trib_fed = total_vlr * ali_fed / 100.0
+        v_trib_est = total_vlr * ali_est / 100.0
+        v_trib_mun = total_vlr * ali_mun / 100.0
+        tot_trib = f"""         <totTrib>
+               <vTotTribFed>{v_trib_fed:.2f}</vTotTribFed>
+               <vTotTribEst>{v_trib_est:.2f}</vTotTribEst>
+               <vTotTribMun>{v_trib_mun:.2f}</vTotTribMun>
                <pTotTrib>
                   <pTotTribFed>{ali_fed:.2f}</pTotTribFed>
                   <pTotTribEst>{ali_est:.2f}</pTotTribEst>
@@ -1308,13 +1680,13 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
     tom_fone_tag = f'<fone>{cli_fone}</fone>' if cli_fone else ''
     tom_email_tag = f'<email>{cli_email}</email>' if cli_email else ''
 
-    return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
-   <infDPS id="{id_dps}">
+    return f'''<DPS xmlns="{xmlns}" versao="1.01">
+   <infDPS Id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
         <dhEmi>{data_emissao.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')}</dhEmi>
-       <verAplic>fly_WS_1.1.0</verAplic>
+       <verAplic>{ver_aplic}</verAplic>
        <serie>{serie}</serie>
-       <nDPS>{ndps}</nDPS>
+        <nDPS>{int(ndps)}</nDPS>
        <dCompet>{data_emissao.strftime('%Y-%m-%d')}</dCompet>
       <tpEmit>1</tpEmit>
       <cLocEmi>{cmun}</cLocEmi>
@@ -1323,8 +1695,9 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
          {prest_fone_tag}
          {prest_email_tag}
          <regTrib>
-            <opSimpNac>1</opSimpNac>
-            <regEspTrib>0</regEspTrib>
+            <opSimpNac>{op_simp_nac}</opSimpNac>
+            {reg_ap_tag}
+            <regEspTrib>{reg_esp_trib}</regEspTrib>
          </regTrib>
       </prest>
        <toma>
@@ -1341,18 +1714,18 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
          <cServ>
             <cTribNac>{cod_serv}</cTribNac>
             <xDescServ>{desc_serv}</xDescServ>
-            <cNBS>{cod_nbs or '010101'}</cNBS>
+            {f'<cNBS>{cod_nbs}</cNBS>' if cod_nbs else ''}
          </cServ>
       </serv>
       <valores>
          <vServPrest>
-            <vServ>{total_vlr:.2f}</vServ>
-         </vServPrest>
+         <vServ>{total_vlr:.2f}</vServ>
+                    </vServPrest>
          <trib>
             <tribMun>
                <tribISSQN>1</tribISSQN>
-               <pAliq>{aliquota:.2f}</pAliq>
                <tpRetISSQN>{tp_ret}</tpRetISSQN>
+               {pAliq_tag}
             </tribMun>
             {tot_trib}
          </trib>
@@ -1360,12 +1733,20 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
    </infDPS>
 </DPS>'''
 
-def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1') -> str:
+def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1',
+                      xmlns: str = None, ver_aplic: str = None) -> str:
     """Gera XML DPS Nacional a partir de uma NFSe já registrada.
     O parâmetro `serie` (1 caractere) é variado nas retentativas para gerar um ID
-    distinto mantendo o nDPS (número da nota) inalterado."""
+    distinto mantendo o nDPS (número da nota) inalterado.
+    `xmlns`/`ver_aplic` permitem trocar para o namespace do Ambiente Nacional."""
+    xmlns = xmlns or 'http://www.betha.com.br/e-nota-dps'
+    ver_aplic = ver_aplic or 'fly_WS_1.1.0'
     from models import Empresa
     empresa = db.query(Empresa).first()
+    op_simp_nac = int(getattr(empresa, 'op_simp_nac', 1) or 1)
+    reg_esp_trib = int(getattr(empresa, 'reg_esp_trib', 0) or 0)
+    reg_ap_trib_sn = int(getattr(empresa, 'reg_ap_trib_sn', 1) or 1)
+    reg_ap_tag = f'<regApTribSN>{reg_ap_trib_sn}</regApTribSN>' if op_simp_nac != 1 else ''
 
     itens = nfse.itens or []
     cnpj_prest = _limpar_codigo(empresa.cnpj or '')
@@ -1419,10 +1800,12 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     raw = nfse.data_emissao
     if raw:
         if raw.tzinfo is None:
-            raw = raw.replace(tzinfo=timezone.utc)
-        data_emissao = raw.astimezone(FUSO_LOCAL)
+            # O app armazena as datas em horario local (sem tz); interpreta
+            # como o fuso da empresa, nao como UTC, para nao deslocar o dhEmi.
+            raw = raw.replace(tzinfo=FUSO_LOCAL)
+        data_emissao = raw.astimezone(FUSO_LOCAL).replace(tzinfo=None)
     else:
-        data_emissao = datetime.now(FUSO_LOCAL)
+        data_emissao = (datetime.fromtimestamp(time.time(), tz=timezone.utc) + timedelta(hours=offset_fuso)).replace(tzinfo=None)
 
     cod_serv = "010101"
     desc_serv = "Servicos"
@@ -1448,6 +1831,10 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     # ISS retido depois da criação da NFSe)
     iss_retido = bool(getattr(nfse, 'iss_retido', False) or (cli and getattr(cli, 'iss_retido', False)))
     tp_ret = 2 if iss_retido else 1
+    # No Ambiente Nacional, municípios conveniados (ativos) têm a alíquota
+    # parametrizada pelo SEFIN; nesses casos não se informa pAliq (E0625).
+    inclui_paliq = (tp_ret != 1) or (not nfse_emissao_nacional())
+    pAliq_tag = f'<pAliq>{aliquota:.2f}</pAliq>' if inclui_paliq else ''
 
     ali_fed = float(nfse.aliquota_federal if nfse.aliquota_federal is not None else (empresa.aliquota_federal or 0.0))
     ali_est = float(nfse.aliquota_estadual if nfse.aliquota_estadual is not None else (empresa.aliquota_estadual or 0.0))
@@ -1460,8 +1847,21 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
         desc_serv += f" | {observacoes}"
     desc_serv = _esc(desc_serv)
 
-    if ali_fed > 0 or ali_est > 0 or ali_mun > 0:
+    if op_simp_nac in (2, 3):
+        # MEI/ME-EPP: não se informa o indicador indTotTrib (E0712). Usa-se o
+        # percentual aproximado total de tributos do Simples Nacional.
+        p_tot_trib_sn = float(getattr(empresa, 'p_tot_trib_sn', 0.0) or 0.0)
         tot_trib = f"""         <totTrib>
+               <pTotTribSN>{p_tot_trib_sn:.2f}</pTotTribSN>
+            </totTrib>"""
+    elif ali_fed > 0 or ali_est > 0 or ali_mun > 0:
+        v_trib_fed = total_vlr * ali_fed / 100.0
+        v_trib_est = total_vlr * ali_est / 100.0
+        v_trib_mun = total_vlr * ali_mun / 100.0
+        tot_trib = f"""         <totTrib>
+               <vTotTribFed>{v_trib_fed:.2f}</vTotTribFed>
+               <vTotTribEst>{v_trib_est:.2f}</vTotTribEst>
+               <vTotTribMun>{v_trib_mun:.2f}</vTotTribMun>
                <pTotTrib>
                   <pTotTribFed>{ali_fed:.2f}</pTotTribFed>
                   <pTotTribEst>{ali_est:.2f}</pTotTribEst>
@@ -1480,13 +1880,13 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     tom_fone_tag = f'<fone>{cli_fone}</fone>' if cli_fone else ''
     tom_email_tag = f'<email>{cli_email}</email>' if cli_email else ''
 
-    return f'''<DPS xmlns="http://www.betha.com.br/e-nota-dps" versao="1.01">
-   <infDPS id="{id_dps}">
+    return f'''<DPS xmlns="{xmlns}" versao="1.01">
+   <infDPS Id="{id_dps}">
       <tpAmb>{tpAmb}</tpAmb>
         <dhEmi>{data_emissao.strftime(f'%Y-%m-%dT%H:%M:%S{fuso_str}')}</dhEmi>
-       <verAplic>fly_WS_1.1.0</verAplic>
+       <verAplic>{ver_aplic}</verAplic>
        <serie>{serie}</serie>
-       <nDPS>{ndps}</nDPS>
+        <nDPS>{int(ndps)}</nDPS>
        <dCompet>{data_emissao.strftime('%Y-%m-%d')}</dCompet>
       <tpEmit>1</tpEmit>
       <cLocEmi>{cmun}</cLocEmi>
@@ -1495,8 +1895,9 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
          {prest_fone_tag}
          {prest_email_tag}
          <regTrib>
-            <opSimpNac>1</opSimpNac>
-            <regEspTrib>0</regEspTrib>
+            <opSimpNac>{op_simp_nac}</opSimpNac>
+            {reg_ap_tag}
+            <regEspTrib>{reg_esp_trib}</regEspTrib>
          </regTrib>
       </prest>
        <toma>
@@ -1513,18 +1914,18 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
          <cServ>
             <cTribNac>{cod_serv}</cTribNac>
             <xDescServ>{desc_serv}</xDescServ>
-            <cNBS>{cod_nbs or '010101'}</cNBS>
+            {f'<cNBS>{cod_nbs}</cNBS>' if cod_nbs else ''}
          </cServ>
       </serv>
       <valores>
          <vServPrest>
             <vServ>{total_vlr:.2f}</vServ>
-                    </vServPrest>
+         </vServPrest>
          <trib>
             <tribMun>
                <tribISSQN>1</tribISSQN>
-               <pAliq>{aliquota:.2f}</pAliq>
                <tpRetISSQN>{tp_ret}</tpRetISSQN>
+               {pAliq_tag}
             </tribMun>
             {tot_trib}
          </trib>
@@ -1535,6 +1936,10 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
 
 def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
     import time
+    # Em modo nacional, o tpAmb deve ser coerente com o ambiente da empresa
+    # (homologação => tpAmb=2), senão o SEFIN devolve E0006 (ambiente divergente).
+    if nfse_emissao_nacional():
+        tpAmb = nfse_tp_amb()
     try:
         service = BethaNfseService()
         numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
@@ -1544,7 +1949,9 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
             # mantendo o nDPS (número da nota) inalterado. Evita E001 (ID com 48 chars)
             # e E050 (DPS duplicada) sem pular o número da nota.
             serie = str((1 + attempt) % 10)
-            dps_xml = gerar_dps_xml_nfse(nfse, db, tpAmb, numero, serie=serie)
+            # No modo nacional, gera o DPS com o namespace do Ambiente Nacional.
+            dps_xml = gerar_dps_xml_nfse(nfse, db, tpAmb, numero, serie=serie,
+                                        xmlns=_dps_xmlns(), ver_aplic=_dps_ver_aplic())
             return service.enviar_dps(dps_xml, tpAmb), dps_xml
 
         # Primeira tentativa
@@ -1586,11 +1993,32 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
                 'erros': erros,
                 'retry_iss_retido': retry_iss_retido,
             }
+        # Emissão nacional é síncrona: a resposta do SEFIN já traz a NFS-e.
+        # Evita varrer o ADN (em homologação a nota de teste não aparece na
+        # distribuição e a consulta ficaria em loop até estourar o timeout).
+        if nfse_emissao_nacional() and resultado.get('xml_documento'):
+            if getattr(nfse, 'origem', None) != 'nacional':
+                nfse.origem = 'nacional'
+                db.commit()
+            return {
+                'status_processamento': 'sucesso',
+                'protocolo': protocolo,
+                'numero': resultado.get('numero_nfse'),
+                'codigo_verificacao': resultado.get('chave_acesso'),
+                'xml': dps_xml,
+                'xml_documento': resultado.get('xml_documento'),
+                'data_emissao': data_original,
+                'erros': [],
+                'retry_iss_retido': retry_iss_retido,
+            }
         for tentativa in range(6):
             time.sleep(5)
             status = service.consultar_status(protocolo, tpAmb)
             st = status.get('status', '')
             if st == 'Processado com sucesso':
+                if nfse_emissao_nacional() and getattr(nfse, 'origem', None) != 'nacional':
+                    nfse.origem = 'nacional'
+                    db.commit()
                 return {
                     'status_processamento': 'sucesso',
                     'protocolo': protocolo,
@@ -1763,6 +2191,10 @@ def _erro_iss_retido(erros: list) -> bool:
 
 def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt: int = 0) -> dict:
     import time
+    # Em modo nacional, o tpAmb deve ser coerente com o ambiente da empresa
+    # (homologação => tpAmb=2), senão o SEFIN devolve E0006 (ambiente divergente).
+    if nfse_emissao_nacional():
+        tpAmb = nfse_tp_amb()
     try:
         service = BethaNfseService()
 
@@ -1771,7 +2203,9 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
             # mantendo o nDPS (número da nota) inalterado. Evita E001 (ID com 48 chars)
             # e E050 (DPS duplicada) sem pular o número da nota.
             serie = str((1 + attempt) % 10)
-            dps_xml = gerar_dps_xml(pedido, db, tpAmb, numero_nfse, serie=serie)
+            # No modo nacional, gera o DPS com o namespace do Ambiente Nacional.
+            dps_xml = gerar_dps_xml(pedido, db, tpAmb, numero_nfse, serie=serie,
+                                   xmlns=_dps_xmlns(), ver_aplic=_dps_ver_aplic())
             return service.enviar_dps(dps_xml, tpAmb), dps_xml
 
         resultado, dps_xml = _send_with_serie(attempt)
@@ -1806,12 +2240,33 @@ def emitir_completa(pedido, db, tpAmb: int = 1, numero_nfse: int = None, attempt
                 'erros': erros,
                 'retry_iss_retido': retry_iss_retido,
             }
+        # Emissão nacional é síncrona: a resposta do SEFIN já traz a NFS-e
+        # (xml_documento + numero_nfse + chave_acesso). Não varrer o ADN aqui
+        # (em homologação a nota de teste nunca aparece na distribuição e a
+        # varredura ficaria em loop por ~2 min até estourar o timeout).
+        if nfse_emissao_nacional() and resultado.get('xml_documento'):
+            if getattr(pedido, 'origem', None) != 'nacional':
+                pedido.origem = 'nacional'
+                db.commit()
+            return {
+                'protocolo': protocolo,
+                'numero': resultado.get('numero_nfse'),
+                'codigo_verificacao': resultado.get('chave_acesso'),
+                'xml': dps_xml,
+                'xml_documento': resultado.get('xml_documento'),
+                'data_emissao': data_original,
+                'erros': [],
+                'retry_iss_retido': retry_iss_retido,
+            }
         # Aguarda processamento nacional (consulta com retry até 120s)
         for tentativa in range(24):
             time.sleep(5)
             status = service.consultar_status(protocolo, tpAmb)
             st = status.get('status', '')
             if st == 'Processado com sucesso':
+                if nfse_emissao_nacional() and getattr(pedido, 'origem', None) != 'nacional':
+                    pedido.origem = 'nacional'
+                    db.commit()
                 return {
                     'protocolo': protocolo,
                     'numero': status.get('numero_nfse'),
