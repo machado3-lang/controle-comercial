@@ -295,7 +295,12 @@ class BethaNfseService:
         # usando o namespace ds como default no escopo do <Signature>.
         signer.namespaces = {None: 'http://www.w3.org/2000/09/xmldsig#'}
         signed = signer.sign(root, key=private_key, cert=cert_pem, reference_uri='#'+ref_id)
-        return etree.tostring(signed, encoding='unicode', pretty_print=False)
+        out = etree.tostring(signed, encoding='unicode', pretty_print=False)
+        # Normaliza o Id (sem namespace) e registra o tag infDPS para diagnóstico no SEFIN.
+        out = _normalizar_id_sem_namespace(out)
+        logger.info("NFSe DPS assinado (tag infDPS): %s",
+                    out[out.find('<infDPS'):out.find('>', out.find('<infDPS')) + 1])
+        return out
 
     def _assinar_dps(self, dps_xml: str) -> str:
         """Compatibilidade: assina o DPS (delega em _assinar_xml)."""
@@ -2070,6 +2075,31 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
         raise
     except Exception as e:
         raise NFSeBethaError(f"Erro inesperado: {e}")
+
+
+def _normalizar_id_sem_namespace(xml_str: str) -> str:
+    """Garante que o atributo 'Id' do elemento infDPS fique SEM namespace.
+
+    O SEFIN (schema TiposNFS_e / DPS_v1.01) exige o atributo 'Id' de infDPS como
+    'attributeFormDefault="unqualified"' (sem namespace). Algumas combinações de
+    lxml/signxml re-serializam o XML assinado qualificando o Id no namespace do DPS
+    (ex.: {http://www.sped.fazenda.gov.br/nfse}Id), o que o validador rejeita com
+    cvc-complex-type.3.2.2 ('Id não pode aparecer') + cvc-complex-type.4 ('id deve aparecer').
+    Esta função normaliza o Id para a forma sem prefixo, determinística quanto à lib."""
+    from lxml import etree
+    try:
+        root = etree.fromstring(xml_str.encode('utf-8'))
+    except Exception:
+        return xml_str
+    for el in root.iter():
+        if el.tag.split('}')[-1] == 'infDPS':
+            for k in list(el.attrib):
+                if k == 'Id' or k.endswith('}Id'):
+                    val = el.attrib.pop(k)
+                    el.set('Id', val)
+                    break
+            break
+    return etree.tostring(root, encoding='unicode', pretty_print=False)
 
 
 def sincronizar_nfse(protocolo: str, tpAmb: int = 1, numero_nfse: str = None,
