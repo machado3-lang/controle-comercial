@@ -165,17 +165,18 @@ document.getElementById('formEmitir').addEventListener('submit', async function(
         const data = await response.json();
         
         if (data.success) {
-            alert('NFSe emitida com sucesso! Protocolo: ' + (data.protocolo || 'N/A'));
-            if (data.aviso) alert(data.aviso);
-            window.location.href = '/nfse';
+            showToast('NFSe emitida com sucesso! Protocolo: ' + (data.protocolo || 'N/A'), 'success');
+            if (data.aviso) showValidationError(data.aviso);
+            setTimeout(() => { window.location.href = '/nfse'; }, 1200);
         } else {
-            alert('Erro: ' + (data.error || data.erros?.[0]?.mensagem || 'Erro desconhecido'));
+            const msgErro = data.error || data.erros?.[0]?.mensagem || 'Erro desconhecido';
+            showValidationError('Não foi possível emitir a NFSe.\n\n' + msgErro);
             btn.disabled = false;
             btn.innerHTML = originalHtml;
             if (window.lucide) lucide.createIcons();
         }
     } catch (err) {
-        alert('Erro de conexão: ' + err.message);
+        showValidationError('Erro de conexão ao emitir a NFSe: ' + err.message);
         btn.disabled = false;
         btn.innerHTML = originalHtml;
         if (window.lucide) lucide.createIcons();

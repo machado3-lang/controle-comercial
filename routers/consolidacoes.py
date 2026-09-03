@@ -8,6 +8,7 @@ import json
 import logging
 
 from database import get_db
+from services.nfse_service import formatar_aviso_nfse
 from models import (
     PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem,
     PedidoConsolidadoItemOrigem, Cliente, Produto, ProdutoVariacao, StatusPedido,
@@ -785,7 +786,10 @@ def cancelar_consolidacao(
             if not resultado.get('sucesso'):
                 erros = resultado.get('erros', [])
                 msg = '; '.join(e.get('mensagem', '') for e in erros)
-                request.session["error"] = (
+                aviso = formatar_aviso_nfse(msg, acao="cancelar a NFSe")
+                request.session["message" if aviso["tipo"] == "warning" else "error"] = (
+                    f"{aviso['texto']}. A consolidação NÃO foi cancelada."
+                    if aviso["tipo"] == "warning" else
                     f"Falha ao cancelar NFSe na Prefeitura: {msg}. "
                     "A consolidação NÃO foi cancelada."
                 )
@@ -793,7 +797,10 @@ def cancelar_consolidacao(
             consolidacao.nfse.status = "cancelada"
             consolidacao.nfse.mensagem_retorno = f"Cancelada via consolidação: {motivo}"
         except Exception as e:
-            request.session["error"] = (
+            aviso = formatar_aviso_nfse(str(e), acao="cancelar a NFSe")
+            request.session["message" if aviso["tipo"] == "warning" else "error"] = (
+                f"{aviso['texto']}. A consolidação NÃO foi cancelada."
+                if aviso["tipo"] == "warning" else
                 f"Erro ao cancelar NFSe na Prefeitura: {str(e)}. "
                 "A consolidação NÃO foi cancelada."
             )

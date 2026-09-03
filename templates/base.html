@@ -171,13 +171,13 @@
                 {% elif msg_type == 'danger' or msg_type == 'error' %}
                     <div class="bg-red-950/30 border border-red-800/50 text-red-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
                 {% elif msg_type == 'warning' %}
-                    <div class="bg-amber-950/30 border border-amber-800/50 text-amber-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
+                    <div class="d-none" data-aviso="1">{{ msg_text }}</div>
                 {% else %}
                     <div class="bg-cyan-950/30 border border-cyan-800/50 text-cyan-300 px-4 py-3 rounded-xl mb-4 flex justify-between items-center backdrop-blur-sm">
                 {% endif %}
-                    {{ msg_text }}
+                    {% if msg_type != 'warning' %}{{ msg_text }}
                     <button type="button" class="text-slate-400 hover:text-slate-200" onclick="this.parentElement.remove()"><i data-lucide="x" class="w-4 h-4"></i></button>
-                </div>
+                </div>{% endif %}
             {% endfor %}
         {% endif %}
         {% block content %}{% endblock %}
@@ -195,6 +195,23 @@
                 </div>
                 <div class="modal-footer border-t border-slate-800/50">
                     <button type="button" class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">OK</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="modalAviso" tabindex="-1">
+        <div class="modal-dialog modal-dialog-centered">
+            <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-amber-800/60 rounded-2xl">
+                <div class="modal-header border-b border-slate-800/50">
+                    <h5 class="modal-title text-amber-400"><i data-lucide="alert-circle" class="w-5 h-5 inline me-2"></i> Aviso</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+                </div>
+                <div class="modal-body">
+                    <div id="avisoMensagem" class="text-slate-200 space-y-2"></div>
+                </div>
+                <div class="modal-footer border-t border-slate-800/50">
+                    <button type="button" class="px-4 py-2 bg-amber-500/80 hover:bg-amber-500 text-slate-900 font-medium rounded-xl transition" data-bs-dismiss="modal">Entendi</button>
                 </div>
             </div>
         </div>
@@ -252,6 +269,12 @@
         const toastTipo = sessionStorage.getItem('toast-tipo');
         if (toastMsg) { showToast(toastMsg, toastTipo); sessionStorage.removeItem('toast-mensagem'); sessionStorage.removeItem('toast-tipo'); }
         if (window.lucide) lucide.createIcons();
+        const avisos = Array.from(document.querySelectorAll('[data-aviso]')).map(e => e.textContent.trim()).filter(Boolean);
+        if (avisos.length && document.getElementById('avisoMensagem')) {
+            document.getElementById('avisoMensagem').innerHTML = avisos.map(a => `<p class="leading-relaxed">${a.replace(/</g, '&lt;')}</p>`).join('');
+            const modal = new bootstrap.Modal(document.getElementById('modalAviso'));
+            modal.show();
+        }
         document.addEventListener('submit', function(e) {
             if (e.defaultPrevented) return;
             const btn = e.target.querySelector('button[type="submit"]');

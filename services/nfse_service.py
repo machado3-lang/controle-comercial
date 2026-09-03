@@ -263,6 +263,73 @@ def extrair_fatura_nfse(xml: str) -> list:
     return unicas
 
 
+def limpar_mensagem_erro(texto: str, limite: int = 400) -> str:
+    """
+    Remove tags XML/HTML, entidades e espaços excessivos de uma mensagem de erro
+    crua retornada pela prefeitura/SEFIN/Betha, deixando apenas o texto legível.
+    Trunca mensagens muito longas (o 'erro grande' que assusta o usuário).
+    """
+    import re
+    import html
+
+    t = texto or ""
+    # Remove blocos de CDATA e tags XML/HTML
+    t = re.sub(r"<!\[CDATA\[.*?\]\]>", " ", t, flags=re.DOTALL)
+    t = re.sub(r"<[^>]+>", " ", t)
+    t = html.unescape(t)
+    t = re.sub(r"\s+", " ", t).strip()
+    if not t:
+        t = "Erro não especificado retornado pelo webservice."
+    if len(t) > limite:
+        t = t[:limite].rstrip() + "..."
+    return t
+
+
+# Padrões que indicam erros de REGRA DE NEGÓCIO / VALIDAÇÃO (devem virar "aviso",
+# não "erro" assustador): prazo de cancelamento, CEP, IBGE, campos obrigatórios etc.
+_PADROES_AVISO = (
+    "prazo", "vencido", "vencida", "fora do prazo", "não pode ser cancelada",
+    "nao pode ser cancelada", "cancelamento", "cancelar", "cep", "ibge",
+    "codigo do municipio", "código do município", "codigomunicipio",
+    "municipio", "município", "rejeitad", "não autorizado", "nao autorizado",
+    "inconsist", "inválido", "inválida", "invalido", "invalida",
+    "obrigatório", "obrigatoria", "obrigatório", "obrigatória",
+    "preencha", "não informado", "nao informado", "inexistente",
+)
+
+
+def classificar_erro_nfse(texto: str) -> str:
+    """
+    Classifica uma mensagem de erro da NFSe.
+
+    Retorna:
+        'warning' -> erro de validação/regra de negócio (ex.: fora do prazo de
+                     cancelamento, CEP inválido, falta do código IBGE). Deve ser
+                     exibido como um AVISO amigável, não como erro fatal.
+        'danger'  -> erro de sistema/comunicação (ex.: falha de conexão, certificado,
+                     timeout, resposta não reconhecida).
+    """
+    t = (texto or "").lower()
+    for padrao in _PADROES_AVISO:
+        if padrao in t:
+            return "warning"
+    return "danger"
+
+
+def formatar_aviso_nfse(texto: str, acao: str = "realizar a operação") -> dict:
+    """
+    Gera um dicionário de mensagem {'tipo': 'warning'|'danger', 'texto': ...}
+    limpo e amigável a partir de uma mensagem crua de erro da NFSe.
+    """
+    limpo = limpar_mensagem_erro(texto)
+    tipo = classificar_erro_nfse(limpo)
+    if tipo == "warning":
+        texto_aviso = f"Não foi possível {acao}. {limpo}"
+    else:
+        texto_aviso = f"Erro ao {acao}: {limpo}"
+    return {"tipo": tipo, "texto": texto_aviso}
+
+
 # Exemplo de uso (remover em produção)
 if __name__ == '__main__':
     # Dados de teste

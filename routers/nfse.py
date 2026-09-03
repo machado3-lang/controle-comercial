@@ -13,6 +13,7 @@ from database import get_db
 from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ProdutoVariacao, ProdutoComposicao, ContaReceber, ContaPagar, StatusConta, StatusPedido, OrdemServico, Assinatura, Fornecedor
 from models_nfe import NFSe, NFSeItem, NFSeRecebida
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
+from services.nfse_service import formatar_aviso_nfse
 from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional, NFSE_NACIONAL_NS
 from services.nfe_notaas import explodir_itens_consolidacao
 
@@ -1610,11 +1611,20 @@ def cancelar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db),
         else:
             erros = resultado.get('erros', [])
             msg = '; '.join(e.get('mensagem', '') for e in erros)
-            request.session["error"] = f"Erro ao cancelar NFSe: {msg}"
-    except NFSeBethaError as e:
-        request.session["error"] = f"Erro ao cancelar NFSe: {str(e)}"
-    except Exception as e:
-        request.session["error"] = f"Erro ao cancelar NFSe: {str(e)}"
+            # Erros de regra de negócio (fora do prazo, CEP, IBGE etc.) viram AVISO
+            aviso = formatar_aviso_nfse(msg, acao="cancelar a NFSe")
+            if aviso["tipo"] == "warning":
+                request.session["message"] = aviso
+            else:
+                request.session["error"] = aviso["texto"]
+    except (NFSeBethaError, Exception) as e:
+        # Captura qualquer erro (inclusive o 'erro grande' fora do prazo) e exibe
+        # como aviso amigável quando for falha de regra de negócio.
+        aviso = formatar_aviso_nfse(str(e), acao="cancelar a NFSe")
+        if aviso["tipo"] == "warning":
+            request.session["message"] = aviso
+        else:
+            request.session["error"] = aviso["texto"]
 
     return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
