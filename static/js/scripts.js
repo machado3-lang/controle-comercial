@@ -388,3 +388,21 @@ function enviarDocumentosSelecionados(name, incluirXml) {
         alert('Erro ao enviar: ' + err);
     });
 }
+
+function reenviarNotaPorEmail(name, id) {
+    var params = new URLSearchParams();
+    params.append(name, id);
+    csrfFetch('/contas/enviar-documentos', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+        body: params
+    }).then(function (resp) {
+        if (resp.redirected) {
+            window.location.href = resp.url;
+        } else {
+            window.location.reload();
+        }
+    }).catch(function (err) {
+        alert('Erro ao enviar: ' + err);
+    });
+}

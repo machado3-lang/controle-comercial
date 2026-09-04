@@ -12,6 +12,10 @@
 <p style="color: #333; font-size: 14px; line-height: 1.6;">Ol&aacute; <strong>{{ cliente_nome }}</strong>,</p>
 <p style="color: #333; font-size: 14px; line-height: 1.6;">Seguem em anexo os documentos solicitados:</p>
 
+{% if mensagem_padrao %}
+<div style="margin: 16px 0; padding: 14px 16px; background: #f8fafc; border-left: 4px solid #6366f1; border-radius: 4px; color: #334155; font-size: 14px; line-height: 1.6; white-space: pre-wrap;">{{ mensagem_padrao }}</div>
+{% endif %}
+
 {% if itens_resumo %}
 <table style="width: 100%; border-collapse: collapse; margin: 16px 0; background: #f8fafc; border-radius: 6px;">
 {% for item in itens_resumo %}

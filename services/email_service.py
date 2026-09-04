@@ -15,11 +15,13 @@ def get_smtp_config(db) -> Optional[dict]:
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.smtp_host or not empresa.smtp_user or not empresa.smtp_password:
         return None
+    seguranca = (empresa.smtp_seguranca or "tls").lower()
     return {
         "host": empresa.smtp_host,
         "port": empresa.smtp_port or 587,
         "user": empresa.smtp_user,
         "password": empresa.smtp_password,
+        "seguranca": seguranca,
         "from_email": empresa.smtp_from_email or empresa.email,
         "from_name": empresa.smtp_from_name or empresa.nome_fantasia or empresa.razao_social or "Sistema",
     }
@@ -56,13 +58,23 @@ def enviar_email(
             msg.attach(part)
 
     try:
-        if config['port'] == 465:
+        seguranca = (config.get('seguranca') or 'tls').lower()
+        if seguranca == 'ssl':
             server = smtplib.SMTP_SSL(config['host'], config['port'], timeout=30)
-        else:
+        elif seguranca == 'none':
             server = smtplib.SMTP(config['host'], config['port'], timeout=30)
-            server.starttls()
+        else:
+            # tls (STARTTLS) - comportamento padrao, inclusive para porta 465
+            if config['port'] == 465:
+                server = smtplib.SMTP_SSL(config['host'], config['port'], timeout=30)
+            else:
+                server = smtplib.SMTP(config['host'], config['port'], timeout=30)
+                server.starttls()
         server.login(config['user'], config['password'])
-        server.send_message(msg)
+        # UOL (e outros provedores) rejeitam remetente de envelope (MAIL FROM)
+        # que nao pertenca ao usuario autenticado. Mantemos o cabecalho From
+        # "bonito" (nome da empresa) mas forçamos o envelope sender = usuario SMTP.
+        server.send_message(msg, from_addr=config['user'])
         server.quit()
         return {"success": True}
     except Exception as e:
@@ -123,15 +135,34 @@ def _xml_nfse_bytes(nfse) -> Optional[bytes]:
 def _pdf_nfse_bytes(nfse, db) -> Optional[bytes]:
     if nfse is None:
         return None
-    # Tenta PDF ja existente em disco
+    xml = getattr(nfse, "xml_text", None)
+    # 1) DANFSe padronizado (oficial) a partir do XML nacional, quando disponivel.
+    #    Evita enviar o PDF basico de fallback persistido em nfse.pdf_path.
+    if xml:
+        try:
+            from services.nfse_pdf import gerar_danfse_pdf, is_xml_nfse_nacional
+            if is_xml_nfse_nacional(xml):
+                pdf_filename = f"danfse_{nfse.numero or nfse.id}.pdf"
+                local = f"static/uploads/nfse/{pdf_filename}"
+                os.makedirs(os.path.dirname(local), exist_ok=True)
+                gerar_danfse_pdf(
+                    xml, local,
+                    cancelada=((nfse.status or "").lower() == "cancelada"),
+                )
+                if os.path.exists(local):
+                    with open(local, "rb") as f:
+                        return f.read()
+        except Exception:
+            pass
+    # 2) PDF ja existente em disco (pdf_path)
     if nfse.pdf_path and os.path.exists(f".{nfse.pdf_path}"):
         try:
             with open(f".{nfse.pdf_path}", "rb") as f:
                 return f.read()
         except Exception:
             pass
-    # Gera sob demanda a partir do XML persistido no banco
-    if getattr(nfse, "xml_text", None):
+    # 3) Gera sob demanda a partir do XML persistido no banco (layout basico)
+    if xml:
         try:
             from services.nfse_pdf import gerar_pdf_nfse
             from routers.nfse import STATUS_LABELS
@@ -143,7 +174,6 @@ def _pdf_nfse_bytes(nfse, db) -> Optional[bytes]:
                 if os.path.exists(local):
                     with open(local, "rb") as f:
                         return f.read()
-                        pass
         except Exception:
             pass
     return None
@@ -152,13 +182,9 @@ def _pdf_nfse_bytes(nfse, db) -> Optional[bytes]:
 def _pdf_nfe_bytes(nfe, db) -> Optional[bytes]:
     if nfe is None:
         return None
-    if nfe.pdf_path and os.path.exists(f".{nfe.pdf_path}"):
-        try:
-            with open(f".{nfe.pdf_path}", "rb") as f:
-                return f.read()
-        except Exception:
-            pass
     xml = _xml_nfe_bytes(nfe)
+    # 1) DANFE oficial a partir do XML (sempre atual e consistente com o DANFE
+    #    exibido na tela). Evita enviar um PDF de disco possivelmente obsoleto.
     if xml:
         try:
             import tempfile, os as _os
@@ -170,8 +196,16 @@ def _pdf_nfe_bytes(nfe, db) -> Optional[bytes]:
             _os.unlink(tmp.name)
             return data
         except Exception:
-            return None
+            pass
+    # 2) Fallback: PDF ja existente em disco (pdf_path)
+    if nfe.pdf_path and os.path.exists(f".{nfe.pdf_path}"):
+        try:
+            with open(f".{nfe.pdf_path}", "rb") as f:
+                return f.read()
+        except Exception:
+            pass
     return None
+
 
 
 def _pdf_boleto_bytes(conta, db) -> Optional[bytes]:
@@ -183,6 +217,36 @@ def _pdf_boleto_bytes(conta, db) -> Optional[bytes]:
         return boleto_bytes
     except Exception:
         return None
+
+
+def _anexar_boleto_nfse(nfse_id, db, anexos, itens_resumo):
+    """Anexa o boleto emitido vinculado a uma NFSe, se houver."""
+    from models import ContaReceber
+    conta = db.query(ContaReceber).filter(
+        ContaReceber.nfse_id == nfse_id,
+        ContaReceber.boleto_emitido == True,  # noqa: E712
+    ).first()
+    if not conta:
+        return
+    pdf = _pdf_boleto_bytes(conta, db)
+    if pdf:
+        anexos.append((f"Boleto_{conta.api_nosso_numero}.pdf", pdf, "application/pdf"))
+        itens_resumo.append(f"Boleto {conta.numero_documento or conta.nosso_numero or ''}".strip())
+
+
+def _anexar_boleto_nfe(nfe_id, db, anexos, itens_resumo):
+    """Anexa o boleto emitido vinculado a uma NFe, se houver."""
+    from models import ContaReceber
+    conta = db.query(ContaReceber).filter(
+        ContaReceber.nfe_id == nfe_id,
+        ContaReceber.boleto_emitido == True,  # noqa: E712
+    ).first()
+    if not conta:
+        return
+    pdf = _pdf_boleto_bytes(conta, db)
+    if pdf:
+        anexos.append((f"Boleto_{conta.api_nosso_numero}.pdf", pdf, "application/pdf"))
+        itens_resumo.append(f"Boleto {conta.numero_documento or conta.nosso_numero or ''}".strip())
 
 
 def enviar_documentos_cliente(
@@ -224,6 +288,8 @@ def enviar_documentos_cliente(
             if xml:
                 anexos.append((f"NFSe_{nfse.numero or nfse.id}.xml", xml, "application/xml"))
         itens_resumo.append(f"NFSe Nº {nfse.numero or nfse.id}")
+        # Boleto vinculado (se emitido) vai junto automaticamente
+        _anexar_boleto_nfse(nfse.id, db, anexos, itens_resumo)
 
     for nfe in nfes:
         if nfe.cliente_id and cliente.id and nfe.cliente_id != cliente.id:
@@ -236,6 +302,8 @@ def enviar_documentos_cliente(
             if xml:
                 anexos.append((f"NFe_{nfe.numero}.xml", xml, "application/xml"))
         itens_resumo.append(f"NFe Nº {nfe.numero}")
+        # Boleto vinculado (se emitido) vai junto automaticamente
+        _anexar_boleto_nfe(nfe.id, db, anexos, itens_resumo)
 
     for conta in contas:
         if conta.cliente_id and cliente.id and conta.cliente_id != cliente.id:
@@ -266,6 +334,7 @@ def enviar_documentos_cliente(
         "cliente_nome": getattr(cliente, "nome", "") or "",
         "itens_resumo": itens_resumo,
         "incluir_xml": incluir_xml,
+        "mensagem_padrao": getattr(empresa, "email_mensagem_padrao", "") or "",
         "whats_link": whats_link,
         "ano": datetime.now().year,
     }
@@ -345,6 +414,9 @@ def enviar_notificacao_conta(conta_id: int):
         if result["success"]:
             conta.email_enviado = True
             conta.data_envio_email = datetime.now()
+            if nfse:
+                nfse.email_enviado = True
+                nfse.data_envio_email = datetime.now()
             db.commit()
     except Exception as e:
         print(f"Erro ao enviar email: {e}")

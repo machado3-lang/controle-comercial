@@ -1028,9 +1028,16 @@ async def enviar_documentos_selecionados(
         )
         if resultado.get("success"):
             enviados += 1
+            agora = datetime.now()
             for conta in grupos["contas"]:
                 conta.email_enviado = True
-                conta.data_envio_email = datetime.now()
+                conta.data_envio_email = agora
+            for nfe in grupos["nfes"]:
+                nfe.email_enviado = True
+                nfe.data_envio_email = agora
+            for nfse in grupos["nfses"]:
+                nfse.email_enviado = True
+                nfse.data_envio_email = agora
             db.commit()
         else:
             falhas.append(f"Cliente {cliente.nome}: {resultado.get('error', 'erro desconhecido')}")

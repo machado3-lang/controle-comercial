@@ -90,7 +90,9 @@ async def salvar_configuracoes(
     smtp_password: str = Form(""),
     smtp_from_email: str = Form(""),
     smtp_from_name: str = Form(""),
+    smtp_seguranca: str = Form("tls"),
     email_auto_enviar: str = Form(""),
+    email_mensagem_padrao: str = Form(""),
     cert_file: UploadFile = File(None),
     cert_password_form: str = Form(""),
     logo: UploadFile = File(None),
@@ -280,7 +282,9 @@ async def salvar_configuracoes(
         empresa.smtp_password = smtp_password
     empresa.smtp_from_email = smtp_from_email or None
     empresa.smtp_from_name = smtp_from_name or None
+    empresa.smtp_seguranca = smtp_seguranca or "tls"
     empresa.email_auto_enviar = (email_auto_enviar == "1")
+    empresa.email_mensagem_padrao = email_mensagem_padrao or None
     empresa.sicoob_token = None
     empresa.updated_at = datetime.now()
     db.commit()

@@ -46,7 +46,9 @@ class NFe(Base):
     aliquota_estadual = Column(Numeric(7, 4), default=0.0)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-    
+    email_enviado = Column(Boolean, default=False)
+    data_envio_email = Column(DateTime, nullable=True)
+
     pedido = relationship("PedidoVenda", back_populates="nfes")
     os = relationship("OrdemServico", back_populates="nfes")
     cliente = relationship("Cliente", back_populates="nfes")
@@ -138,6 +140,8 @@ class NFSe(Base):
     origem = Column(String(20), default="avulsa", nullable=False)
     tomador_nome = Column(String(200), nullable=True)
     tomador_cpf_cnpj = Column(String(20), nullable=True)
+    email_enviado = Column(Boolean, default=False)
+    data_envio_email = Column(DateTime, nullable=True)
 
     pedido = relationship("PedidoVenda", back_populates="nfse")
     consolidacao = relationship("PedidoConsolidado", back_populates="nfse")

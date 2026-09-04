@@ -85,14 +85,18 @@
                     {% set cores = {'rascunho': 'amber', 'pendente': 'amber', 'autorizada': 'emerald', 'erro': 'rose', 'cancelada': 'rose'} %}
                     {% set cor = cores.get((n.status or '').lower(), 'slate') %}
                     <span class="px-2 py-1 text-xs font-medium bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 rounded-full">{{ STATUS_LABELS.get(n.status, n.status) }}</span>
+                    {% if n.email_enviado %}
+                    <span class="px-2 py-1 text-xs font-medium bg-sky-950/50 text-sky-400 border border-sky-800/50 rounded-full ms-1" title="E-mail enviado em {{ n.data_envio_email.strftime('%d/%m/%Y %H:%M') if n.data_envio_email else '' }}">E-mail enviado</span>
+                    {% endif %}
                     {% if n.iss_retido %}
                     <span class="px-1.5 py-0.5 text-xs font-medium bg-amber-950/50 text-amber-400 border border-amber-800/50 rounded-full ms-1">ISS Retido</span>
                     {% endif %}
                 </td>
                 <td class="px-4 py-3 text-center">
-                    <div class="flex items-center justify-center gap-1">
-                        {% set st = (n.status or '').lower() %}
-                        {% if st == 'rascunho' %}
+                        <div class="flex items-center justify-center gap-1">
+                            <button type="button" onclick="reenviarNotaPorEmail('nfse_ids', {{ n.id }})" class="inline-flex p-1.5 text-sky-400 border border-slate-700 rounded hover:bg-sky-950/30 transition" title="Enviar / Reenviar por e-mail"><i data-lucide="mail" class="w-4 h-4"></i></button>
+                            {% set st = (n.status or '').lower() %}
+                            {% if st == 'rascunho' %}
                         <button type="button" onclick="confirmTransmitirLista({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Transmitir"><i data-lucide="send" class="w-4 h-4"></i></button>
                         <a href="/nfse/{{ n.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="edit" class="w-4 h-4"></i></a>
                         <a href="/nfse/detalhe/{{ n.id }}" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Detalhe"><i data-lucide="eye" class="w-4 h-4"></i></a>

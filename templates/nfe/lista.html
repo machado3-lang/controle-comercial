@@ -109,11 +109,15 @@
                     {% set cores = {'rascunho': 'amber', 'queued': 'amber', 'processing': 'cyan', 'issued': 'emerald', 'error': 'rose', 'cancelled': 'slate', 'pendente': 'amber'} %}
                     {% set cor = cores.get(n.status, 'slate') %}
                     <span class="px-2 py-1 text-xs font-medium bg-{{ cor }}-950/50 text-{{ cor }}-400 border border-{{ cor }}-800/50 rounded-full">{{ STATUS_LABELS.get(n.status, n.status) }}</span>
+                    {% if n.email_enviado %}
+                    <span class="px-2 py-1 text-xs font-medium bg-sky-950/50 text-sky-400 border border-sky-800/50 rounded-full ms-1" title="E-mail enviado em {{ n.data_envio_email.strftime('%d/%m/%Y %H:%M') if n.data_envio_email else '' }}">E-mail enviado</span>
+                    {% endif %}
                 </td>
                 <td class="px-4 py-3 text-xs text-slate-400 max-w-[200px] truncate">{{ n.chave_acesso or '-' }}</td>
                 <td class="px-4 py-3 text-center">
-                    <div class="flex items-center justify-center gap-1">
-                        <a href="/nfe/{{ n.id }}/previa" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Revisar"><i data-lucide="eye" class="w-4 h-4"></i></a>
+                        <div class="flex items-center justify-center gap-1">
+                            <button type="button" onclick="reenviarNotaPorEmail('nfe_ids', {{ n.id }})" class="inline-flex p-1.5 text-sky-400 border border-slate-700 rounded hover:bg-sky-950/30 transition" title="Enviar / Reenviar por e-mail"><i data-lucide="mail" class="w-4 h-4"></i></button>
+                            <a href="/nfe/{{ n.id }}/previa" class="inline-flex p-1.5 text-amber-400 border border-slate-700 rounded hover:bg-amber-950/30 transition" title="Prévia / Revisar"><i data-lucide="eye" class="w-4 h-4"></i></a>
                         {% if n.status in ('rascunho', 'queued', 'processing', 'error') %}
                         <button type="button" onclick="confirmTransmitir({{ n.id }}, '{{ n.numero }}')" class="inline-flex p-1.5 text-emerald-400 border border-slate-700 rounded hover:bg-emerald-950/30 transition" title="Transmitir"><i data-lucide="send" class="w-4 h-4"></i></button>
                         <a href="/nfe/{{ n.id }}/editar" class="inline-flex p-1.5 text-cyan-400 border border-slate-700 rounded hover:bg-cyan-950/30 transition" title="Editar"><i data-lucide="edit" class="w-4 h-4"></i></a>

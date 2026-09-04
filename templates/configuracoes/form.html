@@ -391,6 +391,20 @@
                         <label class="block text-xs font-medium text-cyan-400 mb-1">Nome do Remetente</label>
                         <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="smtp_from_name" value="{{ empresa.smtp_from_name or empresa.nome_fantasia or '' }}" placeholder="Nome da empresa">
                     </div>
+                    <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Segurança da Conexão</label>
+                        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="smtp_seguranca">
+                            <option value="tls" {{ 'selected' if (empresa.smtp_seguranca or 'tls') == 'tls' }}>STARTTLS (recomendado, porta 587)</option>
+                            <option value="ssl" {{ 'selected' if empresa.smtp_seguranca == 'ssl' }}>SSL/SMTPs (porta 465)</option>
+                            <option value="none" {{ 'selected' if empresa.smtp_seguranca == 'none' }}>Sem criptografia</option>
+                        </select>
+                        <p class="text-xs text-slate-500 mt-1">UOL: use SSL na porta 465 ou STARTTLS na 587.</p>
+                    </div>
+                </div>
+                <div class="mt-4">
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Mensagem Padrão do E-mail</label>
+                    <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="email_mensagem_padrao" rows="4" placeholder="Mensagem opcional incluída no corpo do e-mail de envio de documentos">{{ empresa.email_mensagem_padrao or '' }}</textarea>
+                    <p class="text-xs text-slate-500 mt-1">Texto opcional enviado junto com os documentos fiscais/boletos.</p>
                 </div>
                 <div class="flex items-center gap-2">
                     <input type="checkbox" class="w-4 h-4 rounded border-slate-700 bg-slate-800 text-cyan-500 focus:ring-cyan-500" name="email_auto_enviar" value="1" id="emailAutoEnviar" {{ 'checked' if empresa.email_auto_enviar else '' }}>
