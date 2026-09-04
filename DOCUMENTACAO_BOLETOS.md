@@ -99,7 +99,7 @@ Fluxo:
 
 ### 3.3 Gatilhos de emissão automática
 - **Contas a receber** (`routers/contas.py:395-429` e `474-521`): flag `emitir_boletos` no formulário chama `emitir_boletos_contas`.
-- **Consolidações** (`routers/consolidacoes.py:730-739`): se `gerar_boleto` ou `forma_pagamento == "boleto"`, emite os boletos de todas as parcelas geradas.
+- **Consolidações** (`routers/nfse.py`, rota `emitir_consolidacao_nfse`): o boleto **não** é emitido no `finalizar_consolidacao`. Ele é emitido **após** salvar os rascunhos NFe/NFSe, se a consolidação tiver `gerar_boleto=True` ou `forma_pagamento == "boleto"`, via `emitir_boletos_contas` sobre as `ContaReceber` já criadas no finalizar.
 - **Em lote manual** (`POST /sicoob/emitir-em-lote`, `sicoob.py:560`): emite todos os boletos pendentes (status `PENDENTE`, não emitidos, vencimento ≥ hoje).
 
 ---

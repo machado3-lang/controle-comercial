@@ -81,7 +81,7 @@ em uma só conta a receber.
 | `GET /consolidacoes/{id}` | Detalhe | `:586` |
 | `POST /consolidacoes/{id}/adicionar` | Adiciona `PRE_VENDA` a consolidação ABERTA | `:460` |
 | `POST /consolidacoes/{id}/remover/{pid}` | Remove (volta a `PRE_VENDA` / exclui se vazia) | `:492` |
-| `POST /consolidacoes/{id}/finalizar` | `CONCLUIDO` + gera `ContaReceber` (parcelada) + boletos | `:661` |
+| `POST /consolidacoes/{id}/finalizar` | `CONCLUIDO` + gera `ContaReceber` (parcelada). **Não** emite boleto (ver §6) | `:661` |
 | `POST /consolidacoes/{id}/cancelar` | Cancela fiscalmente e libera pedidos | `:748` |
 | `GET /consolidacoes/{id}/imprimir` | Impressão A4/térmica | `:847` |
 
@@ -108,14 +108,36 @@ clique, o pedido passa a aparecer na tela de nova consolidação.
 
 ## 6. Geração de NF e cobrança
 
-- **Finalizar** (`finalizar_consolidacao`) gera `ContaReceber` (parcelada) via
-  `services.parcelamento.gerar_contas_receber` e, se `gerar_boleto`/forma boleto,
-  emite os boletos Sicoob de todas as parcelas.
-- **NF da consolidação não gera cobrança própria** — a cobrança vem de
-  `finalizar_consolidacao` (por design). Ver `DOCUMENTACAO_NFE.md` e
+- **Finalizar** (`finalizar_consolidacao`, `consolidacoes.py`) gera a
+  `ContaReceber` (parcelada) via `services.parcelamento.gerar_contas_receber`,
+  mas **não emite boleto**. A emissão do boleto foi deliberadamente desacoplada
+  do finalizar para evitar cobrar antes de existir documento fiscal.
+- **Boleto é emitido somente após gerar as notas.** A rota
+  `emitir_consolidacao_nfse` (`POST /nfse/emitir/consolidacao/{id}`,
+  `nfse.py`) salva os rascunhos de NFe/NFSe e, **depois**, se a consolidação
+  tiver `gerar_boleto=True` ou `forma_pagamento == "boleto"`, emite os boletos
+  Sicoob das parcelas (via `emitir_boletos_contas`). Assim o boleto nasce
+  vinculado às NFs já geradas, usando o `numero` da consolidação e o vencimento
+  informado no finalizar.
+- **NF da consolidação não gera cobrança própria** — a cobrança vem das contas a
+  receber criadas no finalizar. Ver `DOCUMENTACAO_NFE.md` e
   `DOCUMENTACAO_BOLETOS.md`.
 - Rotas de emissão: `GET /nfe/emitir/consolidacao/{id}`,
   `GET /nfse/emitir/consolidacao/{id}`.
+
+### 6.1. Correções aplicadas (commit `91513b6`)
+
+- **Boleto só após as NFs:** removida a emissão imediata em
+  `finalizar_consolidacao`; boleto passou para `emitir_consolidacao_nfse`, após
+  salvar os rascunhos NFe/NFSe.
+- **Valor da NFSe corrigido:** `valor_servicos` em `nfse.py` deixou de multiplicar
+  `item.total * item.quantidade` (contagem em dobro, pois `item.total` já é
+  `quantidade × preço_unitario` agregado) e passou a somar `item.total`. O
+  cabeçalho da NFSe agora bate com o total dos serviços.
+- **Cliente visível no rascunho NFSe:** o formulário de edição
+  (`templates/nfse/editar.html`) pré-preenche a caixa de busca `#clienteSearch`
+  com o nome do cliente já vinculado (antes só o `hidden #clienteId` vinha
+  preenchido, e o campo parecia vazio).
 
 ## 7. Notas de implementação / pendências
 
