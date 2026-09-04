@@ -730,18 +730,9 @@ def finalizar_consolidacao(
         request.session["error"] = "Erro ao finalizar a consolidação. Nenhuma alteração foi salva."
         return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
-    # Emissão imediata de TODOS os boletos das parcelas (Sicoob)
-    if contas_geradas and (gerar_boleto or forma_pagamento == "boleto"):
-        from services.parcelamento import emitir_boletos_contas
-        ok, erros = emitir_boletos_contas(db, contas_geradas)
-        if erros:
-            request.session["error"] = (
-                f"Consolidação finalizada; {ok} boleto(s) emitido(s), mas houve erro(s): " + "; ".join(erros)
-            )
-            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
-        request.session["message"] = f"Consolidação finalizada e {ok} boleto(s) emitido(s) com sucesso!"
-        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
-
+    # A emissao dos boletos foi movida para apos a geracao das notas fiscais
+    # (rota de emissao da consolidacao em routers/nfse.py), evitando cobrar
+    # antes de existir NFe/NFSe vinculada.
     request.session["message"] = "Consolidação finalizada com sucesso!"
     return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 

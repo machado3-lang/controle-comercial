@@ -1019,8 +1019,10 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
         if itens_nfse:
             numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
             empresa.ultimo_numero_nfse = int(numero_nfse)
+            # `item.total` ja e a soma (quantidade * preco_unitario) agregada na
+            # consolidação; multiplicar por `item.quantidade` conta o valor em dobro.
             valor_servicos = sum(
-                Decimal(str(item.total or item.preco_unitario or 0)) * Decimal(str(item.quantidade or 1))
+                Decimal(str(item.total or 0))
                 for item in itens_nfse
             )
             
@@ -1057,14 +1059,33 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                 db.add(nfse_item)
 
         db.commit()
-        
+
+        # Boleto somente apos gerar as notas fiscais (NFe/NFSe). As contas a
+        # receber ja foram criadas no finalizar da consolidacao.
+        boleto_info = ""
+        if consolidacao.gerar_boleto or (consolidacao.forma_pagamento or "").lower() == "boleto":
+            try:
+                from services.parcelamento import emitir_boletos_contas, contas_receber_existentes_para
+                contas = contas_receber_existentes_para(db, consolidacao=consolidacao)
+                if contas:
+                    ok_b, erros_b = emitir_boletos_contas(db, contas)
+                    if erros_b:
+                        boleto_info = f" {ok_b} boleto(s) emitido(s), mas com erro(s): " + "; ".join(erros_b)
+                    else:
+                        boleto_info = f" {ok_b} boleto(s) emitido(s) com sucesso!"
+            except Exception as e:
+                logger.exception("Erro ao emitir boleto apos gerar notas da consolidacao %s", consolidacao_id)
+                boleto_info = f" erro ao emitir boleto: {e}"
+
         msg = f"Rascunhos salvos para ConsolidaÃ§Ã£o #{consolidacao.numero or consolidacao_id}!"
         if nfe:
             msg += f" NFe #{nfe.numero}"
         if nfse:
             msg += f" NFSe #{nfse.numero}"
+        if boleto_info:
+            msg += " |" + boleto_info
         request.session["message"] = msg
-        
+
         # Redirect to preview
         if nfe:
             return RedirectResponse(url=f"/nfe/{nfe.id}/previa", status_code=303)

@@ -383,6 +383,14 @@ document.addEventListener('DOMContentLoaded', function() {
             }
         });
     }
+
+    // Pré-preencher o cliente já vinculado (rascunho/editado) na caixa de busca,
+    // pois apenas o hidden #clienteId vinha preenchido e o campo parecia vazio.
+    const clienteIdAtual = document.getElementById('clienteId');
+    if (clienteIdAtual && clienteIdAtual.value && clienteSearch && !clienteSearch.value) {
+        const cli = clientes.find(c => String(c.id) === clienteIdAtual.value);
+        clienteSearch.value = cli ? cli.nome : {{ (nfse.cliente.nome if nfse.cliente else '')|tojson }};
+    }
 });
 </script>
 {% endblock %}
