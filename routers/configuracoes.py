@@ -471,15 +471,28 @@ async def testar_email(request: Request, db: Session = Depends(get_db)):
     db.commit()
 
     from services.email_service import enviar_email, get_smtp_config, render_email_template
+    from models import Usuario
+
+    # Quando o envio e via API do Brevo (Railway bloqueia SMTP), a
+    # configuracao SMTP nao e obrigatoria para o teste.
+    usa_brevo = bool(os.environ.get("BREVO_API_KEY"))
     config = get_smtp_config(db)
-    if not config:
+    if not usa_brevo and not config:
         return JSONResponse({"success": False, "error": "Preencha servidor, usuario e senha"})
 
-    from models import Usuario
     usuario = db.query(Usuario).filter(Usuario.id == request.session.get("user_id")).first()
-    destinatario = usuario.email if usuario else config["from_email"]
+    if config:
+        from_email = config["from_email"]
+        from_name = config["from_name"]
+    else:
+        from_email = empresa.smtp_from_email or empresa.email
+        from_name = (empresa.smtp_from_name
+                     or empresa.nome_fantasia
+                     or empresa.razao_social
+                     or "Sistema")
+    destinatario = usuario.email if usuario else from_email
     corpo = render_email_template("notificacao.html", {
-        "empresa_nome": config["from_name"],
+        "empresa_nome": from_name,
         "cliente_nome": "Teste",
         "descricao": "Email de teste do sistema",
         "valor": "R$ 0,00",

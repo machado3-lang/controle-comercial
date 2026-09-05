@@ -1,5 +1,8 @@
 import smtplib
 import os
+import json
+import base64
+import requests
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email.mime.text import MIMEText
@@ -27,6 +30,64 @@ def get_smtp_config(db) -> Optional[dict]:
     }
 
 
+def _identidade_email(db):
+    """Retorna (from_email, from_name) configurados na empresa."""
+    empresa = db.query(Empresa).first() if db is not None else None
+    if not empresa:
+        return None, None
+    from_email = empresa.smtp_from_email or getattr(empresa, "email", None)
+    from_name = (empresa.smtp_from_name
+                 or empresa.nome_fantasia
+                 or empresa.razao_social
+                 or "Sistema")
+    return from_email, from_name
+
+
+def _enviar_via_brevo(
+    destinatario: str,
+    assunto: str,
+    corpo_html: str,
+    anexos: Optional[list],
+    from_email: str,
+    from_name: str,
+    api_key: str,
+) -> dict:
+    if not destinatario:
+        return {"success": False, "error": "Destinatario nao informado"}
+    if not from_email:
+        return {"success": False, "error": "Remetente (from_email) nao configurado"}
+    payload = {
+        "sender": {"name": from_name or from_email, "email": from_email},
+        "to": [{"email": destinatario}],
+        "subject": assunto,
+        "htmlContent": corpo_html,
+    }
+    if anexos:
+        atts = []
+        for filename, content, mime_type in anexos:
+            atts.append({
+                "name": filename,
+                "content": base64.b64encode(content).decode("ascii"),
+            })
+        payload["attachment"] = atts
+    try:
+        resp = requests.post(
+            "https://api.brevo.com/v3/smtp/email",
+            headers={
+                "api-key": api_key,
+                "Content-Type": "application/json",
+                "Accept": "application/json",
+            },
+            data=json.dumps(payload),
+            timeout=30,
+        )
+        if resp.status_code in (200, 201):
+            return {"success": True}
+        return {"success": False, "error": f"Brevo {resp.status_code}: {resp.text[:300]}"}
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+
+
 def enviar_email(
     destinatario: str,
     assunto: str,
@@ -34,6 +95,16 @@ def enviar_email(
     anexos: Optional[list] = None,
     db=None,
 ) -> dict:
+    # No Railway (planos Free/Hobby) o SMTP de saida e bloqueado.
+    # Quando a variavel BREVO_API_KEY estiver definida, enviamos via API HTTPS.
+    brevo_key = os.environ.get("BREVO_API_KEY")
+    if brevo_key:
+        from_email, from_name = _identidade_email(db)
+        return _enviar_via_brevo(
+            destinatario, assunto, corpo_html, anexos,
+            from_email, from_name, brevo_key,
+        )
+
     config = get_smtp_config(db)
     if not config:
         return {"success": False, "error": "SMTP não configurado"}
