@@ -120,8 +120,6 @@ def listar_nfse(
         _f = [ContaReceber.nfse_id == n.id]
         if n.pedido_id:
             _f.append(ContaReceber.pedido_id == n.pedido_id)
-        if n.assinatura_id:
-            _f.append(ContaReceber.assinatura_id == n.assinatura_id)
         cob = db.query(ContaReceber).filter(
             or_(*_f),
             ~ContaReceber.status.in_([StatusConta.EXCLUIDO, StatusConta.CANCELADO]),
@@ -1244,15 +1242,14 @@ def detalhe_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
 
-    # Cobrancas vinculadas a esta NFSe (por nfse_id) OU ao pedido/OS de origem
-    # (quando geradas no faturamento do pedido ou na ordem de servico). Exclui
-    # canceladas/excluidas para nao exibir cobranca ja baixada/excluida.
+    # Cobrancas vinculadas a esta NFSe (por nfse_id) OU ao pedido de origem
+    # (quando geradas no faturamento do pedido). Exclui canceladas/excluidas.
+    # A NFSe de assinatura ja vincula a cobranca por nfse_id, entao nao e
+    # necessario filtrar por assinatura_id (ContaReceber nao possui essa coluna).
     _status_ativos = ~ContaReceber.status.in_([StatusConta.EXCLUIDO, StatusConta.CANCELADO])
     _filtros_nfse = [ContaReceber.nfse_id == nfse.id]
     if nfse.pedido_id:
         _filtros_nfse.append(ContaReceber.pedido_id == nfse.pedido_id)
-    if nfse.assinatura_id:
-        _filtros_nfse.append(ContaReceber.assinatura_id == nfse.assinatura_id)
     cobranca = db.query(ContaReceber).filter(
         or_(*_filtros_nfse), _status_ativos
     ).order_by(ContaReceber.numero_parcela).first()
