@@ -113,8 +113,18 @@ def listar_nfse(
     
     nfse_ids_sem_cobranca = set()
     for n in nfse_list:
+        # Mesma regra do detalhe: cobranca vinculada por nfse_id, pedido_id ou
+        # assinatura_id, ignorando canceladas/excluidas. A observacao.like antiga
+        # nao encontrava cobrancas geradas pela OS (observacao "Cobrança agrupada
+        # da OS #..."), deixando a nota marcada como "sem cobrança" indevidamente.
+        _f = [ContaReceber.nfse_id == n.id]
+        if n.pedido_id:
+            _f.append(ContaReceber.pedido_id == n.pedido_id)
+        if n.assinatura_id:
+            _f.append(ContaReceber.assinatura_id == n.assinatura_id)
         cob = db.query(ContaReceber).filter(
-            ContaReceber.observacao.like(f"%NFSe #{n.id}%")
+            or_(*_f),
+            ~ContaReceber.status.in_([StatusConta.EXCLUIDO, StatusConta.CANCELADO]),
         ).first()
         if not cob:
             nfse_ids_sem_cobranca.add(n.id)
@@ -1234,9 +1244,18 @@ def detalhe_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     if not nfse:
         raise HTTPException(status_code=404, detail="NFSe nÃ£o encontrada")
 
+    # Cobrancas vinculadas a esta NFSe (por nfse_id) OU ao pedido/OS de origem
+    # (quando geradas no faturamento do pedido ou na ordem de servico). Exclui
+    # canceladas/excluidas para nao exibir cobranca ja baixada/excluida.
+    _status_ativos = ~ContaReceber.status.in_([StatusConta.EXCLUIDO, StatusConta.CANCELADO])
+    _filtros_nfse = [ContaReceber.nfse_id == nfse.id]
+    if nfse.pedido_id:
+        _filtros_nfse.append(ContaReceber.pedido_id == nfse.pedido_id)
+    if nfse.assinatura_id:
+        _filtros_nfse.append(ContaReceber.assinatura_id == nfse.assinatura_id)
     cobranca = db.query(ContaReceber).filter(
-        ContaReceber.observacao.like(f"%NFSe #{nfse.id}%")
-    ).first()
+        or_(*_filtros_nfse), _status_ativos
+    ).order_by(ContaReceber.numero_parcela).first()
 
     vencimento_sugerido = None
     if nfse.assinatura_id and nfse.assinatura and not cobranca:
@@ -1548,11 +1567,11 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
     cobranca_existente = db.query(ContaReceber).filter(
-        (ContaReceber.nfse_id == nfse.id) |
-        ContaReceber.observacao.like(f"%NFSe #{nfse.id}%")
+        ContaReceber.nfse_id == nfse.id,
+        ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
     ).first()
     if cobranca_existente:
-        request.session["error"] = "CobranÃ§a jÃ¡ existe para esta NFSe"
+        request.session["error"] = "Cobrança já existe para esta NFSe"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
     from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para
