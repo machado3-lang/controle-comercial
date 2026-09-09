@@ -11,11 +11,11 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc, asc, or_
 from database import get_db
 from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsolidado, PedidoConsolidadoItem, Produto, ProdutoVariacao, ProdutoComposicao, ContaReceber, ContaPagar, StatusConta, StatusPedido, OrdemServico, Assinatura, Fornecedor
-from models_nfe import NFSe, NFSeItem, NFSeRecebida
+from models_nfe import NFSe, NFSeItem, NFSeRecebida, NFe, NFeItem
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
 from services.nfse_service import formatar_aviso_nfse
 from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional, NFSE_NACIONAL_NS
-from services.nfe_notaas import explodir_itens_consolidacao
+from services.nfe_notaas import explodir_itens_consolidacao, _limpar_doc
 
 logger = logging.getLogger(__name__)
 
@@ -1229,41 +1229,47 @@ def editar_nfse_salvar(
 
     valor_total = sum(Decimal(str(i.get("valor_total", 0))) for i in itens_data)
 
-    nfse.cliente_id = cliente.id
-    nfse.valor_total = valor_total
-    nfse.natureza_operacao = natureza_operacao or None
-    nfse.regime_especial = regime_especial or None
-    nfse.municipio_codigo = municipio_codigo or None
-    nfse.municipio_nome = municipio_nome or None
-    nfse.iss_retido = getattr(cliente, 'iss_retido', False) or False
-    nfse.observacoes = observacoes or ""
-    if data_competencia:
-        data_antiga = nfse.data_emissao
-        nova_data = datetime.strptime(data_competencia, '%Y-%m-%d')
-        nfse.data_emissao = nova_data.replace(
-            hour=data_antiga.hour, minute=data_antiga.minute,
-            second=data_antiga.second, microsecond=data_antiga.microsecond
-        )
+    try:
+        nfse.cliente_id = cliente.id
+        nfse.valor_total = valor_total
+        nfse.natureza_operacao = natureza_operacao or None
+        nfse.regime_especial = regime_especial or None
+        nfse.municipio_codigo = municipio_codigo or None
+        nfse.municipio_nome = municipio_nome or None
+        nfse.iss_retido = getattr(cliente, 'iss_retido', False) or False
+        nfse.observacoes = observacoes or ""
+        if data_competencia:
+            data_antiga = nfse.data_emissao
+            nova_data = datetime.strptime(data_competencia, '%Y-%m-%d')
+            nfse.data_emissao = nova_data.replace(
+                hour=data_antiga.hour, minute=data_antiga.minute,
+                second=data_antiga.second, microsecond=data_antiga.microsecond
+            )
 
-    for old_item in nfse.itens:
-        db.delete(old_item)
-    db.flush()
+        for old_item in nfse.itens:
+            db.delete(old_item)
+        db.flush()
 
-    for item in itens_data:
-        nfse_item = NFSeItem(
-            nfse_id=nfse.id,
-            produto_id=item.get("produto_id") or None,
-            variacao_id=item.get("variacao_id"),
-            descricao=item.get("descricao", ""),
-            quantidade=Decimal(str(item.get("quantidade", 1))),
-            valor_unitario=Decimal(str(item.get("valor_unitario", 0))),
-            valor_total=Decimal(str(item.get("valor_total", 0))),
-            codigo_servico=item.get("codigo_lc116", ""),
-            tributacao_municipal=item.get("codigo_tributacao_municipal", ""),
-        )
-        db.add(nfse_item)
+        for item in itens_data:
+            nfse_item = NFSeItem(
+                nfse_id=nfse.id,
+                produto_id=item.get("produto_id") or None,
+                variacao_id=item.get("variacao_id"),
+                descricao=item.get("descricao", ""),
+                quantidade=Decimal(str(item.get("quantidade", 1))),
+                valor_unitario=Decimal(str(item.get("valor_unitario", 0))),
+                valor_total=Decimal(str(item.get("valor_total", 0))),
+                codigo_servico=item.get("codigo_lc116", ""),
+                tributacao_municipal=item.get("codigo_tributacao_municipal", ""),
+            )
+            db.add(nfse_item)
 
-    db.commit()
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        request.session["error"] = f"Erro ao salvar rascunho: {str(e)}"
+        return RedirectResponse(url=f"/nfse/{nfse_id}/editar", status_code=303)
+
     request.session["message"] = f"Rascunho NFSe #{nfse.numero} atualizado!"
     return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
