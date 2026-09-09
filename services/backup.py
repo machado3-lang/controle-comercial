@@ -225,7 +225,7 @@ def restore_backup(backup_dict: dict, modo: str = "sobrepor") -> dict:
     for table_name in TABLES_IN_ORDER:
         _validate_table(table_name)
         backup_rows = tables_data.get(table_name, [])
-        tabelas[table_name] = {"backup": len(backup_rows), "importado": 0, "erros": 0, "ignorado": 0}
+        tabelas[table_name] = {"backup": len(backup_rows), "importado": 0, "erros": 0, "ignorado": 0, "nulos_ignorados": 0, "colunas_descartadas": set()}
 
     is_pg = "postgresql" in str(engine.url)
 
@@ -286,10 +286,20 @@ def restore_backup(backup_dict: dict, modo: str = "sobrepor") -> dict:
 
                         for k, v in row_data.items():
                             if db_columns and k not in db_columns:
+                                tabelas[table_name]["colunas_descartadas"].add(k)
                                 continue
                             if not re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', str(k)):
                                 continue
                             if v is None:
+                                if modo == "limpar" and k != "id":
+                                    # Modo limpar: a tabela foi zerada antes, então
+                                    # gravar NULL explicitamente para ser fiel ao backup.
+                                    col_names.append(k)
+                                    col_placeholders.append(f":{k}")
+                                    col_values[k] = None
+                                else:
+                                    # sobrepor: não sobrescreve com NULL (merge) e contabiliza.
+                                    tabelas[table_name]["nulos_ignorados"] += 1
                                 continue
 
                             col_type = columns_info.get(k, {})
@@ -383,6 +393,17 @@ def restore_backup(backup_dict: dict, modo: str = "sobrepor") -> dict:
 
     for tn, t in tabelas.items():
         t["nao_processado"] = t["backup"] - t["importado"] - t["erros"] - t["ignorado"]
+        descartadas = sorted(t.pop("colunas_descartadas", set()))
+        if descartadas:
+            detalhes.append(
+                f"{tn}: {len(descartadas)} coluna(s) do backup AUSENTE(S) no banco destino "
+                f"(descartadas silenciosamente): {', '.join(descartadas)}"
+            )
+        if t["nulos_ignorados"]:
+            detalhes.append(
+                f"{tn}: {t['nulos_ignorados']} campo(s) NULL ignorado(s) "
+                f"(modo '{modo}': não sobrescreve com NULL)"
+            )
 
     logger.info("[RESTORE] concluído: %d importados, %d erros", total_imported, total_errors)
     return {
