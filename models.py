@@ -346,7 +346,15 @@ class OrdemServico(Base):
     valor_total = Column(Numeric(12, 2), default=0)
     data_entrada = Column(Date, nullable=False, default=date.today)
     data_saida = Column(Date, nullable=True)
-    status = Column(Enum(StatusOS, name='statusos', native_enum=True), default=StatusOS.ABERTA, index=True)
+    status = Column(
+        Enum(
+            StatusOS, name='statusos', native_enum=True, create_type=False,
+            # Grava o valor (minúsculo, ex.: 'concluida') e nao o nome do membro,
+            # mantendo consistencia com os rotulos do enum no banco.
+            values_callable=lambda obj: [e.value for e in obj],
+        ),
+        default=StatusOS.ABERTA, index=True
+    )
     tecnico = Column(String(200), nullable=True)
     autorizado_por = Column(String(200), nullable=True)
     numero_requisicao = Column(String(100), nullable=True)

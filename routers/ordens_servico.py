@@ -504,7 +504,13 @@ def atualizar_ordem(
     ordem.cobranca_separada = bool(cobranca_separada)
     ordem.updated_at = datetime.now()
     ordem.bling_pending_sync = True
-    db.commit()
+    _garantir_valor_enum("statusos", novo_status.value)
+    try:
+        db.commit()
+    except Exception as e:
+        db.rollback()
+        request.session["error"] = f"Não foi possível salvar a OS: {str(e)}"
+        return RedirectResponse(url=f"/ordens-servico/{ordem_id}/editar", status_code=303)
     return RedirectResponse(url=f"/ordens-servico/{ordem_id}", status_code=303)
 
 
@@ -918,7 +924,6 @@ def atualizar_status_ordem(
     # erro 'invalid input value for enum'. O SQLAlchemy com native_enum=True
     # envia o NOME do membro (ex.: 'CONCLUIDA'), entao garantimos nome E valor.
     # Isso cobre o caso em que o rotulo ainda nao existe no banco (sem redeploy).
-    _garantir_valor_enum("statusos", status.name)
     _garantir_valor_enum("statusos", status.value)
     # Libera a conexao atual (pode ter cacheado o enum antigo) e forca
     # reconexao para enxergar o novo label.
