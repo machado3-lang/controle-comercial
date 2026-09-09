@@ -13,6 +13,33 @@
             <p class="text-sm text-slate-300"><strong>Pré-pedidos:</strong> {{ consolidacao.qtd_pedidos_origem }} ({{ consolidacao.numeros_pedidos_origem }})</p>
         </div>
 
+        {% set nfe_rasc = nfe_existente and (nfe_existente.status or '')|lower in ('rascunho','erro') %}
+        {% set nfse_rasc = nfse_existente and (nfse_existente.status or '')|lower in ('rascunho','erro') %}
+        {% if nfe_existente or nfse_existente %}
+        <div class="mb-4 space-y-2">
+            {% if nfe_existente %}
+            <div class="p-3 rounded-xl {% if nfe_rasc %}bg-amber-950/30 border border-amber-800/50{% else %}bg-emerald-950/30 border border-emerald-800/50{% endif %}">
+                <p class="text-sm">
+                    <i data-lucide="file" class="w-4 h-4 inline me-1"></i>
+                    <strong>NFe #{{ nfe_existente.numero }}</strong> —
+                    {% if nfe_rasc %}<span class="text-amber-400">Rascunho existente</span>{% else %}<span class="text-emerald-400">Autorizada/emitida ({{ nfe_existente.status }})</span>{% endif %}
+                    <a href="/nfe/{{ nfe_existente.id }}/previa" class="ms-2 text-cyan-400 underline">ver</a>
+                </p>
+            </div>
+            {% endif %}
+            {% if nfse_existente %}
+            <div class="p-3 rounded-xl {% if nfse_rasc %}bg-amber-950/30 border border-amber-800/50{% else %}bg-emerald-950/30 border border-emerald-800/50{% endif %}">
+                <p class="text-sm">
+                    <i data-lucide="file" class="w-4 h-4 inline me-1"></i>
+                    <strong>NFSe #{{ nfse_existente.numero }}</strong> —
+                    {% if nfse_rasc %}<span class="text-amber-400">Rascunho existente</span>{% else %}<span class="text-emerald-400">Autorizada/emitida ({{ nfse_existente.status }})</span>{% endif %}
+                    <a href="/nfse/detalhe/{{ nfse_existente.id }}" class="ms-2 text-cyan-400 underline">ver</a>
+                </p>
+            </div>
+            {% endif %}
+        </div>
+        {% endif %}
+
         {% if itens_nfse %}
         <div class="mb-4 p-3 bg-indigo-950/30 border border-indigo-800/50 rounded-xl">
             <p class="text-sm text-indigo-400"><i data-lucide="info" class="w-4 h-4 inline me-1"></i> <strong>Itens de Serviço:</strong> {{ itens_nfse|length }} item(ns) de serviço — será gerado um rascunho de NFSe.</p>
@@ -93,9 +120,29 @@
     </div>
     {% endif %}
 
-    <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10">
+    {% set nfe_lock = nfe_existente and not (nfe_existente.status or '')|lower in ('rascunho','erro') %}
+    {% set nfse_lock = nfse_existente and not (nfse_existente.status or '')|lower in ('rascunho','erro') %}
+    {% if nfe_lock and nfse_lock %}
+    <div class="mb-4 p-3 bg-slate-800/40 rounded-xl">
+        <p class="text-sm text-slate-300"><i data-lucide="check-circle" class="w-4 h-4 inline me-1"></i> NFe e NFSe desta consolidação já foram transmitidas. Não é possível regerar.</p>
+    </div>
+    {% elif nfe_rasc or nfse_rasc %}
+    <div class="mb-4 p-3 bg-amber-950/30 border border-amber-800/50 rounded-xl">
+        <p class="text-sm text-amber-400"><i data-lucide="alert-triangle" class="w-4 h-4 inline me-1"></i> Já existe(m) rascunho(s). Você pode <strong>manter</strong> os existentes (gerando apenas os faltantes) ou <strong>regenerar</strong> os rascunhos (somente rascunho/erro — autorizadas são mantidas).</p>
+    </div>
+    <div class="flex flex-wrap gap-3">
+        <button type="submit" name="acao" value="manter" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all">
+            <i data-lucide="save" class="w-4 h-4 me-1"></i> Manter existentes e gerar faltantes
+        </button>
+        <button type="submit" name="acao" value="regerar" class="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10">
+            <i data-lucide="refresh-cw" class="w-4 h-4 me-1"></i> Regenerar rascunhos existentes
+        </button>
+    </div>
+    {% else %}
+    <button type="submit" name="acao" value="manter" class="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10">
         <i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar Rascunhos
     </button>
+    {% endif %}
 </form>
 </div>
 </div>

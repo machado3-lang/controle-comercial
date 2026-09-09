@@ -3,6 +3,7 @@ import time
 import httpx
 from typing import Optional
 from datetime import date
+from decimal import Decimal
 from models import Empresa, Produto
 from app.core.config import settings
 
@@ -501,17 +502,17 @@ def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse, valor_kit=None
                 "descricao": insumo.nome,
                 "quantidade": qtd,
                 "preco_unitario": insumo.preco or 0,
-                "total": (insumo.preco or 0) * qtd,
+                "total": Decimal(str(insumo.preco or 0)) * Decimal(str(qtd)),
                 "produto": insumo,
             })
         elif insumo.tipo == "kit":
             _explodir_kit(db, insumo, qtd, folhas_nfe, itens_nfse, valor_kit=None)
     if valor_kit:
-        soma = sum((f.get("preco_unitario") or 0) * (f.get("quantidade") or 0) for f in folhas_nfe)
+        soma = sum(Decimal(str(f.get("preco_unitario") or 0)) * Decimal(str(f.get("quantidade") or 0)) for f in folhas_nfe)
         if soma > 0:
-            fator = float(valor_kit) / soma
+            fator = float(valor_kit) / float(soma)
             for f in folhas_nfe:
-                f["preco_unitario"] = (f.get("preco_unitario") or 0) * fator
+                f["preco_unitario"] = Decimal(str(f.get("preco_unitario") or 0)) * Decimal(str(fator))
     itens_nfe.extend(folhas_nfe)
 
 

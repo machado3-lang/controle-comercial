@@ -919,24 +919,26 @@ def pagina_emitir_consolidacao(request: Request, consolidacao_id: int, db: Sessi
     if not consolidacao:
         raise HTTPException(status_code=404, detail="ConsolidaÃ§Ã£o nÃ£o encontrada")
     if consolidacao.status != "concluido":
-        raise HTTPException(status_code=400, detail="Apenas consolidaÃ§Ãµes finalizadas podem emitir NFSe")
-    if consolidacao.nfse:
-        raise HTTPException(status_code=400, detail="Esta consolidaÃ§Ã£o jÃ¡ possui NFSe emitida")
-    
+        raise HTTPException(status_code=400, detail="Apenas consolidaÃ§Ãµes finalizadas podem emitir NFe/NFSe")
+
     # Explode itens
     itens_nfe, itens_nfse = explodir_itens_consolidacao(consolidacao=consolidacao, db=db)
-    
+    nfe_existente = db.query(NFe).filter(NFe.consolidacao_id == consolidacao_id).order_by(NFe.id.desc()).first()
+    nfse_existente = consolidacao.nfse
+
     empresa = db.query(Empresa).first()
     return request.app.state.templates.TemplateResponse(request,
         "nfe/emissao_consolidacao.html",
         {"request": request, "consolidacao": consolidacao,
          "itens_nfe": itens_nfe, "itens_nfse": itens_nfse,
-         "empresa": empresa, "messages": _get_messages(request)}
+         "empresa": empresa, "messages": _get_messages(request),
+         "nfe_existente": nfe_existente, "nfse_existente": nfse_existente}
     )
 
 
 @router.post("/emitir/consolidacao/{consolidacao_id}")
-def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session = Depends(get_db)):
+def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session = Depends(get_db),
+                              acao: str = Form("manter")):
     """Salva rascunho NFe + NFSe da consolidaÃ§Ã£o"""
     consolidacao = db.query(PedidoConsolidado).options(
         selectinload(PedidoConsolidado.itens).selectinload(PedidoConsolidadoItem.produto),
@@ -947,11 +949,33 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
     if consolidacao.status != "concluido":
         request.session["error"] = "Apenas consolidaÃ§Ãµes finalizadas podem emitir NFe/NFSe"
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
-    if consolidacao.nfse:
-        request.session["error"] = "Esta consolidaÃ§Ã£o jÃ¡ possui NFSe"
-        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
-
     itens_nfe, itens_nfse = explodir_itens_consolidacao(consolidacao=consolidacao, db=db)
+
+    # --- Rascunhos jÃ¡ existentes (NFe e NFSe) ---
+    _RASCUNHO = {"rascunho", "erro"}
+    nfe_existente = db.query(NFe).filter(NFe.consolidacao_id == consolidacao_id).order_by(NFe.id.desc()).first()
+    nfse_existente = consolidacao.nfse
+    nfe_rascunho = bool(nfe_existente and (nfe_existente.status or "").lower() in _RASCUNHO)
+    nfe_autorizada = bool(nfe_existente and not nfe_rascunho)
+    nfse_rascunho = bool(nfse_existente and (nfse_existente.status or "").lower() in _RASCUNHO)
+    nfse_autorizada = bool(nfse_existente and not nfse_rascunho)
+
+    acao_regerar = (acao == "regerar")
+    # Gera NFe apenas se houver itens, nÃ£o estiver autorizada e (se jÃ¡ hÃ¡ rascunho) sÃ³ se confirmado regerar
+    gerar_nfe = bool(itens_nfe) and (not nfe_autorizada) and (acao_regerar if nfe_rascunho else True)
+    gerar_nfse = bool(itens_nfse) and (not nfse_autorizada) and (acao_regerar if nfse_rascunho else True)
+
+    # Remove rascunhos existentes quando solicitado (somente rascunho/erro; autorizadas sÃ£o mantidas)
+    if acao_regerar:
+        for n in db.query(NFe).filter(NFe.consolidacao_id == consolidacao_id).all():
+            if (n.status or "").lower() in _RASCUNHO:
+                db.query(NFeItem).filter(NFeItem.nfe_id == n.id).delete()
+                db.delete(n)
+        if nfse_existente and nfse_rascunho:
+            db.query(NFSeItem).filter(NFSeItem.nfse_id == nfse_existente.id).delete()
+            db.delete(nfse_existente)
+        db.flush()
+
     empresa = db.query(Empresa).first()
     if not empresa:
         request.session["error"] = "Empresa nÃ£o cadastrada"
@@ -970,31 +994,32 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
     if not cliente:
         request.session["error"] = "ConsolidaÃ§Ã£o sem cliente definido. Finalize a consolidaÃ§Ã£o antes de emitir."
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
-    if itens_nfe:
+    if gerar_nfe:
         ie = _limpar_doc(cliente.inscricao_estadual) if hasattr(cliente, 'inscricao_estadual') else None
         if not ie and not cliente.isento_ie and cliente.indicador_ie != "nao_contribuinte":
             request.session["error"] = f"Cliente '{cliente.nome}' nÃ£o possui InscriÃ§Ã£o Estadual e nÃ£o estÃ¡ marcado como Isento IE ou NÃ£o contribuinte."
             return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
-    # Validar LC116 Ãºnico para NFSe
-    codigos_lc116 = set()
-    for item in itens_nfse:
-        prod = item.get("produto") if isinstance(item, dict) else getattr(item, "produto", None)
-        if prod and getattr(prod, "codigo_lc116", None):
-            codigos_lc116.add(prod.codigo_lc116)
-    if len(codigos_lc116) > 1:
-        request.session["error"] = f"ConsolidaÃ§Ã£o possui itens de serviÃ§o com cÃ³digos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura nÃ£o aceita mÃºltiplos cÃ³digos na mesma NFS-e."
-        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+    # Validar LC116 Ãºnico para NFSe (somente quando for gerar/regenerar a NFSe)
+    if gerar_nfse:
+        codigos_lc116 = set()
+        for item in itens_nfse:
+            prod = item.get("produto") if isinstance(item, dict) else getattr(item, "produto", None)
+            if prod and getattr(prod, "codigo_lc116", None):
+                codigos_lc116.add(prod.codigo_lc116)
+        if len(codigos_lc116) > 1:
+            request.session["error"] = f"ConsolidaÃ§Ã£o possui itens de serviÃ§o com cÃ³digos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura nÃ£o aceita mÃºltiplos cÃ³digos na mesma NFS-e."
+            return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
     try:
         # NFe
         nfe = None
-        if itens_nfe:
+        if gerar_nfe:
             from sqlalchemy import func
             empresa_locked = db.query(Empresa).filter(Empresa.id == empresa.id).with_for_update().first()
             numero_nfe = (empresa_locked.ultimo_numero_nfe or 0) + 1
             empresa_locked.ultimo_numero_nfe = numero_nfe
-            total_nfe = sum(i.get("preco_unitario", 0) * i.get("quantidade", 0) for i in itens_nfe)
+            total_nfe = sum(Decimal(str(i.get("preco_unitario", 0)) or 0) * Decimal(str(i.get("quantidade", 0) or 0)) for i in itens_nfe)
             now = datetime.now()
             
             nfe = NFe(
@@ -1026,13 +1051,13 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                     unidade=item.get("unidade", "UN"),
                     quantidade=item.get("quantidade", 1),
                     preco_unitario=item.get("preco_unitario", 0),
-                    total=item.get("quantidade", 1) * item.get("preco_unitario", 0),
+                    total=Decimal(str(item.get("quantidade", 1) or 1)) * Decimal(str(item.get("preco_unitario", 0) or 0)),
                 )
                 db.add(nfe_item)
 
         # NFSe
         nfse = None
-        if itens_nfse:
+        if gerar_nfse:
             numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
             empresa.ultimo_numero_nfse = int(numero_nfse)
             # Normaliza itens (PedidoConsolidadoItem OU dicionario vindo da
@@ -1122,7 +1147,8 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                 logger.exception("Erro ao emitir boleto apos gerar notas da consolidacao %s", consolidacao_id)
                 boleto_info = f" erro ao emitir boleto: {e}"
 
-        msg = f"Rascunhos salvos para ConsolidaÃ§Ã£o #{consolidacao.numero or consolidacao_id}!"
+        msg = f"Rascunhos da ConsolidaÃ§Ã£o #{consolidacao.numero or consolidacao_id} "
+        msg += "regerados!" if acao_regerar else "salvos (existentes mantidos quando aplicÃ¡vel)!"
         if nfe:
             msg += f" NFe #{nfe.numero}"
         if nfse:
@@ -1134,8 +1160,10 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
         # Redirect to preview
         if nfe:
             return RedirectResponse(url=f"/nfe/{nfe.id}/previa", status_code=303)
-        else:
+        if nfse:
             return RedirectResponse(url=f"/nfse/detalhe/{nfse.id}", status_code=303)
+        request.session["message"] = "NFe/NFSe da consolidaÃ§Ã£o jÃ¡ existem; nenhum rascunho novo foi gerado."
+        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
             
     except Exception as e:
         db.rollback()

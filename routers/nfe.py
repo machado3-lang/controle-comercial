@@ -734,7 +734,7 @@ def emitir_pedido_submit(
 
     try:
         numero_nfe = _proximo_numero(empresa, db)
-        total = sum(i.get("preco_unitario", 0) * i.get("quantidade", 0) for i in itens_nfe)
+        total = sum(Decimal(str(i.get("preco_unitario", 0) or 0)) * Decimal(str(i.get("quantidade", 0) or 0)) for i in itens_nfe)
         now = _agora_local(empresa)
         nfe = NFe(
             pedido_id=pedido_id,
@@ -766,7 +766,7 @@ def emitir_pedido_submit(
                 unidade=item.get("unidade", "UN"),
                 quantidade=item.get("quantidade", 1),
                 preco_unitario=item.get("preco_unitario", 0),
-                total=item.get("quantidade", 1) * item.get("preco_unitario", 0),
+                total=Decimal(str(item.get("quantidade", 1) or 1)) * Decimal(str(item.get("preco_unitario", 0) or 0)),
                 desconto=item.get("desconto") or 0,
                 cst=item.get("cst"),
                 csosn=item.get("csosn"),
@@ -900,7 +900,7 @@ def emitir_os_submit(
 
     try:
         numero_nfe = _proximo_numero(empresa, db)
-        total = sum(i.get("preco_unitario", 0) * i.get("quantidade", 0) for i in itens_nfe)
+        total = sum(Decimal(str(i.get("preco_unitario", 0) or 0)) * Decimal(str(i.get("quantidade", 0) or 0)) for i in itens_nfe)
         now = _agora_local(empresa)
         nfe = NFe(
             os_id=os_id,
@@ -931,7 +931,7 @@ def emitir_os_submit(
                 unidade=item.get("unidade", "UN"),
                 quantidade=item.get("quantidade", 1),
                 preco_unitario=item.get("preco_unitario", 0),
-                total=item.get("quantidade", 1) * item.get("preco_unitario", 0),
+                total=Decimal(str(item.get("quantidade", 1) or 1)) * Decimal(str(item.get("preco_unitario", 0) or 0)),
                 desconto=item.get("desconto") or 0,
                 cst=item.get("cst"),
                 csosn=item.get("csosn"),
@@ -1018,7 +1018,7 @@ def emitir_consolidacao_submit(
 
     try:
         numero_nfe = _proximo_numero(empresa, db)
-        total = sum(i.get("preco_unitario", 0) * i.get("quantidade", 0) for i in itens_nfe)
+        total = sum(Decimal(str(i.get("preco_unitario", 0) or 0)) * Decimal(str(i.get("quantidade", 0) or 0)) for i in itens_nfe)
         now = _agora_local(empresa)
         nfe = NFe(
             consolidacao_id=consolidacao_id,
@@ -1050,7 +1050,7 @@ def emitir_consolidacao_submit(
                 unidade=item.get("unidade", "UN"),
                 quantidade=item.get("quantidade", 1),
                 preco_unitario=item.get("preco_unitario", 0),
-                total=item.get("quantidade", 1) * item.get("preco_unitario", 0),
+                total=Decimal(str(item.get("quantidade", 1) or 1)) * Decimal(str(item.get("preco_unitario", 0) or 0)),
                 desconto=item.get("desconto") or 0,
                 cst=item.get("cst"),
                 csosn=item.get("csosn"),
