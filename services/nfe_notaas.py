@@ -493,7 +493,17 @@ def _explodir_kit(db, produto, quantidade, itens_nfe, itens_nfse, valor_kit=None
             _mesclar_tributos(folha, _tributos_do_produto(insumo))
             folhas_nfe.append(folha)
         elif insumo.tipo == "servico":
-            itens_nfse.append(insumo)
+            # Servico insumo do kit: anexa como item normalizado (Igual as
+            # folhas de produto), para que a geracao da NFSe trate统一mente
+            # objetos PedidoConsolidadoItem e dicionarios do kit.
+            itens_nfse.append({
+                "produto_id": insumo.id,
+                "descricao": insumo.nome,
+                "quantidade": qtd,
+                "preco_unitario": insumo.preco or 0,
+                "total": (insumo.preco or 0) * qtd,
+                "produto": insumo,
+            })
         elif insumo.tipo == "kit":
             _explodir_kit(db, insumo, qtd, folhas_nfe, itens_nfse, valor_kit=None)
     if valor_kit:

@@ -963,6 +963,13 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
 
     # Validar cliente para NFe
     cliente = consolidacao.cliente
+    if not cliente:
+        primeiro_ped = consolidacao.pedidos[0] if consolidacao.pedidos else None
+        if primeiro_ped and primeiro_ped.cliente_id:
+            cliente = db.query(Cliente).filter(Cliente.id == primeiro_ped.cliente_id).first()
+    if not cliente:
+        request.session["error"] = "ConsolidaÃ§Ã£o sem cliente definido. Finalize a consolidaÃ§Ã£o antes de emitir."
+        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
     if itens_nfe:
         ie = _limpar_doc(cliente.inscricao_estadual) if hasattr(cliente, 'inscricao_estadual') else None
         if not ie and not cliente.isento_ie and cliente.indicador_ie != "nao_contribuinte":
@@ -972,8 +979,9 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
     # Validar LC116 Ãºnico para NFSe
     codigos_lc116 = set()
     for item in itens_nfse:
-        if item.produto and item.produto.codigo_lc116:
-            codigos_lc116.add(item.produto.codigo_lc116)
+        prod = item.get("produto") if isinstance(item, dict) else getattr(item, "produto", None)
+        if prod and getattr(prod, "codigo_lc116", None):
+            codigos_lc116.add(prod.codigo_lc116)
     if len(codigos_lc116) > 1:
         request.session["error"] = f"ConsolidaÃ§Ã£o possui itens de serviÃ§o com cÃ³digos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura nÃ£o aceita mÃºltiplos cÃ³digos na mesma NFS-e."
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
@@ -1027,13 +1035,42 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
         if itens_nfse:
             numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
             empresa.ultimo_numero_nfse = int(numero_nfse)
+            # Normaliza itens (PedidoConsolidadoItem OU dicionario vindo da
+            # explosao de kit) para uma estrutura unica, evitando divergência
+            # entre o cabecalho (valor_total) e a soma dos itens.
+            servicos_norm = []
+            for item in itens_nfse:
+                if isinstance(item, dict):
+                    prod = item.get("produto")
+                    servicos_norm.append({
+                        "produto_id": item.get("produto_id"),
+                        "variacao_id": item.get("variacao_id"),
+                        "descricao": item.get("descricao") or (prod.nome if prod else ""),
+                        "quantidade": Decimal(str(item.get("quantidade") or 1)),
+                        "preco_unitario": Decimal(str(item.get("preco_unitario") or 0)),
+                        "total": Decimal(str(item.get("total") or 0)),
+                        "codigo_lc116": getattr(prod, "codigo_lc116", None) or "",
+                        "trib_mun": getattr(prod, "codigo_tributacao_municipal", None) or "",
+                    })
+                else:
+                    prod = getattr(item, "produto", None)
+                    servicos_norm.append({
+                        "produto_id": getattr(item, "produto_id", None),
+                        "variacao_id": getattr(item, "variacao_id", None),
+                        "descricao": (getattr(item, "descricao", None) or (prod.nome if prod else "")),
+                        "quantidade": Decimal(str(getattr(item, "quantidade", 1) or 1)),
+                        "preco_unitario": Decimal(str(getattr(item, "preco_unitario", 0) or 0)),
+                        "total": Decimal(str(getattr(item, "total", 0) or 0)),
+                        "codigo_lc116": getattr(prod, "codigo_lc116", None) or "",
+                        "trib_mun": getattr(prod, "codigo_tributacao_municipal", None) or "",
+                    })
+
             # `item.total` ja e a soma (quantidade * preco_unitario) agregada na
-            # consolidação; multiplicar por `item.quantidade` conta o valor em dobro.
-            valor_servicos = sum(
-                Decimal(str(item.total or 0))
-                for item in itens_nfse
-            )
-            
+            # consolidacao; multiplicar por `item.quantidade` conta o valor em dobro.
+            # O valor_total do cabecalho e calculado a partir dos mesmos itens
+            # salvos, garantindo cabecalho == soma dos itens (sem desconto negativo).
+            valor_servicos = sum(s["total"] for s in servicos_norm)
+
             iss_retido = getattr(cliente, 'iss_retido', False) or False
             nfse = NFSe(
                 consolidacao_id=consolidacao_id,
@@ -1052,17 +1089,17 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
             db.add(nfse)
             db.flush()
 
-            for item in itens_nfse:
+            for s in servicos_norm:
                 nfse_item = NFSeItem(
                     nfse_id=nfse.id,
-                    produto_id=item.produto_id,
-                variacao_id=item.variacao_id,
-                    descricao=item.descricao or item.produto.nome,
-                    quantidade=Decimal(str(item.quantidade or 1)),
-                    valor_unitario=Decimal(str(item.preco_unitario or 0)),
-                    valor_total=Decimal(str(item.total or 0)),
-                    codigo_servico=item.produto.codigo_lc116 or "",
-                    tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
+                    produto_id=s["produto_id"],
+                    variacao_id=s["variacao_id"],
+                    descricao=s["descricao"],
+                    quantidade=s["quantidade"],
+                    valor_unitario=s["preco_unitario"],
+                    valor_total=s["total"],
+                    codigo_servico=s["codigo_lc116"],
+                    tributacao_municipal=s["trib_mun"],
                 )
                 db.add(nfse_item)
 

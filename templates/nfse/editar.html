@@ -131,7 +131,8 @@
             </div>
             <div class="p-4">
                 {% set total_bruto = nfse.itens|sum(attribute='valor_total') %}
-                {% set desconto_atual = (total_bruto - (nfse.valor_total or 0))|round(2) %}
+                {% set desconto_bruto = (total_bruto - (nfse.valor_total or 0))|round(2) %}
+                {% set desconto_atual = [desconto_bruto, 0]|max %}
                 <div class="space-y-3 mb-4">
                     <div class="flex justify-between">
                         <span class="text-slate-400">Subtotal:</span>
