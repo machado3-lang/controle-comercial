@@ -70,7 +70,7 @@
                 <select name="atestado_tecnico" class="w-full h-9 text-sm px-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
                     <option value="emitido" {% if relogio and relogio.atestado_tecnico == 'emitido' %}selected{% endif %}>Emitido</option>
                     <option value="pendente" {% if not relogio or relogio.atestado_tecnico in (None, 'pendente') %}selected{% endif %}>Pendente</option>
-                    <option value="nao_aplica" {% if relogio and relogio.atestado_tecnico == 'nao_aplica' %}selected{% endif %}>Sem atestado (não se aplica)</option>
+                    <option value="nao_aplica" {% if relogio and relogio.atestado_tecnico == 'nao_aplica' %}selected{% endif %}>N.Aplica</option>
                 </select>
             </div>
         </div>
