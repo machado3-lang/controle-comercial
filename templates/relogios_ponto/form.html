@@ -65,10 +65,14 @@
 
         <!-- Atestado técnico -->
         <div class="flex items-end">
-            <label class="flex items-center gap-2 text-emerald-300 cursor-pointer px-3 py-2 bg-slate-900/40 border border-slate-800/60 rounded-xl">
-                <input type="checkbox" name="atestado_tecnico" value="1" {% if relogio and relogio.atestado_tecnico %}checked{% endif %} class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded">
-                <span class="text-sm">Atestado técnico emitido</span>
-            </label>
+            <div class="w-full">
+                <label class="block text-xs text-cyan-400 mb-1">Atestado técnico</label>
+                <select name="atestado_tecnico" class="w-full h-9 text-sm px-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
+                    <option value="emitido" {% if relogio and relogio.atestado_tecnico == 'emitido' %}selected{% endif %}>Emitido</option>
+                    <option value="pendente" {% if not relogio or relogio.atestado_tecnico in (None, 'pendente') %}selected{% endif %}>Pendente</option>
+                    <option value="nao_aplica" {% if relogio and relogio.atestado_tecnico == 'nao_aplica' %}selected{% endif %}>Sem atestado (não se aplica)</option>
+                </select>
+            </div>
         </div>
 
         <!-- Observação -->

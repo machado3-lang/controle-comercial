@@ -45,7 +45,8 @@ class RelogioPonto(Base):
     numero_serial = Column(String(100), nullable=True, unique=True, index=True)
     documento_referencia = Column(String(100), nullable=True, index=True)
     valor = Column(Numeric(12, 2), nullable=True)
-    atestado_tecnico = Column(Boolean, default=False, nullable=False)
+    # Tri-state: "emitido" | "pendente" | "nao_aplica" (equipamento que nao precisa de atestado)
+    atestado_tecnico = Column(String(20), default="pendente", nullable=False)
     observacao = Column(Text, nullable=True)
     observacao2 = Column(Text, nullable=True)
 

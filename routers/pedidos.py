@@ -24,6 +24,14 @@ STATUS_PEDIDO_LABELS = {
     StatusPedido.CANCELADO: "Cancelado",
 }
 
+# Apenas estes status permitem editar itens (ainda sem vínculo fiscal/contábil).
+# FATURADO, CONSOLIDADO, AGRUPADO e CANCELADO não podem ser alterados.
+STATUS_PEDIDO_EDITAVEIS = (
+    StatusPedido.PENDENTE,
+    StatusPedido.PRE_VENDA,
+    StatusPedido.APROVADO,
+)
+
 FORMAS_PAGAMENTO = {
     FormaPagamento.AVISTA: "À Vista",
     FormaPagamento.APRAZO: "À Prazo",
@@ -264,6 +272,12 @@ def salvar_pedido(
         pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
         if not pedido:
             return RedirectResponse(url="/pedidos/", status_code=303)
+        if pedido.status not in STATUS_PEDIDO_EDITAVEIS:
+            request.session["error"] = (
+                f"Pedido com status '{STATUS_PEDIDO_LABELS.get(pedido.status, pedido.status)}' "
+                f"não pode ser editado. Crie um novo pedido."
+            )
+            return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
         pedido.cliente_id = cliente_id_int
         if numero:
             pedido.numero = numero
@@ -531,6 +545,12 @@ def editar_pedido(request: Request, pedido_id: int, db: Session = Depends(get_db
     ).filter(PedidoVenda.id == pedido_id).first()
     if not pedido:
         return RedirectResponse(url="/pedidos/", status_code=303)
+    if pedido.status not in STATUS_PEDIDO_EDITAVEIS:
+        request.session["error"] = (
+            f"Pedido com status '{STATUS_PEDIDO_LABELS.get(pedido.status, pedido.status)}' "
+            f"não pode ser editado. Crie um novo pedido."
+        )
+        return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
     return request.app.state.templates.TemplateResponse(
         "pedidos/form.html",
         {"request": request, "pedido": pedido, "clientes": clientes, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "date": date, "hoje": hoje, "clientes_json": clientes_json}

@@ -19,7 +19,7 @@
     <form method="get" action="/consolidacoes/nova" class="p-4 flex flex-wrap gap-4 items-end">
         <div class="w-80 relative">
             <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente</label>
-            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 cliente-search" placeholder="Digite para buscar cliente..." autocomplete="off" value="{% if cliente_id %}{{ clientes | selectattr('id', 'equalto', cliente_id) | first | map(attribute='nome') | first }}{% endif %}">
+            <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 cliente-search" placeholder="Digite para buscar cliente..." autocomplete="off" value="{% if cliente_id %}{{ (clientes | selectattr('id', 'equalto', cliente_id) | first).nome }}{% endif %}">
             <div id="clientes-dropdown" class="absolute z-[1000] w-full bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto shadow-lg"></div>
             <input type="hidden" name="cliente_id" id="clienteId" value="{{ cliente_id }}">
         </div>

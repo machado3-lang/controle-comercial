@@ -36,6 +36,7 @@
             <option value="">Todos</option>
             <option value="1" {% if atestado == '1' %}selected{% endif %}>Emitido</option>
             <option value="0" {% if atestado == '0' %}selected{% endif %}>Pendente</option>
+            <option value="na" {% if atestado == 'na' %}selected{% endif %}>Sem atestado</option>
         </select>
     </div>
     <div>
@@ -81,8 +82,10 @@
                     <td class="px-4 py-3 text-sm text-indigo-300">{{ r.documento_referencia or '-' }}</td>
                     <td class="px-4 py-3 text-sm text-emerald-300 text-right">{{ r.valor|format_reais if r.valor else '-' }}</td>
                     <td class="px-4 py-3 text-center">
-                        {% if r.atestado_tecnico %}
+                        {% if r.atestado_tecnico == 'emitido' %}
                         <span class="px-2 py-1 text-xs font-medium bg-emerald-950/50 text-emerald-400 border border-emerald-800/50 rounded-full">Emitido</span>
+                        {% elif r.atestado_tecnico == 'nao_aplica' %}
+                        <span class="px-2 py-1 text-xs font-medium bg-slate-800/50 text-slate-400 border border-slate-700/50 rounded-full">Sem atestado</span>
                         {% else %}
                         <span class="px-2 py-1 text-xs font-medium bg-amber-950/50 text-amber-400 border border-amber-800/50 rounded-full">Pendente</span>
                         {% endif %}

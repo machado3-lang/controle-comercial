@@ -20,6 +20,23 @@ from services.audit import registrar_auditoria
 router = APIRouter(prefix="/relogios-ponto", tags=["Equipamentos Vendidos"])
 
 
+# Valores válidos para o tri-state de atestado técnico
+ATESTADO_EMITIDO = "emitido"
+ATESTADO_PENDENTE = "pendente"
+ATESTADO_NAO_APLICA = "nao_aplica"
+ATESTADOS_VALIDOS = (ATESTADO_EMITIDO, ATESTADO_PENDENTE, ATESTADO_NAO_APLICA)
+
+
+def _normalizar_atestado(valor: str) -> str:
+    """Converte diversas entradas (checkbox 'on'/'1', select, ...) no tri-state."""
+    v = (valor or "").strip().lower()
+    if v in ("1", "on", "true", "sim", "emitido"):
+        return ATESTADO_EMITIDO
+    if v in ("na", "nao", "não", "nao_aplica", "nao_aplicavel", "sem", "nao_se_aplica"):
+        return ATESTADO_NAO_APLICA
+    return ATESTADO_PENDENTE
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -99,8 +116,9 @@ def _aplicar_filtros(query, busca, marca, fornecedor_id, atestado, data_ini, dat
         query = query.filter(RelogioPonto.marca_cache.ilike(f"%{marca}%"))
     if fornecedor_id:
         query = query.filter(RelogioPonto.fornecedor_id == fornecedor_id)
-    if atestado in ("1", "0"):
-        query = query.filter(RelogioPonto.atestado_tecnico == (atestado == "1"))
+    if atestado in ("1", "0", "na"):
+        _mapa = {"1": "emitido", "0": "pendente", "na": "nao_aplica"}
+        query = query.filter(RelogioPonto.atestado_tecnico == _mapa[atestado])
     if data_ini:
         try:
             query = query.filter(RelogioPonto.data_venda >= datetime.strptime(data_ini, "%Y-%m-%d").date())
@@ -197,7 +215,7 @@ def criar_relogio(
     r.numero_serial = numero_serial.strip() or None
     r.documento_referencia = documento_referencia.strip() or None
     r.valor = _parse_valor_br(valor)
-    r.atestado_tecnico = (atestado_tecnico == "1" or atestado_tecnico == "on")
+    r.atestado_tecnico = _normalizar_atestado(atestado_tecnico)
     r.observacao = observacao or None
     r.observacao2 = observacao2 or None
     r.usuario_id = request.session.get("user_id")
@@ -229,7 +247,7 @@ def relatorio_relogios(
 
     total_qtd = query.count()
     total_valor = query.with_entities(func.coalesce(func.sum(RelogioPonto.valor), 0)).scalar() or 0
-    total_atestado = query.filter(RelogioPonto.atestado_tecnico == True).count()
+    total_atestado = query.filter(RelogioPonto.atestado_tecnico == ATESTADO_EMITIDO).count()
 
     def agrupar(campo):
         linhas = (
@@ -326,7 +344,7 @@ def atualizar_relogio(
     relogio.numero_serial = numero_serial.strip() or None
     relogio.documento_referencia = documento_referencia.strip() or None
     relogio.valor = _parse_valor_br(valor)
-    relogio.atestado_tecnico = (atestado_tecnico == "1" or atestado_tecnico == "on")
+    relogio.atestado_tecnico = _normalizar_atestado(atestado_tecnico)
     relogio.observacao = observacao or None
     relogio.observacao2 = observacao2 or None
     _preencher_cache(db, relogio, relogio.cliente_id, relogio.produto_id, relogio.fornecedor_id)

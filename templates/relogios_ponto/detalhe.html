@@ -70,7 +70,11 @@
         </div>
         <div>
             <p class="text-xs text-amber-400">Atestado Técnico</p>
-            <p class="text-slate-100">{% if relogio.atestado_tecnico %}Emitido{% else %}Pendente{% endif %}</p>
+            <p class="text-slate-100">
+                {% if relogio.atestado_tecnico == 'emitido' %}Emitido
+                {% elif relogio.atestado_tecnico == 'nao_aplica' %}Sem atestado (não se aplica)
+                {% else %}Pendente{% endif %}
+            </p>
         </div>
         <div class="md:col-span-2">
             <p class="text-xs text-cyan-400">Contato</p>
