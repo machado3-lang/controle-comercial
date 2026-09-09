@@ -249,13 +249,16 @@ Correções:
 - **Backend (`POST /ordens-servico/{id}/status`):** com o header JSON, o
   handler genérico de exceção retorna `{"detail": ...}` (JSON), permitindo o
   tratamento correto no JS.
-- **Enum `statusos` (Railway/Postgres):** o valor gravado pelo SQLAlchemy é o
-  **valor** do enum — `StatusOS.CONCLUIDA.value = 'concluida'` (minúsculo). O
-  `scripts/migracao_os_cobranca.sql` antigo adicionava o rótulo **`CONCLUIDA`
-  (maiúsculo)**, que nunca é usado; num DB restaurado só com esse rótulo, o
-  `UPDATE ... SET status='concluida'` falhava com `InvalidTextRepresentation
-  (500)`. O script e o auto-migration (`lifespan._add_missing_enum_values`) agora
-  garantem o rótulo **`concluida`** (minúsculo) correto.
+- **Enum `statusos` (Railway/Postgres):** a coluna `status` usa
+  `values_callable` (em `models.py`) que faz o SQLAlchemy gravar o **valor**
+  do enum — `StatusOS.CONCLUIDA.value = 'concluida'` (minúsculo), e não o nome
+  (`CONCLUIDA`). A migration `f6a7b8c9d0e1` normaliza os dados já existentes
+  (maiúsculos → minúsculos). O `scripts/migracao_os_cobranca.sql` antigo
+  adicionava o rótulo **`CONCLUIDA` (maiúsculo)**, que nunca é usado; num DB
+  restaurado só com esse rótulo, o `UPDATE ... SET status='concluida'` falhava
+  com `InvalidTextRepresentation (500)`. O auto-migration
+  (`lifespan._add_missing_enum_values`) segue como defesa para rótulos faltantes
+  de outros enums.
 
 ---
 
@@ -341,72 +344,70 @@ class StatusOS(str, enum.Enum):
     CANCELADA = "cancelada"
 ```
 
-A coluna usa `Enum(StatusOS, name="statusos", native_enum=True)`. Com
-`native_enum=True`, o SQLAlchemy **envia o NOME do membro** para o banco
-(`CONCLUIDA`), **não o valor** (`concluida`). Isso foi confirmado
-empiricamente: ao gravar `ordem.status = StatusOS.CONCLUIDA`, o parâmetro
-vinculado é `status='CONCLUIDA'`.
+O tipo enum nativo do PostgreSQL (`statusos`) foi criado (pela migration
+inicial / `create_all`) com os **rótulos = valores** em minúsculas
+(`aberta`, `em_andamento`, `finalizada`, `concluida`, `cancelada`).
 
-O tipo enum nativo do PostgreSQL (`statusos`) foi criado pela migration inicial
-com os rótulos = **nomes** (`ABERTA`, `EM_ANDAMENTO`, `FINALIZADA`,
-`CANCELADA`). Por isso os 4 estados originais funcionavam: o nome enviado
-(`FINALIZADA`, etc.) batia com o rótulo existente.
+Com `Enum(StatusOS, name="statusos", native_enum=True)` e **sem**
+`values_callable`, o SQLAlchemy **grava o NOME do membro** (`CONCLUIDA`,
+`EM_ANDAMENTO`, ...) — e não o valor (`concluida`). Como os rótulos do banco
+são os valores minúsculos, gravar `CONCLUIDA` falha com:
 
-O membro `CONCLUIDA` foi adicionado **depois**, no modelo. Os helpers de
-auto-migração (`_add_missing_enum_values` e `_garantir_valor_enum`) inseriam
-apenas o **valor** (`concluida`) como rótulo — nunca o **nome** (`CONCLUIDA`).
-Como o SQLAlchemy envia o nome, o banco de produção não tinha o rótulo
-`CONCLUIDA` e rejeitava o `UPDATE` → **HTTP 500**. Os outros estados não
-quebravam justamente porque seus rótulos-nome já existiam na criação.
+```
+(psycopg2.errors.InvalidTextRepresentation) invalid input value for enum statusos: "CONCLUIDA"
+```
 
-Resumo do desencontro:
+Além disso, os dados já gravados estavam armazenados com o **nome** em
+maiúsculas (`CONCLUIDA`, `EM_ANDAMENTO`, `FINALIZADA`), o que também quebrava
+a leitura/escrita.
 
-| Membro            | Nome enviado pelo SQLAlchemy | Rótulo no banco (produção) | Resultado |
-|-------------------|------------------------------|----------------------------|-----------|
-| `ABERTA`          | `ABERTA`                     | existe (migration)         | OK        |
-| `EM_ANDAMENTO`    | `EM_ANDAMENTO`               | existe (migration)         | OK        |
-| `FINALIZADA`      | `FINALIZADA`                 | existe (migration)         | OK        |
-| `CONCLUIDA`       | `CONCLUIDA`                  | **FALTAVA** (só havia `concluida`) | **500** |
-| `CANCELADA`       | `CANCELADA`                  | existe (migration)         | OK        |
+### 8.2 Correção (definitiva — commit `f14374b`, supercedeu o commit `01c4bf5`)
 
-### 8.2 Correção (commit `01c4bf5`)
+A solução adotada foi **gravar o valor (minúsculo) e normalizar os dados**,
+em vez de tentar criar rótulos de nome no enum (abordagem anterior, frágil
+porque `ALTER TYPE ... ADD VALUE` não roda dentro de um bloco de transação).
 
-O ponto-chave é garantir que o **rótulo = NOME do membro** exista no enum
-nativo (e, por segurança, também o valor).
+**`models.py` — coluna `status` da `OrdemServico`:**
+```python
+status = Column(
+    Enum(
+        StatusOS, name="statusos", native_enum=True, create_type=False,
+        # Grava o VALOR (minúsculo, ex.: 'concluida'), não o nome do membro.
+        values_callable=lambda obj: [e.value for e in obj],
+    ),
+    default=StatusOS.ABERTA, index=True
+)
+```
+- `values_callable` faz o SQLAlchemy enviar o **valor** (`concluida`) ao banco.
+- `create_type=False` evita um `CREATE TYPE` duplicado no startup (o tipo já
+  existe).
 
-**`app/core/lifespan.py` — `_add_missing_enum_values()` (startup):**
-- Agora itera cada membro do enum e insere **nome E valor** como rótulos:
-  `ALTER TYPE <tipo> ADD VALUE IF NOT EXISTS '<nome>'` e
-  `... '<valor>'`. Antes inseria só o valor.
-- Isso cobre `CONCLUIDA` (e qualquer membro adicionado futuramente) no
-  próprio *startup* da aplicação.
+**Migration `f6a7b8c9d0e1` — normaliza os dados existentes:**
+```sql
+UPDATE ordens_servico SET status = lower(status::text)::statusos
+WHERE status::text <> lower(status::text);
+```
+Converte `CONCLUIDA`→`concluida`, `EM_ANDAMENTO`→`em_andamento`, etc.
 
-**`routers/ordens_servico.py` — `_garantir_valor_enum` + endpoint `/status`:**
-- Antes de gravar, o endpoint garante **nome e valor** do status sendo escrito:
-  ```python
-  _garantir_valor_enum("statusos", status.name)
-  _garantir_valor_enum("statusos", status.value)
-  ```
-- Em seguida faz `db.rollback()` + `engine.dispose()` para liberar a conexão
-  atual (que pode ter cacheado a definição antiga do enum — o PostgreSQL
-  *cacheia* o enum por conexão) e forçar uma reconexão limpa na gravação.
-- O `db.commit()` continua envolto em `try/except`, retornando
-  `{"erro": "Não foi possível atualizar o status da OS: <detalhe>"}` (JSON, 500)
-  para o JS exibir a causa real.
+**`routers/ordens_servico.py`:**
+- `_garantir_valor_enum("statusos", status.value)` — garante apenas o valor.
+- `atualizar_ordem` (formulário de edição) agora chama `_garantir_valor_enum`
+  e envolve o `db.commit()` em `try/except`, redirecionando com mensagem de
+  erro em vez de estourar **HTTP 500** bruto.
 
-> Nota sobre cache de enum no PostgreSQL: conexões abertas antes de um
-> `ALTER TYPE ... ADD VALUE` mantêm a definição antiga do enum até serem
-> fechadas. Por isso o `engine.dispose()` (que zera o pool) é essencial — ele
-> obriga as próximas requisições a abrirem conexões novas que enxergam os
-> rótulos recém-adicionados.
+> Nota: a abordagem anterior (commit `01c4bf5`) de inserir **nome e valor**
+> como rótulos do enum via `ALTER TYPE ... ADD VALUE`/`engine.dispose()` foi
+> abandonada: `ADD VALUE` não é executável dentro de uma transação e deixava
+> os dados inconsistentes. A normalização + gravação do valor é a correção
+> definitiva.
 
 ### 8.3 Como testar
 
 1. Concluir (entregar) uma OS `finalizada` → grava `StatusOS.CONCLUIDA`,
-   registra `data_saida` e não retorna erro.
-2. Se o rótulo ainda não existir no banco, o próprio endpoint o cria em tempo
-   de execução (e o `dispose()` garante que a gravação use uma conexão atualizada).
-3. `SELECT enumlabel FROM pg_enum WHERE enumtypid = (SELECT oid FROM pg_type
-   WHERE typname='statusos')` deve listar `ABERTA`, `EM_ANDAMENTO`,
-   `FINALIZADA`, `CONCLUIDA`, `CANCELADA` (e os valores, se presentes).
+   registra `data_saida` e retorna 200 (JSON) sem erro.
+2. Editar uma OS e mudar o status pelo formulário (ex.: para `cancelada`) →
+   redireciona 303 sem 500.
+3. `SELECT status, count(*) FROM ordens_servico GROUP BY 1` deve retornar
+   apenas valores minúsculos (`aberta`, `em_andamento`, `finalizada`,
+   `concluida`, `cancelada`).
 

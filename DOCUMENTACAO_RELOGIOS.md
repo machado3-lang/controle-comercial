@@ -71,7 +71,7 @@ Tabela: `relogios_ponto`
 | `numero_serial` | String **único** (índice) | Nº de série (planilha: coluna E) |
 | `documento_referencia` | String (índice) | Nº da Nota / OS / Pedido (livre) |
 | `valor` | Numeric(12,2) | Valor da venda (planilha: coluna H) |
-| `atestado_tecnico` | Boolean | Atestado técnico emitido (planilha: coluna A "X") |
+| `atestado_tecnico` | String(20) | Tri-state do atestado: `emitido` / `pendente` / `nao_aplica` (exibido como "N.Aplica"). Planilha coluna A "X" → `emitido` |
 | `observacao` | Text | Observação (planilha: coluna I) |
 | `observacao2` | Text | Observação 2 (planilha: coluna J) |
 | `created_at` / `updated_at` | DateTime | Timestamps |
@@ -80,7 +80,7 @@ Tabela: `relogios_ponto`
 
 | Planilha | Campo | Tratamento |
 |---|---|---|
-| A (X) | `atestado_tecnico` | X → `True` |
+| A (X) | `atestado_tecnico` | X → `emitido`; ausente → `pendente` (ou `nao_aplica` p/ equipamentos que não exigem atestado) |
 | B | `data_venda` | Data |
 | C | `cliente_id` + `cliente_nome_cache` | Vincula Cliente; cache do nome |
 | D | `produto_id` + `modelo_cache` | Vincula Item; cache do nome |
@@ -92,6 +92,19 @@ Tabela: `relogios_ponto`
 | (nova) | `marca_cache` | Vem do Produto (marca_id) |
 | (nova) | `fornecedor_id` + `fornecedor_nome_cache` | Vincula Fornecedor |
 | (nova) | `documento_referencia` | Nº Nota/OS/Pedido livre |
+
+#### Atestado técnico (tri-state)
+O campo `atestado_tecnico` deixou de ser `Boolean` e passou a ser `String(20)`
+com três valores:
+- `emitido` — atestado técnico emitido (planilha coluna A "X");
+- `pendente` — ainda não emitido (**default**);
+- `nao_aplica` — equipamento que não exige atestado (exibido na UI como
+  **N.Aplica**).
+
+A conversão foi feita pela migration `e5f6a7b8c9d0` (Boolean → VARCHAR(20),
+normalizando valores inválidos/ausentes para `pendente` e `SET NOT NULL` com
+default `pendente`). O `<select>` do formulário e os filtros usam
+`emitido`/`pendente`/`nao_aplica` (no filtro de listagem/relatório: `1`/`0`/`na`).
 
 ---
 
