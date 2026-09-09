@@ -563,6 +563,21 @@ def finalizar_pedido(
                 pass
         pedido.gerar_boleto = gerar_boleto
         pedido.terminos_boleto = terminos_boleto
+        # Persiste o parcelamento escolhido para que a cobranca automatica da
+        # NFe emitida (services/routers/nfe._garantir_cobranca_nfe) possa
+        # respeita-lo em vez de fixar 1 parcela com vencimento = hoje.
+        try:
+            pedido.num_parcelas = max(1, int(num_parcelas or 1))
+        except (ValueError, TypeError):
+            pedido.num_parcelas = 1
+        try:
+            pedido.intervalo_dias = max(1, int(intervalo_dias or 30))
+        except (ValueError, TypeError):
+            pedido.intervalo_dias = 30
+        try:
+            pedido.primeiro_vencimento = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else None
+        except ValueError:
+            pedido.primeiro_vencimento = None
         # Cria conta(s) a receber automática(s) — com suporte a parcelamento
         contas_geradas = []
         contas_existentes = []

@@ -519,6 +519,11 @@ class PedidoVenda(Base):
     forma_pagamento = Column(String(20), nullable=True)
     gerar_boleto = Column(Boolean, default=False)
     terminos_boleto = Column(Text, nullable=True)
+    # Parcelamento escolhido no faturamento (usado para gerar as contas a
+    # receber / boletos e para a cobranca automatica da NFe emitida).
+    num_parcelas = Column(Integer, nullable=False, default=1)
+    intervalo_dias = Column(Integer, nullable=False, default=30)
+    primeiro_vencimento = Column(Date, nullable=True)
     consolidacao_id = Column(Integer, ForeignKey("pedidos_consolidados.id"), nullable=True, index=True)
     pedido_agrupado_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)

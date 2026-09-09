@@ -9,12 +9,13 @@ from datetime import datetime, date
 from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException, UploadFile, File
 from fastapi.responses import RedirectResponse, Response, JSONResponse
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import desc, String
+from sqlalchemy import desc, String, or_
 
 from database import get_db
 from models import (Cliente, Empresa, PedidoVenda, PedidoVendaItem,
                     StatusPedido, Produto, OrdemServico, CfopNatureza,
-                    ContaReceber, PedidoConsolidado, PedidoConsolidadoItem)
+                    ContaReceber, PedidoConsolidado, PedidoConsolidadoItem,
+                    StatusConta)
 from models_nfe import NFe, NFeItem, NFSe, NFSeItem, NFeCartaCorrecao
 from services.nfe_notaas import (
     emitir_nfe, consultar_status, baixar_pdf, baixar_xml,
@@ -2047,8 +2048,8 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
     cobranca_existente = db.query(ContaReceber).filter(
-        (ContaReceber.nfe_id == nfe.id) |
-        ContaReceber.observacao.like(f"%NFe #{nfe.id}%")
+        ContaReceber.nfe_id == nfe.id,
+        ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
     ).first()
     if cobranca_existente:
         request.session["error"] = "Cobrança já existe para esta NFe"
@@ -2126,21 +2127,33 @@ def _garantir_cobranca_nfe(db, nfe):
     cliente_id = nfe.cliente_id or (nfe.pedido.cliente_id if nfe.pedido else None)
     if not cliente_id:
         return
-    venc = nfe.data_emissao.date() if nfe.data_emissao else \
-        (nfe.pedido.data if nfe.pedido and getattr(nfe.pedido, "data", None) else date.today())
+    # Respeita o parcelamento informado no faturamento do pedido (se houver),
+    # em vez de fixar 1 parcela com vencimento = data de hoje. Caso contrario,
+    # gera 1 parcela unica com vencimento na data da emissao.
+    pedido = nfe.pedido
+    num_parcelas = 1
+    intervalo_dias = 30
+    if pedido:
+        num_parcelas = getattr(pedido, "num_parcelas", None) or 1
+        intervalo_dias = getattr(pedido, "intervalo_dias", None) or 30
+    if pedido and getattr(pedido, "primeiro_vencimento", None):
+        venc = pedido.primeiro_vencimento
+    else:
+        venc = nfe.data_emissao.date() if nfe.data_emissao else \
+            (pedido.data if pedido and getattr(pedido, "data", None) else date.today())
     gerar_contas_receber(
         db,
         cliente_id=cliente_id,
         descricao=f"NFe {nfe.numero or '#' + str(nfe.id)}",
         valor_total=nfe.valor_total or 0,
         primeiro_vencimento=venc,
-        num_parcelas=1,
-        intervalo_dias=0,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
         forma_pagamento=nfe.forma_pagamento or "NFSe",
         numero_documento=str(nfe.numero) if nfe.numero else None,
         pedido_id=nfe.pedido_id,
         nfe_id=nfe.id,
-        consolidacao_id=nfe.pedido.consolidacao_id if (nfe.pedido and nfe.pedido.consolidacao_id) else None,
+        consolidacao_id=pedido.consolidacao_id if (pedido and pedido.consolidacao_id) else None,
     )
 
 
@@ -2376,9 +2389,18 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
                 db.commit()
         except Exception as e:
             logger.warning(f"Falha ao consultar status da NFe #{nfe_id}: {e}")
-    cobranca = db.query(ContaReceber).filter(
-        ContaReceber.observacao.like(f"%NFe #{nfe.id}%")
-    ).first()
+    from models import StatusConta as _StatusConta
+    _status_ativos = ~ContaReceber.status.in_([_StatusConta.EXCLUIDO, _StatusConta.CANCELADO])
+    # Cobrancas vinculadas a esta NFe (por nfe_id) OU ao pedido de origem
+    # (quando geradas no faturamento do pedido). Exclui canceladas/excluidas.
+    cobrancas = db.query(ContaReceber).filter(
+        or_(
+            ContaReceber.nfe_id == nfe.id,
+            ContaReceber.pedido_id == nfe.pedido_id,
+        ) if nfe.pedido_id else ContaReceber.nfe_id == nfe.id,
+        _status_ativos,
+    ).order_by(ContaReceber.numero_parcela).all()
+    cobranca = cobrancas[0] if cobrancas else None
 
     return request.app.state.templates.TemplateResponse(request, 
         "nfe/detalhe.html",
@@ -2387,6 +2409,7 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
          "FRETE_LABELS": FRETE_LABELS,
          "messages": _get_messages(request),
          "cobranca": cobranca,
+         "cobrancas": cobrancas,
          "cartas": nfe.cartas_correcao}
     )
 

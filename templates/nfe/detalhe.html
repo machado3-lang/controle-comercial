@@ -44,10 +44,18 @@
                 <p class="text-sm text-slate-100">{{ nfe.data_emissao.strftime('%d/%m/%Y %H:%M') }}</p>
             </div>
             {% endif %}
-            {% if cobranca %}
+            {% if cobrancas %}
             <div class="p-3 bg-slate-800/40 rounded-xl">
-                <p class="text-xs text-slate-500">Cobrança</p>
-                <a href="/contas/receber/{{ cobranca.id }}" class="text-sm text-emerald-400 hover:text-emerald-300">R$ {{ "%.2f"|format(cobranca.valor) }} - {{ cobranca.status.name.lower() if cobranca.status else 'pendente' }}</a>
+                <p class="text-xs text-slate-500">Cobrança{% if cobrancas|length > 1 %}s ({{ cobrancas|length }} parcelas){% endif %}</p>
+                <div class="space-y-1 mt-1">
+                {% for c in cobrancas %}
+                    <a href="/contas/receber/{{ c.id }}" class="block text-sm text-emerald-400 hover:text-emerald-300">
+                        {% if cobrancas|length > 1 %}Parcela {{ c.numero_parcela or 1 }}/{{ c.total_parcelas or 1 }}: {% endif %}R$ {{ "%.2f"|format(c.valor) }}
+                        {% if c.data_vencimento %} · {{ c.data_vencimento.strftime('%d/%m/%Y') }}{% endif %}
+                        - {{ c.status.name.lower() if c.status else 'pendente' }}
+                    </a>
+                {% endfor %}
+                </div>
             </div>
             {% endif %}
         </div>
@@ -129,15 +137,15 @@
                 </div>
     <div>
                     <label class="block text-[10px] font-medium text-amber-400 mb-0.5">Parcelas</label>
-                    <input type="number" min="1" max="60" value="1" name="num_parcelas" id="numParcelasNfeDet" class="w-20 px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
+                    <input type="number" min="1" max="60" value="{{ nfe.pedido.num_parcelas if nfe.pedido and nfe.pedido.num_parcelas else 1 }}" name="num_parcelas" id="numParcelasNfeDet" class="w-20 px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
                 </div>
                 <div>
                     <label class="block text-[10px] font-medium text-amber-400 mb-0.5">1º Venc.</label>
-                    <input type="date" name="primeiro_vencimento" id="primeiroVencNfeDet" value="{{ nfe.data_emissao.strftime('%Y-%m-%d') if nfe.data_emissao else '' }}" class="px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
+                    <input type="date" name="primeiro_vencimento" id="primeiroVencNfeDet" value="{{ (nfe.pedido.primeiro_vencimento.strftime('%Y-%m-%d') if nfe.pedido and nfe.pedido.primeiro_vencimento else (nfe.data_emissao.strftime('%Y-%m-%d') if nfe.data_emissao else '')) }}" class="px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
                 </div>
                 <div>
                     <label class="block text-[10px] font-medium text-amber-400 mb-0.5">Intervalo</label>
-                    <input type="number" min="1" max="365" value="30" name="intervalo_dias" id="intervaloDiasNfeDet" class="w-20 px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
+                    <input type="number" min="1" max="365" value="{{ nfe.pedido.intervalo_dias if nfe.pedido and nfe.pedido.intervalo_dias else 30 }}" name="intervalo_dias" id="intervaloDiasNfeDet" class="w-20 px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
                 </div>
                 <button type="submit" class="flex items-center px-3 py-2 text-sm text-amber-400 border border-amber-800/50 rounded-xl hover:bg-amber-950/30 transition">
                     <i data-lucide="banknote" class="w-4 h-4 me-1"></i> Gerar Cobrança

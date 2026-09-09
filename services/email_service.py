@@ -290,34 +290,32 @@ def _pdf_boleto_bytes(conta, db) -> Optional[bytes]:
         return None
 
 
-def _anexar_boleto_nfse(nfse_id, db, anexos, itens_resumo):
-    """Anexa o boleto emitido vinculado a uma NFSe, se houver."""
+def _anexar_boletos_nfse(nfse_id, db, anexos, itens_resumo):
+    """Anexa todos os boletos emitidos vinculados a uma NFSe (inclui parcelas)."""
     from models import ContaReceber
-    conta = db.query(ContaReceber).filter(
+    contas = db.query(ContaReceber).filter(
         ContaReceber.nfse_id == nfse_id,
         ContaReceber.boleto_emitido == True,  # noqa: E712
-    ).first()
-    if not conta:
-        return
-    pdf = _pdf_boleto_bytes(conta, db)
-    if pdf:
-        anexos.append((f"Boleto_{conta.api_nosso_numero}.pdf", pdf, "application/pdf"))
-        itens_resumo.append(f"Boleto {conta.numero_documento or conta.nosso_numero or ''}".strip())
+    ).all()
+    for conta in contas:
+        pdf = _pdf_boleto_bytes(conta, db)
+        if pdf:
+            anexos.append((f"Boleto_{conta.api_nosso_numero}.pdf", pdf, "application/pdf"))
+            itens_resumo.append(f"Boleto {conta.numero_documento or conta.nosso_numero or ''}".strip())
 
 
-def _anexar_boleto_nfe(nfe_id, db, anexos, itens_resumo):
-    """Anexa o boleto emitido vinculado a uma NFe, se houver."""
+def _anexar_boletos_nfe(nfe_id, db, anexos, itens_resumo):
+    """Anexa todos os boletos emitidos vinculados a uma NFe (inclui parcelas)."""
     from models import ContaReceber
-    conta = db.query(ContaReceber).filter(
+    contas = db.query(ContaReceber).filter(
         ContaReceber.nfe_id == nfe_id,
         ContaReceber.boleto_emitido == True,  # noqa: E712
-    ).first()
-    if not conta:
-        return
-    pdf = _pdf_boleto_bytes(conta, db)
-    if pdf:
-        anexos.append((f"Boleto_{conta.api_nosso_numero}.pdf", pdf, "application/pdf"))
-        itens_resumo.append(f"Boleto {conta.numero_documento or conta.nosso_numero or ''}".strip())
+    ).all()
+    for conta in contas:
+        pdf = _pdf_boleto_bytes(conta, db)
+        if pdf:
+            anexos.append((f"Boleto_{conta.api_nosso_numero}.pdf", pdf, "application/pdf"))
+            itens_resumo.append(f"Boleto {conta.numero_documento or conta.nosso_numero or ''}".strip())
 
 
 def enviar_documentos_cliente(
@@ -359,8 +357,8 @@ def enviar_documentos_cliente(
             if xml:
                 anexos.append((f"NFSe_{nfse.numero or nfse.id}.xml", xml, "application/xml"))
         itens_resumo.append(f"NFSe Nº {nfse.numero or nfse.id}")
-        # Boleto vinculado (se emitido) vai junto automaticamente
-        _anexar_boleto_nfse(nfse.id, db, anexos, itens_resumo)
+        # Boletos vinculados (se emitidos, inclui parcelas) vao juntos automaticamente
+        _anexar_boletos_nfse(nfse.id, db, anexos, itens_resumo)
 
     for nfe in nfes:
         if nfe.cliente_id and cliente.id and nfe.cliente_id != cliente.id:
@@ -373,8 +371,8 @@ def enviar_documentos_cliente(
             if xml:
                 anexos.append((f"NFe_{nfe.numero}.xml", xml, "application/xml"))
         itens_resumo.append(f"NFe Nº {nfe.numero}")
-        # Boleto vinculado (se emitido) vai junto automaticamente
-        _anexar_boleto_nfe(nfe.id, db, anexos, itens_resumo)
+        # Boletos vinculados (se emitidos, inclui parcelas) vao juntos automaticamente
+        _anexar_boletos_nfe(nfe.id, db, anexos, itens_resumo)
 
     for conta in contas:
         if conta.cliente_id and cliente.id and conta.cliente_id != cliente.id:
@@ -413,6 +411,12 @@ def enviar_documentos_cliente(
     assunto = f"{empresa.nome_fantasia or empresa.razao_social or ''} - Documentos fiscais e boletos"
 
     result = enviar_email(cliente.email, assunto, corpo, anexos, db)
+    if result.get("success"):
+        try:
+            from services.whatsapp_service import notificar_envio_documentos
+            notificar_envio_documentos(cliente, db)
+        except Exception:
+            pass
     return result
 
 
@@ -483,6 +487,11 @@ def enviar_notificacao_conta(conta_id: int):
 
         result = enviar_email(conta.cliente.email, assunto, corpo, anexos, db)
         if result["success"]:
+            try:
+                from services.whatsapp_service import notificar_envio_documentos
+                notificar_envio_documentos(conta.cliente, db)
+            except Exception:
+                pass
             conta.email_enviado = True
             conta.data_envio_email = datetime.now()
             if nfse:
