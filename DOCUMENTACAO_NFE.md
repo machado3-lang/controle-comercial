@@ -110,6 +110,12 @@ silêncio: o XML sai com `<fat>` e **nenhum** `<dup>`/`<dVenc>`):
   o desconto da fatura é `desconto` (**não** `valorDesconto`).
 - As parcelas vêm do `ContaReceber` vinculado (`nfe_id` → `pedido_id` → `consolidacao_id`).
   Sem conta a receber, nenhum grupo `<cobr>` é enviado (venda à vista).
+- **Regra à vista (`eh_pagamento_a_vista` em `services/parcelamento.py`):**
+  formas `avista`/`cartao_debito`/`dinheiro`/`pix` **não geram `ContaReceber`**
+  (nem na emissão da consolidação, nem em `_garantir_cobranca_nfe`); e o
+  `transmitir_nfe` zera `duplicatas` quando a forma é à vista. Assim a NFe à vista
+  **nunca** leva `<cobr>`/`<dup>`, evitando o **cStat 853**. Formas diferidas
+  (`aprazo`, `boleto`, `cartao_credito`) seguem gerando a cobrança por nota.
 - `valorOriginal`/`valorLiquido` são a **soma das parcelas**, para não cair na
   rejeição 617 (somatório das duplicatas difere do valor líquido da fatura).
 - `indPag` não existe no contrato da NotaAs — é inferido pela API a partir do `tipoPagamento`.
@@ -198,7 +204,7 @@ migration Alembic manual é necessária para essas duas alterações.
 - `montar_payload_nfe` **sempre** envia `transporte.modalidadeFrete` (default 9 quando ausente).
 - A CC-e é síncrona e **sem retry** (reatualizar a página não reenvia — evita duplicata).
 - O cancelamento segue o mesmo padrão (sem retry) e exige `invoice_id`.
-- Toda NFe autorizada gera/atualiza `ContaReceber` (cobrança) quando aplicável.
+- Toda NFe autorizada (forma diferida) gera/atualiza `ContaReceber` (cobrança) quando aplicável; notas à vista não geram cobrança (ver regra em §3 da cobrança).
 
 ---
 

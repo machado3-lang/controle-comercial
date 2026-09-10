@@ -97,10 +97,42 @@ Fluxo:
   `forcar=True`.
 - Retorna `(qtd_ok, lista_de_erros)`.
 
+### 3.2b Emissão após autorização da nota — `emitir_boleto_para_nota(db, *, nfe=, nfse=)` (`parcelamento.py`)
+- Helper **idempotente** que emite o boleto das `ContaReceber` vinculadas a uma
+  nota **já autorizada** (NFe `issued` / NFSe `autorizada`).
+- **Só gera boleto quando `conta.forma_pagamento == "boleto"`** — para à vista,
+  dinheiro, pix, cartão de débito etc. ele não emite nada (e não há
+  `ContaReceber` nesses casos, ver regra em §3.4).
+- **Corrige `numero_documento` da conta para o número da própria nota**
+  (NFe/NFSe) antes de emitir — o número do boleto (Sicoob `seuNumero`) passa a
+  ser o da nota fiscal, **nunca o da consolidação**.
+- É chamado nos pontos de autorização das notas (não na criação do rascunho):
+  - `transmitir_nfe` (autorização síncrona), `ver_nfe` (poll de status) e
+    `webhook_nfe` (autorização assíncrona) para NFe;
+  - `transmitir_nfse` (2 caminhos) e `sincronizar_nfse` para NFSe.
+
 ### 3.3 Gatilhos de emissão automática
 - **Contas a receber** (`routers/contas.py:395-429` e `474-521`): flag `emitir_boletos` no formulário chama `emitir_boletos_contas`.
-- **Consolidações** (`routers/nfse.py`, rota `emitir_consolidacao_nfse`): o boleto **não** é emitido no `finalizar_consolidacao`. Ele é emitido **após** salvar os rascunhos NFe/NFSe, se a consolidação tiver `gerar_boleto=True` ou `forma_pagamento == "boleto"`, via `emitir_boletos_contas` sobre as `ContaReceber` já criadas no finalizar.
+- **Consolidações** (`routers/nfse.py`, rota `emitir_consolidacao_nfse`): o boleto
+  **não** é emitido na criação dos rascunhos nem no `finalizar_consolidacao`. Ele é
+  emitido **somente após a NFe/NFSe ser autorizada** (transmitida), usando o
+  número da própria nota, via `emitir_boleto_para_nota` chamado em
+  `transmitir_nfe`/`transmitir_nfse`/`sincronizar_nfse`. Assim o boleto nasce
+  vinculado à nota já emitida e com o `numero` dela, não o da consolidação.
 - **Em lote manual** (`POST /sicoob/emitir-em-lote`, `sicoob.py:560`): emite todos os boletos pendentes (status `PENDENTE`, não emitidos, vencimento ≥ hoje).
+
+### 3.4 Regra "à vista" — quando NÃO há boleto nem cobrança
+- Formas de **recebimento imediato** (`eh_pagamento_a_vista` em
+  `parcelamento.py`): `avista`, `cartao_debito`, `dinheiro`, `pix` (e
+  variações). Nesses casos **não se gera `ContaReceber`** (nem para NFe nem para
+  NFSe) nem boleto — o valor é reconhecido como recebido (caixa).
+- Consequência na NFe: sem `ContaReceber`, o grupo `<cobr>`/`<dup>` **não** é
+  montado (`transmitir_nfe` zera `duplicatas` quando a forma é à vista), evitando
+  o **cStat 853** (duplicata em nota à vista). A guarda vale tanto na emissão da
+  consolidação (`emitir_consolidacao_nfse`) quanto na garantia de cobrança da NFe
+  de pedido (`_garantir_cobranca_nfe`).
+- Formas **diferidas** (`aprazo`, `boleto`, `cartao_credito`) continuam gerando
+  `ContaReceber` por nota; o boleto só é emitido quando `forma_pagamento == "boleto"`.
 
 ---
 
@@ -262,7 +294,7 @@ Fluxo:
 | Arquivo | Responsabilidade |
 |---------|------------------|
 | `routers/sicoob.py` | toda a integração Sicoob (emissão, consulta, PDF, baixa, alteração, sync, webhook, importação, inadimplência) |
-| `services/parcelamento.py` | `emitir_boletos_contas` (emissão em lote das parcelas) |
+| `services/parcelamento.py` | `emitir_boletos_contas` (lote), `emitir_boleto_para_nota` (após autorização da nota, corrige nº do boleto), `eh_pagamento_a_vista` (formas sem cobrança) |
 | `services/email_service.py` | anexa e envia PDF do boleto por e-mail |
 | `services/cert_store.py` | armazenamento seguro do certificado Sicoob |
 | `app/core/config.py` | `SICOOB_API_URL`, `SICOOB_AUTH_URL` |

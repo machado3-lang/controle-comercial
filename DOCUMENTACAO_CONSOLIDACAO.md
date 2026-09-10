@@ -118,16 +118,25 @@ clique, o pedido passa a aparecer na tela de nova consolidação.
   serviços num só registro e (b) a NFe herdar a cobrança da consolidação e emitir
   `<cobr>` numa nota à vista (cStat 853) — a NFe recebe **sua própria**
   duplicata.
-- **Boleto é emitido somente após gerar as notas.** A rota
-  `emitir_consolidacao_nfse` (`POST /nfse/emitir/consolidacao/{id}`,
-  `nfse.py`) salva os rascunhos de NFe/NFSe **e suas cobranças por nota**, e
-  **depois**, se a consolidação tiver `gerar_boleto=True` ou
-  `forma_pagamento == "boleto"`, emite os boletos Sicoob das parcelas (via
-  `emitir_boletos_contas`). Assim o boleto nasce vinculado às NFs já geradas,
-  usando o `numero` da consolidação e o vencimento informado no finalizar.
+- **Boleto é emitido somente APÓS a nota ser autorizada, e usa o nº da nota.**
+  A rota `emitir_consolidacao_nfse` (`POST /nfse/emitir/consolidacao/{id}`,
+  `nfse.py`) salva os rascunhos de NFe/NFSe **e suas cobranças por nota**, mas
+  **não** emite o boleto ali. O boleto é gerado **depois de transmitir/autorizar**
+  cada nota, via `emitir_boleto_para_nota` (`services/parcelamento.py`), chamado
+  em `transmitir_nfe`/`transmitir_nfse`/`sincronizar_nfse`. Ele corrige o
+  `numero_documento` da `ContaReceber` para o **número da própria NFe/NFSe** (nunca
+  o da consolidação) e só emite quando `forma_pagamento == "boleto"`. Com NFe+NFSe
+  há um boleto por nota (cada um com o respectivo nº).
 - **NF da consolidação gera cobrança própria por nota** na emissão (vinculada a
   `nfe_id`/`nfse_id`), não no finalizar. Ver `DOCUMENTACAO_NFE.md` e
   `DOCUMENTACAO_BOLETOS.md`.
+- **Forma à vista não gera cobrança nem boleto.** Quando
+  `consolidacao.forma_pagamento` é `avista`/`cartao_debito`/`dinheiro`/`pix`, a
+  emissão **não cria `ContaReceber`** (nem NFe nem NFSe) e, portanto, não emite
+  boleto — o valor é reconhecido como recebido. Isso também evita o `<cobr>` em
+  nota à vista (cStat 853 na SEFAZ). Formas diferidas (`aprazo`, `boleto`,
+  `cartao_credito`) seguem gerando cobrança por nota; o boleto só sai se a forma
+  for `boleto`.
 - Rotas de emissão: `GET /nfe/emitir/consolidacao/{id}`,
   `GET /nfse/emitir/consolidacao/{id}`.
 
@@ -165,6 +174,24 @@ clique, o pedido passa a aparecer na tela de nova consolidação.
   (`templates/nfse/editar.html`) pré-preenche a caixa de busca `#clienteSearch`
   com o nome do cliente já vinculado (antes só o `hidden #clienteId` vinha
   preenchido, e o campo parecia vazio).
+
+### 6.2. Correções aplicadas (commit `09887a5`)
+- **Boleto gerado após autorização, com nº da nota.** Removida a emissão de
+  boleto em `emitir_consolidacao_nfse` (que ocorria logo após salvar os
+  rascunhos, quando a nota ainda estava `rascunho` e `numero_documento_para_cobranca`
+  caía no fallback do nº da consolidação). Agora `emitir_boleto_para_nota`
+  (`services/parcelamento.py`) é chamado nos pontos de autorização das notas
+  (`transmitir_nfe`, `transmitir_nfse`, `sincronizar_nfse`, `ver_nfe`,
+  `webhook_nfe`) e corrige `numero_documento` para o nº da NFe/NFSe antes de emitir.
+- **Cenário NFSe pura (sem produtos) corrigido:** antes, consolidação só com
+  NFSe (serviços) gerava o boleto já na criação do rascunho, com o nº da
+  consolidação. Agora o boleto é emitido após a NFSe autorizar, com o nº dela.
+- **Regra à vista (sem cobrança/boleto):** novo helper `eh_pagamento_a_vista`
+  (`avista`, `cartao_debito`, `dinheiro`, `pix`). Na emissão da consolidação
+  (`emitir_consolidacao_nfse` e `emitir_consolidacao_submit` em `nfe.py`) a
+  `ContaReceber` só é criada para formas diferidas; `_garantir_cobranca_nfe` e o
+  `transmitir_nfe` também respeitam a regra (sem `<cobr>` para à vista → evita
+  cStat 853).
 
 ## 7. Notas de implementação / pendências
 
