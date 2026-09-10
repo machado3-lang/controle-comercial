@@ -16,6 +16,11 @@ TABLES_IN_ORDER = [
     "usuarios",
     "clientes",
     "fornecedores",
+    "tipos_documento",
+    "condicoes_pagamento",
+    "plano_contas",
+    "empresa",
+    "transportadoras",
     "contas_pagar",
     "contas_receber",
     "produtos",
@@ -26,11 +31,21 @@ TABLES_IN_ORDER = [
     "pedidos_venda",
     "pedidos_venda_itens",
     "ordens_servico",
+    "pedidos_consolidados",
+    "pedidos_consolidados_itens",
+    "pedidos_consolidados_itens_origem",
     "nfe",
     "nfe_itens",
+    "nfe_cartas_correcao",
+    "nfe_distribuidas",
     "nfse",
     "nfse_itens",
-    "empresa",
+    "nfse_recebida",
+    "relogios_ponto",
+    "movimentacoes_estoque",
+    "os_pecas",
+    "audit_log",
+    "historico_cadastro",
 ]
 
 ALLOWED_TABLES = set(TABLES_IN_ORDER)
@@ -237,16 +252,17 @@ def restore_backup(backup_dict: dict, modo: str = "sobrepor") -> dict:
     # é enforcement por padrão, então nenhuma ação extra é necessária.
     fk_defs = []
     fk_disabled = False
+    if is_pg:
+        with engine.connect() as conn:
+            trans = conn.begin()
+            fk_defs = _pg_drop_fk_constraints(conn)
+            for drop_sql, _ in fk_defs:
+                conn.execute(text(drop_sql))
+            trans.commit()
+        fk_disabled = True
+        logger.info("[RESTORE] %d FKs removidas (PostgreSQL, modo=%s)", len(fk_defs), modo)
+
     if modo == "limpar":
-        if is_pg:
-            with engine.connect() as conn:
-                trans = conn.begin()
-                fk_defs = _pg_drop_fk_constraints(conn)
-                for drop_sql, _ in fk_defs:
-                    conn.execute(text(drop_sql))
-                trans.commit()
-            fk_disabled = True
-            logger.info("[RESTORE] limpar: %d FKs removidas (PostgreSQL)", len(fk_defs))
         with engine.connect() as conn:
             trans = conn.begin()
             try:
