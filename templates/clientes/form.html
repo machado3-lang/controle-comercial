@@ -179,7 +179,8 @@
         </div>
         <div class="mb-3">
             <label class="form-label text-cyan-300">Email</label>
-            <input type="email" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="email" value="{{ cliente.email if cliente else '' }}">
+            <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="email" value="{{ cliente.email if cliente else '' }}" placeholder="email1@exemplo.com; email2@exemplo.com">
+            <small class="text-slate-500">Informe mais de um e-mail separando-os por ponto e vírgula (;). Os documentos serão enviados para todos.</small>
         </div>
     </div>
 

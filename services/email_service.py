@@ -1,5 +1,6 @@
 import smtplib
 import os
+import re
 import json
 import base64
 import requests
@@ -43,6 +44,24 @@ def _identidade_email(db):
     return from_email, from_name
 
 
+def _parse_destinatarios(destinatario) -> list:
+    """Aceita um unico e-mail, uma lista de e-mails ou uma string com varios
+    enderecos separados por ';', ',' ou espacos/quebras de linha."""
+    if destinatario is None:
+        return []
+    if isinstance(destinatario, (list, tuple, set)):
+        fontes = [str(d) for d in destinatario]
+    else:
+        fontes = [str(destinatario)]
+    emails = []
+    for fonte in fontes:
+        for part in re.split(r"[;,\s]+", fonte):
+            part = part.strip()
+            if part and "@" in part and part not in emails:
+                emails.append(part)
+    return emails
+
+
 def _enviar_via_brevo(
     destinatario: str,
     assunto: str,
@@ -52,13 +71,14 @@ def _enviar_via_brevo(
     from_name: str,
     api_key: str,
 ) -> dict:
-    if not destinatario:
+    emails = _parse_destinatarios(destinatario)
+    if not emails:
         return {"success": False, "error": "Destinatario nao informado"}
     if not from_email:
         return {"success": False, "error": "Remetente (from_email) nao configurado"}
     payload = {
         "sender": {"name": from_name or from_email, "email": from_email},
-        "to": [{"email": destinatario}],
+        "to": [{"email": e} for e in emails],
         "subject": assunto,
         "htmlContent": corpo_html,
     }
@@ -108,12 +128,13 @@ def enviar_email(
     config = get_smtp_config(db)
     if not config:
         return {"success": False, "error": "SMTP não configurado"}
-    if not destinatario:
+    emails = _parse_destinatarios(destinatario)
+    if not emails:
         return {"success": False, "error": "Destinatário não informado"}
 
     msg = MIMEMultipart('mixed')
     msg['From'] = f"{config['from_name']} <{config['from_email']}>"
-    msg['To'] = destinatario
+    msg['To'] = ", ".join(emails)
     msg['Subject'] = assunto
 
     msg_alternative = MIMEMultipart('alternative')
