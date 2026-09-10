@@ -833,7 +833,7 @@ def emitir_pedido_submit(
         # (que causava cStat 853 em nota a vista).
         from services.parcelamento import (
             gerar_contas_receber_para_nota, contas_receber_existentes_para,
-            numero_documento_para_cobranca,
+            numero_documento_para_cobranca, eh_pagamento_a_vista,
         )
         _venc = consolidacao.data_fechamento or date.today()
         _forma = consolidacao.forma_pagamento or "NFSe"
@@ -842,7 +842,9 @@ def emitir_pedido_submit(
         )
         _num_parc = consolidacao.num_parcelas or 1
         _intervalo = consolidacao.intervalo_dias or 30
-        if nfe is not None and not contas_receber_existentes_para(db, nfe=nfe):
+        # Recebimento a vista: nao gera conta a receber a vencer nem boleto.
+        _gerar_cobranca = not eh_pagamento_a_vista(_forma)
+        if _gerar_cobranca and nfe is not None and not contas_receber_existentes_para(db, nfe=nfe):
             gerar_contas_receber_para_nota(
                 db, nfe_id=nfe.id, cliente_id=cliente.id,
                 descricao=f"Consolidação {consolidacao.numero} - NFe",
@@ -851,7 +853,7 @@ def emitir_pedido_submit(
                 forma_pagamento=_forma, numero_documento=_doc,
                 consolidacao_id=consolidacao_id,
             )
-        if nfse is not None and not contas_receber_existentes_para(db, nfse=nfse):
+        if _gerar_cobranca and nfse is not None and not contas_receber_existentes_para(db, nfse=nfse):
             gerar_contas_receber_para_nota(
                 db, nfse_id=nfse.id, cliente_id=cliente.id,
                 descricao=f"Consolidação {consolidacao.numero} - NFSe",
@@ -2192,7 +2194,12 @@ def _garantir_cobranca_nfe(db, nfe):
     mas a NFe de pedido não gerava (documento fiscal sem conta a receber)."""
     if not nfe.pedido_id:
         return
-    from services.parcelamento import contas_receber_existentes_para, gerar_contas_receber
+    from services.parcelamento import (
+        contas_receber_existentes_para, gerar_contas_receber, eh_pagamento_a_vista,
+    )
+    # Recebimento a vista: nao gera cobranca a vencer (evita cStat 853 na NFe).
+    if eh_pagamento_a_vista(nfe.forma_pagamento):
+        return
     if contas_receber_existentes_para(db, nfe=nfe):
         return
     cliente_id = nfe.cliente_id or (nfe.pedido.cliente_id if nfe.pedido else None)
@@ -2320,6 +2327,12 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         if not forma_pag and contas_nfe:
             forma_pag = contas_nfe[0].forma_pagamento
 
+        # Recebimento a vista: NFe nao deve levar <cobr>/<dup> (cStat 853).
+        # Mantem as duplicatas somente para formas diferidas (a prazo/boleto).
+        from services.parcelamento import eh_pagamento_a_vista
+        if contas_nfe and eh_pagamento_a_vista(forma_pag):
+            duplicatas = None
+
         payload = montar_payload_nfe(
             empresa, cliente, itens_nfe,
             numero_nfe=nfe.numero,
@@ -2401,6 +2414,26 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
             logger.warning(f"Erro ao baixar estoque NFe: {e}")
 
         request.session["message"] = f"NFe #{nfe.numero} transmitida com sucesso!"
+
+        # Boleto: somente apos a nota autorizada, usando o numero da NFe.
+        # (idempotente: ignora contas cujo boleto ja foi emitido)
+        if ja_emitida:
+            try:
+                from services.parcelamento import emitir_boleto_para_nota
+                ok_b, erros_b = emitir_boleto_para_nota(db, nfe=nfe)
+                msg_b = request.session.get("message") or ""
+                if erros_b:
+                    msg_b += f" | {ok_b} boleto(s) emitido(s), mas com erro(s): " + "; ".join(erros_b)
+                elif ok_b:
+                    msg_b += f" | {ok_b} boleto(s) emitido(s) com sucesso!"
+                request.session["message"] = msg_b
+                db.commit()
+            except Exception as e:
+                logger.exception("Erro ao emitir boleto apos autorizar NFe %s", nfe_id)
+                request.session["message"] = (
+                    (request.session.get("message") or "") + f" | erro ao emitir boleto: {e}"
+                )
+
         return RedirectResponse(url=f"/nfe/{nfe.id}", status_code=303)
     except Exception as e:
         # Falhou a emissão: libera o rascunho para nova tentativa manual.
@@ -2444,6 +2477,13 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
                     nfe.pedido.status = StatusPedido.FATURADO
                 _salvar_xml_nfe(empresa, nfe, db)
                 db.commit()
+                # Boleto: somente apos a nota autorizada, usando o numero da NFe.
+                try:
+                    from services.parcelamento import emitir_boleto_para_nota
+                    emitir_boleto_para_nota(db, nfe=nfe)
+                    db.commit()
+                except Exception as e:
+                    logger.warning("Erro ao emitir boleto apos autorizar NFe %s: %s", nfe_id, e)
             elif novo_status and novo_status != nfe.status and not (nfe.status == "issued" and novo_status == "error"):
                 nfe.status = novo_status
                 nfe.chave_acesso = status_data.get("chaveAcesso") or nfe.chave_acesso
@@ -2869,6 +2909,12 @@ async def webhook_nfe(request: Request, db: Session = Depends(get_db)):
             nfe.data_emissao = _agora_local(empresa)
             if empresa:
                 _salvar_xml_nfe(empresa, nfe, db)
+            # Boleto: somente apos a nota autorizada, usando o numero da NFe.
+            try:
+                from services.parcelamento import emitir_boleto_para_nota
+                emitir_boleto_para_nota(db, nfe=nfe)
+            except Exception as e:
+                logger.warning("Erro ao emitir boleto apos autorizar NFe %s: %s", nfe_id, e)
             # Dispara e-mail pos-autorizacao para o cliente da NFe (DANFE pronto)
             try:
                 from services.email_service import enviar_documentos_cliente

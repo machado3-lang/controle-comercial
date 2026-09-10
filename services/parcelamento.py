@@ -25,6 +25,25 @@ logger = logging.getLogger(__name__)
 _STATUS_EMITIDOS_NFE = {"issued", "queued", "pendente"}
 _STATUS_EMITIDOS_NFSE = {"autorizada", "pendente", "em_processamento"}
 
+# Formas de recebimento IMEDIATO: nao geram conta a receber a vencer nem duplicata
+# na NFe (enviar <cobr> em nota a vista causa cStat 853 na SEFAZ). So nao criamos
+# cobranca para elas -- o valor e reconhecido como recebido (caixa).
+_FORMAS_A_VISTA = {
+    "avista", "a_vista", "a vista", "vista",
+    "cartao_debito", "cartaodebito", "debito",
+    "dinheiro", "pix",
+}
+
+
+def eh_pagamento_a_vista(forma_pagamento):
+    """True para formas de recebimento imediato (avista, debito, dinheiro, pix).
+
+    Nesses casos nao se gera ContaReceber nem o grupo <cobr>/<dup> da NFe.
+    """
+    if not forma_pagamento:
+        return False
+    return str(forma_pagamento).strip().lower() in _FORMAS_A_VISTA
+
 
 def numero_documento_para_cobranca(pedido=None, consolidacao=None):
     """Retorna o numero do documento a ser usado no boleto da cobranca.
@@ -397,3 +416,49 @@ def emitir_boletos_contas(db, contas, forcar=False):
             logger.exception("Erro ao emitir boleto da conta %s", conta.id)
             erros.append(f"Parcela {conta.numero_parcela or 1}/{conta.total_parcelas or 1}: {e}")
     return ok, erros
+
+
+def emitir_boleto_para_nota(db, *, nfe=None, nfse=None):
+    """Emite os boletos das contas a receber vinculadas a uma nota JA AUTORIZADA.
+
+    So deve ser chamado APOS a NFe/NFSe ser transmitida e autorizada: o numero
+    do documento do boleto passa a ser o da PROPRIA nota (NFe/NFSe) e nao o da
+    consolidacao. Gera boleto apenas quando a forma de pagamento da conta eh
+    'boleto'. Eh idempotente (ignora contas com boleto ja emitido).
+
+    Retorna (qtd_ok, lista_de_erros).
+    """
+    from sqlalchemy import or_
+
+    numero = None
+    filtros = []
+    if nfe is not None:
+        filtros.append(ContaReceber.nfe_id == nfe.id)
+        numero = str(nfe.numero) if nfe.numero else None
+    if nfse is not None:
+        filtros.append(ContaReceber.nfse_id == nfse.id)
+        numero = str(nfse.numero) if nfse.numero else None
+    if not filtros:
+        return 0, []
+
+    contas = (
+        db.query(ContaReceber)
+        .filter(or_(*filtros))
+        .filter(ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]))
+        .all()
+    )
+    if not contas:
+        return 0, []
+
+    # Corrige o numero do documento para o da nota (pode ter ficado com o numero
+    # da consolidacao quando a cobranca foi criada antes da emissao da nota).
+    if numero:
+        for conta in contas:
+            if (conta.forma_pagamento or "").lower() == "boleto" and conta.numero_documento != numero:
+                conta.numero_documento = numero
+        db.flush()
+
+    contas_boleto = [c for c in contas if (c.forma_pagamento or "").lower() == "boleto"]
+    if not contas_boleto:
+        return 0, []
+    return emitir_boletos_contas(db, contas_boleto)

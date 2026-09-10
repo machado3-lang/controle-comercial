@@ -1148,7 +1148,7 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
         # (que causava cStat 853 em nota a vista).
         from services.parcelamento import (
             gerar_contas_receber_para_nota, contas_receber_existentes_para,
-            numero_documento_para_cobranca,
+            numero_documento_para_cobranca, eh_pagamento_a_vista,
         )
         _venc = consolidacao.data_fechamento or date.today()
         _forma = consolidacao.forma_pagamento or "NFSe"
@@ -1157,7 +1157,10 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
         )
         _num_parc = consolidacao.num_parcelas or 1
         _intervalo = consolidacao.intervalo_dias or 30
-        if nfe is not None and not contas_receber_existentes_para(db, nfe=nfe):
+        # Recebimento a vista (dinheiro/pix/debito/avista): nao gera conta a
+        # receber a vencer nem boleto -- o valor e reconhecido como recebido.
+        _gerar_cobranca = not eh_pagamento_a_vista(_forma)
+        if _gerar_cobranca and nfe is not None and not contas_receber_existentes_para(db, nfe=nfe):
             gerar_contas_receber_para_nota(
                 db, nfe_id=nfe.id, cliente_id=cliente.id,
                 descricao=f"Consolidação {consolidacao.numero} - NFe",
@@ -1166,7 +1169,7 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                 forma_pagamento=_forma, numero_documento=_doc,
                 consolidacao_id=consolidacao_id,
             )
-        if nfse is not None and not contas_receber_existentes_para(db, nfse=nfse):
+        if _gerar_cobranca and nfse is not None and not contas_receber_existentes_para(db, nfse=nfse):
             gerar_contas_receber_para_nota(
                 db, nfse_id=nfse.id, cliente_id=cliente.id,
                 descricao=f"Consolidação {consolidacao.numero} - NFSe",
@@ -1178,30 +1181,17 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
 
         db.commit()
 
-        # Boleto somente apos gerar as notas fiscais (NFe/NFSe) e suas cobrancas.
-        boleto_info = ""
-        if consolidacao.gerar_boleto or (consolidacao.forma_pagamento or "").lower() == "boleto":
-            try:
-                from services.parcelamento import emitir_boletos_contas, contas_receber_existentes_para
-                contas = contas_receber_existentes_para(db, consolidacao=consolidacao)
-                if contas:
-                    ok_b, erros_b = emitir_boletos_contas(db, contas)
-                    if erros_b:
-                        boleto_info = f" {ok_b} boleto(s) emitido(s), mas com erro(s): " + "; ".join(erros_b)
-                    else:
-                        boleto_info = f" {ok_b} boleto(s) emitido(s) com sucesso!"
-            except Exception as e:
-                logger.exception("Erro ao emitir boleto apos gerar notas da consolidacao %s", consolidacao_id)
-                boleto_info = f" erro ao emitir boleto: {e}"
+        # O boleto NAO eh gerado aqui: ele deve ser emitido SOMENTE apos a NFe/NFSe
+        # ser autorizada (transmitida), usando o numero da propria nota. A emissao
+        # acontece em routers/nfse.transmitir_nfse e routers/nfe.transmitir_nfe, que
+        # chamam emitir_boleto_para_nota apos a autorizacao.
 
-        msg = f"Rascunhos da ConsolidaÃ§Ã£o #{consolidacao.numero or consolidacao_id} "
-        msg += "regerados!" if acao_regerar else "salvos (existentes mantidos quando aplicÃ¡vel)!"
+        msg = f"Rascunhos da Consolidação #{consolidacao.numero or consolidacao_id} "
+        msg += "regerados!" if acao_regerar else "salvos (existentes mantidos quando aplicável)!"
         if nfe:
             msg += f" NFe #{nfe.numero}"
         if nfse:
             msg += f" NFSe #{nfse.numero}"
-        if boleto_info:
-            msg += " |" + boleto_info
         request.session["message"] = msg
 
         # Redirect to preview
@@ -1879,6 +1869,18 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
             msg = f"NFSe #{nfse.numero} emitida com sucesso!"
             if resultado.get('retry_iss_retido'):
                 msg += " ISS retido foi marcado automaticamente."
+            # Boleto: somente apos a nota autorizada, usando o numero da NFSe.
+            try:
+                from services.parcelamento import emitir_boleto_para_nota
+                ok_b, erros_b = emitir_boleto_para_nota(db, nfse=nfse)
+                if erros_b:
+                    msg += f" | {ok_b} boleto(s) emitido(s), mas com erro(s): " + "; ".join(erros_b)
+                elif ok_b:
+                    msg += f" | {ok_b} boleto(s) emitido(s) com sucesso!"
+                db.commit()
+            except Exception as e:
+                logger.exception("Erro ao emitir boleto apos autorizar NFSe %s", nfse_id)
+                msg += f" | erro ao emitir boleto: {e}"
             request.session["message"] = msg
             if background_tasks:
                 # Envio pos-autorizacao feito na sincronizacao (status autorizada),
@@ -1918,6 +1920,20 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                     request.session["message"] = f"NFSe #{nfse.numero} jÃ¡ estava processada! Autorizada com sucesso."
                     if background_tasks:
                         pass
+                    # Boleto: somente apos a nota autorizada, usando o numero da NFSe.
+                    try:
+                        from services.parcelamento import emitir_boleto_para_nota
+                        ok_b, erros_b = emitir_boleto_para_nota(db, nfse=nfse)
+                        if erros_b:
+                            request.session["message"] += (
+                                f" | {ok_b} boleto(s) emitido(s), mas com erro(s): " + "; ".join(erros_b)
+                            )
+                        elif ok_b:
+                            request.session["message"] += f" | {ok_b} boleto(s) emitido(s) com sucesso!"
+                        db.commit()
+                    except Exception as e:
+                        logger.exception("Erro ao emitir boleto apos autorizar NFSe %s", nfse_id)
+                        request.session["message"] += f" | erro ao emitir boleto: {e}"
                 elif sp_sync == 'processando':
                     nfse.status = "em_processamento"
                     nfse.mensagem_retorno = "DPS jÃ¡ recebida, aguardando processamento."
@@ -2008,6 +2024,21 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
                 request.session["message"] = f"NFSe #{nfse.numero} autorizada com DANFSe"
             else:
                 request.session["message"] = f"NFSe #{nfse.numero} autorizada"
+
+            # Boleto: somente apos a nota autorizada, usando o numero da NFSe.
+            try:
+                from services.parcelamento import emitir_boleto_para_nota
+                ok_b, erros_b = emitir_boleto_para_nota(db, nfse=nfse)
+                if erros_b:
+                    request.session["message"] += (
+                        f" | {ok_b} boleto(s) emitido(s), mas com erro(s): " + "; ".join(erros_b)
+                    )
+                elif ok_b:
+                    request.session["message"] += f" | {ok_b} boleto(s) emitido(s) com sucesso!"
+                db.commit()
+            except Exception as e:
+                logger.exception("Erro ao emitir boleto apos autorizar NFSe %s", nfse_id)
+                request.session["message"] += f" | erro ao emitir boleto: {e}"
 
             # Dispara e-mail pos-autorizacao (evita enviar documento em processamento)
             try:
