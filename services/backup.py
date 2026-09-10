@@ -52,21 +52,24 @@ ALLOWED_TABLES = set(TABLES_IN_ORDER)
 
 SKIP_TABLES_ON_RESTORE = set()
 
-# Colunas que armazenam enums Python (VARCHAR no banco) e seus tipos de enum.
-# A fonte da verdade são os valores definidos em models.py (case-sensitive).
+# Colunas que armazenam enums Python e como o valor é persistido no banco.
+# Chave: (tabela, coluna). "forma" indica o que o banco guarda:
+#   "name"  -> o NOME do membro (native_enum padrao: "PENDENTE", "CONSOLIDADO")
+#   "value" -> o VALOR do membro (values_callable e/ou String livre: "aberta", "avista")
+# A fonte da verdade sao os enums definidos em models.py (case-sensitive).
 _ENUM_COLUMNS = {
-    "status": ("pedidos_venda", "StatusPedido"),
-    "status": ("ordens_servico", "StatusOS"),
-    "status": ("contas_pagar", "StatusConta"),
-    "status": ("contas_receber", "StatusConta"),
-    "forma_pagamento": ("pedidos_venda", "FormaPagamento"),
-    "forma_pagamento": ("contas_pagar", "FormaPagamento"),
-    "forma_pagamento": ("contas_receber", "FormaPagamento"),
+    ("pedidos_venda", "status"): ("StatusPedido", "name"),
+    ("ordens_servico", "status"): ("StatusOS", "value"),
+    ("contas_pagar", "status"): ("StatusConta", "name"),
+    ("contas_receber", "status"): ("StatusConta", "name"),
+    ("pedidos_venda", "forma_pagamento"): ("FormaPagamento", "value"),
+    ("contas_pagar", "forma_pagamento"): ("FormaPagamento", "value"),
+    ("contas_receber", "forma_pagamento"): ("FormaPagamento", "value"),
 }
 
 
 def _build_enum_lookup():
-    """Constrói um dicionário {coluna: {variante_lower: valor_canônico}} a partir
+    """Constrói {(tabela, coluna): {variante_lower: valor_canônico}} a partir
     dos enums definidos em models.py."""
     from models import (
         StatusPedido, StatusOS, StatusConta, FormaPagamento,
@@ -78,24 +81,23 @@ def _build_enum_lookup():
         "FormaPagamento": FormaPagamento,
     }
     lookup = {}
-    for col, (_, enum_name) in _ENUM_COLUMNS.items():
+    for (table, col), (enum_name, form) in _ENUM_COLUMNS.items():
         enum_cls = _enum_classes.get(enum_name)
         if not enum_cls:
             continue
         norm = {}
         for member in enum_cls:
-            # O SQLAlchemy (native_enum=False) usa o NOME do membro (ex.: CONSOLIDADO)
-            # para ler/gravar, não o .value. Normalizamos para o nome canônico.
-            canon = member.name
+            canon = member.name if form == "name" else member.value
             variantes = {
                 member.name.lower(),
                 member.value.lower(),
                 member.value.lower().replace("_", ""),
                 member.value.lower().replace("_", " "),
+                canon.lower(),
             }
             for v in variantes:
                 norm[v] = canon
-        lookup[col] = norm
+        lookup[(table, col)] = norm
     return lookup
 
 
@@ -163,15 +165,18 @@ def _pg_drop_fk_constraints(conn):
     return defs
 
 
-def _normalize_enum_value(col_name: str, value):
-    """Normaliza um valor de enum para o NOME canônico do membro em models.py
-    (o que o SQLAlchemy espera com native_enum=False)."""
-    if not isinstance(value, str) or col_name not in _ENUM_LOOKUP:
+def _normalize_enum_value(table_name: str, col_name: str, value):
+    """Normaliza um valor de enum para a forma canônica persistida no banco
+    (nome ou valor, conforme definido em _ENUM_COLUMNS)."""
+    if not isinstance(value, str):
+        return value
+    k = (table_name, col_name)
+    if k not in _ENUM_LOOKUP:
         return value
     key = value.strip().lower()
-    if key in _ENUM_LOOKUP[col_name]:
-        return _ENUM_LOOKUP[col_name][key]
-    return value.strip().upper()
+    if key in _ENUM_LOOKUP[k]:
+        return _ENUM_LOOKUP[k][key]
+    return value.strip()
 
 
 def _validate_table(table_name: str) -> str:
@@ -323,11 +328,11 @@ def restore_backup(backup_dict: dict, modo: str = "sobrepor") -> dict:
                                 "statusconta", "statusos", "statuspedido", "formapagamento"
                             ):
                                 if isinstance(v, str):
-                                    v = v.upper()
+                                    v = _normalize_enum_value(table_name, k, v)
                                 col_names.append(k)
                                 col_placeholders.append(f"CAST(:{k} AS {col_type['udt_name']})")
-                            elif k in _ENUM_LOOKUP and isinstance(v, str):
-                                v = _normalize_enum_value(k, v)
+                            elif (table_name, k) in _ENUM_LOOKUP and isinstance(v, str):
+                                v = _normalize_enum_value(table_name, k, v)
                                 col_names.append(k)
                                 col_placeholders.append(f":{k}")
                             else:
