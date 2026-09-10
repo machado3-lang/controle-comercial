@@ -500,9 +500,22 @@ def atualizar_status(
         except ValueError:
             request.session["error"] = "Status inválido"
             return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
-        # Regra de ouro: pedido já faturado não pode mudar de status.
-        if pedido.status == StatusPedido.FATURADO:
-            request.session["error"] = "Pedido já faturado não pode ter o status alterado"
+        # Regra de ouro: estados terminais não podem ter o status alterado manualmente.
+        # FATURADO, CONSOLIDADO, AGRUPADO e CANCELADO já possuem vínculo fiscal/
+        # contábil (notas e/ou consolidação); reverter para Pré-venda abriria a
+        # porta para reconsolidar/reemitir um pedido já faturado. O cancelamento
+        # da consolidação libera os pedidos diretamente (sem passar por aqui).
+        _STATUS_BLOQUEADOS = (
+            StatusPedido.FATURADO,
+            StatusPedido.CONSOLIDADO,
+            StatusPedido.AGRUPADO,
+            StatusPedido.CANCELADO,
+        )
+        if pedido.status in _STATUS_BLOQUEADOS:
+            request.session["error"] = (
+                f"Pedido com status '{STATUS_PEDIDO_LABELS.get(pedido.status, pedido.status)}' "
+                f"não pode ter o status alterado manualmente."
+            )
             return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
         # Não permitir faturar diretamente um pedido que já pertence a uma consolidação
         # (o faturamento deve ocorrer pela consolidação).
