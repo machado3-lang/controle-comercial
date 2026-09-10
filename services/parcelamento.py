@@ -135,6 +135,39 @@ def gerar_contas_receber(
     return contas
 
 
+def gerar_contas_receber_para_nota(
+    db, *, nfe_id=None, nfse_id=None, cliente_id, descricao, valor_total,
+    primeiro_vencimento, num_parcelas=1, intervalo_dias=30,
+    forma_pagamento=None, numero_documento=None, consolidacao_id=None,
+):
+    """Cria as parcelas da cobrança de uma NFe ou NFSe, vinculadas ao documento
+    (nfe_id / nfse_id) e, quando aplicável, à consolidação de origem.
+
+    Usado na emissão de consolidações: cada nota (produtos vs serviços) recebe
+    sua própria cobrança, evitando misturar os valores e evitando que a NFe
+    herde a cobrança da consolidação (cStat 853). Não faz commit.
+    """
+    try:
+        if not valor_total or Decimal(str(valor_total)) <= 0:
+            return []
+    except (ValueError, TypeError):
+        return []
+    return gerar_contas_receber(
+        db,
+        cliente_id=cliente_id,
+        descricao=descricao,
+        valor_total=valor_total,
+        primeiro_vencimento=primeiro_vencimento,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
+        forma_pagamento=forma_pagamento,
+        numero_documento=numero_documento,
+        consolidacao_id=consolidacao_id,
+        nfe_id=nfe_id,
+        nfse_id=nfse_id,
+    )
+
+
 def gerar_contas_pagar(
     db,
     *,

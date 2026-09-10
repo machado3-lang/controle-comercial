@@ -967,13 +967,26 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
 
     # Remove rascunhos existentes quando solicitado (somente rascunho/erro; autorizadas sÃ£o mantidas)
     if acao_regerar:
+        from models import ContaReceber as _ContaReceber
+        _nfe_ids_rm = []
         for n in db.query(NFe).filter(NFe.consolidacao_id == consolidacao_id).all():
             if (n.status or "").lower() in _RASCUNHO:
                 db.query(NFeItem).filter(NFeItem.nfe_id == n.id).delete()
+                _nfe_ids_rm.append(n.id)
                 db.delete(n)
+        _nfse_id_rm = None
         if nfse_existente and nfse_rascunho:
             db.query(NFSeItem).filter(NFSeItem.nfse_id == nfse_existente.id).delete()
+            _nfse_id_rm = nfse_existente.id
             db.delete(nfse_existente)
+        # Remove tambem a cobranca vinculada a esses rascunhos (sera recriada).
+        _filtros_cob = []
+        if _nfe_ids_rm:
+            _filtros_cob.append(_ContaReceber.nfe_id.in_(_nfe_ids_rm))
+        if _nfse_id_rm is not None:
+            _filtros_cob.append(_ContaReceber.nfse_id == _nfse_id_rm)
+        if _filtros_cob:
+            db.query(_ContaReceber).filter(or_(*_filtros_cob)).delete(synchronize_session=False)
         db.flush()
 
     empresa = db.query(Empresa).first()
@@ -1034,6 +1047,7 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                 valor_total=total_nfe,
                 data_emissao=now,
                 data_saida=now,
+                forma_pagamento=consolidacao.forma_pagamento or None,
                 aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
                 aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
             )
@@ -1128,10 +1142,43 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                 )
                 db.add(nfse_item)
 
+        # Cobranca por nota: 1 conta (parcela) por documento, vinculada a
+        # nfe_id / nfse_id (cada nota ja esta ligada a consolidacao_id). Assim a
+        # NFe recebe sua propria duplicata e nao herda a cobranca da consolidacao
+        # (que causava cStat 853 em nota a vista).
+        from services.parcelamento import (
+            gerar_contas_receber_para_nota, contas_receber_existentes_para,
+            numero_documento_para_cobranca,
+        )
+        _venc = consolidacao.data_fechamento or date.today()
+        _forma = consolidacao.forma_pagamento or "NFSe"
+        _doc = numero_documento_para_cobranca(consolidacao=consolidacao) or (
+            str(consolidacao.numero) if consolidacao.numero else None
+        )
+        _num_parc = consolidacao.num_parcelas or 1
+        _intervalo = consolidacao.intervalo_dias or 30
+        if nfe is not None and not contas_receber_existentes_para(db, nfe=nfe):
+            gerar_contas_receber_para_nota(
+                db, nfe_id=nfe.id, cliente_id=cliente.id,
+                descricao=f"Consolidação {consolidacao.numero} - NFe",
+                valor_total=total_nfe, primeiro_vencimento=_venc,
+                num_parcelas=_num_parc, intervalo_dias=_intervalo,
+                forma_pagamento=_forma, numero_documento=_doc,
+                consolidacao_id=consolidacao_id,
+            )
+        if nfse is not None and not contas_receber_existentes_para(db, nfse=nfse):
+            gerar_contas_receber_para_nota(
+                db, nfse_id=nfse.id, cliente_id=cliente.id,
+                descricao=f"Consolidação {consolidacao.numero} - NFSe",
+                valor_total=valor_servicos, primeiro_vencimento=_venc,
+                num_parcelas=_num_parc, intervalo_dias=_intervalo,
+                forma_pagamento=_forma, numero_documento=_doc,
+                consolidacao_id=consolidacao_id,
+            )
+
         db.commit()
 
-        # Boleto somente apos gerar as notas fiscais (NFe/NFSe). As contas a
-        # receber ja foram criadas no finalizar da consolidacao.
+        # Boleto somente apos gerar as notas fiscais (NFe/NFSe) e suas cobrancas.
         boleto_info = ""
         if consolidacao.gerar_boleto or (consolidacao.forma_pagamento or "").lower() == "boleto":
             try:

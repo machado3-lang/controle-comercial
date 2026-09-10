@@ -108,19 +108,25 @@ clique, o pedido passa a aparecer na tela de nova consolidação.
 
 ## 6. Geração de NF e cobrança
 
-- **Finalizar** (`finalizar_consolidacao`, `consolidacoes.py`) gera a
-  `ContaReceber` (parcelada) via `services.parcelamento.gerar_contas_receber`,
-  mas **não emite boleto**. A emissão do boleto foi deliberadamente desacoplada
-  do finalizar para evitar cobrar antes de existir documento fiscal.
+- **Finalizar** (`finalizar_consolidacao`, `consolidacoes.py`) **NÃO gera mais
+  `ContaReceber`**. A cobrança é criada na **emissão** (`emitir_consolidacao_nfse`
+  em `nfse.py` e `emitir_consolidacao_submit` em `nfe.py`), **UMA por documento
+  fiscal**, vinculada diretamente a `nfe_id` / `nfse_id` (cada nota já está
+  ligada à consolidação via `consolidacao_id`). Os valores vêm da explosão dos
+  itens (`explodir_itens_consolidacao`): uma conta com o valor dos produtos (NFe)
+  e outra com o valor dos serviços (NFSe). Isso evita (a) misturar produtos e
+  serviços num só registro e (b) a NFe herdar a cobrança da consolidação e emitir
+  `<cobr>` numa nota à vista (cStat 853) — a NFe recebe **sua própria**
+  duplicata.
 - **Boleto é emitido somente após gerar as notas.** A rota
   `emitir_consolidacao_nfse` (`POST /nfse/emitir/consolidacao/{id}`,
-  `nfse.py`) salva os rascunhos de NFe/NFSe e, **depois**, se a consolidação
-  tiver `gerar_boleto=True` ou `forma_pagamento == "boleto"`, emite os boletos
-  Sicoob das parcelas (via `emitir_boletos_contas`). Assim o boleto nasce
-  vinculado às NFs já geradas, usando o `numero` da consolidação e o vencimento
-  informado no finalizar.
-- **NF da consolidação não gera cobrança própria** — a cobrança vem das contas a
-  receber criadas no finalizar. Ver `DOCUMENTACAO_NFE.md` e
+  `nfse.py`) salva os rascunhos de NFe/NFSe **e suas cobranças por nota**, e
+  **depois**, se a consolidação tiver `gerar_boleto=True` ou
+  `forma_pagamento == "boleto"`, emite os boletos Sicoob das parcelas (via
+  `emitir_boletos_contas`). Assim o boleto nasce vinculado às NFs já geradas,
+  usando o `numero` da consolidação e o vencimento informado no finalizar.
+- **NF da consolidação gera cobrança própria por nota** na emissão (vinculada a
+  `nfe_id`/`nfse_id`), não no finalizar. Ver `DOCUMENTACAO_NFE.md` e
   `DOCUMENTACAO_BOLETOS.md`.
 - Rotas de emissão: `GET /nfe/emitir/consolidacao/{id}`,
   `GET /nfse/emitir/consolidacao/{id}`.
@@ -130,10 +136,31 @@ clique, o pedido passa a aparecer na tela de nova consolidação.
 - **Boleto só após as NFs:** removida a emissão imediata em
   `finalizar_consolidacao`; boleto passou para `emitir_consolidacao_nfse`, após
   salvar os rascunhos NFe/NFSe.
-- **Valor da NFSe corrigido:** `valor_servicos` em `nfse.py` deixou de multiplicar
+- **Valor da NFSe corrigido:** `valor_servicos` (em `nfse.py` **e** em
+  `nfe.py::emitir_consolidacao_submit`) deixou de multiplicar
   `item.total * item.quantidade` (contagem em dobro, pois `item.total` já é
   `quantidade × preço_unitario` agregado) e passou a somar `item.total`. O
   cabeçalho da NFSe agora bate com o total dos serviços.
+- **Cliente na NFSe:** `emitir_consolidacao_submit` (`nfe.py`) agora cria a NFSe
+  com `cliente_id` e `origem="consolidacao"` (antes vinha em branco).
+- **Detecção de rascunho em `nfe.py`:** `emitir_consolidacao_submit` passou a
+  bloquear a recriação quando já existe NFe/NFSe (rascunho/erro → avisa para
+  excluir; autorizada → avisa que não pode recriar), espelhando a regra já
+  existente em `nfse.py` (manter/regenerar).
+- **Contas por nota na emissão:** as `ContaReceber` (NFe e NFSe) são criadas em
+  `emitir_consolidacao_nfse`/`emitir_consolidacao_submit` (via
+  `gerar_contas_receber_para_nota`), vinculadas a `nfe_id`/`nfse_id`, não mais no
+  finalizar nem como 1 conta com o total. O `regerar` apaga também as cobranças
+  dos rascunhos removidos.
+- **Parcelamento persistido:** `PedidoConsolidado` ganhou `num_parcelas` e
+  `intervalo_dias`; o `finalizar_consolidacao` os persiste. Na emissão cada nota
+  gera suas parcelas com esses valores (ex.: 3 parcelas na NFe e 3 na NFSe), e não
+  mais 1 conta por nota.
+- **Forma de pagamento na NFe:** `emitir_consolidacao_nfse` agora seta
+  `forma_pagamento` da NFe a partir de `consolidacao.forma_pagamento`. A pré-visualização
+  (`nfe/previa.html`) exibia "À vista / Dinheiro" hardcoded; agora mostra o rótulo
+  real (`FORMA_PAGAMENTO_LABELS` em `ver_previa`), caindo no fallback "À vista /
+  Dinheiro" só quando a NFe não tem forma de pagamento definida.
 - **Cliente visível no rascunho NFSe:** o formulário de edição
   (`templates/nfse/editar.html`) pré-preenche a caixa de busca `#clienteSearch`
   com o nome do cliente já vinculado (antes só o `hidden #clienteId` vinha

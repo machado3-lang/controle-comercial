@@ -592,6 +592,8 @@ class PedidoConsolidado(Base):
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
     finalizado_at = Column(DateTime, nullable=True)
     finalizado_por = Column(Integer, ForeignKey("usuarios.id"), nullable=True, index=True)
+    num_parcelas = Column(Integer, default=1, nullable=True)  # parcelamento da cobranca por nota
+    intervalo_dias = Column(Integer, default=30, nullable=True)  # intervalo entre parcelas
 
     cliente = relationship("Cliente", back_populates="consolidacoes")
     pedidos_origem = relationship("PedidoVenda", back_populates="consolidacao")

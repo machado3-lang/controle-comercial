@@ -693,34 +693,23 @@ def finalizar_consolidacao(
     consolidacao.finalizado_at = datetime.now()
     # TODO: get current user id from session
     # consolidacao.finalizado_por = current_user_id
+    # Parcelamento da cobranca por nota (usado na emissao para gerar as parcelas)
+    try:
+        consolidacao.num_parcelas = int(num_parcelas) if num_parcelas else 1
+    except (ValueError, TypeError):
+        consolidacao.num_parcelas = 1
+    try:
+        consolidacao.intervalo_dias = int(intervalo_dias) if intervalo_dias else 30
+    except (ValueError, TypeError):
+        consolidacao.intervalo_dias = 30
 
-    # Cria conta(s) a receber com suporte a parcelamento, independente da
-    # forma de pagamento (à vista/cartão também geram o registro financeiro).
-    from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para, numero_documento_para_cobranca
-    contas_geradas = contas_receber_existentes_para(db, consolidacao=consolidacao)
-    if contas_geradas:
-        logger.info(
-            "Consolidação %s já possui %s conta(s) a receber; nenhuma nova será gerada",
-            consolidacao.id, len(contas_geradas),
-        )
-    else:
-        try:
-            venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (consolidacao.data_fechamento or date.today())
-        except ValueError:
-            venc = consolidacao.data_fechamento or date.today()
-        contas_geradas = gerar_contas_receber(
-            db,
-            cliente_id=consolidacao.cliente_id,
-            descricao=f"Consolidação {consolidacao.numero}",
-            valor_total=consolidacao.total or 0,
-            primeiro_vencimento=venc,
-            num_parcelas=num_parcelas,
-            intervalo_dias=intervalo_dias,
-            forma_pagamento=forma_pagamento or "NFSe",
-            numero_documento=numero_documento_para_cobranca(consolidacao=consolidacao)
-            or (str(consolidacao.numero) if consolidacao.numero else None),
-            consolidacao_id=consolidacao.id,
-        )
+    # As contas a receber NÃO são geradas aqui: elas são criadas na EMISSÃO
+    # (routers/nfse.py e routers/nfe.py), uma por documento fiscal, vinculadas
+    # diretamente a `nfe_id` / `nfse_id` (cada nota já está ligada à
+    # consolidação via `consolidacao_id`). Isso garante (a) uma cobrança por
+    # nota (produtos vs serviços) e (b) que a transmissão da NFe encontre a
+    # `ContaReceber` própria e monte o grupo <cobr> corretamente, sem puxar a
+    # cobrança da consolidação (que causava cStat 853 em nota à vista).
 
     try:
         db.commit()

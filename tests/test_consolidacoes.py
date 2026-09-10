@@ -129,9 +129,11 @@ async def test_rota_pedidos_disponiveis_nao_e_capturada_pela_rota_dinamica(
 
 
 @pytest.mark.asyncio
-async def test_finalizar_consolidacao_gera_parcelas_sem_duplicar(
+async def test_emitir_consolidacao_gera_cobranca_por_nota(
     authenticated_client: AsyncClient, db_session: Session, test_empresa
 ):
+    """A cobranca nao e mais gerada no finalizar; e criada na EMISSAO, uma por
+    nota (vinculada a nfe_id/nfse_id), e nunca duplicada ao reemitir."""
     cliente = criar_cliente_teste(db_session)
     produto = Produto(nome="Servico A", preco=10, tipo="servico")
     db_session.add(produto)
@@ -154,18 +156,35 @@ async def test_finalizar_consolidacao_gera_parcelas_sem_duplicar(
     )
     assert resp.status_code == 303
 
+    # Finalizar NAO gera cobranca vinculada a consolidacao
     db_session.expire_all()
-    contas = db_session.query(ContaReceber).filter(
+    assert db_session.query(ContaReceber).filter(
         ContaReceber.consolidacao_id == consolidacao_id
-    ).all()
-    assert len(contas) == 3
-    assert sum(float(c.valor) for c in contas) == 40.0
+    ).count() == 0
+
+    # Emitir cria a cobranca vinculada a NFSe (servico desta consolidacao)
+    resp = await authenticated_client.post(
+        f"/nfse/emitir/consolidacao/{consolidacao_id}", data={"csrf_token": csrf}
+    )
+    assert resp.status_code == 303
+
+    db_session.expire_all()
     consolidacao = db_session.get(PedidoConsolidado, consolidacao_id)
     assert consolidacao.status == StatusConsolidacao.CONCLUIDO
 
-    # Uma segunda finalizacao e recusada e nao duplica as parcelas
+    contas = db_session.query(ContaReceber).filter(
+        ContaReceber.consolidacao_id == consolidacao_id
+    ).all()
+    # Apenas a NFSe (servico); num_parcelas=3 vira 3 parcelas, todas vinculadas
+    # a nfse_id (e nao a nfe_id), somando o valor total da consolidacao.
+    assert len(contas) == 3
+    assert all(c.nfse_id is not None for c in contas)
+    assert all(c.nfe_id is None for c in contas)
+    assert abs(sum(float(c.valor) for c in contas) - 40.0) < 0.01
+
+    # Reemitir nao duplica a cobranca existente
     resp = await authenticated_client.post(
-        f"/consolidacoes/{consolidacao_id}/finalizar", data=dados
+        f"/nfse/emitir/consolidacao/{consolidacao_id}", data={"csrf_token": csrf}
     )
     assert resp.status_code == 303
     db_session.expire_all()

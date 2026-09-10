@@ -160,6 +160,13 @@ def montar_payload_nfe(
     }
     tipo_pagamento = _TIPO_PAG.get((forma_pagamento or "").lower(), "01")
 
+    # Pagamentos considerados "a prazo" (admitem grupo de cobrança/duplicatas).
+    # Boleto e à prazo mapeiam para "15". Demais tipos (dinheiro, cheque,
+    # cartão, pix, transferência, outros) são à vista e NÃO podem levar o
+    # grupo <cobr>: a SEFAZ rejeita com cStat 853 ("Dados de cobranca nao
+    # devem ser informados para pagamento a vista").
+    _PAGAMENTOS_PRAZO = {"15"}
+
     payload = {
         "modelo": modelo,
         # nNF e série devem ser enviados explicitamente: a SEFAZ valida a
@@ -262,10 +269,12 @@ def montar_payload_nfe(
     # e cobranca.parcelas[]{numero,vencimento,valor}. Nomes divergentes (ex.
     # "duplicatas"/"dataVencimento") são ignorados silenciosamente pela API e o
     # XML sai com <fat> sem nenhum <dup>/<dVenc>.
-    if duplicatas:
+    if duplicatas and tipo_pagamento in _PAGAMENTOS_PRAZO:
         # Vencimento de fallback: data de emissão (ou hoje) quando a parcela
         # não traz data explícita — evita descartar a duplicata e silenciar o
         # vencimento/parcelas no DANFE.
+        # Só monta o grupo de cobrança se a forma de pagamento for a prazo
+        # (boleto/à prazo). Para à vista, a SEFAZ proíbe o grupo <cobr> (cStat 853).
         _venc_fallback = ""
         if data_emissao:
             _venc_fallback = str(data_emissao)[:10]

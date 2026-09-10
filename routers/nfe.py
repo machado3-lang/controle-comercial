@@ -825,7 +825,41 @@ def emitir_pedido_submit(
                     codigo_servico=item.produto.codigo_lc116 or "",
                     tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
                 )
-                db.add(nfse_item)
+            db.add(nfse_item)
+
+        # Cobranca por nota: 1 conta (parcela) por documento, vinculada a
+        # nfe_id / nfse_id (cada nota ja esta ligada a consolidacao_id). Assim a
+        # NFe recebe sua propria duplicata e nao herda a cobranca da consolidacao
+        # (que causava cStat 853 em nota a vista).
+        from services.parcelamento import (
+            gerar_contas_receber_para_nota, contas_receber_existentes_para,
+            numero_documento_para_cobranca,
+        )
+        _venc = consolidacao.data_fechamento or date.today()
+        _forma = consolidacao.forma_pagamento or "NFSe"
+        _doc = numero_documento_para_cobranca(consolidacao=consolidacao) or (
+            str(consolidacao.numero) if consolidacao.numero else None
+        )
+        _num_parc = consolidacao.num_parcelas or 1
+        _intervalo = consolidacao.intervalo_dias or 30
+        if nfe is not None and not contas_receber_existentes_para(db, nfe=nfe):
+            gerar_contas_receber_para_nota(
+                db, nfe_id=nfe.id, cliente_id=cliente.id,
+                descricao=f"Consolidação {consolidacao.numero} - NFe",
+                valor_total=total, primeiro_vencimento=_venc,
+                num_parcelas=_num_parc, intervalo_dias=_intervalo,
+                forma_pagamento=_forma, numero_documento=_doc,
+                consolidacao_id=consolidacao_id,
+            )
+        if nfse is not None and not contas_receber_existentes_para(db, nfse=nfse):
+            gerar_contas_receber_para_nota(
+                db, nfse_id=nfse.id, cliente_id=cliente.id,
+                descricao=f"Consolidação {consolidacao.numero} - NFSe",
+                valor_total=valor_servicos, primeiro_vencimento=_venc,
+                num_parcelas=_num_parc, intervalo_dias=_intervalo,
+                forma_pagamento=_forma, numero_documento=_doc,
+                consolidacao_id=consolidacao_id,
+            )
 
         db.commit()
         msg = f"Rascunho NFe #{numero_nfe} salvo! Revise antes de transmitir."
@@ -1010,6 +1044,26 @@ def emitir_consolidacao_submit(
             request.session["error"] = "Nenhum item do tipo produto para emitir NFe"
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
+    # Evita duplicar rascunhos: se já houver NFe/NFSe para a consolidação, avisa
+    # em vez de recriar. A emissão em /nfse/emitir/consolidacao já oferece as
+    # opções granulares "manter" / "regenerar" (por documento).
+    nfe_existente = db.query(NFe).filter(NFe.consolidacao_id == consolidacao_id).order_by(NFe.id.desc()).first()
+    nfse_existente = consolidacao.nfse
+    _RASCUNHO = {"rascunho", "erro"}
+
+    def _e_rascunho(x):
+        return bool(x and (x.status or "").lower() in _RASCUNHO)
+
+    if _e_rascunho(nfe_existente) or _e_rascunho(nfse_existente):
+        request.session["error"] = (
+            "Já existe rascunho de NFe/NFSe nesta consolidação. Exclua o rascunho "
+            "anterior ou use a emissão de NFSe (manter/regenerar) para evitar duplicidade."
+        )
+        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+    if (nfe_existente and not _e_rascunho(nfe_existente)) or (nfse_existente and not _e_rascunho(nfse_existente)):
+        request.session["error"] = "NFe/NFSe da consolidação já foram transmitidas; não é possível recriar o rascunho."
+        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+
     cliente = consolidacao.cliente
     ie = _limpar_doc(cliente.inscricao_estadual) if hasattr(cliente, 'inscricao_estadual') else None
     if not ie and not cliente.isento_ie and cliente.indicador_ie != "nao_contribuinte":
@@ -1074,17 +1128,18 @@ def emitir_consolidacao_submit(
 
         numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
         empresa.ultimo_numero_nfse = int(numero_nfse)
-        valor_servicos = sum(
-            Decimal(str(item.total or item.preco_unitario or 0)) * Decimal(str(item.quantidade or 1))
-            for item in itens_nfse
-        )
+        # `item.total` já é a soma (quantidade * preco_unitario) agregada na
+        # consolidação: não multiplicar por `item.quantidade` de novo.
+        valor_servicos = sum(Decimal(str(item.total or 0)) for item in itens_nfse)
 
         iss_retido = getattr(cliente, 'iss_retido', False) or False
         nfse = NFSe(
             consolidacao_id=consolidacao_id,
+            cliente_id=cliente.id,
             numero=numero_nfse,
             status="rascunho",
             valor_total=valor_servicos,
+            origem="consolidacao",
             data_emissao=now,
             iss_retido=iss_retido,
             aliquota_iss=empresa.aliquota_iss or 2.0,
@@ -1806,6 +1861,21 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
         request.session["error"] = "NFe já foi transmitida"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
+    FORMA_PAGAMENTO_LABELS = {
+        "dinheiro": "Dinheiro",
+        "pix": "PIX",
+        "boleto": "Boleto",
+        "cartao_credito": "Cartão de Crédito",
+        "cartao_debito": "Cartão de Débito",
+        "transferencia": "Transferência",
+        "cheque": "Cheque",
+        "aprazo": "A prazo",
+        "avista": "À vista",
+        "outro": "Outro",
+    }
+    fp = nfe.forma_pagamento
+    forma_pagamento_label = FORMA_PAGAMENTO_LABELS.get(fp, "À vista / Dinheiro") if fp else "À vista / Dinheiro"
+
     erros = _validar_rascunho(nfe, nfe.cliente or (nfe.pedido.cliente if nfe.pedido else None), empresa)
     from models import Transportadora
     transportadoras = db.query(Transportadora).order_by(Transportadora.nome).all()
@@ -1813,6 +1883,7 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
         "nfe/previa.html",
         {"request": request, "nfe": nfe, "empresa": empresa,
          "transportadoras": transportadoras,
+         "forma_pagamento_label": forma_pagamento_label,
          "erros": erros, "STATUS_LABELS": STATUS_LABELS,
          "messages": _get_messages(request)}
     )
@@ -2217,10 +2288,13 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         data_emissao_str = nfe.data_emissao.strftime("%Y-%m-%dT%H:%M:%S") if nfe.data_emissao else None
         data_saida_str = nfe.data_saida.strftime("%Y-%m-%dT%H:%M:%S") if nfe.data_saida else None
 
-        # Duplicatas: parcelas do contas a receber vinculadas a esta NFe
-        # (grupo <cobr>/<dup> do XML — obrigatório em vendas a prazo).
-        # Fallback: NFe emitida de pedido/consolidação usa as parcelas geradas
-        # no faturamento do documento de origem.
+        # Duplicatas: parcelas do contas a receber vinculadas DIRETAMENTE a
+        # esta NFe (grupo <cobr>/<dup> do XML — obrigatório em vendas a prazo).
+        # A cobrança deve vir da PRÓPRIA nota, nunca da consolidação de origem:
+        # quando a consolidação é desmembrada em NFe + NFSe, cada documento tem
+        # sua própria cobrança. Puxar a ContaReceber da consolidação (valor total)
+        # embutiria o <cobr> da consolidação numa nota individual e, se a nota for
+        # tratada como à vista, gera cStat 853.
         from models import StatusConta as _StatusConta
         _status_validos = ~ContaReceber.status.in_([_StatusConta.EXCLUIDO, _StatusConta.CANCELADO])
         contas_nfe = db.query(ContaReceber).filter(
@@ -2229,10 +2303,6 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         if not contas_nfe and nfe.pedido_id:
             contas_nfe = db.query(ContaReceber).filter(
                 ContaReceber.pedido_id == nfe.pedido_id, _status_validos,
-            ).order_by(ContaReceber.numero_parcela).all()
-        if not contas_nfe and getattr(nfe, 'consolidacao_id', None):
-            contas_nfe = db.query(ContaReceber).filter(
-                ContaReceber.consolidacao_id == nfe.consolidacao_id, _status_validos,
             ).order_by(ContaReceber.numero_parcela).all()
         duplicatas = [
             {
