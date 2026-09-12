@@ -126,7 +126,7 @@
             {% endif %}
             {% elif nfe.status == 'issued' %}
             {% endif %}
-            {% if not cobranca and nfe.status in ('rascunho', 'issued') %}
+            {% if not cobranca and nfe.status not in ('rascunho', 'pendente', 'queued') %}
             <form method="post" action="/nfe/{{ nfe.id }}/gerar-cobranca" class="inline-flex items-end gap-2 flex-wrap">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div>

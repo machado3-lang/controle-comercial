@@ -641,23 +641,25 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
     numero_nfse = _proximo_numero(empresa, db)
 
     try:
-        resultado = emitir_completa(pedido, db, tpAmb=1, numero_nfse=numero_nfse)
-
+        # Gera apenas o RASCUNHO da NFSe (NAO transmite). A transmissao ocorre
+        # depois pelo botao "Transmitir" na tela da NFSe, igual ao fluxo da NFe
+        # e das consolidacoes. Assim o usuario revisa os dados antes de consumir
+        # certificado/webservice e o erro de certificado aparece so na transmissao.
         valor_total = sum(Decimal(str(i.total or 0)) for i in itens_servico)
         if valor_total == 0:
             valor_total = Decimal(str(pedido.total or 0))
 
         iss_retido = getattr(pedido.cliente, 'iss_retido', False) or False
-        empresa = db.query(Empresa).first()
         nfse = NFSe(
             pedido_id=pedido_id,
             cliente_id=pedido.cliente_id,
-            numero=resultado.get('numero') or numero_nfse,
-            codigo_verificacao=resultado.get('codigo_verificacao'),
-            status="autorizada" if resultado.get('protocolo') else "pendente",
+            numero=numero_nfse,
+            codigo_verificacao=None,
+            status="rascunho",
             valor_total=valor_total,
             origem="pedido",
-            data_emissao=resultado.get('data_emissao'),
+            data_emissao=pedido.data,
+            forma_pagamento=pedido.forma_pagamento or "NFSe",
             iss_retido=iss_retido,
             aliquota_iss=empresa.aliquota_iss or 2.0,
             aliquota_federal=empresa.aliquota_federal or 0.0,
@@ -681,107 +683,16 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
             )
             db.add(nfse_item)
 
-        # Salva XML da NFSe
-        try:
-            dps_xml = resultado.get('xml')
-            if dps_xml:
-                xml_filename = f"nfse_{nfse.id}.xml"
-                xml_path = os.path.join(XML_DIR, xml_filename)
-                os.makedirs(os.path.dirname(xml_path), exist_ok=True)
-                with open(xml_path, 'w', encoding='utf-8') as f:
-                    f.write(dps_xml)
-                nfse.xml_path = f"/{xml_path.replace(os.sep, '/')}"
-                nfse.xml_text = dps_xml
-        except Exception:
-            pass
-
-        # XML nacional autorizado (emissão síncrona SEFIN) — fonte do DANFSe.
-        # Em homologação o ADN não disponibiliza a nota de teste, então usamos
-        # o próprio retorno do envio para gerar o DANFSe imediatamente.
-        try:
-            xml_doc = resultado.get('xml_documento')
-            chave = (resultado.get('codigo_verificacao')
-                     or nfse.chave_acesso or nfse.codigo_verificacao)
-            if xml_doc and chave:
-                _salvar_xml_nacional_e_danfse(nfse, db, chave, xml=xml_doc)
-        except Exception:
-            logger.warning("Falha ao gerar DANFSe a partir do XML síncrono", exc_info=True)
-
         db.commit()
-
-        # NF emitida => pedido FATURADO (amarra o estado fiscal do pedido à
-        # nota; antes o status ficava desacoplado da realidade fiscal).
-        if pedido.status != StatusPedido.FATURADO:
-            pedido.status = StatusPedido.FATURADO
-            db.commit()
-
-        # Gera PDF automaticamente
-        try:
-            empresa = db.query(Empresa).first()
-            cliente = pedido.cliente
-            itens = db.query(NFSeItem).filter(NFSeItem.nfse_id == nfse.id).all()
-            pdf_url = gerar_pdf_nfse(nfse, empresa, cliente, itens, STATUS_LABELS)
-            nfse.pdf_path = pdf_url
-            db.commit()
-        except Exception:
-            pass
-
-        # Gera cobranÃ§a automaticamente â€” com suporte a parcelamento
-        try:
-            from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para
-            # Nao duplica cobranca: se o pedido/consolidacao ja gerou contas
-            # (ex.: finalizado com "Gerar Cobranca" ou consolidacao finalizada),
-            # apenas vincula a NFSe as contas existentes.
-            existentes = contas_receber_existentes_para(db, pedido=pedido)
-            if existentes:
-                for conta in existentes:
-                    if not conta.nfse_id:
-                        conta.nfse_id = nfse.id
-                logger.info(
-                    "Pedido %s ja possui %s conta(s) a receber; NFSe %s apenas vinculada",
-                    pedido.id, len(existentes), nfse.id,
-                )
-            else:
-                try:
-                    venc = datetime.strptime(primeiro_vencimento, '%Y-%m-%d').date() if primeiro_vencimento else (pedido.data or date.today())
-                except ValueError:
-                    venc = pedido.data or date.today()
-                gerar_contas_receber(
-                    db,
-                    cliente_id=pedido.cliente_id,
-                    descricao=f"NFSe Pedido #{pedido.numero or pedido.id}",
-                    valor_total=nfse.valor_liquido,
-                    primeiro_vencimento=venc,
-                    num_parcelas=num_parcelas,
-                    intervalo_dias=intervalo_dias,
-                    forma_pagamento="NFSe",
-                    numero_documento=str(nfse.numero) if nfse.numero else None,
-                    observacao=f"Gerado automaticamente da NFSe #{nfse.id} (Pedido #{pedido.id})",
-                    nfse_id=nfse.id,
-                    pedido_id=pedido.id,
-                    consolidacao_id=pedido.consolidacao_id,
-                )
-            db.commit()
-        except Exception:
-            logger.exception("Erro ao gerar cobranca da NFSe %s", nfse.id)
-
-        resp = {
-            "success": True,
-            "protocolo": resultado.get('protocolo'),
-            "erros": resultado.get('erros', [])
-        }
-        if resultado.get('retry_iss_retido'):
-            if not resultado.get('protocolo') or resultado.get('erros'):
-                resp['aviso'] = "ISS retido foi marcado automaticamente, mas a NFSe ainda foi rejeitada. Verifique o cadastro do cliente."
-            else:
-                resp['aviso'] = "ISS retido foi marcado automaticamente pelo tomador e a NFSe foi emitida com sucesso."
-        return JSONResponse(resp)
-    except NFSeBethaError as e:
-        db.rollback()
-        return JSONResponse({"error": str(e)}, status_code=500)
+        request.session["message"] = (
+            f"Rascunho NFSe #{nfse.numero} criado! Revise na lista e transmita quando estiver certo."
+        )
+        return RedirectResponse(url="/nfse/", status_code=303)
     except Exception as e:
         db.rollback()
-        return JSONResponse({"error": f"Erro inesperado: {str(e)}"}, status_code=500)
+        logger.exception("Erro ao salvar rascunho NFSe do pedido %s", pedido_id)
+        request.session["error"] = f"Erro ao salvar rascunho NFSe: {str(e)}"
+        return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
 
 
 @router.get("/emitir/os/{os_id}")
@@ -938,7 +849,7 @@ def pagina_emitir_consolidacao(request: Request, consolidacao_id: int, db: Sessi
 
 @router.post("/emitir/consolidacao/{consolidacao_id}")
 def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session = Depends(get_db),
-                              acao: str = Form("manter")):
+                              acao: str = Form("manter"), tipo: str = Form("auto")):
     """Salva rascunho NFe + NFSe da consolidaÃ§Ã£o"""
     consolidacao = db.query(PedidoConsolidado).options(
         selectinload(PedidoConsolidado.itens).selectinload(PedidoConsolidadoItem.produto),
@@ -961,9 +872,13 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
     nfse_autorizada = bool(nfse_existente and not nfse_rascunho)
 
     acao_regerar = (acao == "regerar")
-    # Gera NFe apenas se houver itens, nÃ£o estiver autorizada e (se jÃ¡ hÃ¡ rascunho) sÃ³ se confirmado regerar
-    gerar_nfe = bool(itens_nfe) and (not nfe_autorizada) and (acao_regerar if nfe_rascunho else True)
-    gerar_nfse = bool(itens_nfse) and (not nfse_autorizada) and (acao_regerar if nfse_rascunho else True)
+    tipo = (tipo or "auto").lower()
+    _deseja_nfe = tipo in ("auto", "nfe", "ambas")
+    _deseja_nfse = tipo in ("auto", "nfse", "ambas")
+    # Gera NFe apenas se houver itens de produto e o tipo solicitado pedir NFe.
+    gerar_nfe = bool(itens_nfe) and _deseja_nfe and (not nfe_autorizada) and (acao_regerar if nfe_rascunho else True)
+    # Gera NFSe apenas se houver itens de SERVIÃ‡O (itens_nfse) e o tipo pedir NFSe.
+    gerar_nfse = bool(itens_nfse) and _deseja_nfse and (not nfse_autorizada) and (acao_regerar if nfse_rascunho else True)
 
     # Remove rascunhos existentes quando solicitado (somente rascunho/erro; autorizadas sÃ£o mantidas)
     if acao_regerar:
@@ -996,6 +911,13 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
 
     if not itens_nfe and not itens_nfse:
         request.session["error"] = "Nenhum item para emitir"
+        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+
+    if _deseja_nfe and not itens_nfe:
+        request.session["error"] = "Tipo selecionado exige NFe, mas a consolidação não possui itens de produto."
+        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+    if _deseja_nfse and not itens_nfse:
+        request.session["error"] = "Tipo selecionado exige NFSe, mas a consolidação não possui itens de serviço."
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
     # Validar cliente para NFe
@@ -1119,6 +1041,7 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                 valor_total=valor_servicos,
                 origem="consolidacao",
                 data_emissao=datetime.now(),
+                forma_pagamento=consolidacao.forma_pagamento or "NFSe",
                 iss_retido=iss_retido,
                 aliquota_iss=empresa.aliquota_iss or 2.0,
                 aliquota_federal=empresa.aliquota_federal or 0.0,
@@ -1344,6 +1267,7 @@ def detalhe_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     nfse = db.query(NFSe).options(
         selectinload(NFSe.itens).selectinload(NFSeItem.produto),
         selectinload(NFSe.pedido),
+        selectinload(NFSe.consolidacao),
         selectinload(NFSe.cliente),
         selectinload(NFSe.assinatura),
     ).filter(NFSe.id == nfse_id).first()
@@ -1679,7 +1603,9 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         request.session["error"] = "Cobrança já existe para esta NFSe"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
-    from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para
+    from services.parcelamento import (
+        gerar_contas_receber, contas_receber_existentes_para, eh_pagamento_a_vista, quitar_avista,
+    )
     if contas_receber_existentes_para(db, nfse=nfse):
         request.session["error"] = "Cobrança já existe para esta NFSe (ou para o pedido/consolidação vinculado)"
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
@@ -1709,6 +1635,14 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
     if venc is None:
         venc = date.today()
 
+    # Forma de pagamento: propria NFSe, pedido ou consolidacao de origem.
+    _forma = (
+        (str(nfse.forma_pagamento) if nfse.forma_pagamento else None)
+        or (str(nfse.pedido.forma_pagamento) if nfse.pedido and nfse.pedido.forma_pagamento else None)
+        or (str(nfse.consolidacao.forma_pagamento) if nfse.consolidacao and nfse.consolidacao.forma_pagamento else None)
+        or "NFSe"
+    )
+
     observacao = f"Gerado da NFSe #{nfse.id}"
     if nfse.assinatura_id:
         observacao = f"CobranÃ§a automÃ¡tica - assinatura #{nfse.assinatura_id} (NFSe #{nfse.id})"
@@ -1721,13 +1655,16 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         primeiro_vencimento=venc,
         num_parcelas=num_parcelas,
         intervalo_dias=intervalo_dias,
-        forma_pagamento="NFSe",
+        forma_pagamento=_forma,
         numero_documento=str(nfse.numero) if nfse.numero else None,
         observacao=observacao,
         nfse_id=nfse.id,
         pedido_id=nfse.pedido_id,
         consolidacao_id=nfse.consolidacao_id if nfse.consolidacao else None,
     )
+    # A vista (incl. cartao): conta gerada JA RECEBIDA (PAGO), constando nos
+    # relatorios de recebimento sem virar 'a receber' pendente.
+    quitar_avista(contas, _forma)
     db.commit()
     request.session["message"] = f"{len(contas)} cobranÃ§a(s) gerada(s) com sucesso para NFSe #{nfse.numero}!"
     return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
@@ -1799,6 +1736,62 @@ def excluir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/nfse", status_code=303)
 
 
+def _garantir_cobranca_nfse(db, nfse):
+    """Gera a cobranca vinculada a NFSe autorizada (comportamento igual a NFe).
+
+    A flag "Gerar Cobranca" do pedido/consolidacao e o interruptor mestre:
+    desligada, nenhuma cobranca automatica e gerada. Recebimento a vista
+    (dinheiro/pix/debito/cartao/avista) gera a conta JA RECEBIDA (PAGO), constando
+    nos relatorios de recebimento sem virar 'a receber' pendente. Cobrancas ja
+    existentes sao reaproveitadas para evitar duplicidade.
+    """
+    from services.parcelamento import (
+        gerar_contas_receber_para_nota, contas_receber_existentes_para,
+        eh_pagamento_a_vista, quitar_avista,
+    )
+    from datetime import date as _date
+    try:
+        ped = nfse.pedido
+        cons = db.query(PedidoConsolidado).get(nfse.consolidacao_id) if nfse.consolidacao_id else None
+        # Forma de pagamento: vem da propria NFSe (quando preenchida na emissao),
+        # senao do pedido/consolidacao de origem. Garante que a vista (incl. cartao)
+        # seja detectada mesmo para NFSe de consolidacao (que nao tem pedido).
+        _forma = (
+            (str(nfse.forma_pagamento) if nfse.forma_pagamento else None)
+            or (str(ped.forma_pagamento) if ped and ped.forma_pagamento else None)
+            or (str(cons.forma_pagamento) if cons and cons.forma_pagamento else None)
+            or "NFSe"
+        )
+        # Flag "Gerar Cobranca" e o interruptor mestre (pedido ou consolidacao).
+        if (ped and ped.gerar_cobranca is False) or (cons and cons.gerar_cobranca is False):
+            return
+        if contas_receber_existentes_para(db, nfse=nfse):
+            return
+        cliente_id = nfse.cliente_id or (ped.cliente_id if ped else None) or (cons.cliente_id if cons else None)
+        if not cliente_id:
+            return
+        _origem = ped or cons
+        venc = (_origem.primeiro_vencimento if _origem and getattr(_origem, "primeiro_vencimento", None) else _date.today())
+        num_parc = int(_origem.num_parcelas or 1) if _origem and getattr(_origem, "num_parcelas", None) else 1
+        intervalo = int(_origem.intervalo_dias or 30) if _origem and getattr(_origem, "intervalo_dias", None) else 30
+        contas = gerar_contas_receber_para_nota(
+            db, nfse_id=nfse.id, cliente_id=cliente_id,
+            descricao=f"NFSe #{nfse.numero or nfse.id}",
+            valor_total=nfse.valor_liquido,
+            primeiro_vencimento=venc, num_parcelas=num_parc, intervalo_dias=intervalo,
+            forma_pagamento=_forma,
+            numero_documento=str(nfse.numero) if nfse.numero else None,
+            consolidacao_id=nfse.consolidacao_id,
+        )
+        # A vista (incl. cartao): conta gerada JA RECEBIDA (PAGO), para constar
+        # nos relatorios de recebimento sem virar 'a receber' pendente.
+        if contas:
+            quitar_avista(contas, _forma)
+        db.commit()
+    except Exception as e:
+        logger.exception("Erro ao garantir cobranca da NFSe %s", nfse.id)
+
+
 @router.post("/{nfse_id}/transmitir")
 def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db), background_tasks: BackgroundTasks = None):
     nfse = db.query(NFSe).options(
@@ -1866,6 +1859,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                 if empresa and cliente:
                     nfse.pdf_path = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
             db.commit()
+            _garantir_cobranca_nfse(db, nfse)
             msg = f"NFSe #{nfse.numero} emitida com sucesso!"
             if resultado.get('retry_iss_retido'):
                 msg += " ISS retido foi marcado automaticamente."
@@ -1917,6 +1911,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                         if empresa and cliente:
                             nfse.pdf_path = gerar_pdf_nfse(nfse, empresa, cliente, nfse.itens, STATUS_LABELS)
                     db.commit()
+                    _garantir_cobranca_nfse(db, nfse)
                     request.session["message"] = f"NFSe #{nfse.numero} jÃ¡ estava processada! Autorizada com sucesso."
                     if background_tasks:
                         pass

@@ -119,6 +119,7 @@ class NFSe(Base):
     chave_acesso = Column(String(100), unique=True)
     data_emissao = Column(DateTime)
     status = Column(String(20), default="pendente", index=True)
+    forma_pagamento = Column(String(20), nullable=True)  # dinheiro/pix/boleto/cartao_credito/avista...
     xml_path = Column(String(500))
     xml_text = Column(Text, nullable=True)
     pdf_path = Column(String(500))

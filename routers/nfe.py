@@ -804,6 +804,7 @@ def emitir_pedido_submit(
                 status="rascunho",
                 valor_total=valor_servicos,
                 data_emissao=now,
+                forma_pagamento=pedido.forma_pagamento or "NFSe",
                 iss_retido=iss_retido,
                 aliquota_iss=empresa.aliquota_iss or 2.0,
                 aliquota_federal=empresa.aliquota_federal or 0.0,
@@ -827,41 +828,47 @@ def emitir_pedido_submit(
                 )
             db.add(nfse_item)
 
-        # Cobranca por nota: 1 conta (parcela) por documento, vinculada a
-        # nfe_id / nfse_id (cada nota ja esta ligada a consolidacao_id). Assim a
-        # NFe recebe sua propria duplicata e nao herda a cobranca da consolidacao
-        # (que causava cStat 853 em nota a vista).
+        # Cobranca por nota (pedido AVULSO): 1 conta (parcela) por documento,
+        # vinculada a nfe_id / nfse_id e ao proprio pedido. Esta rota atende
+        # apenas pedidos avulsos (consolidados/agrupados sao bloqueados acima),
+        # entao usamos o parcelamento ja informado no pedido em finalizar_pedido.
+        # Assim a NFe recebe sua propria duplicata e nao herda cobranca alheia.
         from services.parcelamento import (
             gerar_contas_receber_para_nota, contas_receber_existentes_para,
-            numero_documento_para_cobranca, eh_pagamento_a_vista,
+            numero_documento_para_cobranca, eh_pagamento_a_vista, quitar_avista,
         )
-        _venc = consolidacao.data_fechamento or date.today()
-        _forma = consolidacao.forma_pagamento or "NFSe"
-        _doc = numero_documento_para_cobranca(consolidacao=consolidacao) or (
-            str(consolidacao.numero) if consolidacao.numero else None
+        _venc = pedido.primeiro_vencimento or pedido.data or date.today()
+        _forma = str(pedido.forma_pagamento) if pedido.forma_pagamento else "NFSe"
+        _doc = numero_documento_para_cobranca(pedido=pedido) or (
+            str(pedido.numero) if pedido.numero else None
         )
-        _num_parc = consolidacao.num_parcelas or 1
-        _intervalo = consolidacao.intervalo_dias or 30
-        # Recebimento a vista: nao gera conta a receber a vencer nem boleto.
-        _gerar_cobranca = not eh_pagamento_a_vista(_forma)
-        if _gerar_cobranca and nfe is not None and not contas_receber_existentes_para(db, nfe=nfe):
-            gerar_contas_receber_para_nota(
-                db, nfe_id=nfe.id, cliente_id=cliente.id,
-                descricao=f"Consolidação {consolidacao.numero} - NFe",
-                valor_total=total, primeiro_vencimento=_venc,
-                num_parcelas=_num_parc, intervalo_dias=_intervalo,
-                forma_pagamento=_forma, numero_documento=_doc,
-                consolidacao_id=consolidacao_id,
-            )
-        if _gerar_cobranca and nfse is not None and not contas_receber_existentes_para(db, nfse=nfse):
-            gerar_contas_receber_para_nota(
-                db, nfse_id=nfse.id, cliente_id=cliente.id,
-                descricao=f"Consolidação {consolidacao.numero} - NFSe",
-                valor_total=valor_servicos, primeiro_vencimento=_venc,
-                num_parcelas=_num_parc, intervalo_dias=_intervalo,
-                forma_pagamento=_forma, numero_documento=_doc,
-                consolidacao_id=consolidacao_id,
-            )
+        _num_parc = pedido.num_parcelas or 1
+        _intervalo = pedido.intervalo_dias or 30
+        # A flag "Gerar Cobranca" e o interruptor mestre: desligada, nenhuma
+        # cobranca automatica. A vista (incl. cartao) gera conta JA RECEBIDA
+        # (PAGO) para constar nos relatorios de recebimento sem virar pendente.
+        _gerar_cobranca = bool(pedido.gerar_cobranca) or (pedido.forma_pagamento == "boleto")
+        if _gerar_cobranca:
+            if nfe is not None and not contas_receber_existentes_para(db, nfe=nfe):
+                contas = gerar_contas_receber_para_nota(
+                    db, nfe_id=nfe.id, cliente_id=cliente.id,
+                    descricao=f"Pedido {pedido.numero or '#' + str(pedido.id)} - NFe",
+                    valor_total=total, primeiro_vencimento=_venc,
+                    num_parcelas=_num_parc, intervalo_dias=_intervalo,
+                    forma_pagamento=_forma, numero_documento=_doc,
+                    pedido_id=pedido.id,
+                )
+                quitar_avista(contas, _forma)
+            if nfse is not None and not contas_receber_existentes_para(db, nfse=nfse):
+                contas = gerar_contas_receber_para_nota(
+                    db, nfse_id=nfse.id, cliente_id=cliente.id,
+                    descricao=f"Pedido {pedido.numero or '#' + str(pedido.id)} - NFSe",
+                    valor_total=valor_servicos, primeiro_vencimento=_venc,
+                    num_parcelas=_num_parc, intervalo_dias=_intervalo,
+                    forma_pagamento=_forma, numero_documento=_doc,
+                    pedido_id=pedido.id,
+                )
+                quitar_avista(contas, _forma)
 
         db.commit()
         msg = f"Rascunho NFe #{numero_nfe} salvo! Revise antes de transmitir."
@@ -1118,57 +1125,62 @@ def emitir_consolidacao_submit(
             )
             db.add(nfe_item)
 
-        # Criar NFSe se houver itens de serviço
-        codigos_lc116 = set()
-        for item in itens_nfse:
-            if item.produto and item.produto.codigo_lc116:
-                codigos_lc116.add(item.produto.codigo_lc116)
-        if len(codigos_lc116) > 1:
-            db.rollback()
-            request.session["error"] = f"Consolidação possui itens de serviço com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura de Dourados-MS não aceita múltiplos códigos na mesma NFS-e. Remova ou separe os itens em consolidações diferentes."
-            return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+        # Criar NFSe somente se houver itens de serviço. Sem esse guard, uma
+        # consolidação com apenas produtos gerava uma NFSe com valor zerado.
+        if not itens_nfse:
+            nfse = None
+        else:
+            codigos_lc116 = set()
+            for item in itens_nfse:
+                if item.produto and item.produto.codigo_lc116:
+                    codigos_lc116.add(item.produto.codigo_lc116)
+            if len(codigos_lc116) > 1:
+                db.rollback()
+                request.session["error"] = f"Consolidação possui itens de serviço com códigos LC116 diferentes: {', '.join(sorted(codigos_lc116))}. A prefeitura de Dourados-MS não aceita múltiplos códigos na mesma NFS-e. Remova ou separe os itens em consolidações diferentes."
+                return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
-        numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
-        empresa.ultimo_numero_nfse = int(numero_nfse)
-        # `item.total` já é a soma (quantidade * preco_unitario) agregada na
-        # consolidação: não multiplicar por `item.quantidade` de novo.
-        valor_servicos = sum(Decimal(str(item.total or 0)) for item in itens_nfse)
+            numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
+            empresa.ultimo_numero_nfse = int(numero_nfse)
+            # `item.total` já é a soma (quantidade * preco_unitario) agregada na
+            # consolidação: não multiplicar por `item.quantidade` de novo.
+            valor_servicos = sum(Decimal(str(item.total or 0)) for item in itens_nfse)
 
-        iss_retido = getattr(cliente, 'iss_retido', False) or False
-        nfse = NFSe(
-            consolidacao_id=consolidacao_id,
-            cliente_id=cliente.id,
-            numero=numero_nfse,
-            status="rascunho",
-            valor_total=valor_servicos,
-            origem="consolidacao",
-            data_emissao=now,
-            iss_retido=iss_retido,
-            aliquota_iss=empresa.aliquota_iss or 2.0,
-            aliquota_federal=empresa.aliquota_federal or 0.0,
-            aliquota_estadual=empresa.aliquota_estadual or 0.0,
-            aliquota_municipal=empresa.aliquota_municipal or 0.0,
-        )
-        db.add(nfse)
-        db.flush()
-
-        for item in itens_nfse:
-            nfse_item = NFSeItem(
-                nfse_id=nfse.id,
-                produto_id=item.produto_id,
-                variacao_id=item.variacao_id,
-                descricao=item.descricao or item.produto.nome,
-                quantidade=Decimal(str(item.quantidade or 1)),
-                valor_unitario=Decimal(str(item.preco_unitario or 0)),
-                valor_total=Decimal(str(item.total or (item.preco_unitario or 0) * (item.quantidade or 1))),
-                codigo_servico=item.produto.codigo_lc116 or "",
-                tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
+            iss_retido = getattr(cliente, 'iss_retido', False) or False
+            nfse = NFSe(
+                consolidacao_id=consolidacao_id,
+                cliente_id=cliente.id,
+                numero=numero_nfse,
+                status="rascunho",
+                valor_total=valor_servicos,
+                origem="consolidacao",
+                data_emissao=now,
+                forma_pagamento=consolidacao.forma_pagamento or "NFSe",
+                iss_retido=iss_retido,
+                aliquota_iss=empresa.aliquota_iss or 2.0,
+                aliquota_federal=empresa.aliquota_federal or 0.0,
+                aliquota_estadual=empresa.aliquota_estadual or 0.0,
+                aliquota_municipal=empresa.aliquota_municipal or 0.0,
             )
-            db.add(nfse_item)
+            db.add(nfse)
+            db.flush()
+
+            for item in itens_nfse:
+                nfse_item = NFSeItem(
+                    nfse_id=nfse.id,
+                    produto_id=item.produto_id,
+                    variacao_id=item.variacao_id,
+                    descricao=item.descricao or item.produto.nome,
+                    quantidade=Decimal(str(item.quantidade or 1)),
+                    valor_unitario=Decimal(str(item.preco_unitario or 0)),
+                    valor_total=Decimal(str(item.total or (item.preco_unitario or 0) * (item.quantidade or 1))),
+                    codigo_servico=item.produto.codigo_lc116 or "",
+                    tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
+                )
+                db.add(nfse_item)
 
         db.commit()
         msg = f"Rascunho NFe #{numero_nfe} salvo! Revise antes de transmitir."
-        if numero_nfse:
+        if numero_nfse is not None:
             msg += f" Rascunho NFSe #{numero_nfse} criado para os serviços."
         request.session["message"] = msg
         return RedirectResponse(url=f"/nfe/{nfe.id}/previa", status_code=303)
@@ -1423,7 +1435,7 @@ def emitir_avulsa_submit(
 
         contas_geradas = []
         if gerar_cobranca or num_parcelas > 1 or bool(primeiro_vencimento):
-            from services.parcelamento import gerar_contas_receber
+            from services.parcelamento import gerar_contas_receber, quitar_avista
             try:
                 venc = datetime.strptime(primeiro_vencimento, '%Y-%m-%d').date() if primeiro_vencimento else (
                     datetime.strptime(data_emissao, '%Y-%m-%d').date() if data_emissao else date.today())
@@ -1442,6 +1454,9 @@ def emitir_avulsa_submit(
                 numero_documento=str(numero_nfe),
                 nfe_id=nfe.id,
             )
+            # Recebimento a vista (incl. cartao): conta gerada JA RECEBIDA (PAGO),
+            # constando nos relatorios de recebimento sem virar 'a receber' pendente.
+            quitar_avista(contas_geradas, forma_pagamento or "NFe")
 
         db.commit()
         msg = f"Rascunho NFe #{numero_nfe} salvo! Revise antes de transmitir."
@@ -1879,14 +1894,25 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     forma_pagamento_label = FORMA_PAGAMENTO_LABELS.get(fp, "À vista / Dinheiro") if fp else "À vista / Dinheiro"
 
     erros = _validar_rascunho(nfe, nfe.cliente or (nfe.pedido.cliente if nfe.pedido else None), empresa)
-    from models import Transportadora
+    from models import Transportadora, StatusConta as _StatusConta
     transportadoras = db.query(Transportadora).order_by(Transportadora.nome).all()
+    # Cobrancas vinculadas a esta NFe (por nfe_id) OU ao pedido de origem.
+    _status_ativos = ~ContaReceber.status.in_([_StatusConta.EXCLUIDO, _StatusConta.CANCELADO])
+    cobrancas = db.query(ContaReceber).filter(
+        or_(
+            ContaReceber.nfe_id == nfe.id,
+            ContaReceber.pedido_id == nfe.pedido_id,
+        ) if nfe.pedido_id else ContaReceber.nfe_id == nfe.id,
+        _status_ativos,
+    ).order_by(ContaReceber.numero_parcela).all()
+    cobranca = cobrancas[0] if cobrancas else None
     return request.app.state.templates.TemplateResponse(request, 
         "nfe/previa.html",
         {"request": request, "nfe": nfe, "empresa": empresa,
          "transportadoras": transportadoras,
          "forma_pagamento_label": forma_pagamento_label,
          "erros": erros, "STATUS_LABELS": STATUS_LABELS,
+         "cobranca": cobranca,
          "messages": _get_messages(request)}
     )
 
@@ -2190,36 +2216,41 @@ def excluir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
 
 def _garantir_cobranca_nfe(db, nfe):
     """Gera ContaReceber para a NFe autorizada se ainda não houver cobrança
-    vinculada. Corrige a cobrança assimétrica: a NFSe de pedido gera cobrança,
-    mas a NFe de pedido não gerava (documento fiscal sem conta a receber)."""
-    if not nfe.pedido_id:
+    vinculada. Cobre NFe de pedido avulso E de consolidacao (a NFe da
+    consolidacao tambem precisa da sua cobranca para nao ficar sem 'a receber')."""
+    if not nfe.pedido_id and not nfe.consolidacao_id:
         return
     from services.parcelamento import (
         contas_receber_existentes_para, gerar_contas_receber, eh_pagamento_a_vista,
+        quitar_avista,
     )
-    # Recebimento a vista: nao gera cobranca a vencer (evita cStat 853 na NFe).
-    if eh_pagamento_a_vista(nfe.forma_pagamento):
+    pedido = nfe.pedido
+    cons = db.query(PedidoConsolidado).get(nfe.consolidacao_id) if nfe.consolidacao_id else None
+    _forma = str(nfe.forma_pagamento) if nfe.forma_pagamento else "NFSe"
+    # Flag "Gerar Cobranca" e o interruptor mestre (pedido ou consolidacao):
+    # desligada, nenhuma cobranca automatica (mesmo a prazo). A vista ja nao
+    # gera <dup> na NFe (evita cStat 853).
+    if (pedido and pedido.gerar_cobranca is False) or (cons and cons.gerar_cobranca is False):
         return
     if contas_receber_existentes_para(db, nfe=nfe):
         return
-    cliente_id = nfe.cliente_id or (nfe.pedido.cliente_id if nfe.pedido else None)
+    cliente_id = nfe.cliente_id or (pedido.cliente_id if pedido else None) or (cons.cliente_id if cons else None)
     if not cliente_id:
         return
-    # Respeita o parcelamento informado no faturamento do pedido (se houver),
-    # em vez de fixar 1 parcela com vencimento = data de hoje. Caso contrario,
-    # gera 1 parcela unica com vencimento na data da emissao.
-    pedido = nfe.pedido
+    # Respeita o parcelamento informado no faturamento (pedido ou consolidacao,
+    # se houver), em vez de fixar 1 parcela com vencimento = data de hoje.
     num_parcelas = 1
     intervalo_dias = 30
-    if pedido:
-        num_parcelas = getattr(pedido, "num_parcelas", None) or 1
-        intervalo_dias = getattr(pedido, "intervalo_dias", None) or 30
-    if pedido and getattr(pedido, "primeiro_vencimento", None):
-        venc = pedido.primeiro_vencimento
+    _origem = pedido or cons
+    if _origem:
+        num_parcelas = getattr(_origem, "num_parcelas", None) or 1
+        intervalo_dias = getattr(_origem, "intervalo_dias", None) or 30
+    if _origem and getattr(_origem, "primeiro_vencimento", None):
+        venc = _origem.primeiro_vencimento
     else:
         venc = nfe.data_emissao.date() if nfe.data_emissao else \
-            (pedido.data if pedido and getattr(pedido, "data", None) else date.today())
-    gerar_contas_receber(
+            (getattr(_origem, "data", None) or date.today())
+    contas = gerar_contas_receber(
         db,
         cliente_id=cliente_id,
         descricao=f"NFe {nfe.numero or '#' + str(nfe.id)}",
@@ -2227,12 +2258,15 @@ def _garantir_cobranca_nfe(db, nfe):
         primeiro_vencimento=venc,
         num_parcelas=num_parcelas,
         intervalo_dias=intervalo_dias,
-        forma_pagamento=nfe.forma_pagamento or "NFSe",
+        forma_pagamento=_forma,
         numero_documento=str(nfe.numero) if nfe.numero else None,
         pedido_id=nfe.pedido_id,
         nfe_id=nfe.id,
-        consolidacao_id=pedido.consolidacao_id if (pedido and pedido.consolidacao_id) else None,
+        consolidacao_id=nfe.consolidacao_id,
     )
+    # A vista (incl. cartao): conta gerada JA RECEBIDA (PAGO), para constar nos
+    # relatorios de recebimento sem virar 'a receber' pendente.
+    quitar_avista(contas, _forma)
 
 
 @router.post("/{nfe_id}/transmitir")

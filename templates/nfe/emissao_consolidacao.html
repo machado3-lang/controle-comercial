@@ -74,7 +74,18 @@
 
         <form method="post">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
-    
+
+    <div class="mb-4">
+        <label class="block text-xs font-medium text-cyan-400 mb-1">Tipo de documento a gerar</label>
+        <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tipo">
+            <option value="auto">Automático (NFe se houver produtos, NFSe se houver serviços)</option>
+            <option value="nfe">Apenas NFe</option>
+            <option value="nfse">Apenas NFSe</option>
+            <option value="ambas">Ambas (NFe + NFSe)</option>
+        </select>
+        <p class="text-xs text-slate-500 mt-1">Consolidações com apenas produtos não geram NFSe; com apenas serviços não geram NFe.</p>
+    </div>
+
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
         <div>
             <label class="block text-xs font-medium text-cyan-400 mb-1">Natureza da Operação</label>

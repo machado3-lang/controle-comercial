@@ -1607,6 +1607,10 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
 
     raw = pedido.data
     if raw:
+        # pedido.data pode ser date (PedidoVenda/PedidoConsolidado) ou datetime;
+        # garante datetime antes de acessar tzinfo (date nao tem tzinfo).
+        if not isinstance(raw, datetime):
+            raw = datetime.combine(raw, datetime.min.time())
         if raw.tzinfo is None:
             # O app armazena as datas em horario local (sem tz); interpreta
             # como o fuso da empresa, nao como UTC, para nao deslocar o dhEmi.

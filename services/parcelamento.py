@@ -31,18 +31,32 @@ _STATUS_EMITIDOS_NFSE = {"autorizada", "pendente", "em_processamento"}
 _FORMAS_A_VISTA = {
     "avista", "a_vista", "a vista", "vista",
     "cartao_debito", "cartaodebito", "debito",
+    "cartao_credito", "cartaocredito", "credito",
     "dinheiro", "pix",
 }
 
 
 def eh_pagamento_a_vista(forma_pagamento):
-    """True para formas de recebimento imediato (avista, debito, dinheiro, pix).
+    """True para formas de recebimento imediato (avista, debito, dinheiro, pix, cartao).
 
-    Nesses casos nao se gera ContaReceber nem o grupo <cobr>/<dup> da NFe.
+    Nesses casos nao se gera ContaReceber a vencer nem o grupo <cobr>/<dup> da NFe.
     """
     if not forma_pagamento:
         return False
     return str(forma_pagamento).strip().lower() in _FORMAS_A_VISTA
+
+
+def quitar_avista(contas, forma_pagamento):
+    """Recebimento a vista (incl. cartao): a conta e gerada JA RECEBIDA (quitada)
+    para constar nos relatorios de recebimento, sem virar 'a receber' pendente.
+    'contas' e a lista retornada por gerar_contas_receber* (pode ser vazia)."""
+    if not eh_pagamento_a_vista(forma_pagamento):
+        return
+    for c in contas:
+        c.status = StatusConta.PAGO
+        c.data_recebimento = date.today()
+        if c.valor_total is None:
+            c.valor_total = c.valor
 
 
 def numero_documento_para_cobranca(pedido=None, consolidacao=None):

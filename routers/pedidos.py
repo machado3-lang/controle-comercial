@@ -578,11 +578,13 @@ def finalizar_pedido(
     gerar_boleto: bool = Form(False),
     terminos_boleto: str = Form(""),
     gerar_cobranca: bool = Form(False),
+    acao: str = Form("finalizar"),
     num_parcelas: int = Form(1),
     primeiro_vencimento: str = Form(""),
     intervalo_dias: int = Form(30),
 ):
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
+    faturar_recibo = (acao == "recibo")
     if pedido:
         if pedido.consolidacao_id is not None:
             request.session["error"] = "Este pedido pertence a uma consolidação; fature pela consolidação"
@@ -595,6 +597,7 @@ def finalizar_pedido(
             except:
                 pass
         pedido.gerar_boleto = gerar_boleto
+        pedido.gerar_cobranca = gerar_cobranca
         pedido.terminos_boleto = terminos_boleto
         # Persiste o parcelamento escolhido para que a cobranca automatica da
         # NFe emitida (services/routers/nfe._garantir_cobranca_nfe) possa
@@ -611,11 +614,50 @@ def finalizar_pedido(
             pedido.primeiro_vencimento = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else None
         except ValueError:
             pedido.primeiro_vencimento = None
-        # Cria conta(s) a receber automática(s) — com suporte a parcelamento
+        # Criar cobranca/contas a receber:
+        #  - "Faturar somente com Recibo (sem NF)" (opt-in, igual a OS): gera o
+        #    recibo direto agora, mesmo com itens e mesmo a vista (recibo e
+        #    registro de recebimento). Nao exige nota fiscal.
+        #  - Pedido "fechado sem NFs" (sem itens): cobranca direto (recibo).
+        #  - Pedido com itens (vai gerar NFe/NFSe): a cobranca sera criada pela
+        #    propria nota (vinculada ao documento), evitando cobranca solta.
+        #  - A vista (sem recibo): nao gera conta a receber (valor recebido).
         contas_geradas = []
         contas_existentes = []
-        if gerar_cobranca or forma_pagamento == "boleto":
-            from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para, numero_documento_para_cobranca
+        _forma = forma_pagamento or "NFSe"
+        from services.parcelamento import (
+            gerar_contas_receber, contas_receber_existentes_para,
+            numero_documento_para_cobranca, eh_pagamento_a_vista, quitar_avista,
+        )
+        _pedido_sem_nf = not bool(pedido.itens)
+        # A flag "Gerar Cobranca" e o interruptor mestre: desligada, nenhuma
+        # cobranca automatica e gerada (o usuario lanca o financeiro manualmente).
+        # Pedidos com itens (vao gerar NFe/NFSe) tem a cobranca criada pela
+        # propria nota; aqui so geramos para recibo sem NF ou pedido fechado
+        # sem NFs. Recebimento a vista (incl. cartao) gera a conta JA RECEBIDA
+        # (PAGO), constando nos relatorios de recebimento sem virar a receber.
+        if faturar_recibo:
+            # Recibo sem nota fiscal (PIX, dinheiro, cartao, garantia, etc.) —
+            # igual a OS. Gera a cobranca direto, aceitando a vista (e registro).
+            if not contas_receber_existentes_para(db, pedido=pedido):
+                try:
+                    venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (pedido.data or date.today())
+                except ValueError:
+                    venc = pedido.data or date.today()
+                contas_geradas = gerar_contas_receber(
+                    db,
+                    cliente_id=pedido.cliente_id,
+                    descricao=f"Pedido {pedido.numero or '#' + str(pedido.id)} (Recibo sem NF)",
+                    valor_total=pedido.total or 0,
+                    primeiro_vencimento=venc,
+                    num_parcelas=num_parcelas,
+                    intervalo_dias=intervalo_dias,
+                    forma_pagamento=_forma,
+                    numero_documento=numero_documento_para_cobranca(pedido=pedido)
+                    or (str(pedido.numero) if pedido.numero else str(pedido.id)),
+                    pedido_id=pedido.id,
+                )
+        elif _pedido_sem_nf and (pedido.gerar_cobranca or forma_pagamento == "boleto"):
             contas_existentes = contas_receber_existentes_para(db, pedido=pedido)
             if contas_existentes:
                 # Evita cobranca em duplicidade (ex.: pedido finalizado 2x ou ja
@@ -637,11 +679,13 @@ def finalizar_pedido(
                     primeiro_vencimento=venc,
                     num_parcelas=num_parcelas,
                     intervalo_dias=intervalo_dias,
-                    forma_pagamento=forma_pagamento or "NFSe",
+                    forma_pagamento=_forma,
                     numero_documento=numero_documento_para_cobranca(pedido=pedido)
                     or (str(pedido.numero) if pedido.numero else str(pedido.id)),
                     pedido_id=pedido.id,
                 )
+        if contas_geradas and eh_pagamento_a_vista(_forma):
+            quitar_avista(contas_geradas, _forma)
         db.commit()
         # Emissão imediata de TODOS os boletos das parcelas (Sicoob).
         # Contas que ja possuem boleto sao ignoradas dentro do servico.
@@ -656,11 +700,28 @@ def finalizar_pedido(
             else:
                 request.session["message"] = f"Pedido faturado e {ok} boleto(s) emitido(s) com sucesso!"
         elif contas_geradas:
-            request.session["message"] = f"Pedido faturado! {len(contas_geradas)} conta(s) a receber gerada(s)."
+            if eh_pagamento_a_vista(_forma):
+                request.session["message"] = (
+                    f"Pedido faturado! {len(contas_geradas)} recebimento(s) à vista registrado(s) "
+                    "(contas já quitadas)."
+                )
+            else:
+                request.session["message"] = f"Pedido faturado! {len(contas_geradas)} conta(s) a receber gerada(s)."
         elif contas_existentes:
             request.session["message"] = (
                 f"Pedido faturado! Já existiam {len(contas_existentes)} conta(s) a receber vinculada(s); "
                 "nenhuma cobrança duplicada foi gerada."
+            )
+        # Aviso: faturar sem nota fiscal deixa o pedido sem documento. A geração
+        # da(s) nota(s) deve ocorrer após o faturamento; isso apenas alerta.
+        try:
+            tem_nf = bool(pedido.nfes) or bool(pedido.nfse)
+        except Exception:
+            tem_nf = False
+        if not tem_nf and not faturar_recibo:
+            request.session["warning"] = (
+                "Pedido faturado sem nota fiscal vinculada. Lembre-se de gerar a "
+                "NFe e/ou NFS-e (botões abaixo) antes de finalizar o processo."
             )
         # Baixa de estoque na finalizacao (venda sem nota). Se o pedido ja
         # gerou NFSe/NFe, a baixa ocorre na nota (evita duplicar).

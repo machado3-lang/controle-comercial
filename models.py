@@ -526,6 +526,7 @@ class PedidoVenda(Base):
     tipo_pedido = Column(String(20), default="venda")  # venda ou pre_venda
     forma_pagamento = Column(String(20), nullable=True)
     gerar_boleto = Column(Boolean, default=False)
+    gerar_cobranca = Column(Boolean, default=True)
     terminos_boleto = Column(Text, nullable=True)
     # Parcelamento escolhido no faturamento (usado para gerar as contas a
     # receber / boletos e para a cobranca automatica da NFe emitida).

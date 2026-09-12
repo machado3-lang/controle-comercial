@@ -90,6 +90,7 @@
                 <span class="px-2 py-1 text-xs font-medium bg-amber-950/50 text-amber-400 border border-amber-800/50 rounded-full ms-1">ISS Retido</span>
                 {% endif %}
             </div>
+            <div><strong class="text-sky-300">Forma de Pagamento:</strong> <span class="text-slate-100">{{ (nfse.forma_pagamento or (nfse.pedido.forma_pagamento if nfse.pedido else None) or (nfse.consolidacao.forma_pagamento if nfse.consolidacao else None) or '-') }}</span></div>
             {% if nfse.mensagem_retorno and nfse.status in ('erro', 'pendente') %}
             <div class="col-span-2">
                 <div class="p-3 bg-rose-950/30 border border-rose-800/50 rounded-xl">
@@ -154,7 +155,7 @@
         {% endif %}
 
         <div class="border-t border-slate-800/60 pt-4 flex flex-wrap gap-2">
-            {% if not cobranca and nfse.status in ('rascunho', 'autorizada', 'pendente') %}
+            {% if not cobranca and nfse.status != 'rascunho' %}
             <form method="post" action="/nfse/{{ nfse.id }}/gerar-cobranca" class="inline-flex items-end gap-2 flex-wrap">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div>
