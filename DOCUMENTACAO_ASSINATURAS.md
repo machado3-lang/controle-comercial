@@ -99,8 +99,14 @@ Cria um **rascunho** `NFSe` (`status="rascunho"`) com:
 - e vincula `assinatura.nfse_id = nfse.id`.
 
 > Atenção: **não gera cobrança** e **não avança o vencimento** por si só. A cobrança
-> (e o avanço do ciclo) só ocorre em `routers/nfse.py::gerar_cobranca_nfse`, que cria
-> um `ContaReceber` com observação `Cobrança automática - assinatura #<id> (NFSe #<id>)`.
+> (e o avanço do ciclo) ocorre em `routers/nfse.py::gerar_cobranca_nfse` (botão manual)
+> **e** automaticamente na transmissão da NFSe (`routers/nfse.py::_garantir_cobranca_nfse`),
+> que cria um `ContaReceber` com observação `Cobrança automática - assinatura #<id> (NFSe #<id>)`
+> e vencimento = `proximo_vencimento_para_cobranca(db, assinatura)`.
+>
+> Regra de `travar_cobranca` (seção 5): a cobrança automática pela NFSe **só** acontece quando
+> `travar_cobranca is True`. Se `False`, a própria assinatura já gerou a cobrança recorrente e a
+> transmissão da NFSe **não** cria cobrança (evita duplicar o ciclo).
 
 > **Gotcha:** `gerar_cobranca_nfse` **recusa NFSe em `rascunho`** (`routers/nfse.py:1197`):
 > só é possível gerar a cobrança após **emitir/transmitir** a nota (status passa a

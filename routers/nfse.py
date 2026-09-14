@@ -1767,6 +1767,35 @@ def _garantir_cobranca_nfse(db, nfse):
             return
         if contas_receber_existentes_para(db, nfse=nfse):
             return
+        # Assinatura: a cobranca recorrente e rastreada pela observacao "assinatura #<id>"
+        # (DOCUMENTACAO_ASSINATURAS.md, secoes 3, 5 e 7). Se travar_cobranca=False a propria
+        # assinatura ja gerou a cobranca recorrente e a NFSe nao deve duplicar o ciclo; se
+        # travar_cobranca=True a NFSe e a fonte da cobranca.
+        if nfse.assinatura_id:
+            assin = db.query(Assinatura).get(nfse.assinatura_id)
+            if assin and assin.travar_cobranca is False:
+                return
+            if assin:
+                from routers.assinaturas import proximo_vencimento_para_cobranca
+                venc = proximo_vencimento_para_cobranca(db, assin)
+                cliente_id = nfse.cliente_id or assin.cliente_id
+                if not cliente_id:
+                    return
+                contas = gerar_contas_receber_para_nota(
+                    db, nfse_id=nfse.id, cliente_id=cliente_id,
+                    descricao=f"NFSe #{nfse.numero or nfse.id}",
+                    valor_total=nfse.valor_liquido,
+                    primeiro_vencimento=venc, num_parcelas=1, intervalo_dias=30,
+                    forma_pagamento=_forma,
+                    numero_documento=str(nfse.numero) if nfse.numero else None,
+                    consolidacao_id=nfse.consolidacao_id,
+                )
+                if contas:
+                    for c in contas:
+                        c.observacao = f"Cobrança automática - assinatura #{assin.id} (NFSe #{nfse.id})"
+                    quitar_avista(contas, _forma)
+                db.commit()
+                return
         cliente_id = nfse.cliente_id or (ped.cliente_id if ped else None) or (cons.cliente_id if cons else None)
         if not cliente_id:
             return
