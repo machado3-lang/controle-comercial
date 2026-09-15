@@ -82,9 +82,12 @@ precisa ganhar um caminho nacional. A parte de "leitura" já está pronta.
   (`RecepcionarDps` — a confirmar).
 - `verAplic` (`fly_WS_1.1.0`, `:1300`/`:1472`) provavelmente precisa mudar para
   o identificador do seu sistema no Ambiente Nacional.
-- Numeração: o sistema **já controla** o `nDPS` (campo `numero` da NFSe,
-  `:1525`/`:1388`); o Ambiente Nacional devolve o protocolo e o `nNFSe`. Sem
-  mudança de lógica.
+- Numeração: o `nDPS` é **desacoplado** do número da nota. O contador fica em
+  `empresa.ultimo_numero_dps` e avança monotonicamente a cada transmissão; o valor
+  alocado é persistido em `nfse.numero_dps` e reaproveitado nas retentativas (só a
+  `serie` varia). Isso evita o erro `E050` (reuso de DPS já finalizado no SEFIN
+  Nacional), que ocorria quando o `nDPS` era igual ao nº da nota. O Ambiente Nacional
+  devolve o protocolo e o `nNFSe`; buracos no `nDPS` são aceitos, reuso não.
 
 ### 4.2 Consulta de status (`consultar_status`)
 - Mesmo padrão: trocar URL + namespace + operação (`ConsultarStatusDps`).

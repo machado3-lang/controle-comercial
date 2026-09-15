@@ -112,6 +112,41 @@ BETHA_NFSE_DPS_URL=https://nota-eletronica.betha.cloud/dps/ws
 </DPS>
 ```
 
+## Numeração do DPS (desacoplada do número da nota)
+
+O **número do DPS (`nDPS`)** é uma sequência **própria e independente** do número da
+NFS-e. O SEFIN Nacional rejeita o **reuso** de um DPS que já pertence a uma NFS-e
+finalizada (mesmo cancelada) com o erro `E050` ("número do DPS já existe / já
+informado em nota anterior"); **buracos (gaps) são aceitos**. Por isso o DPS não
+pode ser igual ao número da nota.
+
+### Comportamento atual
+- O contador fica em `empresa.ultimo_numero_dps` e avança **monotonicamente** a cada
+  transmissão efetiva (uma nota cancelada e reemitida, ou um novo registro, consome um
+  DPS novo).
+- O DPS alocado é persistido em `nfse.numero_dps` (e a `serie_dps`) e **reaproveitado**
+  nas retentativas — estas variam apenas a `serie` (1 dígito) para gerar um ID DPS
+  distinto, sem reutilizar um DPS já finalizado.
+- O número da NFS-e (`nfse.numero` / `empresa.ultimo_numero_nfse`) segue sua própria
+  sequência e é independente do DPS.
+
+### Calibração (seed) no deploy
+No startup, `run_migrations` (`app/core/lifespan.py`) sincroniza
+`empresa.ultimo_numero_dps` com o **maior DPS já emitido** na sequência pós-01/09/2026
+(filtra registros `origem='importada'` da era Betha e `data_emissao < 2026-09-01`),
+**sem nunca reduzir** o valor. Garante que a primeira emissão em produção não colida.
+
+### Ajuste manual
+Em **Configurações → NFSe** há o campo "Último Número DPS". Use-o se o portal SEFIN
+mostrar um último DPS diferente do calculado (ex.: um DPS "fantasma" não registrado no
+banco). O próximo DPS enviado será `ultimo_numero_dps + 1`.
+
+### Histórico / lição
+Antigamente o `nDPS` era gerado igual ao nº da nota. Isso funcionava até o SEFIN
+renumerar as notas (cada cancelamento/reemissão ou transmissão aceita mas não
+registrada consumia um DPS), fazendo o DPS "escapar" do nº da nota e, eventualmente,
+acertar em cheio um DPS já finalizado → `E050`. O desacoplamento elimina esse risco.
+
 ## Mudanças Previstas (01/09/2026)
 
 ### Ambiente Nacional - Simples Nacional
