@@ -1879,7 +1879,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                 from services.nfse_pdf import gerar_pdf_nfse
                 numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
                 if not nfse.xml_text:
-                    dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero)
+                    dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero, numero_dps=nfse.numero_dps)
                     if dps_xml:
                         nfse.xml_path = _salvar_xml_arquivo(nfse, dps_xml)
                         nfse.xml_text = dps_xml
@@ -1931,7 +1931,7 @@ def transmitir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db
                         from services.nfse_pdf import gerar_pdf_nfse
                         numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
                         if not nfse.xml_text:
-                            dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero)
+                            dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero, numero_dps=nfse.numero_dps)
                             if dps_xml:
                                 nfse.xml_path = _salvar_xml_arquivo(nfse, dps_xml)
                                 nfse.xml_text = dps_xml
@@ -2033,7 +2033,7 @@ def sincronizar_nfse(request: Request, nfse_id: int, db: Session = Depends(get_d
                 from services.nfse_pdf import gerar_pdf_nfse
                 numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
                 if not nfse.xml_text:
-                    dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero)
+                    dps_xml = gerar_dps_xml_nfse(nfse, db, 1, numero, numero_dps=nfse.numero_dps)
                     if dps_xml:
                         nfse.xml_path = _salvar_xml_arquivo(nfse, dps_xml)
                         nfse.xml_text = dps_xml

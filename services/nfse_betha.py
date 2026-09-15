@@ -1541,7 +1541,7 @@ def _esc(valor) -> str:
 
 
 def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1',
-                xmlns: str = None, ver_aplic: str = None) -> str:
+                xmlns: str = None, ver_aplic: str = None, numero_dps: int = None) -> str:
     """Gera XML DPS Nacional - formato ID 45 chars - filtra apenas serviços.
     O parâmetro `serie` (1 caractere) é variado nas retentativas para gerar um ID
     distinto mantendo o nDPS (número da nota) inalterado.
@@ -1589,7 +1589,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
             toma_doc += f'\n         <IM>{cli_im}</IM>'
 
     serie = (serie or '1')[:1]
-    ndps_num = numero_nfse if numero_nfse is not None else pedido.id
+    ndps_num = numero_dps if numero_dps is not None else (numero_nfse if numero_nfse is not None else pedido.id)
     ndps = f"{ndps_num:015d}"
 
     service = BethaNfseService()
@@ -1743,7 +1743,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
 </DPS>'''
 
 def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1',
-                      xmlns: str = None, ver_aplic: str = None) -> str:
+                      xmlns: str = None, ver_aplic: str = None, numero_dps: int = None) -> str:
     """Gera XML DPS Nacional a partir de uma NFSe já registrada.
     O parâmetro `serie` (1 caractere) é variado nas retentativas para gerar um ID
     distinto mantendo o nDPS (número da nota) inalterado.
@@ -1790,7 +1790,19 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
             toma_doc += f'\n         <IM>{cli_im}</IM>'
 
     serie = (serie or '1')[:1]
-    ndps_num = numero_nfse if numero_nfse is not None else (int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else nfse.id)
+    # O nº do DPS é desacoplado do nº da nota: prioriza o nº de DPS já alocado
+    # (nfse.numero_dps / parâmetro), caindo para o nº da nota apenas como
+    # fallback para notas emitidas antes do desacoplamento.
+    if numero_dps is not None:
+        ndps_num = int(numero_dps)
+    elif getattr(nfse, 'numero_dps', None):
+        ndps_num = int(nfse.numero_dps)
+    elif numero_nfse is not None:
+        ndps_num = int(numero_nfse)
+    elif nfse.numero and str(nfse.numero).isdigit():
+        ndps_num = int(nfse.numero)
+    else:
+        ndps_num = nfse.id
     ndps = f"{ndps_num:015d}"
 
     service = BethaNfseService()
@@ -1951,15 +1963,31 @@ def emitir_rascunho(nfse, db, tpAmb: int = 1, attempt: int = 0) -> dict:
         tpAmb = nfse_tp_amb()
     try:
         service = BethaNfseService()
+        from models import Empresa
         numero = int(nfse.numero) if nfse.numero and nfse.numero.isdigit() else None
+
+        # DPS desacoplado do nº da nota: aloca um nº de DPS monotônico e próprio
+        # (empresa.ultimo_numero_dps), persistido no registro e reaproveitado nos
+        # retries (que só variam a série). Garante que nunca reutilizamos um DPS
+        # já finalizado no SEFIN Nacional — eliminando o erro E050.
+        if getattr(nfse, 'numero_dps', None):
+            numero_dps = int(nfse.numero_dps)
+        else:
+            empresa = db.query(Empresa).with_for_update().first()
+            empresa.ultimo_numero_dps = (empresa.ultimo_numero_dps or 0) + 1
+            numero_dps = empresa.ultimo_numero_dps
+            nfse.numero_dps = numero_dps
+            db.commit()
 
         def _send_with_serie(attempt: int):
             # Varia a série (1 dígito) para gerar um ID DPS distinto nas retentativas,
-            # mantendo o nDPS (número da nota) inalterado. Evita E001 (ID com 48 chars)
-            # e E050 (DPS duplicada) sem pular o número da nota.
+            # mantendo o nDPS (número do DPS) inalterado. Evita E001 (ID com 48 chars)
+            # e E050 (DPS duplicada) sem reutilizar um DPS já finalizado.
             serie = str((1 + attempt) % 10)
+            nfse.serie_dps = int(serie)
             # No modo nacional, gera o DPS com o namespace do Ambiente Nacional.
             dps_xml = gerar_dps_xml_nfse(nfse, db, tpAmb, numero, serie=serie,
+                                        numero_dps=numero_dps,
                                         xmlns=_dps_xmlns(), ver_aplic=_dps_ver_aplic())
             return service.enviar_dps(dps_xml, tpAmb), dps_xml
 

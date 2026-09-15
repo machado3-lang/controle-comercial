@@ -108,6 +108,7 @@ async def salvar_configuracoes(
     nfe_aliquota_estadual: float = Form(0.0),
     crt: int = Form(3),
     ultimo_numero_nfse: int = Form(0),
+    ultimo_numero_dps: int = Form(0),
     fuso_horario: int = Form(-4),
     nfse_emissao_ambiente: str = Form("producao"),
     nfse_url_producao: str = Form(""),
@@ -179,6 +180,7 @@ async def salvar_configuracoes(
         empresa.nfe_aliquota_estadual = nfe_aliquota_estadual
         empresa.crt = crt
         empresa.ultimo_numero_nfse = ultimo_numero_nfse
+        empresa.ultimo_numero_dps = ultimo_numero_dps
         empresa.fuso_horario = fuso_horario
         empresa.nfse_emissao_ambiente = (nfse_emissao_ambiente or "producao")
         empresa.nfse_url_producao = nfse_url_producao or None
@@ -217,6 +219,7 @@ async def salvar_configuracoes(
             nfe_aliquota_estadual=nfe_aliquota_estadual,
             crt=crt,
             ultimo_numero_nfse=ultimo_numero_nfse,
+            ultimo_numero_dps=ultimo_numero_dps,
             fuso_horario=fuso_horario,
             nfse_emissao_ambiente=(nfse_emissao_ambiente or "producao"),
             nfse_url_producao=nfse_url_producao or None,

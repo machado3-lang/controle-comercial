@@ -143,6 +143,8 @@ class NFSe(Base):
     tomador_cpf_cnpj = Column(String(20), nullable=True)
     email_enviado = Column(Boolean, default=False)
     data_envio_email = Column(DateTime, nullable=True)
+    numero_dps = Column(Integer, nullable=True)
+    serie_dps = Column(Integer, nullable=True)
 
     pedido = relationship("PedidoVenda", back_populates="nfse")
     consolidacao = relationship("PedidoConsolidado", back_populates="nfse")
