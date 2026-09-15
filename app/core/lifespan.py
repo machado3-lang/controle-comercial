@@ -11,7 +11,8 @@ from starlette.responses import RedirectResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.sessions import SessionMiddleware as StarletteSessionMiddleware
 from starlette.types import ASGIApp, Receive, Scope, Send
-from sqlalchemy import func, inspect as sa_inspect
+from sqlalchemy import func, inspect as sa_inspect, text
+import re
 from sqlalchemy.orm import sessionmaker, Session, joinedload
 from database import engine, Base, SessionLocal, get_db
 from models import TipoDocumento, PlanoDeContas, Cliente, Fornecedor, ContaPagar, ContaReceber, Assinatura, OrdemServico, Empresa, StatusConta, StatusOS, Produto, PedidoVenda
@@ -116,6 +117,14 @@ def run_migrations():
         _backfill_origem()
     except Exception as e:
         print(f"[MIGRATION] Warning: could not backfill origem: {e}")
+
+    # Seed: sincroniza empresa.ultimo_numero_dps com o maior DPS ja emitido
+    # (sequencia pos-01/09/2026 no SEFIN Nacional), sem nunca reduzir. Evita
+    # E050 (reuso de DPS) na primeira emissao apos o deploy em producao.
+    try:
+        _seed_ultimo_numero_dps()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not seed ultimo_numero_dps: {e}")
 
 
 def _add_missing_columns():
@@ -272,6 +281,32 @@ def _backfill_origem():
             except Exception as e:
                 print(f"[MIGRATION] Backfill origem falhou ({sql[:40]}...): {e}")
         conn.commit()
+
+
+def _seed_ultimo_numero_dps():
+    """Sincroniza empresa.ultimo_numero_dps com o maior DPS ja efetivamente
+    emitido na sequencia pos-01/09/2026 (SEFIN Nacional), sem nunca reduzir o
+    valor ja configurado. Evita E050 (reuso de DPS ja finalizado) na primeira
+    emissao apos o deploy em producao, onde o contador inicia em 0."""
+    with engine.connect() as conn:
+        row = conn.execute(text("SELECT ultimo_numero_dps FROM empresa LIMIT 1")).first()
+        atual = int(row[0]) if row and row[0] is not None else 0
+        res = conn.execute(text(
+            "SELECT xml_text FROM nfse WHERE xml_text LIKE '%<nDPS>%' "
+            "AND data_emissao >= '2026-09-01' "
+            "AND (origem IS NULL OR origem <> 'importada')"
+        )).fetchall()
+    max_dps = 0
+    for (xml,) in res:
+        for m in re.findall(r'<nDPS>(\d+)</nDPS>', xml or ''):
+            d = int(m)
+            if d > max_dps:
+                max_dps = d
+    if max_dps > atual:
+        with engine.begin() as conn:
+            conn.execute(text("UPDATE empresa SET ultimo_numero_dps = :v"), {"v": max_dps})
+        print(f"[MIGRATION] ultimo_numero_dps ajustado para {max_dps} "
+              f"(proximo DPS = {max_dps + 1})")
 
     # Create audit_log table if it doesn't exist
     if "audit_log" not in existing_tables:
