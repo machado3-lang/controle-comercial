@@ -259,8 +259,7 @@ def salvar_pedido(
     observacao: str = Form(""),
     forma_pagamento: str = Form("avista"),
     itens: str = Form("[]"),
-    pedido_id: str = Form(""),
-    acao: str = Form("emitir")
+    pedido_id: str = Form("")
 ):
     import json
     cliente_id_int = int(cliente_id) if cliente_id else None
@@ -371,8 +370,6 @@ def salvar_pedido(
         request.session["error"] = "Erro ao salvar os itens do pedido. Verifique os valores informados."
         return RedirectResponse(url="/pedidos/", status_code=303)
 
-    if acao == "emitir":
-        return RedirectResponse(url=f"/pedidos/{pedido.id}/imprimir", status_code=303)
     return RedirectResponse(url="/pedidos/", status_code=303)
 
 

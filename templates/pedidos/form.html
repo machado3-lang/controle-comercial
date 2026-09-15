@@ -130,45 +130,11 @@
                     <a href="/pedidos" class="flex-1 px-4 py-2 text-slate-300 border border-slate-700 rounded-xl hover:bg-slate-800/50 transition flex items-center justify-center"><i data-lucide="x" class="w-4 h-4 me-1"></i> Cancelar</a>
                     <button type="submit" name="acao" value="salvar" form="formPedido" class="flex-1 px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all flex items-center justify-center"><i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar Orçamento</button>
                 </div>
-                <button type="button" id="btnEmitir" class="w-full mt-2 px-4 py-2 bg-gradient-to-r from-emerald-500 to-cyan-600 hover:from-emerald-600 hover:to-cyan-700 text-white rounded-xl font-medium transition-all flex items-center justify-center"><i data-lucide="printer" class="w-4 h-4 me-1"></i> Emitir / Finalizar</button>
             </div>
         </div>
     </div>
 </div>
 
-<div class="modal fade" id="modalPreview" tabindex="-1">
-    <div class="modal-dialog max-w-3xl">
-        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
-            <div class="modal-header border-b border-slate-800/50 flex justify-between items-center">
-                <h5 class="text-transparent bg-clip-text bg-gradient-to-r from-cyan-400 to-indigo-400 font-semibold">Pré-visualização</h5>
-                <div class="flex gap-1">
-                    <button type="button" class="tab-impressao px-3 py-1.5 text-xs font-medium bg-cyan-950/50 text-cyan-400 border border-cyan-800/50 rounded-full active" data-formato="a4">A4</button>
-                    <button type="button" class="tab-impressao px-3 py-1.5 text-xs font-medium text-slate-400 border border-slate-700 rounded-full hover:text-slate-300" data-formato="termica">Térmica 80mm</button>
-                </div>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-            </div>
-            <div class="modal-body max-h-[70vh] overflow-y-auto p-6" id="previewContent">
-                <div class="print-preview bg-white text-black p-6 rounded-lg text-sm">
-                    <div class="text-center border-b-2 border-gray-800 pb-4 mb-4">
-                        <h2 class="text-2xl font-bold text-black">PEDIDO</h2>
-                        <p class="text-slate-600">Data: {{ hoje or '' }}</p>
-                    </div>
-                    <div class="mb-4"><strong>Cliente:</strong> <span id="previewCliente">-</span></div>
-                    <table class="w-full border border-gray-300 mb-4">
-                        <thead class="bg-gray-100"><tr><th class="border p-2 text-left">Descrição</th><th class="border p-2">Qtd</th><th class="border p-2">Preço</th><th class="border p-2">Total</th></tr></thead>
-                        <tbody id="previewItens"><tr><td colspan="4" class="border p-4 text-center text-slate-500">Nenhum item</td></tr></tbody>
-                        <tfoot class="bg-gray-100"><tr><td colspan="3" class="border p-2 text-end font-bold">Total:</td><td class="border p-2 font-bold text-emerald-600">R$ <span id="previewTotal">0.00</span></td></tr></tfoot>
-                    </table>
-                    <div class="border-t pt-2"><small>Observação: <span id="previewObs"></span></small></div>
-                </div>
-            </div>
-            <div class="modal-footer border-t border-slate-800/50 flex justify-between">
-                <button type="button" class="px-4 py-2 border border-slate-700 rounded-xl text-slate-300 hover:bg-slate-800/50" data-bs-dismiss="modal">Cancelar</button>
-                <button type="button" id="btnImprimirPreview" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium"><i data-lucide="printer" class="w-4 h-4 me-1"></i> Finalizar e Imprimir</button>
-            </div>
-        </div>
-    </div>
-</div>
 {% endblock %}
 
 {% block scripts %}
@@ -482,50 +448,5 @@ document.addEventListener('DOMContentLoaded', function() {
     }
 });
 
-document.getElementById('btnEmitir').addEventListener('click', function() {
-    const clienteId = document.getElementById('clienteId')?.value;
-    const itens = [];
-    document.querySelectorAll('.item-row').forEach(row => {
-        const item_id = row.querySelector('.item-select')?.value;
-        const preco = parseFloat(row.dataset.preco) || 0;
-        const qtd = parseFloat(row.dataset.qtd) || 0;
-        const descricao = row.children[0]?.querySelector('.text-xs')?.textContent || '';
-        if (item_id && preco > 0) {
-            itens.push({item_id, descricao, quantidade: qtd, preco});
-        }
-    });
-    if (!clienteId || itens.length === 0) {
-        alert('Selecione um cliente e ao menos um item');
-        return;
-    }
-    document.getElementById('previewCliente').textContent = document.querySelector('.cliente-search')?.value || '-';
-    document.getElementById('previewObs').textContent = document.querySelector('[name="observacao"]')?.value || '-';
-    document.getElementById('previewItens').innerHTML = itens.map(i => 
-        `<tr><td class="border p-2">${i.descricao}</td><td class="border p-2 text-center">${i.quantidade}</td><td class="border p-2 text-right">R$ ${i.preco.toFixed(2)}</td><td class="border p-2 text-right">R$ ${(i.preco * i.quantidade).toFixed(2)}</td></tr>`
-    ).join('');
-    document.getElementById('previewTotal').textContent = itens.reduce((t, i) => t + i.preco * i.quantidade, 0).toFixed(2);
-    new bootstrap.Modal(document.getElementById('modalPreview')).show();
-});
-
-document.querySelectorAll('.tab-impressao').forEach(btn => {
-    btn.addEventListener('click', function() {
-        document.querySelectorAll('.tab-impressao').forEach(b => b.classList.remove('bg-cyan-950/50', 'text-cyan-400', 'border-cyan-800/50', 'active'));
-        this.classList.add('bg-cyan-950/50', 'text-cyan-400', 'border-cyan-800/50', 'active');
-        document.querySelector('.print-preview').className = 'print-preview bg-white text-black p-6 rounded-lg text-sm';
-        if (this.dataset.formato === 'termica') {
-            document.querySelector('.print-preview').classList.add('max-w-[80mm]', 'mx-auto', 'text-xs');
-        }
-    });
-});
-
-document.getElementById('btnImprimirPreview').addEventListener('click', function() {
-    const isTermica = document.querySelector('.tab-impressao.active')?.dataset?.formato === 'termica';
-    const inputAcao = document.createElement('input');
-    inputAcao.type = 'hidden';
-    inputAcao.name = 'acao';
-    inputAcao.value = 'emitir';
-    document.getElementById('formPedido').appendChild(inputAcao);
-    document.getElementById('formPedido').submit();
-});
 </script>
 {% endblock %}
