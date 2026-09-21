@@ -38,6 +38,27 @@ def extrair_situacao(boleto: dict) -> str:
     return str(raw or "")
 
 
+SITUACAO_ABERTA = "EM ABERTO"
+SITUACAO_BAIXADA = "BAIXADO"
+SITUACAO_LIQUIDADA = "LIQUIDADO"
+
+
+def normalizar_situacao(boleto: dict) -> str:
+    """Converte o campo de situacao do Sicoob em rotulo interno.
+
+    codigoSituacao: 1 Entrada Normal (em aberto) | 2 Baixado | 3 Liquidado.
+    """
+    bruto = (extrair_situacao(boleto) or "").strip()
+    if bruto in ("1", "2", "3"):
+        return {"1": SITUACAO_ABERTA, "2": SITUACAO_BAIXADA, "3": SITUACAO_LIQUIDADA}[bruto]
+    upper = bruto.upper()
+    if "LIQUIDADO" in upper or "PAGO" in upper:
+        return SITUACAO_LIQUIDADA
+    if "BAIXADO" in upper or "CANCELADO" in upper:
+        return SITUACAO_BAIXADA
+    return SITUACAO_ABERTA
+
+
 def extrair_data_liquidacao(boleto: dict) -> str | None:
     """Retorna a data da liquidação do boleto (dt. liquid. do Sicoob).
 
@@ -602,24 +623,97 @@ def emitir_em_lote(request: Request, db: Session = Depends(get_db), background_t
     return RedirectResponse(url="/sicoob", status_code=303)
 
 
+def consultar_situacao_boleto_sicoob(db: Session, conta: ContaReceber) -> tuple[str | None, str | None]:
+    """Consulta a situacao REAL do boleto no Sicoob.
+
+    Retorna (situacao, erro). situacao e 'EM ABERTO' | 'BAIXADO' | 'LIQUIDADO',
+    ou None quando o boleto nao foi localizado. erro vem preenchido apenas em
+    falha de comunicacao/autenticacao (nesse caso situacao e None).
+    """
+    emp = get_empresa(db)
+    if not emp:
+        return None, "Empresa não configurada"
+    numero_busca = conta.api_nosso_numero or conta.nosso_numero
+    if not numero_busca:
+        return None, "Conta sem nosso número"
+
+    cert_config = get_cert_config(db)
+    client_args = {"timeout": 30}
+    if cert_config and "cert" in cert_config:
+        client_args["cert"] = cert_config["cert"]
+    token = refresh_sicoob_token(db, "boletos_consulta")
+    if not token:
+        return None, "Token Sicoob não configurado"
+
+    try:
+        with httpx.Client(**client_args) as client:
+            resp = client.get(
+                f"{SICOOO_API}/boletos",
+                params={
+                    "numeroCliente": int(emp.sicoob_beneficiario) if emp.sicoob_beneficiario else 91820,
+                    "codigoModalidade": 1,
+                    "nossoNumero": numero_busca,
+                },
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if resp.status_code in (204, 400, 404):
+                return None, None
+            if resp.status_code != 200:
+                return None, f"HTTP {resp.status_code}: {resp.text[:120]}"
+            data = resp.json()
+            resultado = data.get("resultado", {})
+            boletos = resultado.get("boletos") or []
+            if not boletos and "nossoNumero" in resultado:
+                boletos = [resultado]
+            if not boletos:
+                return None, None
+            return normalizar_situacao(boletos[0]), None
+    except Exception as e:
+        return None, f"Erro ao consultar o Sicoob: {e}"
+
+
 def baixar_boleto_sicoob(db: Session, conta: ContaReceber, motivo: str = "") -> dict:
     """Baixa (cancela) o boleto vinculado a uma ContaReceber diretamente no Sicoob.
 
-    Função síncrona reutilizável (usada pela rota de baixa manual e pela
-    exclusão de contas a receber). Retorna {"success", "error", "message"}.
-    É idempotente: se a conta já estiver CANCELADA/EXCLUÍDA, retorna sucesso.
+    Função síncrona reutilizável (rota de baixa manual, exclusão de contas a
+    receber, cancelamento de consolidação e regeração de nota). Retorna
+    {"success", "error", "message"} e pode trazer "ja_baixado", "liquidado" ou
+    "nao_localizado".
+
+    A idempotência é baseada na situação REAL do boleto no Sicoob: se a conta
+    já está CANCELADA/EXCLUÍDA localmente mas o boleto continua EM ABERTO no
+    Sicoob, a baixa é comandada (era exatamente o caso dos boletos órfãos).
     """
     if conta is None:
         return {"success": False, "error": "Conta não encontrada"}
-    if conta.status in (StatusConta.CANCELADO, StatusConta.EXCLUIDO):
-        return {"success": True, "message": "Boleto já baixado", "ja_baixado": True}
+    if not (conta.api_nosso_numero or conta.nosso_numero):
+        return {"success": False, "error": "Conta sem nosso número (boleto não identificado no Sicoob)"}
+
+    status_anterior = conta.status
+    terminal = status_anterior in (StatusConta.CANCELADO, StatusConta.EXCLUIDO)
+
+    # Conta ja cancelada/excluida: confia no Sicoob, nao no status local.
+    if terminal:
+        situacao, erro = consultar_situacao_boleto_sicoob(db, conta)
+        if situacao == SITUACAO_BAIXADA:
+            return {"success": True, "message": "Boleto já baixado", "ja_baixado": True}
+        if situacao == SITUACAO_LIQUIDADA:
+            return {"success": True, "message": "Boleto liquidado no Sicoob", "ja_baixado": True, "liquidado": True}
+        if situacao is None and erro is None:
+            return {
+                "success": True,
+                "message": "Boleto não localizado no Sicoob (nada a baixar)",
+                "ja_baixado": True,
+                "nao_localizado": True,
+            }
+        # EM ABERTO (ou consulta indisponivel): segue e comanda a baixa.
 
     emp = get_empresa(db)
     if not emp:
         return {"success": False, "error": "Empresa não configurada"}
 
     # marca a baixa como solicitada (espelha o fluxo da rota de baixa)
-    if conta.status != StatusConta.BAIXA_SOLICITADA:
+    if not terminal and conta.status != StatusConta.BAIXA_SOLICITADA:
         conta.status = StatusConta.BAIXA_SOLICITADA
         if motivo:
             conta.motivo_baixa = motivo
@@ -656,6 +750,8 @@ def baixar_boleto_sicoob(db: Session, conta: ContaReceber, motivo: str = "") -> 
 
     token = refresh_sicoob_token(db, "boletos_alteracao")
     if not token:
+        conta.status = status_anterior
+        db.commit()
         return {"success": False, "error": "Token Sicoob não configurado"}
 
     cert_config = get_cert_config(db)
@@ -676,11 +772,19 @@ def baixar_boleto_sicoob(db: Session, conta: ContaReceber, motivo: str = "") -> 
                 headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
             )
             if resp.status_code in (200, 204):
-                conta.status = StatusConta.CANCELADO
+                # Nao "ressuscita" conta ja cancelada/excluida: preserva o status terminal.
+                if not terminal:
+                    conta.status = StatusConta.CANCELADO
+                if motivo:
+                    conta.motivo_baixa = motivo
                 db.commit()
                 return {"success": True, "message": "Boleto baixado com sucesso"}
+            conta.status = status_anterior
+            db.commit()
             return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}"}
     except Exception as e:
+        conta.status = status_anterior
+        db.commit()
         return {"success": False, "error": f"Erro ao comunicar com o Sicoob: {e}"}
 
 
@@ -1192,13 +1296,28 @@ async def excluir_boleto_api(request: Request, nosso_numero: str, db: Session = 
     conta = db.query(ContaReceber).filter(
         (ContaReceber.api_nosso_numero == nosso_numero) | (ContaReceber.nosso_numero == nosso_numero)
     ).first()
-    if conta:
+    if not conta:
+        return {"success": False, "error": "Boleto não encontrado"}
+
+    # Excluir o boleto da lista sem baixar no Sicoob deixava titulos abertos no
+    # banco. Agora a baixa e comandada de verdade (idempotente: se o Sicoob ja
+    # informa BAIXADO/LIQUIDADO, apenas confirmamos o cancelamento local).
+    if conta.api_nosso_numero or conta.nosso_numero:
+        if conta.status == StatusConta.PAGO:
+            return {"success": False, "error": "Boleto já liquidado não pode ser excluído"}
+        resultado = baixar_boleto_sicoob(db, conta, motivo="Exclusão pela tela de boletos")
+        if not resultado.get("success"):
+            return {"success": False, "error": f"Falha ao baixar o boleto no Sicoob: {resultado.get('error')}"}
+        detalhe = f"Boleto: {nosso_numero} ({resultado.get('message') or 'baixado no Sicoob'})"
+    else:
+        detalhe = f"Boleto: {nosso_numero} (sem nosso número; apenas cancelado localmente)"
+
+    if conta.status not in (StatusConta.CANCELADO, StatusConta.EXCLUIDO):
         conta.status = StatusConta.CANCELADO
-        db.commit()
-        registrar_auditoria(
-            db, request.session.get("user_id"), "excluir",
-            "boleto", 0, f"Boleto: {nosso_numero}",
-            request.client.host if request.client else None
-        )
-        return {"success": True, "message": "Boleto excluído do sistema"}
-    return {"success": False, "error": "Boleto não encontrado"}
+    db.commit()
+    registrar_auditoria(
+        db, request.session.get("user_id"), "excluir",
+        "boleto", conta.id, detalhe,
+        request.client.host if request.client else None
+    )
+    return {"success": True, "message": "Boleto excluído e baixado no Sicoob"}

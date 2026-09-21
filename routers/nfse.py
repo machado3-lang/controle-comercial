@@ -895,12 +895,32 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
             _nfse_id_rm = nfse_existente.id
             db.delete(nfse_existente)
         # Remove tambem a cobranca vinculada a esses rascunhos (sera recriada).
+        # Antes de apagar, os boletos emitidos sao baixados no Sicoob — apagar a
+        # conta sem baixa deixava titulos abertos no banco e perdia o nosso numero.
         _filtros_cob = []
         if _nfe_ids_rm:
             _filtros_cob.append(_ContaReceber.nfe_id.in_(_nfe_ids_rm))
         if _nfse_id_rm is not None:
             _filtros_cob.append(_ContaReceber.nfse_id == _nfse_id_rm)
         if _filtros_cob:
+            from routers.sicoob import baixar_boleto_sicoob as _baixar_boleto
+            from models import StatusConta as _StatusConta
+            _cobrancas_rm = db.query(_ContaReceber).filter(or_(*_filtros_cob)).all()
+            for _c in _cobrancas_rm:
+                if not (_c.api_nosso_numero or _c.nosso_numero):
+                    continue
+                if _c.status == _StatusConta.PAGO:
+                    request.session["error"] = (
+                        f"A cobrança #{_c.id} já está recebida; não é possível regerar a nota."
+                    )
+                    return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+                _res = _baixar_boleto(db, _c, motivo="Regeração da nota fiscal")
+                if not _res.get("success"):
+                    request.session["error"] = (
+                        f"Erro ao baixar o boleto da cobrança #{_c.id} no Sicoob: "
+                        f"{_res.get('error')}. A nota NÃO foi regerada."
+                    )
+                    return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
             db.query(_ContaReceber).filter(or_(*_filtros_cob)).delete(synchronize_session=False)
         db.flush()
 

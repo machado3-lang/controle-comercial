@@ -745,6 +745,26 @@ def cancelar_consolidacao(
         request.session["error"] = "Consolidação já está cancelada"
         return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
+    # Boletos ja emitidos precisam ser baixados no Sicoob. Isso e feito ANTES do
+    # cancelamento fiscal para nao deixar titulos abertos no banco caso algo falhe.
+    from routers.sicoob import baixar_boleto_sicoob
+    for conta in consolidacao.contas_receber:
+        if not (conta.api_nosso_numero or conta.nosso_numero):
+            continue
+        if conta.status == StatusConta.PAGO:
+            request.session["error"] = (
+                f"A consolidação possui a cobrança #{conta.id} já recebida. "
+                "A consolidação NÃO foi cancelada."
+            )
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+        resultado = baixar_boleto_sicoob(db, conta, motivo="Cancelamento da consolidação")
+        if not resultado.get("success"):
+            request.session["error"] = (
+                f"Erro ao baixar o boleto da cobrança #{conta.id} no Sicoob: "
+                f"{resultado.get('error')}. A consolidação NÃO foi cancelada."
+            )
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
     # Cancelamento fiscal real: NFSe e NFe vinculadas devem ser canceladas
     # na Prefeitura/SEFAZ antes de liberar os pedidos. Falha no cancelamento
     # fiscal aborta o cancelamento da consolidação (sem efeito colateral).
@@ -820,7 +840,8 @@ def cancelar_consolidacao(
     if motivo:
         consolidacao.observacao = (consolidacao.observacao or "") + f"\nCancelado: {motivo}"
 
-    # Estorna os registros financeiros já gerados pela consolidação
+    # Estorna os registros financeiros já gerados pela consolidação.
+    # Os boletos já foram baixados no Sicoob no início da rota.
     for conta in consolidacao.contas_receber:
         conta.status = StatusConta.CANCELADO
     if consolidacao.nfse and (consolidacao.nfse.status or '').lower() != "cancelada":

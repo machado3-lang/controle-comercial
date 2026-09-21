@@ -530,21 +530,38 @@ def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends
     if not conta:
         return JSONResponse({"erro": "Conta não encontrada"}, status_code=404)
 
+    if conta.status == StatusConta.PAGO:
+        return JSONResponse(
+            {"erro": "Conta já recebida não pode ser excluída (a exclusão removeria o recebimento do financeiro)."},
+            status_code=400
+        )
+
     aviso = ""
-    # Se a conta possui boleto emitido e ainda está ativo, baixa automaticamente no Sicoob.
-    if conta.boleto_emitido and (conta.api_nosso_numero or conta.nosso_numero) and conta.status in (
-        StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA
-    ):
+    # Se a conta possui boleto, a baixa e comandada no Sicoob antes da exclusao.
+    # A função e idempotente e verifica a situacao real do boleto no banco.
+    if conta.api_nosso_numero or conta.nosso_numero:
         from routers.sicoob import baixar_boleto_sicoob
         resultado = baixar_boleto_sicoob(db, conta, motivo="Exclusão da conta a receber")
         if resultado.get("success"):
             nn = conta.api_nosso_numero or conta.nosso_numero
-            aviso = f" Boleto {nn} baixado automaticamente no Sicoob."
+            if resultado.get("liquidado"):
+                return JSONResponse(
+                    {"erro": f"O boleto {nn} está LIQUIDADO no Sicoob. Estorne o recebimento antes de excluir a conta."},
+                    status_code=400
+                )
+            if resultado.get("nao_localizado"):
+                aviso = f" Aviso: boleto {nn} não foi localizado no Sicoob."
+            elif resultado.get("ja_baixado"):
+                aviso = f" Boleto {nn} já estava baixado no Sicoob."
+            else:
+                aviso = f" Boleto {nn} baixado automaticamente no Sicoob."
         else:
             return JSONResponse(
                 {"erro": f"Não foi possível baixar o boleto no Sicoob ({resultado.get('error')}). A conta não foi excluída."},
                 status_code=400
             )
+    elif conta.boleto_emitido:
+        aviso = " Aviso: conta marcada com boleto emitido, mas sem nosso número (não foi possível baixar no Sicoob)."
 
     conta.status = StatusConta.EXCLUIDO
     db.commit()
