@@ -9,7 +9,7 @@ import httpx
 from datetime import datetime, timedelta, date
 from fastapi import APIRouter, Depends, Request, Form, UploadFile, File, BackgroundTasks
 from fastapi.responses import RedirectResponse, JSONResponse, Response
-from sqlalchemy import func, desc as sql_desc, asc as sql_asc
+from sqlalchemy import func, or_, desc as sql_desc, asc as sql_asc
 from sqlalchemy.orm import Session, joinedload, selectinload
 from database import get_db
 from models import Empresa, ContaReceber, StatusConta, Cliente
@@ -1089,6 +1089,81 @@ def listar_boletos_sicoob(
             })
 
     return {"success": True, "boletos": boletos_unicos, "total": len(boletos_unicos), "_debug": debug_amostra}
+
+
+@router.get("/api/conferencia-abertos", response_class=JSONResponse)
+def conferencia_boletos_abertos(
+    request: Request, db: Session = Depends(get_db),
+    data_inicio: str = None, data_fim: str = None,
+    offset: int = 0, limite: int = 25,
+):
+    """Conferencia inversa (Sicoob -> sistema).
+
+    Varre os clientes e lista os boletos EM ABERTO no Sicoob que nao possuem
+    cobranca ativa no sistema: ou porque a conta foi cancelada/excluida sem
+    baixa (boleto orfao) ou porque nao existe nenhuma conta local (cobranca
+    apagada/emitida direto no banco).
+
+    A consulta do Sicoob e por pagador, entao o trabalho e dividido em blocos
+    de clientes (offset/limite) para nao estourar o timeout da requisicao.
+    """
+    if not request.session.get("user_id"):
+        return {"success": False, "error": "Não autenticado"}
+    if not data_inicio or not data_fim:
+        return {"success": False, "error": "Informe o período de vencimento (data_inicio e data_fim)"}
+    try:
+        offset = max(0, int(offset))
+        limite = max(1, min(int(limite), 100))
+    except (TypeError, ValueError):
+        offset, limite = 0, 25
+
+    query = db.query(Cliente).filter(Cliente.cpf_cnpj.isnot(None), Cliente.cpf_cnpj != "")
+    total_clientes = query.count()
+    clientes = query.order_by(Cliente.nome).offset(offset).limit(limite).all()
+
+    divergencias = []
+    erros = []
+    for cli in clientes:
+        boletos, erro = _buscar_boletos_por_pagador(
+            db, cli.cpf_cnpj, data_inicio, data_fim, codigo_situacao=1
+        )
+        if erro:
+            erros.append(f"{cli.nome}: {erro}")
+            continue
+        for b in boletos or []:
+            nn = str(b.get("nossoNumero") or "").strip()
+            if not nn:
+                continue
+            conta = db.query(ContaReceber).filter(
+                or_(ContaReceber.api_nosso_numero == nn, ContaReceber.nosso_numero == nn)
+            ).first()
+            if conta is not None and conta.status not in (StatusConta.CANCELADO, StatusConta.EXCLUIDO):
+                continue  # coerente: cobranca ativa no sistema
+            pagador = b.get("pagador") or {}
+            divergencias.append({
+                "nossoNumero": nn,
+                "seuNumero": str(b.get("seuNumero") or ""),
+                "valor": float(b.get("valor") or 0),
+                "dataVencimento": b.get("dataVencimento") or "",
+                "dataEmissao": b.get("dataEmissao") or "",
+                "linhaDigitavel": b.get("linhaDigitavel") or "",
+                "cliente": cli.nome,
+                "cpfCnpj": cli.cpf_cnpj,
+                "conta_id": conta.id if conta else None,
+                "status_local": (conta.status.value if conta and hasattr(conta.status, "value") else None),
+                "tipo": "cancelada_local" if conta else "sem_cobranca_local",
+            })
+
+    proximo = offset + len(clientes)
+    return {
+        "success": True,
+        "divergencias": divergencias,
+        "erros": erros,
+        "processados": len(clientes),
+        "offset": offset,
+        "proximo_offset": proximo if proximo < total_clientes else None,
+        "total_clientes": total_clientes,
+    }
 
 
 @router.post("/importar-boleto", response_class=JSONResponse)

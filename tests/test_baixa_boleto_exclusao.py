@@ -158,6 +158,53 @@ def test_exclusao_bloqueia_conta_recebida(db_session, test_user, conta_com_bolet
     assert db_session.get(ContaReceber, conta_com_boleto.id).status == StatusConta.PAGO
 
 
+def _request_fake(user_id):
+    class FakeRequest:
+        session = {"user_id": user_id}
+        client = None
+
+    return FakeRequest()
+
+
+def test_conferencia_abertos_aponta_boletos_sem_cobranca_ativa(
+    db_session, test_user, conta_com_boleto, monkeypatch
+):
+    """Conferencia inversa: boleto aberto no Sicoob sem cobranca ativa local."""
+    conta_com_boleto.status = StatusConta.EXCLUIDO
+    db_session.commit()
+
+    boletos = [
+        {"nossoNumero": "99001", "seuNumero": "123", "valor": 100.0, "dataVencimento": "2030-01-10"},
+        {"nossoNumero": "99099", "seuNumero": "999", "valor": 50.0, "dataVencimento": "2030-01-10"},
+        {"nossoNumero": "99002", "seuNumero": "124", "valor": 10.0, "dataVencimento": "2030-01-10"},
+    ]
+    monkeypatch.setattr(
+        sicoob, "_buscar_boletos_por_pagador",
+        lambda db, cpf, di=None, df=None, codigo_situacao=None: (boletos, None),
+    )
+
+    # 99002 pertence a uma conta ativa -> nao e divergencia
+    from tests.conftest import criar_cliente_teste
+    cliente = criar_cliente_teste(db_session, cpf_cnpj="99988877000166")
+    ativa = ContaReceber(
+        cliente_id=cliente.id, descricao="Ativa", valor=10,
+        data_vencimento=date(2030, 1, 10), status=StatusConta.PENDENTE,
+        nosso_numero="99002", api_nosso_numero="99002",
+    )
+    db_session.add(ativa)
+    db_session.commit()
+
+    resp = sicoob.conferencia_boletos_abertos(
+        _request_fake(test_user.id), db_session,
+        data_inicio="2026-01-01", data_fim="2030-12-31", offset=0, limite=25,
+    )
+
+    tipos = {d["nossoNumero"]: d["tipo"] for d in resp["divergencias"]}
+    assert tipos.get("99001") == "cancelada_local"
+    assert tipos.get("99099") == "sem_cobranca_local"
+    assert "99002" not in tipos, "boleto com cobranca ativa nao deve ser listado"
+
+
 def test_exclusao_bloqueia_quando_boleto_esta_liquidado(
     db_session, test_user, conta_com_boleto, monkeypatch
 ):
