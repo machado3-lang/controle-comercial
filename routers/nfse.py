@@ -933,11 +933,21 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
         request.session["error"] = "Nenhum item para emitir"
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
-    if _deseja_nfe and not itens_nfe:
+    # 'auto' emite o que existir (NFe, NFSe ou as duas); os tipos explicitos
+    # exigem os itens correspondentes. Antes 'auto' exigia itens de produto
+    # E de serviço, impedindo emitir consolidações só de serviço ou só de
+    # produto por esta rota.
+    if tipo == "nfe" and not itens_nfe:
         request.session["error"] = "Tipo selecionado exige NFe, mas a consolidação não possui itens de produto."
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
-    if _deseja_nfse and not itens_nfse:
+    if tipo == "nfse" and not itens_nfse:
         request.session["error"] = "Tipo selecionado exige NFSe, mas a consolidação não possui itens de serviço."
+        return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
+    if tipo == "ambas" and (not itens_nfe or not itens_nfse):
+        request.session["error"] = (
+            "Tipo selecionado exige NFe e NFSe, mas a consolidação não possui "
+            "itens de produto e de serviço."
+        )
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
     # Validar cliente para NFe
@@ -1085,43 +1095,12 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                 )
                 db.add(nfse_item)
 
-        # Cobranca por nota: 1 conta (parcela) por documento, vinculada a
-        # nfe_id / nfse_id (cada nota ja esta ligada a consolidacao_id). Assim a
-        # NFe recebe sua propria duplicata e nao herda a cobranca da consolidacao
-        # (que causava cStat 853 em nota a vista).
-        from services.parcelamento import (
-            gerar_contas_receber_para_nota, contas_receber_existentes_para,
-            numero_documento_para_cobranca, eh_pagamento_a_vista,
-        )
-        _venc = consolidacao.data_fechamento or date.today()
-        _forma = consolidacao.forma_pagamento or "NFSe"
-        _doc = numero_documento_para_cobranca(consolidacao=consolidacao) or (
-            str(consolidacao.numero) if consolidacao.numero else None
-        )
-        _num_parc = consolidacao.num_parcelas or 1
-        _intervalo = consolidacao.intervalo_dias or 30
-        # Recebimento a vista (dinheiro/pix/debito/avista): nao gera conta a
-        # receber a vencer nem boleto -- o valor e reconhecido como recebido.
-        _gerar_cobranca = not eh_pagamento_a_vista(_forma)
-        if _gerar_cobranca and nfe is not None and not contas_receber_existentes_para(db, nfe=nfe):
-            gerar_contas_receber_para_nota(
-                db, nfe_id=nfe.id, cliente_id=cliente.id,
-                descricao=f"Consolidação {consolidacao.numero} - NFe",
-                valor_total=total_nfe, primeiro_vencimento=_venc,
-                num_parcelas=_num_parc, intervalo_dias=_intervalo,
-                forma_pagamento=_forma, numero_documento=_doc,
-                consolidacao_id=consolidacao_id,
-            )
-        if _gerar_cobranca and nfse is not None and not contas_receber_existentes_para(db, nfse=nfse):
-            gerar_contas_receber_para_nota(
-                db, nfse_id=nfse.id, cliente_id=cliente.id,
-                descricao=f"Consolidação {consolidacao.numero} - NFSe",
-                valor_total=valor_servicos, primeiro_vencimento=_venc,
-                num_parcelas=_num_parc, intervalo_dias=_intervalo,
-                forma_pagamento=_forma, numero_documento=_doc,
-                consolidacao_id=consolidacao_id,
-            )
-
+        # NENHUMA conta a receber e criada aqui: os rascunhos ainda nao sao
+        # documentos autorizados. A cobranca e gerada na TRANSMISSAO, uma por
+        # nota, por _garantir_cobranca_nfe (NFe) e _garantir_cobranca_nfse
+        # (NFSe) — que respeitam a flag "Gerar Cobranca", o parcelamento da
+        # consolidacao, quitam a vista como PAGO e gravam consolidacao_id
+        # (evitando que a NFe herde a cobranca da consolidacao / cStat 853).
         db.commit()
 
         # O boleto NAO eh gerado aqui: ele deve ser emitido SOMENTE apos a NFe/NFSe
@@ -1783,7 +1762,9 @@ def _garantir_cobranca_nfse(db, nfse):
             or "NFSe"
         )
         # Flag "Gerar Cobranca" e o interruptor mestre (pedido ou consolidacao).
-        if (ped and ped.gerar_cobranca is False) or (cons and cons.gerar_cobranca is False):
+        # PedidoConsolidado nao possui a coluna gerar_cobranca (so o pedido tem);
+        # getattr evita AttributeError ao cancelar/gerar cobranca de consolidacao.
+        if (ped and ped.gerar_cobranca is False) or (cons and getattr(cons, "gerar_cobranca", None) is False):
             return
         if contas_receber_existentes_para(db, nfse=nfse):
             return

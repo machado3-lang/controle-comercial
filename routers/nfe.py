@@ -2194,7 +2194,9 @@ def _garantir_cobranca_nfe(db, nfe):
     # Flag "Gerar Cobranca" e o interruptor mestre (pedido ou consolidacao):
     # desligada, nenhuma cobranca automatica (mesmo a prazo). A vista ja nao
     # gera <dup> na NFe (evita cStat 853).
-    if (pedido and pedido.gerar_cobranca is False) or (cons and cons.gerar_cobranca is False):
+    # PedidoConsolidado nao possui a coluna gerar_cobranca (so o pedido tem);
+    # getattr evita AttributeError ao gerar a cobranca de uma consolidacao.
+    if (pedido and pedido.gerar_cobranca is False) or (cons and getattr(cons, "gerar_cobranca", None) is False):
         return
     if contas_receber_existentes_para(db, nfe=nfe):
         return

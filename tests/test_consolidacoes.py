@@ -14,8 +14,8 @@ from httpx import AsyncClient
 from sqlalchemy.orm import Session
 
 from models import (
-    ContaReceber, PedidoConsolidado, PedidoVenda, PedidoVendaItem, Produto,
-    StatusConsolidacao, StatusPedido,
+    ContaReceber, NFe, PedidoConsolidado, PedidoVenda, PedidoVendaItem, Produto,
+    StatusConsolidacao, StatusConta, StatusPedido,
 )
 from tests.conftest import criar_cliente_teste
 
@@ -162,7 +162,7 @@ async def test_emitir_consolidacao_gera_cobranca_por_nota(
         ContaReceber.consolidacao_id == consolidacao_id
     ).count() == 0
 
-    # Emitir cria a cobranca vinculada a NFSe (servico desta consolidacao)
+    # Emitir (rascunho) NAO cria cobranca: nenhuma conta nasce antes da nota.
     resp = await authenticated_client.post(
         f"/nfse/emitir/consolidacao/{consolidacao_id}", data={"csrf_token": csrf}
     )
@@ -171,22 +171,31 @@ async def test_emitir_consolidacao_gera_cobranca_por_nota(
     db_session.expire_all()
     consolidacao = db_session.get(PedidoConsolidado, consolidacao_id)
     assert consolidacao.status == StatusConsolidacao.CONCLUIDO
+    assert db_session.query(ContaReceber).filter(
+        ContaReceber.consolidacao_id == consolidacao_id
+    ).count() == 0
 
+    # A cobranca nasce na transmissao (_garantir_cobranca_nfse), uma por nota:
+    # aqui apenas a NFSe (servico); num_parcelas=3 vira 3 parcelas vinculadas
+    # a nfse_id (e nao a nfe_id), somando o valor total da consolidacao.
+    from routers.nfse import _garantir_cobranca_nfse
+    nfse = consolidacao.nfse
+    assert nfse is not None
+    _garantir_cobranca_nfse(db_session, nfse)
+    db_session.commit()
+
+    db_session.expire_all()
     contas = db_session.query(ContaReceber).filter(
         ContaReceber.consolidacao_id == consolidacao_id
     ).all()
-    # Apenas a NFSe (servico); num_parcelas=3 vira 3 parcelas, todas vinculadas
-    # a nfse_id (e nao a nfe_id), somando o valor total da consolidacao.
     assert len(contas) == 3
     assert all(c.nfse_id is not None for c in contas)
     assert all(c.nfe_id is None for c in contas)
     assert abs(sum(float(c.valor) for c in contas) - 40.0) < 0.01
 
-    # Reemitir nao duplica a cobranca existente
-    resp = await authenticated_client.post(
-        f"/nfse/emitir/consolidacao/{consolidacao_id}", data={"csrf_token": csrf}
-    )
-    assert resp.status_code == 303
+    # Reemitir/chamar de novo nao duplica a cobranca existente
+    _garantir_cobranca_nfse(db_session, nfse)
+    db_session.commit()
     db_session.expire_all()
     assert db_session.query(ContaReceber).filter(
         ContaReceber.consolidacao_id == consolidacao_id
@@ -214,9 +223,32 @@ async def test_pedido_faturado_duas_vezes_nao_duplica_cobranca(
         assert resp.status_code == 303
 
     db_session.expire_all()
+    # Pedido com itens: o faturamento NAO gera cobranca (a conta nasce da nota,
+    # na transmissao), entao finalizar duas vezes nao duplica nada.
     assert db_session.query(ContaReceber).filter(
         ContaReceber.pedido_id == pedido_id
-    ).count() == 2
+    ).count() == 0
+
+    # A cobranca vem da NFe transmitida: 2 parcelas, sem duplicar na 2a chamada.
+    from routers.nfe import _garantir_cobranca_nfe
+    pedido = db_session.get(PedidoVenda, pedido_id)
+    nfe = NFe(
+        pedido_id=pedido_id, cliente_id=pedido.cliente_id, numero="9001",
+        status="issued", valor_total=pedido.total or 0, forma_pagamento="avista",
+    )
+    db_session.add(nfe)
+    db_session.commit()
+    _garantir_cobranca_nfe(db_session, nfe)
+    db_session.commit()
+    _garantir_cobranca_nfe(db_session, nfe)
+    db_session.commit()
+
+    db_session.expire_all()
+    contas = db_session.query(ContaReceber).filter(
+        ContaReceber.pedido_id == pedido_id
+    ).all()
+    assert len(contas) == 2
+    assert all(c.status == StatusConta.PAGO for c in contas)
 
 
 @pytest.mark.asyncio
