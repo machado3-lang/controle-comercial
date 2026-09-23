@@ -4,7 +4,8 @@ from datetime import date
 import pytest
 
 import routers.sicoob as sicoob
-from models import ContaReceber, StatusConta
+from fastapi.responses import RedirectResponse
+from models import ContaReceber, NFe, StatusConta
 from routers.contas import excluir_conta_receber
 from tests.conftest import criar_cliente_teste
 
@@ -156,6 +157,110 @@ def test_exclusao_bloqueia_conta_recebida(db_session, test_user, conta_com_bolet
     assert resp.status_code == 400
     db_session.expire_all()
     assert db_session.get(ContaReceber, conta_com_boleto.id).status == StatusConta.PAGO
+
+
+def test_recibo_sem_nota_continua_gerando_contas(db_session, test_empresa):
+    """Excecao a regra: 'Gerar recibo (sem NFs)' gera a conta no faturamento.
+
+    Nao existe nota nesse fluxo, entao a cobranca nasce ali mesmo — inclusive
+    com a flag "Gerar Cobranca" desligada.
+    """
+    from models import PedidoVenda
+    from routers.pedidos import finalizar_pedido
+
+    cliente = criar_cliente_teste(db_session, cpf_cnpj="55566677788")
+    pedido = PedidoVenda(
+        cliente_id=cliente.id, numero="9901", data=date.today(), total=100,
+        status="APROVADO", forma_pagamento="aprazo", gerar_cobranca=False,
+        num_parcelas=1, intervalo_dias=30, primeiro_vencimento=date(2030, 1, 10),
+    )
+    db_session.add(pedido)
+    db_session.commit()
+
+    class FakeRequest:
+        session = {}
+        client = None
+
+    finalizar_pedido(
+        FakeRequest(), pedido.id, db_session,
+        tipo_pedido="venda", forma_pagamento="aprazo", gerar_boleto=False,
+        terminos_boleto="", gerar_cobranca=False, acao="recibo",
+        num_parcelas=1, primeiro_vencimento="2030-01-10", intervalo_dias=30,
+    )
+
+    db_session.expire_all()
+    contas = db_session.query(ContaReceber).filter(ContaReceber.pedido_id == pedido.id).all()
+    assert len(contas) == 1
+    assert contas[0].status == StatusConta.PENDENTE
+
+
+def test_gerar_contas_para_nota_aceita_pedido_id(db_session, conta_com_boleto):
+    """A cobranca de uma nota pode ser vinculada ao pedido de origem."""
+    from services.parcelamento import gerar_contas_receber_para_nota as gerar
+
+    contas = gerar(
+        db_session, nfe_id=None, cliente_id=conta_com_boleto.cliente_id,
+        descricao="Pedido 89 - NFe", valor_total=50,
+        primeiro_vencimento=date(2030, 1, 10), num_parcelas=1,
+        forma_pagamento="aprazo", pedido_id=999,
+    )
+    db_session.commit()
+
+    assert len(contas) == 1
+    assert contas[0].pedido_id == 999
+
+
+def test_rascunho_nfe_de_pedido_nao_gera_contas(db_session, test_empresa):
+    """Rascunho de NFe a partir de pedido: NFe criada e ZERO contas a receber.
+
+    A cobranca so nasce na transmissao (a nota ainda nao existe como documento
+    autorizado). Antes este trecho quebrava com
+    "gerar_contas_receber_para_nota() got an unexpected keyword argument 'pedido_id'".
+    """
+    import routers.nfe as nfe_router
+    from models import Cliente, Produto, PedidoVenda, PedidoVendaItem
+
+    test_empresa.notaas_api_key = "chave-teste"
+    test_empresa.serie_nfe = 1
+    db_session.commit()
+
+    cliente = criar_cliente_teste(db_session, cpf_cnpj="11122233344")
+    cliente.isento_ie = True
+    db_session.commit()
+    produto = Produto(nome="Produto NFe", preco=10, tipo="produto", ncm="12345678", unidade="UN")
+    db_session.add(produto)
+    db_session.commit()
+
+    pedido = PedidoVenda(
+        cliente_id=cliente.id, numero="9900", data=date.today(), total=10,
+        status="FATURADO", forma_pagamento="aprazo", gerar_cobranca=True,
+        num_parcelas=2, intervalo_dias=30, primeiro_vencimento=date(2030, 1, 10),
+    )
+    db_session.add(pedido)
+    db_session.commit()
+    db_session.add(PedidoVendaItem(
+        pedido_id=pedido.id, produto_id=produto.id, descricao="Produto NFe",
+        quantidade=1, preco_unitario=10, total=10,
+    ))
+    db_session.commit()
+
+    class FakeRequest:
+        session = {}
+        client = None
+
+    req = FakeRequest()
+    resp = nfe_router.emitir_pedido_submit(
+        req, pedido.id, db_session,
+        natureza_operacao="Venda de mercadoria", cfop="5102",
+    )
+
+    assert isinstance(resp, RedirectResponse), req.session
+    db_session.expire_all()
+    nfe = db_session.query(NFe).filter(NFe.pedido_id == pedido.id).first()
+    assert nfe is not None, "o rascunho da NFe deveria ter sido criado"
+    assert nfe.status == "rascunho"
+    assert db_session.query(ContaReceber).filter(ContaReceber.pedido_id == pedido.id).count() == 0
+    assert db_session.query(ContaReceber).filter(ContaReceber.nfe_id == nfe.id).count() == 0
 
 
 def _request_fake(user_id):

@@ -828,48 +828,12 @@ def emitir_pedido_submit(
                 )
             db.add(nfse_item)
 
-        # Cobranca por nota (pedido AVULSO): 1 conta (parcela) por documento,
-        # vinculada a nfe_id / nfse_id e ao proprio pedido. Esta rota atende
-        # apenas pedidos avulsos (consolidados/agrupados sao bloqueados acima),
-        # entao usamos o parcelamento ja informado no pedido em finalizar_pedido.
-        # Assim a NFe recebe sua propria duplicata e nao herda cobranca alheia.
-        from services.parcelamento import (
-            gerar_contas_receber_para_nota, contas_receber_existentes_para,
-            numero_documento_para_cobranca, eh_pagamento_a_vista, quitar_avista,
-        )
-        _venc = pedido.primeiro_vencimento or pedido.data or date.today()
-        _forma = str(pedido.forma_pagamento) if pedido.forma_pagamento else "NFSe"
-        _doc = numero_documento_para_cobranca(pedido=pedido) or (
-            str(pedido.numero) if pedido.numero else None
-        )
-        _num_parc = pedido.num_parcelas or 1
-        _intervalo = pedido.intervalo_dias or 30
-        # A flag "Gerar Cobranca" e o interruptor mestre: desligada, nenhuma
-        # cobranca automatica. A vista (incl. cartao) gera conta JA RECEBIDA
-        # (PAGO) para constar nos relatorios de recebimento sem virar pendente.
-        _gerar_cobranca = bool(pedido.gerar_cobranca) or (pedido.forma_pagamento == "boleto")
-        if _gerar_cobranca:
-            if nfe is not None and not contas_receber_existentes_para(db, nfe=nfe):
-                contas = gerar_contas_receber_para_nota(
-                    db, nfe_id=nfe.id, cliente_id=cliente.id,
-                    descricao=f"Pedido {pedido.numero or '#' + str(pedido.id)} - NFe",
-                    valor_total=total, primeiro_vencimento=_venc,
-                    num_parcelas=_num_parc, intervalo_dias=_intervalo,
-                    forma_pagamento=_forma, numero_documento=_doc,
-                    pedido_id=pedido.id,
-                )
-                quitar_avista(contas, _forma)
-            if nfse is not None and not contas_receber_existentes_para(db, nfse=nfse):
-                contas = gerar_contas_receber_para_nota(
-                    db, nfse_id=nfse.id, cliente_id=cliente.id,
-                    descricao=f"Pedido {pedido.numero or '#' + str(pedido.id)} - NFSe",
-                    valor_total=valor_servicos, primeiro_vencimento=_venc,
-                    num_parcelas=_num_parc, intervalo_dias=_intervalo,
-                    forma_pagamento=_forma, numero_documento=_doc,
-                    pedido_id=pedido.id,
-                )
-                quitar_avista(contas, _forma)
-
+        # NENHUMA conta a receber e criada aqui: enquanto a nota e apenas
+        # RASCUNHO, nao existe documento fiscal autorizado. A cobranca (e o
+        # boleto) sao gerados na TRANSMISSAO, por _garantir_cobranca_nfe
+        # (NFe) e _garantir_cobranca_nfse (NFSe), que respeitam a flag
+        # "Gerar Cobranca", o parcelamento do pedido e gravam pedido_id.
+        # Excecao (sem nota): "Gerar recibo (sem NFs)" em finalizar_pedido.
         db.commit()
         msg = f"Rascunho NFe #{numero_nfe} salvo! Revise antes de transmitir."
         if numero_nfse:

@@ -172,9 +172,10 @@ def gerar_contas_receber_para_nota(
     db, *, nfe_id=None, nfse_id=None, cliente_id, descricao, valor_total,
     primeiro_vencimento, num_parcelas=1, intervalo_dias=30,
     forma_pagamento=None, numero_documento=None, consolidacao_id=None,
+    pedido_id=None,
 ):
     """Cria as parcelas da cobrança de uma NFe ou NFSe, vinculadas ao documento
-    (nfe_id / nfse_id) e, quando aplicável, à consolidação de origem.
+    (nfe_id / nfse_id) e, quando aplicável, à consolidação e ao pedido de origem.
 
     Usado na emissão de consolidações: cada nota (produtos vs serviços) recebe
     sua própria cobrança, evitando misturar os valores e evitando que a NFe
@@ -198,6 +199,7 @@ def gerar_contas_receber_para_nota(
         consolidacao_id=consolidacao_id,
         nfe_id=nfe_id,
         nfse_id=nfse_id,
+        pedido_id=pedido_id,
     )
 
 
