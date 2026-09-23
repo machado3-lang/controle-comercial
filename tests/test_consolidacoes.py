@@ -150,6 +150,7 @@ async def test_emitir_consolidacao_gera_cobranca_por_nota(
     dados = {
         "csrf_token": csrf, "forma_pagamento": "aprazo", "num_parcelas": "3",
         "primeiro_vencimento": "2030-01-10", "intervalo_dias": "30",
+        "gerar_cobranca": "on",
     }
     resp = await authenticated_client.post(
         f"/consolidacoes/{consolidacao_id}/finalizar", data=dados
@@ -200,6 +201,103 @@ async def test_emitir_consolidacao_gera_cobranca_por_nota(
     assert db_session.query(ContaReceber).filter(
         ContaReceber.consolidacao_id == consolidacao_id
     ).count() == 3
+
+
+@pytest.mark.asyncio
+async def test_finalizar_consolidacao_como_recibo_gera_contas(
+    authenticated_client: AsyncClient, db_session: Session, test_empresa
+):
+    """'Gerar recibo (sem NFs)' na consolidação gera a cobrança na finalização.
+
+    Nao havera nota fiscal, entao as contas nascem ali mesmo (igual ao pedido
+    avulso), em 3 parcelas a prazo.
+    """
+    cliente = criar_cliente_teste(db_session)
+    produto = Produto(nome="Servico A", preco=10, tipo="servico")
+    db_session.add(produto)
+    db_session.commit()
+    ids = _criar_pre_vendas(db_session, cliente.id, produto.id, quantos=2)
+
+    csrf = await _csrf(authenticated_client)
+    resp = await authenticated_client.post("/consolidacoes/criar", data={
+        "csrf_token": csrf,
+        "pedido_ids": [str(i) for i in ids],
+    })
+    consolidacao_id = int(resp.headers["location"].rstrip("/").split("/")[-1])
+
+    resp = await authenticated_client.post(
+        f"/consolidacoes/{consolidacao_id}/finalizar",
+        data={
+            "csrf_token": csrf, "forma_pagamento": "aprazo", "num_parcelas": "3",
+            "primeiro_vencimento": "2030-01-10", "intervalo_dias": "30",
+            "acao": "recibo",
+        },
+    )
+    assert resp.status_code == 303
+
+    db_session.expire_all()
+    contas = db_session.query(ContaReceber).filter(
+        ContaReceber.consolidacao_id == consolidacao_id
+    ).all()
+    assert len(contas) == 3
+    assert all(c.status == StatusConta.PENDENTE for c in contas)
+    assert all(c.nfe_id is None and c.nfse_id is None for c in contas)
+
+    consolidacao = db_session.get(PedidoConsolidado, consolidacao_id)
+    assert consolidacao.status == StatusConsolidacao.CONCLUIDO
+    assert consolidacao.primeiro_vencimento.isoformat() == "2030-01-10"
+
+
+@pytest.mark.asyncio
+async def test_finalizar_consolidacao_sem_gerar_cobranca(
+    authenticated_client: AsyncClient, db_session: Session, test_empresa
+):
+    """Flag 'Gerar Cobrança' desligada na consolidação: nenhuma conta nasce."""
+    from routers.nfse import _garantir_cobranca_nfse
+
+    cliente = criar_cliente_teste(db_session)
+    produto = Produto(nome="Servico A", preco=10, tipo="servico")
+    db_session.add(produto)
+    db_session.commit()
+    ids = _criar_pre_vendas(db_session, cliente.id, produto.id, quantos=2)
+
+    csrf = await _csrf(authenticated_client)
+    resp = await authenticated_client.post("/consolidacoes/criar", data={
+        "csrf_token": csrf,
+        "pedido_ids": [str(i) for i in ids],
+    })
+    consolidacao_id = int(resp.headers["location"].rstrip("/").split("/")[-1])
+
+    # sem "gerar_cobranca" no form -> False
+    resp = await authenticated_client.post(
+        f"/consolidacoes/{consolidacao_id}/finalizar",
+        data={"csrf_token": csrf, "forma_pagamento": "aprazo", "num_parcelas": "1"},
+    )
+    assert resp.status_code == 303
+
+    db_session.expire_all()
+    consolidacao = db_session.get(PedidoConsolidado, consolidacao_id)
+    assert consolidacao.gerar_cobranca is False
+
+    # emissao (rascunho) nao gera nada...
+    resp = await authenticated_client.post(
+        f"/nfse/emitir/consolidacao/{consolidacao_id}", data={"csrf_token": csrf}
+    )
+    assert resp.status_code == 303
+    db_session.expire_all()
+    consolidacao = db_session.get(PedidoConsolidado, consolidacao_id)
+    assert consolidacao.nfse is not None
+    assert db_session.query(ContaReceber).filter(
+        ContaReceber.consolidacao_id == consolidacao_id
+    ).count() == 0
+
+    # ...e a transmissao tambem respeita a flag
+    _garantir_cobranca_nfse(db_session, consolidacao.nfse)
+    db_session.commit()
+    db_session.expire_all()
+    assert db_session.query(ContaReceber).filter(
+        ContaReceber.consolidacao_id == consolidacao_id
+    ).count() == 0
 
 
 @pytest.mark.asyncio

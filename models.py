@@ -586,7 +586,12 @@ class PedidoConsolidado(Base):
     observacao = Column(Text, nullable=True)
     forma_pagamento = Column(String(20), nullable=True)
     gerar_boleto = Column(Boolean, default=False)
+    # Interruptor mestre da cobrança automática (espelha PedidoVenda): desligado,
+    # nenhuma conta a receber é gerada para as notas desta consolidação.
+    gerar_cobranca = Column(Boolean, default=True)
     terminos_boleto = Column(Text, nullable=True)
+    # 1º vencimento informado na finalização (usado pela cobrança das notas)
+    primeiro_vencimento = Column(Date, nullable=True)
     periodo_inicio = Column(Date, nullable=True)  # Início do período de consolidação
     periodo_fim = Column(Date, nullable=True)     # Fim do período de consolidação
     created_at = Column(DateTime, default=datetime.now)

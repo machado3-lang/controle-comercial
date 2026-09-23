@@ -666,13 +666,21 @@ def finalizar_consolidacao(
     db: Session = Depends(get_db),
     forma_pagamento: str = Form(...),
     gerar_boleto: bool = Form(False),
+    gerar_cobranca: bool = Form(False),
     terminos_boleto: str = Form(""),
     observacao: str = Form(""),
     num_parcelas: int = Form(1),
     primeiro_vencimento: str = Form(""),
     intervalo_dias: int = Form(30),
+    acao: str = Form("finalizar"),
 ):
-    """Finaliza a consolidação - gera contas a receber e prepara para faturamento"""
+    """Finaliza a consolidação.
+
+    - acao=finalizar (padrão): NÃO gera cobrança; as contas nascem na
+      transmissão das notas (uma por NFe/NFSe).
+    - acao=recibo: fecha sem nota fiscal (recibo), gerando as contas a receber
+      agora, como no "Gerar recibo (sem NFs)" do pedido avulso.
+    """
     consolidacao = db.query(PedidoConsolidado).filter(
         PedidoConsolidado.id == consolidacao_id
     ).first()
@@ -684,9 +692,12 @@ def finalizar_consolidacao(
         request.session["error"] = "Apenas consolidações em aberto podem ser finalizadas"
         return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
+    gerar_recibo = (acao == "recibo")
+
     consolidacao.status = StatusConsolidacao.CONCLUIDO
     consolidacao.forma_pagamento = forma_pagamento if forma_pagamento else None
     consolidacao.gerar_boleto = gerar_boleto
+    consolidacao.gerar_cobranca = gerar_cobranca
     consolidacao.terminos_boleto = terminos_boleto
     if observacao:
         consolidacao.observacao = (consolidacao.observacao or "") + "\n" + observacao
@@ -702,8 +713,39 @@ def finalizar_consolidacao(
         consolidacao.intervalo_dias = int(intervalo_dias) if intervalo_dias else 30
     except (ValueError, TypeError):
         consolidacao.intervalo_dias = 30
+    try:
+        consolidacao.primeiro_vencimento = (
+            date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else None
+        )
+    except ValueError:
+        consolidacao.primeiro_vencimento = None
 
-    # As contas a receber NÃO são geradas aqui: elas são criadas na EMISSÃO
+    # "Gerar recibo (sem NFs)": nao havera nota fiscal, entao a cobranca e gerada
+    # aqui mesmo (igual ao pedido avulso). A vista/cartao gera conta ja RECEBIDA
+    # (PAGO); a prazo/boleto gera a receber e, com "Gerar Boleto", emite o boleto.
+    if gerar_recibo:
+        from services.parcelamento import (
+            gerar_contas_receber, eh_pagamento_a_vista, quitar_avista,
+            emitir_boletos_contas,
+        )
+        _venc = consolidacao.primeiro_vencimento or consolidacao.data_fechamento or date.today()
+        _forma = forma_pagamento or "NFSe"
+        contas_recibo = gerar_contas_receber(
+            db,
+            cliente_id=consolidacao.cliente_id,
+            descricao=f"Consolidação {consolidacao.numero or '#' + str(consolidacao.id)} (Recibo sem NF)",
+            valor_total=consolidacao.total or 0,
+            primeiro_vencimento=_venc,
+            num_parcelas=consolidacao.num_parcelas or 1,
+            intervalo_dias=consolidacao.intervalo_dias or 30,
+            forma_pagamento=_forma,
+            numero_documento=str(consolidacao.numero) if consolidacao.numero else None,
+            consolidacao_id=consolidacao.id,
+        )
+        quitar_avista(contas_recibo, _forma)
+        db.commit()
+
+    # As contas a receber NÃO são geradas aqui (exceto no recibo): elas são criadas na EMISSÃO
     # (routers/nfse.py e routers/nfe.py), uma por documento fiscal, vinculadas
     # diretamente a `nfe_id` / `nfse_id` (cada nota já está ligada à
     # consolidação via `consolidacao_id`). Isso garante (a) uma cobrança por
@@ -721,8 +763,25 @@ def finalizar_consolidacao(
 
     # A emissao dos boletos foi movida para apos a geracao das notas fiscais
     # (rota de emissao da consolidacao em routers/nfse.py), evitando cobrar
-    # antes de existir NFe/NFSe vinculada.
-    request.session["message"] = "Consolidação finalizada com sucesso!"
+    # antes de existir NFe/NFSe vinculada. Excecao: recibo sem NF, em que as
+    # contas ja nasceram aqui e podem receber boleto imediatamente.
+    msg = "Consolidação finalizada com sucesso!"
+    if gerar_recibo:
+        msg = f"Consolidação finalizada como recibo (sem NFs)! {len(contas_recibo)} conta(s) gerada(s)."
+        if contas_recibo and gerar_boleto:
+            from services.parcelamento import emitir_boletos_contas
+            ok, erros = emitir_boletos_contas(db, contas_recibo)
+            if erros:
+                request.session["error"] = (
+                    f"{ok} boleto(s) emitido(s), mas houve erro(s): " + "; ".join(erros)
+                )
+            else:
+                msg += f" {ok} boleto(s) emitido(s)."
+    elif not consolidacao.gerar_cobranca:
+        msg += " Cobrança automática desligada: nenhuma conta será gerada pelas notas."
+    else:
+        msg += " As contas a receber serão geradas ao transmitir as notas fiscais."
+    request.session["message"] = msg
     return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
 
