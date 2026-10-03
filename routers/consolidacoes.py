@@ -319,6 +319,7 @@ async def criar_consolidacao(request: Request, db: Session = Depends(get_db)):
         # Agrega itens dos pedidos selecionados
         itens_agregados = {}  # key: (produto_id, variacao_id, descricao, preco_unitario)
         total_consolidado = Decimal("0")
+        desconto_consolidado = Decimal("0")
 
         for pedido in pedidos:
             for item in pedido.itens:
@@ -351,6 +352,9 @@ async def criar_consolidacao(request: Request, db: Session = Depends(get_db)):
                     "preco_unitario": item.preco_unitario,
                     "total": item.total or Decimal("0"),
                 })
+            # Transporta o desconto do pedido de origem para a consolidacao
+            # (senao o faturamento cobraria o bruto).
+            desconto_consolidado += Decimal(str(pedido.valor_desconto or 0))
             # Marca pedido como consolidado
             pedido.consolidacao_id = consolidacao.id
             pedido.status = StatusPedido.CONSOLIDADO
@@ -387,7 +391,12 @@ async def criar_consolidacao(request: Request, db: Session = Depends(get_db)):
 
             total_consolidado += agg["total"]
 
-        consolidacao.total = total_consolidado
+        consolidacao.total = total_consolidado - desconto_consolidado
+        consolidacao.valor_desconto = desconto_consolidado
+        consolidacao.desconto_percentual = (
+            (desconto_consolidado / total_consolidado * Decimal("100")).quantize(Decimal("0.01"))
+            if total_consolidado > 0 else Decimal("0")
+        )
         db.commit()
     except Exception:
         db.rollback()
@@ -418,7 +427,9 @@ def _rebuild_itens_consolidacao(db, consolidacao):
 
     itens_agregados = {}
     total_consolidado = Decimal("0")
+    desconto_consolidado = Decimal("0")
     for pedido in consolidacao.pedidos_origem:
+        desconto_consolidado += Decimal(str(pedido.valor_desconto or 0))
         for item in pedido.itens:
             if item.item_pai_id is not None:
                 continue
@@ -455,7 +466,12 @@ def _rebuild_itens_consolidacao(db, consolidacao):
                 preco_unitario=orig["preco_unitario"], total=orig["total"],
             ))
         total_consolidado += agg["total"]
-    consolidacao.total = total_consolidado
+    consolidacao.valor_desconto = desconto_consolidado
+    consolidacao.desconto_percentual = (
+        (desconto_consolidado / total_consolidado * Decimal("100")).quantize(Decimal("0.01"))
+        if total_consolidado > 0 else Decimal("0")
+    )
+    consolidacao.total = total_consolidado - desconto_consolidado
 
 
 @router.post("/{consolidacao_id}/adicionar")

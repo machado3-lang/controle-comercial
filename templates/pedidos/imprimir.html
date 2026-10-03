@@ -155,6 +155,10 @@
   <!-- Totais -->
   <div class="totais">
     <table>
+      {% if pedido.valor_desconto %}
+      <tr><td>Subtotal</td><td class="num">R$ {{ "%.2f"|format(pedido.subtotal or 0) }}</td></tr>
+      <tr><td>Desconto ({{ "%.2f"|format(pedido.desconto_percentual or 0) }}%)</td><td class="num">- R$ {{ "%.2f"|format(pedido.valor_desconto or 0) }}</td></tr>
+      {% endif %}
       <tr class="total-final"><td>Total Geral</td><td class="num">R$ {{ "%.2f"|format(pedido.total or 0) }}</td></tr>
     </table>
   </div>

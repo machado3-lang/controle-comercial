@@ -260,7 +260,10 @@ def montar_payload_nfe(
     if data_saida:
         payload["dataSaida"] = data_saida
 
-    total_nota = sum(i.get("valorTotal", 0) for i in payload["items"])
+    # Valor do pagamento = liquido da nota: vProd menos o desconto (vDesc) dos
+    # itens. Antes era o bruto, que divergia do vNF quando havia desconto.
+    desconto_nota = round(sum(float(i.get("desconto") or 0) for i in payload["items"]), 2)
+    total_nota = round(sum(i.get("valorTotal", 0) for i in payload["items"]) - desconto_nota, 2)
     payload["pagamentos"][0]["valor"] = total_nota
 
     # Cobrança / duplicatas (grupo <cobr>/<dup> — obrigatório em venda a prazo).
@@ -293,11 +296,13 @@ def montar_payload_nfe(
             })
         if parcelas:
             total_parcelas = round(sum(p["valor"] for p in parcelas), 2)
+            # Fatura: vOrig = bruto, vDesc = desconto dos itens, vLiq = parcelas
+            # (que ja sao liquidas). Antes o desconto saia zerado na fatura.
             payload["cobranca"] = {
                 "fatura": {
                     "numero": str(numero_nfe or ""),
-                    "valorOriginal": total_parcelas,
-                    "desconto": 0,
+                    "valorOriginal": round(total_parcelas + (desconto_nota or 0), 2),
+                    "desconto": desconto_nota or 0,
                     "valorLiquido": total_parcelas,
                 },
                 "parcelas": parcelas,

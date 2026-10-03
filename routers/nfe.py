@@ -734,7 +734,19 @@ def emitir_pedido_submit(
 
     try:
         numero_nfe = _proximo_numero(empresa, db)
-        total = sum(Decimal(str(i.get("preco_unitario", 0) or 0)) * Decimal(str(i.get("quantidade", 0) or 0)) for i in itens_nfe)
+        # Desconto do pedido: rateado entre a NFe (produtos, como vDesc) e a
+        # NFSe (servicos, no valor unitario) proporcionalmente ao bruto de cada
+        # lado. NFeItem guarda vDesc; o total da nota sai LIQUIDO.
+        from services.desconto import (
+            distribuir_desconto, total_bruto as _total_bruto, ratear_por_bruto,
+            calcular_valores_com_desconto,
+        )
+        bruto_nfe = _total_bruto(itens_nfe)
+        bruto_nfse = _total_bruto(itens_nfse)
+        desc_nfe, desc_nfse = ratear_por_bruto(bruto_nfe, bruto_nfse, pedido.valor_desconto or 0)
+        distribuir_desconto(itens_nfe, desc_nfe)
+        valores_nfse = calcular_valores_com_desconto(itens_nfse, desc_nfse)
+        total = bruto_nfe - desc_nfe
         now = _agora_local(empresa)
         nfe = NFe(
             pedido_id=pedido_id,
@@ -792,10 +804,9 @@ def emitir_pedido_submit(
 
             numero_nfse = str((empresa.ultimo_numero_nfse or 0) + 1)
             empresa.ultimo_numero_nfse = int(numero_nfse)
-            valor_servicos = sum(
-                Decimal(str(item.total or item.preco_unitario or 0)) * Decimal(str(item.quantidade or 1))
-                for item in itens_nfse
-            )
+            # Servicos: sem campo de desconto por item, o rateio entra no valor
+            # unitario — o total da NFS-e sai liquido igual ao do pedido.
+            valor_servicos = sum((t for _, t in valores_nfse), Decimal("0"))
 
             iss_retido = getattr(cliente, 'iss_retido', False) or False
             nfse = NFSe(
@@ -814,19 +825,20 @@ def emitir_pedido_submit(
             db.add(nfse)
             db.flush()
 
-            for item in itens_nfse:
+            for idx, item in enumerate(itens_nfse):
+                _unit, _tot = valores_nfse[idx]
                 nfse_item = NFSeItem(
                     nfse_id=nfse.id,
                     produto_id=item.produto_id,
                     variacao_id=item.variacao_id,
                     descricao=item.descricao or item.produto.nome,
                     quantidade=Decimal(str(item.quantidade or 1)),
-                    valor_unitario=Decimal(str(item.preco_unitario or 0)),
-                    valor_total=Decimal(str(item.total or (item.preco_unitario or 0) * (item.quantidade or 1))),
+                    valor_unitario=_unit,
+                    valor_total=_tot,
                     codigo_servico=item.produto.codigo_lc116 or "",
                     tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
                 )
-            db.add(nfse_item)
+                db.add(nfse_item)
 
         # NENHUMA conta a receber e criada aqui: enquanto a nota e apenas
         # RASCUNHO, nao existe documento fiscal autorizado. A cobranca (e o
@@ -1045,7 +1057,18 @@ def emitir_consolidacao_submit(
 
     try:
         numero_nfe = _proximo_numero(empresa, db)
-        total = sum(Decimal(str(i.get("preco_unitario", 0) or 0)) * Decimal(str(i.get("quantidade", 0) or 0)) for i in itens_nfe)
+        # Desconto da consolidacao (soma dos pedidos de origem), rateado entre
+        # NFe (vDesc por item) e NFSe (valor unitario) proporcionalmente.
+        from services.desconto import (
+            distribuir_desconto, total_bruto as _total_bruto, ratear_por_bruto,
+            calcular_valores_com_desconto,
+        )
+        bruto_nfe = _total_bruto(itens_nfe)
+        bruto_nfse = _total_bruto(itens_nfse)
+        desc_nfe, desc_nfse = ratear_por_bruto(bruto_nfe, bruto_nfse, consolidacao.valor_desconto or 0)
+        distribuir_desconto(itens_nfe, desc_nfe)
+        valores_nfse = calcular_valores_com_desconto(itens_nfse, desc_nfse)
+        total = bruto_nfe - desc_nfe
         now = _agora_local(empresa)
         nfe = NFe(
             consolidacao_id=consolidacao_id,
@@ -1107,7 +1130,8 @@ def emitir_consolidacao_submit(
             empresa.ultimo_numero_nfse = int(numero_nfse)
             # `item.total` já é a soma (quantidade * preco_unitario) agregada na
             # consolidação: não multiplicar por `item.quantidade` de novo.
-            valor_servicos = sum(Decimal(str(item.total or 0)) for item in itens_nfse)
+            # O desconto entra no valor unitario (NFS-e não tem vDesc por item).
+            valor_servicos = sum((t for _, t in valores_nfse), Decimal("0"))
 
             iss_retido = getattr(cliente, 'iss_retido', False) or False
             nfse = NFSe(
@@ -1128,15 +1152,16 @@ def emitir_consolidacao_submit(
             db.add(nfse)
             db.flush()
 
-            for item in itens_nfse:
+            for idx, item in enumerate(itens_nfse):
+                _unit, _tot = valores_nfse[idx]
                 nfse_item = NFSeItem(
                     nfse_id=nfse.id,
                     produto_id=item.produto_id,
                     variacao_id=item.variacao_id,
                     descricao=item.descricao or item.produto.nome,
                     quantidade=Decimal(str(item.quantidade or 1)),
-                    valor_unitario=Decimal(str(item.preco_unitario or 0)),
-                    valor_total=Decimal(str(item.total or (item.preco_unitario or 0) * (item.quantidade or 1))),
+                    valor_unitario=_unit,
+                    valor_total=_tot,
                     codigo_servico=item.produto.codigo_lc116 or "",
                     tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
                 )
@@ -1328,25 +1353,16 @@ def emitir_avulsa_submit(
             **tributos,
         })
 
-    # Desconto global: distribui proporcionalmente como vDesc de cada item,
-    # mantendo o preço unitário intacto (antes "enterrava" o desconto no preço).
-    if desconto > 0:
-        total_bruto = sum(i["preco_unitario"] * i["quantidade"] for i in itens_nfe)
-        if total_bruto > 0:
-            restante = Decimal(str(desconto))
-            n = len(itens_nfe)
-            for idx, item in enumerate(itens_nfe):
-                if n == 1 or idx == n - 1:
-                    v_desc = restante
-                else:
-                    proporcao = (item["preco_unitario"] * item["quantidade"]) / total_bruto
-                    v_desc = (Decimal(str(desconto)) * proporcao).quantize(Decimal("0.01"))
-                    restante -= v_desc
-                item["desconto"] = v_desc
+    # Desconto global: vira vDesc de cada item (proporcional), mantendo o
+    # preço unitário intacto. `valor_total` da NFe e o LIQUIDO (bruto - desconto),
+    # senão a cobrança gerada depois sai pelo valor cheio.
+    from services.desconto import distribuir_desconto, total_bruto as _total_bruto
+    bruto = _total_bruto(itens_nfe)
+    desconto_aplicado = distribuir_desconto(itens_nfe, desconto)
 
     try:
         numero_nfe = _proximo_numero(empresa, db)
-        total = sum(i["preco_unitario"] * i["quantidade"] for i in itens_nfe)
+        total = bruto - desconto_aplicado
         nfe = NFe(
             cliente_id=cliente.id,
             numero=numero_nfe,
@@ -1926,8 +1942,12 @@ def editar_nfe_form(request: Request, nfe_id: int, db: Session = Depends(get_db)
         "preco_unitario": float(i.preco_unitario) if i.preco_unitario else 0,
     } for i in nfe.itens])
 
+    # Desconto ja aplicado: vDesc dos itens (criterio atual). Notas antigas
+    # tiveram o desconto "enterrado" no preco unitario, entao cai no fallback
+    # (bruto dos itens - valor_total) e o valor reaparece na tela.
     total_bruto = float(sum(i.preco_unitario * i.quantidade for i in nfe.itens))
-    desconto = round(max(total_bruto - float(nfe.valor_total or 0), 0), 2)
+    desconto_itens = sum(float(i.desconto or 0) for i in nfe.itens)
+    desconto = round(desconto_itens if desconto_itens > 0 else max(total_bruto - float(nfe.valor_total or 0), 0), 2)
 
     request.session["nfe_avulsa_cliente_id"] = nfe.cliente_id
     request.session["nfe_avulsa_cfop"] = nfe.cfop
@@ -2027,15 +2047,15 @@ def editar_nfe_submit(
             "origem": origem,
         })
 
-    if desconto > 0:
-        total_bruto = sum(i["preco_unitario"] * i["quantidade"] for i in itens_nfe)
-        if total_bruto > 0:
-            fator = Decimal("1") - (Decimal(str(desconto)) / total_bruto)
-            for item in itens_nfe:
-                item["preco_unitario"] = round(item["preco_unitario"] * fator, 2)
+    # Mesmo criterio da criacao: desconto vira vDesc por item (preco unitario
+    # intacto). Antes aqui o desconto era "enterrado" no preco unitario, o que
+    # divergia da emissao e fazia o desconto desaparecer ao reeditar.
+    from services.desconto import distribuir_desconto, total_bruto as _total_bruto
+    bruto = _total_bruto(itens_nfe)
+    desconto_aplicado = distribuir_desconto(itens_nfe, desconto)
 
     try:
-        total = sum(i["preco_unitario"] * i["quantidade"] for i in itens_nfe)
+        total = bruto - desconto_aplicado
 
         for old_item in nfe.itens:
             if old_item.produto_id:

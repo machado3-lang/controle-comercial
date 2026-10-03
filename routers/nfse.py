@@ -645,7 +645,11 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
         # depois pelo botao "Transmitir" na tela da NFSe, igual ao fluxo da NFe
         # e das consolidacoes. Assim o usuario revisa os dados antes de consumir
         # certificado/webservice e o erro de certificado aparece so na transmissao.
-        valor_total = sum(Decimal(str(i.total or 0)) for i in itens_servico)
+        # Desconto do pedido: rateado no valor unitario dos servicos (NFS-e nao
+        # tem vDesc por item). Os itens do pedido NAO sao alterados.
+        from services.desconto import calcular_valores_com_desconto
+        valores_servicos = calcular_valores_com_desconto(itens_servico, pedido.valor_desconto or 0)
+        valor_total = sum((t for _, t in valores_servicos), Decimal("0"))
         if valor_total == 0:
             valor_total = Decimal(str(pedido.total or 0))
 
@@ -669,15 +673,16 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
         db.add(nfse)
         db.flush()
 
-        for item in itens_servico:
+        for idx, item in enumerate(itens_servico):
+            _unit, _tot = valores_servicos[idx]
             nfse_item = NFSeItem(
                 nfse_id=nfse.id,
                 produto_id=item.produto_id,
                 variacao_id=item.variacao_id,
                 descricao=item.descricao or item.produto.nome,
                 quantidade=Decimal(str(item.quantidade or 1)),
-                valor_unitario=Decimal(str(item.preco_unitario or 0)),
-                valor_total=Decimal(str(item.total or 0)),
+                valor_unitario=_unit,
+                valor_total=_tot,
                 codigo_servico=item.produto.codigo_lc116 or "",
                 tributacao_municipal=item.produto.codigo_tributacao_municipal or "",
             )
@@ -977,6 +982,16 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
             return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
 
     try:
+        # Desconto da consolidação: rateado entre NFe (vDesc por item) e NFSe
+        # (no valor unitário) proporcionalmente ao bruto de cada lado.
+        from services.desconto import (
+            distribuir_desconto, total_bruto as _total_bruto, ratear_por_bruto,
+        )
+        bruto_nfe = _total_bruto(itens_nfe)
+        bruto_nfse = _total_bruto(itens_nfse)
+        desc_nfe, desc_nfse = ratear_por_bruto(bruto_nfe, bruto_nfse, consolidacao.valor_desconto or 0)
+        distribuir_desconto(itens_nfe, desc_nfe)
+
         # NFe
         nfe = None
         if gerar_nfe:
@@ -984,7 +999,7 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
             empresa_locked = db.query(Empresa).filter(Empresa.id == empresa.id).with_for_update().first()
             numero_nfe = (empresa_locked.ultimo_numero_nfe or 0) + 1
             empresa_locked.ultimo_numero_nfe = numero_nfe
-            total_nfe = sum(Decimal(str(i.get("preco_unitario", 0)) or 0) * Decimal(str(i.get("quantidade", 0) or 0)) for i in itens_nfe)
+            total_nfe = bruto_nfe - desc_nfe
             now = datetime.now()
             
             nfe = NFe(
@@ -1018,6 +1033,7 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                     quantidade=item.get("quantidade", 1),
                     preco_unitario=item.get("preco_unitario", 0),
                     total=Decimal(str(item.get("quantidade", 1) or 1)) * Decimal(str(item.get("preco_unitario", 0) or 0)),
+                    desconto=item.get("desconto") or Decimal("0"),
                 )
                 db.add(nfe_item)
 
@@ -1060,6 +1076,13 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
             # consolidacao; multiplicar por `item.quantidade` conta o valor em dobro.
             # O valor_total do cabecalho e calculado a partir dos mesmos itens
             # salvos, garantindo cabecalho == soma dos itens (sem desconto negativo).
+            # A parte do desconto destinada aos servicos entra no valor unitario
+            # (NFS-e nao tem vDesc por item).
+            if desc_nfse > 0:
+                from services.desconto import calcular_valores_com_desconto
+                for s, (unit, tot) in zip(servicos_norm, calcular_valores_com_desconto(servicos_norm, desc_nfse)):
+                    s["preco_unitario"] = unit
+                    s["total"] = tot
             valor_servicos = sum(s["total"] for s in servicos_norm)
 
             iss_retido = getattr(cliente, 'iss_retido', False) or False

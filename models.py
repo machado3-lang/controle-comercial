@@ -522,6 +522,11 @@ class PedidoVenda(Base):
     data = Column(Date, nullable=False, default=date.today)
     status = Column(Enum(StatusPedido, name='statuspedido', native_enum=True), default=StatusPedido.PENDENTE, index=True)
     total = Column(Numeric(12, 2), nullable=False, default=0)
+    # Desconto do resumo: o usuario informa em % ou em R$ (os dois campos se
+    # calculam mutuamente na tela). Guardamos os dois para reabrir a edicao sem
+    # perder o criterio usado; `total` e o liquido (subtotal - valor_desconto).
+    desconto_percentual = Column(Numeric(5, 2), nullable=False, default=0)
+    valor_desconto = Column(Numeric(12, 2), nullable=False, default=0)
     observacao = Column(Text, nullable=True)
     tipo_pedido = Column(String(20), default="venda")  # venda ou pre_venda
     forma_pagamento = Column(String(20), nullable=True)
@@ -537,16 +542,26 @@ class PedidoVenda(Base):
     pedido_agrupado_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)
-
     cliente = relationship("Cliente", back_populates="pedidos_venda")
     itens = relationship("PedidoVendaItem", back_populates="pedido", cascade="all, delete-orphan")
     nfse = relationship("NFSe", back_populates="pedido", uselist=False)
     nfes = relationship("NFe", back_populates="pedido")
     consolidacao = relationship("PedidoConsolidado", back_populates="pedidos_origem")
-    pedido_agrupado = relationship("PedidoVenda", remote_side=[id], back_populates="pedidos_origem_agrupamento")
+    pedido_agrupado = relationship("PedidoVenda", remote_side=[id], 
+back_populates="pedidos_origem_agrupamento")
     pedidos_origem_agrupamento = relationship("PedidoVenda", back_populates="pedido_agrupado")
-    itens_origem_consolidado = relationship("PedidoConsolidadoItemOrigem", foreign_keys="[PedidoConsolidadoItemOrigem.pedido_origem_id]", back_populates="pedido_origem")
+    itens_origem_consolidado = relationship("PedidoConsolidadoItemOrigem", 
+foreign_keys="[PedidoConsolidadoItemOrigem.pedido_origem_id]", back_populates="pedido_origem")
 
+    @property
+    def subtotal(self):
+        """Soma dos itens principais (sem os insumos filhos de kit).
+
+        O desconto nao mexe no preco unitario: subtotal - valor_desconto == total.
+        """
+        return sum(
+            (i.total or 0) for i in (self.itens or []) if not i.item_pai_id
+        ) or 0
 
 class PedidoVendaItem(Base):
     __tablename__ = "pedidos_venda_itens"
@@ -583,6 +598,9 @@ class PedidoConsolidado(Base):
     cliente_id = Column(Integer, ForeignKey("clientes.id"), nullable=False, index=True)
     status = Column(Enum(StatusConsolidacao, native_enum=False), default=StatusConsolidacao.ABERTO, index=True)
     total = Column(Numeric(12, 2), nullable=False, default=0)
+    # Desconto herdado dos pedidos de origem (soma): `total` e o liquido.
+    desconto_percentual = Column(Numeric(5, 2), nullable=False, default=0)
+    valor_desconto = Column(Numeric(12, 2), nullable=False, default=0)
     observacao = Column(Text, nullable=True)
     forma_pagamento = Column(String(20), nullable=True)
     gerar_boleto = Column(Boolean, default=False)

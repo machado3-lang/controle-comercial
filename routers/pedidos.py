@@ -1,4 +1,5 @@
 import logging
+from decimal import Decimal, InvalidOperation
 from fastapi import APIRouter, Depends, Request, Form, Query
 from fastapi.responses import RedirectResponse, JSONResponse
 from sqlalchemy.orm import Session
@@ -201,11 +202,21 @@ async def finalizar_grupo(
             )
             db.add(novo_item)
             novo_pedido.total = (novo_pedido.total or 0) + (item.total or 0)
+        # Transporta o desconto dos pedidos de origem (somatorio) para o pedido
+        # agrupado, senao o agrupamento faturaria o valor bruto.
+        novo_pedido.valor_desconto = (novo_pedido.valor_desconto or 0) + (p.valor_desconto or 0)
+        novo_pedido.total = (novo_pedido.total or 0) - (p.valor_desconto or 0)
         # Manter pedido antigo, apenas marcar referência.
         # Status AGRUPADO (e nao FATURADO) evita dupla contagem de receita:
         # o pedido agrupado (novo_pedido) e o unico considerado faturado.
         p.pedido_agrupado_id = novo_pedido.id
         p.status = StatusPedido.AGRUPADO
+        if novo_pedido.total and novo_pedido.total > 0:
+            novo_pedido.desconto_percentual = (
+                Decimal(str(novo_pedido.valor_desconto or 0))
+                / Decimal(str((novo_pedido.total or 0) + (novo_pedido.valor_desconto or 0)))
+                * Decimal("100")
+            ).quantize(Decimal("0.01"))
     novo_pedido.observacao = f"Pedidos agrupados: {pedidos_numeros}"
     # Gera cobrança para o pedido agrupado (evita pedido "solta" sem
     # conta a receber) — mesmo padrão de finalizar_pedido.
@@ -259,13 +270,29 @@ def salvar_pedido(
     observacao: str = Form(""),
     forma_pagamento: str = Form("avista"),
     itens: str = Form("[]"),
-    pedido_id: str = Form("")
+    pedido_id: str = Form(""),
+    desconto_percentual: str = Form("0"),
+    valor_desconto: str = Form("0"),
 ):
     import json
     cliente_id_int = int(cliente_id) if cliente_id else None
     if not cliente_id_int:
         return RedirectResponse(url="/pedidos/", status_code=303)
     pedido_id_int = int(pedido_id) if pedido_id else None
+
+    def _decimal(v):
+        try:
+            return Decimal(str(v).replace(",", ".").strip() or "0")
+        except (InvalidOperation, ValueError):
+            return Decimal("0")
+
+    # Desconto do resumo: a tela envia os dois campos (sempre consistentes
+    # entre si). O R$ prevalece quando informado; a % e recalculada a partir
+    # do subtotal. `total` e salvo LIQUIDO (o desconto nao mexe no preco
+    # unitario dos itens).
+    pct_desc = min(Decimal("100"), max(Decimal("0"), _decimal(desconto_percentual)))
+    valor_desc = max(Decimal("0"), _decimal(valor_desconto))
+
     if pedido_id:
         # EDIÇÃO: Atualizar pedido existente
         pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
@@ -362,7 +389,18 @@ def salvar_pedido(
                     fornecedor_id=produto.fornecedor_id if produto else None,
                 )
                 db.add(pi)
-        pedido.total = total
+        subtotal = Decimal(str(total))
+        if valor_desc <= 0 and pct_desc > 0:
+            valor_desc = (subtotal * pct_desc / Decimal("100")).quantize(Decimal("0.01"))
+        # Nunca deixa o desconto comer mais que o proprio pedido
+        valor_desc = min(valor_desc, subtotal)
+        if subtotal > 0:
+            pct_desc = (valor_desc / subtotal * Decimal("100")).quantize(Decimal("0.01"))
+        else:
+            pct_desc = Decimal("0")
+        pedido.desconto_percentual = pct_desc
+        pedido.valor_desconto = valor_desc
+        pedido.total = max(Decimal("0"), subtotal - valor_desc)
         db.commit()
     except Exception as e:
         db.rollback()

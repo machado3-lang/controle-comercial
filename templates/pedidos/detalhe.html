@@ -56,6 +56,10 @@
                 {% endfor %}
             </tbody>
             <tfoot class="bg-slate-950/50">
+                {% if pedido.valor_desconto %}
+                <tr><td colspan="5" class="px-3 py-2 text-end text-slate-300">Subtotal:</td><td class="px-3 py-2 text-right text-slate-200">R$ {{ "%.2f"|format(pedido.subtotal or 0) }}</td></tr>
+                <tr><td colspan="5" class="px-3 py-2 text-end text-rose-300">Desconto ({{ "%.2f"|format(pedido.desconto_percentual or 0) }}%):</td><td class="px-3 py-2 text-right text-rose-400">- R$ {{ "%.2f"|format(pedido.valor_desconto or 0) }}</td></tr>
+                {% endif %}
                 <tr><td colspan="5" class="px-3 py-2 text-end text-emerald-400 font-bold">Total:</td><td class="px-3 py-2 text-right text-emerald-400 font-bold">R$ {{ "%.2f"|format(pedido.total or 0) }}</td></tr>
             </tfoot>
         </table>
