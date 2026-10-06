@@ -126,6 +126,14 @@ def run_migrations():
     except Exception as e:
         print(f"[MIGRATION] Warning: could not seed ultimo_numero_dps: {e}")
 
+    # Seed/backfill: garante conta de receita padrao e classifica retroativamente
+    # as contas a receber que nasceram sem plano de contas (services/seed_classificacao.py).
+    try:
+        from services.seed_classificacao import seed_classificacao_contabil
+        seed_classificacao_contabil()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not seed classificacao contabil: {e}")
+
 
 def _add_missing_columns():
     """Add missing columns to existing tables for schema evolution.

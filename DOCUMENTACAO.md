@@ -21,6 +21,7 @@ Sistema web completo para gestão comercial com integração Bling ERP v3.
 |------------|---------|
 | [DOCUMENTACAO_BACKUP.md](DOCUMENTACAO_BACKUP.md) | Backup e restore: agendamento automático, modos `sobrepor`/`limpar`, retenção e UI. |
 | [DOCUMENTACAO_ASSINATURAS.md](DOCUMENTACAO_ASSINATURAS.md) | Assinaturas recorrentes, vencimento e histórico. |
+| [DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md](DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md) | Classificação contábil automática: conta de receita no produto, cascata de resolução, plano de contas e DRE. |
 | [DOCUMENTACAO_BOLETOS.md](DOCUMENTACAO_BOLETOS.md) | Boletos Sicoob: emissão, reemissão e valor líquido. |
 | [DOCUMENTACAO_ITENS.md](DOCUMENTACAO_ITENS.md) | Produtos/serviços/kits (itens). |
 | [DOCUMENTACAO_NFE.md](DOCUMENTACAO_NFE.md) | NFe: NotaAs, distribuição SEFAZ e importação. |
@@ -455,13 +456,17 @@ Revisão técnica completa do sistema cobrindo segurança, tratamento de erros, 
 
 **Existentes e funcionais:**
 - PDF listas: Contas a Pagar/Receber (corrigido), Pedidos (`/pedidos/{id}/pdf`), Produtos selecionados (`/produtos/pdf-selecionados`), Boleto Sicoob, DANFE (NFe) e DANFSE (NFSe).
-- HTML financeiros: Previsão de Recebimentos (`/contas/previsao-recebimentos`), Inadimplência (`/contas/inadimplencia`) e **DRE** (`/contas/dre`, com plano de contas + não-classificados).
+- HTML financeiros: Previsão de Recebimentos (`/contas/previsao-recebimentos`), Inadimplência (`/contas/inadimplencia`) e **DRE** (`/contas/dre`, com plano de contas hierárquico, subtotais por grupo e linha de não-classificados).
 - Excel export: Contas a Pagar/Receber (`/pagar/exportar`, `/receber/exportar`).
+
+**Classificação contábil:** as contas a receber passam a ser classificadas automaticamente pela origem do documento — ver [DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md](DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md). A conta de receita mora em `produtos.conta_receita_id` e a resolução acontece em um único ponto (`services/parcelamento.py:gerar_contas_receber`), cobrindo NF-e, NFS-e, OS, pedido, consolidação, assinatura e importação de boleto. Restam como lacuna a **partida dobrada** (lançamentos/razão) e o **regime de competência** — o DRE continua em base de caixa.
 
 **Lacunas (sugestões de implementação futura):**
 - Recibo individual de pagamento/recebimento (1 conta) em PDF.
 - Relatório de vendas por período/cliente e extrato por cliente/fornecedor.
 - Razão contábil e fluxo de caixa projetado (além da previsão atual).
+- Partida dobrada: tabelas `lancamentos`/`periodos` e contas correntes por cliente/fornecedor.
+- Ampliar `PlanoDeContas.tipo` (hoje é `String(10)`, só `receita`/`despesa`) para comportar `ativo`/`passivo`/`patrimônio`.
 
 ### Certificados Digitais no Railway
 

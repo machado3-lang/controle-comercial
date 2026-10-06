@@ -259,6 +259,11 @@ class ContaReceber(Base):
     pedido_id = Column(Integer, ForeignKey("pedidos_venda.id"), nullable=True, index=True)
     nfe_id = Column(Integer, ForeignKey("nfe.id"), nullable=True, index=True)
     os_id = Column(Integer, ForeignKey("ordens_servico.id"), nullable=True, index=True)
+    # True quando a conta de receita foi resolvida pelo fallback da empresa em
+    # vez de vir dos itens do documento (nota mista, origem sem itens, ou
+    # documento sem vinculo). Sinaliza "confirme esta classificacao" na tela de
+    # contas a receber; a conta ja vem preenchida para o DRE fechar.
+    classificacao_revisar = Column(Boolean, default=False, index=True)
 
     cliente = relationship("Cliente", back_populates="contas_receber")
     tipo_documento = relationship("TipoDocumento", back_populates="contas_receber")
@@ -448,6 +453,14 @@ class Produto(Base):
     aliquota_cofins = Column(Numeric(5, 2), nullable=True)  # % COFINS
     cest = Column(String(7), nullable=True)  # Código Especificador da Substituição Tributária
     codigo_beneficio_fiscal = Column(String(10), nullable=True)  # cBenef (ex.: SP070130)
+    # Conta de receita no plano de contas. Origem da classificacao contabil
+    # automatica das contas a receber: um produto/servico pode ser vendido por
+    # qualquer documento (NF-e, NFS-e, OS, pedido) e e este campo que define
+    # para onde a receita vai no DRE. Produto e Servico sao linhas desta mesma
+    # tabela (discriminadas por `tipo`), entao um unico campo cobre os dois.
+    conta_receita_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True, index=True)
+
+    conta_receita = relationship("PlanoDeContas", foreign_keys=[conta_receita_id])
 
     @property
     def preco_padrao(self):
@@ -766,6 +779,11 @@ class Empresa(Base):
     reg_ap_trib_sn = Column(Integer, nullable=True, default=1)  # apuração tributos SN p/ optante ME/EPP
     p_tot_trib_sn = Column(Float, nullable=True, default=0.0)  # % aprox. total trib. SN (Lei 12.741)
     nfe_ultnsu = Column(String(20), nullable=True)  # Último NSU consultado na SEFAZ
+    # Conta de receita usada como fallback final da cascata de classificacao
+    # (services/parcelamento.py: resolver_conta_receita). Garante que nenhuma
+    # conta a receber nasca sem classificacao, mesmo quando o documento tem
+    # itens sem conta ou ha divergencia entre itens (nota mista).
+    conta_receita_padrao_id = Column(Integer, ForeignKey("plano_contas.id"), nullable=True, index=True)
     cfop_padrao = Column(String(4), nullable=False, default="5102")
     crt = Column(Integer, nullable=False, default=3)  # Código Regime Tributário: 1=SN, 2=SN Excesso, 3=Normal, 4=MEI
     fuso_horario = Column(Integer, nullable=False, default=-4)
@@ -834,6 +852,8 @@ class PlanoDeContas(Base):
     children = relationship("PlanoDeContas", back_populates="parent", remote_side=[id])
     contas_pagar = relationship("ContaPagar", back_populates="plano_conta")
     contas_receber = relationship("ContaReceber", back_populates="plano_conta")
+    produtos = relationship("Produto", back_populates="conta_receita",
+                            foreign_keys="[Produto.conta_receita_id]")
 
 
 class AuditLog(Base):

@@ -352,6 +352,29 @@ function marcarTodos(master, name) {
     });
 }
 
+// Classificacao contabil em lote: o form de classificacao fica fora do form de
+// envio de documentos (HTML nao aceita forms aninhados), entao os ids
+// selecionados na tabela sao copiados para o hidden antes do submit.
+document.addEventListener('submit', function (ev) {
+    var form = ev.target;
+    if (!form || form.id !== 'formClassificarLote') return;
+    var destino = form.querySelector('select[name="plano_conta_id"]');
+    if (!destino || !destino.value) {
+        ev.preventDefault();
+        alert('Escolha a conta de destino.');
+        return;
+    }
+    var marcados = document.querySelectorAll('input[name="conta_ids"]:checked');
+    if (marcados.length === 0) {
+        ev.preventDefault();
+        alert('Selecione ao menos uma conta para classificar.');
+        return;
+    }
+    var ids = [];
+    marcados.forEach(function (cb) { ids.push(cb.value); });
+    form.querySelector('#contaIdsClassificar').value = ids.join(',');
+});
+
 function validarEnvio(name) {
     var selecionados = document.querySelectorAll('input[name="' + name + '"]:checked');
     if (selecionados.length === 0) {

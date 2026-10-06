@@ -59,6 +59,43 @@ def conta_vencida(conta, hoje: date = None) -> bool:
     )
 
 
+def _contas_receita_para_selecao(db, conta_atual_id=None):
+    """Contas de receita para os selects de classificação.
+
+    Inclui a conta ja vinculada mesmo quando ela esta inativa. Sem isso, o
+    select nao traria a opção corrente e salvar o form zeraria
+    `plano_conta_id`, apagando a classificacao existente — os dois filtros
+    abaixo (tipo/ativo) sao identicos aos de `/contas/dre`, entao o usuario
+    enxerga a conta classificada exatamente como ela aparece no relatorio.
+    """
+    contas = (
+        db.query(PlanoDeContas)
+        .filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True)
+        .order_by(PlanoDeContas.codigo)
+        .all()
+    )
+    if conta_atual_id and not any(c.id == conta_atual_id for c in contas):
+        atual = db.query(PlanoDeContas).filter(PlanoDeContas.id == conta_atual_id).first()
+        if atual is not None:
+            contas = sorted(contas + [atual], key=lambda c: c.codigo or "")
+    return contas
+
+
+def _contas_despesa_para_selecao(db, conta_atual_id=None):
+    """Espelho de `_contas_receita_para_selecao` para as contas a pagar."""
+    contas = (
+        db.query(PlanoDeContas)
+        .filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True)
+        .order_by(PlanoDeContas.codigo)
+        .all()
+    )
+    if conta_atual_id and not any(c.id == conta_atual_id for c in contas):
+        atual = db.query(PlanoDeContas).filter(PlanoDeContas.id == conta_atual_id).first()
+        if atual is not None:
+            contas = sorted(contas + [atual], key=lambda c: c.codigo or "")
+    return contas
+
+
 @router.get("/pagar")
 def contas_pagar(
     request: Request, db: Session = Depends(get_db),
@@ -209,7 +246,7 @@ def editar_conta_pagar_form(request: Request, conta_id: int, db: Session = Depen
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
-    planos_contas_despesa = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
+    planos_contas_despesa = _contas_despesa_para_selecao(db, conta.plano_conta_id)
     irmas = []
     if conta.parcelamento_grupo:
         irmas = db.query(ContaPagar).filter(
@@ -287,6 +324,7 @@ def contas_receber(
     data_inicio: str = Query(""), data_fim: str = Query(""),
     page: int = Query(1), per_page: int = Query(20),
     sort: str = Query("data_vencimento"), ordem: str = Query("asc"),
+    classificacao: str = Query(""),
 ):
     from sqlalchemy import func
     hoje = date.today()
@@ -333,6 +371,13 @@ def contas_receber(
         except ValueError:
             request.session["message"] = {"tipo": "danger", "texto": "Data de fim inválida. Use o formato AAAA-MM-DD."}
             return RedirectResponse(url="/contas/receber", status_code=303)
+    # Filtro de classificacao contábil: sem conta, para revisar, ou por conta.
+    if classificacao == "sem_conta":
+        query = query.filter(ContaReceber.plano_conta_id.is_(None))
+    elif classificacao == "revisar":
+        query = query.filter(ContaReceber.classificacao_revisar == True)
+    elif classificacao.isdigit():
+        query = query.filter(ContaReceber.plano_conta_id == int(classificacao))
     if sort == "cliente":
         query = query.outerjoin(Cliente, ContaReceber.cliente_id == Cliente.id)
     total_count = query.count()
@@ -351,6 +396,12 @@ def contas_receber(
     tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
     planos_contas_receita = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     planos_contas_despesa = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
+    # Contadores para o filtro de classificação aparecer no menu.
+    q_ativa = db.query(ContaReceber).filter(
+        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA])
+    )
+    cont_sem_conta = q_ativa.filter(ContaReceber.plano_conta_id.is_(None)).count()
+    cont_revisar = q_ativa.filter(ContaReceber.classificacao_revisar == True).count()
     return request.app.state.templates.TemplateResponse(request, 
         "contas/receber.html",
         {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0,
@@ -359,6 +410,7 @@ def contas_receber(
          "data_inicio": data_inicio, "data_fim": data_fim,
          "tipos_documento": tipos_documento, "planos_contas_receita": planos_contas_receita,
          "planos_contas_despesa": planos_contas_despesa,
+         "classificacao": classificacao, "qtd_sem_conta": cont_sem_conta, "qtd_revisar": cont_revisar,
          "page": page, "per_page": per_page, "total_pages": total_pages, "total_count": total_count,
          "sort": sort, "ordem": ordem}
     )
@@ -441,7 +493,7 @@ def editar_conta_receber_form(request: Request, conta_id: int, db: Session = Dep
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome, "fantasia": c.fantasia or '', "cpf_cnpj": c.cpf_cnpj} for c in clientes]
     tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
-    planos_contas_receita = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
+    planos_contas_receita = _contas_receita_para_selecao(db, conta.plano_conta_id)
     irmas = []
     if conta.parcelamento_grupo:
         irmas = db.query(ContaReceber).filter(
@@ -496,6 +548,9 @@ def atualizar_conta_receber(
     conta.tipo_documento_id = to_int(tipo_documento_id)
     conta.plano_conta_id = to_int(plano_conta_id)
     conta.forma_pagamento = forma_pagamento
+    # Classificacao confirmada manualmente: limpa o marcador de revisao.
+    if conta.plano_conta_id:
+        conta.classificacao_revisar = False
     # Data de recebimento: usa a informada; se vazia e a conta foi paga, assume hoje
     dr = to_date(data_recebimento)
     if dr:
@@ -571,6 +626,49 @@ def excluir_conta_receber(request: Request, conta_id: int, db: Session = Depends
         request.client.host if request.client else None
     )
     return JSONResponse({"ok": True, "redirect": "/contas/receber", "message": "Conta excluída." + aviso})
+
+
+@router.post("/receber/classificar-lote")
+def classificar_contas_receber_lote(
+    request: Request, db: Session = Depends(get_db),
+    conta_ids: str = Form(""), plano_conta_id: str = Form(""),
+):
+    """Classifica varias contas a receber de uma vez na conta escolhida.
+
+    Usa o array `conta_ids` que a listagem ja produz (checkbox "marcarTodos"), e
+    que ate entao nao tinha nenhuma acao consumindo. Aplicado aos leftovers do
+    backfill (boletos importados, cobrancas recorrentes), deixa de exigir abrir
+    uma conta por vez.
+    """
+    ids = [int(i) for i in (conta_ids or "").replace(",", " ").split() if str(i).strip().isdigit()]
+    if not ids:
+        request.session["error"] = "Selecione ao menos uma conta para classificar."
+        return RedirectResponse(url="/contas/receber", status_code=303)
+
+    try:
+        conta_id_alvo = int(plano_conta_id) if plano_conta_id else None
+    except (TypeError, ValueError):
+        conta_id_alvo = None
+
+    if conta_id_alvo is None:
+        request.session["error"] = "Selecione a conta de destino."
+        return RedirectResponse(url="/contas/receber", status_code=303)
+
+    conta_destino = db.query(PlanoDeContas).filter(PlanoDeContas.id == conta_id_alvo).first()
+    if conta_destino is None or conta_destino.tipo != "receita":
+        request.session["error"] = "Conta de destino inválida: escolha uma conta do tipo 'receita'."
+        return RedirectResponse(url="/contas/receber", status_code=303)
+
+    atualizadas = (
+        db.query(ContaReceber)
+        .filter(ContaReceber.id.in_(ids), ContaReceber.status != StatusConta.EXCLUIDO)
+        .update({ContaReceber.plano_conta_id: conta_id_alvo,
+                 ContaReceber.classificacao_revisar: False},
+                synchronize_session=False)
+    )
+    db.commit()
+    request.session["message"] = f"{atualizadas} conta(s) classificada(s) em {conta_destino.codigo} - {conta_destino.nome}."
+    return RedirectResponse(url="/contas/receber", status_code=303)
 
 
 @router.post("/pagar/{conta_id}/baixar")
@@ -939,55 +1037,126 @@ def dre(
         di = datetime.strptime(data_inicio, "%Y-%m-%d").date()
         df = datetime.strptime(data_fim, "%Y-%m-%d").date()
     except ValueError:
-        request.session["message"] = {"tipo": "danger", "texto": "Formato de data inválido. Use AAAA-MM-DD."}
+        request.session["message"] = {"tipo": "danger", "texto": "Formato de data inválida. Use AAAA-MM-DD."}
         return RedirectResponse(url="/contas/dre", status_code=303)
 
-    DRELine = namedtuple("DRELine", ["codigo", "nome", "nivel", "parent_id"])
+    DRELine = namedtuple("DRELine", ["codigo", "nome", "nivel", "parent_id", "valor", "filhos"])
 
-    receitas = db.query(
-        PlanoDeContas, sql_func.coalesce(sql_func.sum(ContaReceber.valor), 0)
-    ).outerjoin(ContaReceber, and_(
-        ContaReceber.plano_conta_id == PlanoDeContas.id,
-        ContaReceber.status == StatusConta.PAGO,
-        ContaReceber.data_recebimento >= di,
-        ContaReceber.data_recebimento <= df
-    )).filter(
-        PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True
-    ).group_by(PlanoDeContas.id, PlanoDeContas.codigo, PlanoDeContas.nome, PlanoDeContas.nivel, PlanoDeContas.parent_id).order_by(PlanoDeContas.codigo).all()
+    # Soma o valor efetivamente liquidado: `valor_total` e `valor + juros -
+    # desconto` na baixa (routers/contas.py:baixa). Somar `valor` descartava juros
+    # e desconto do resultado. COALESCE cobre contas sem baixa, onde
+    # `valor_total` ainda e NULL.
+    def _soma(modelo, coluna_data):
+        return sql_func.coalesce(sql_func.sum(
+            sql_func.coalesce(modelo.valor_total, modelo.valor)
+        ), 0)
 
-    despesas = db.query(
-        PlanoDeContas, sql_func.coalesce(sql_func.sum(ContaPagar.valor), 0)
-    ).outerjoin(ContaPagar, and_(
-        ContaPagar.plano_conta_id == PlanoDeContas.id,
-        ContaPagar.status == StatusConta.PAGO,
-        ContaPagar.data_pagamento >= di,
-        ContaPagar.data_pagamento <= df
-    )).filter(
-        PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True
-    ).group_by(PlanoDeContas.id, PlanoDeContas.codigo, PlanoDeContas.nome, PlanoDeContas.nivel, PlanoDeContas.parent_id).order_by(PlanoDeContas.codigo).all()
+    def _montar(tipo):
+        """Linhas do DRE com rollup dos grupos (pai = soma dos filhos).
 
-    # Include unclassified (plano_conta_id=NULL) accounts so DRE always reconciles
-    receitas_sem_class = db.query(sql_func.coalesce(sql_func.sum(ContaReceber.valor), 0)).filter(
-        ContaReceber.status == StatusConta.PAGO,
-        ContaReceber.data_recebimento >= di,
-        ContaReceber.data_recebimento <= df,
-        ContaReceber.plano_conta_id.is_(None)
-    ).scalar() or 0.0
+        Contas inativas NAO sao filtradas: desativar uma conta de resultado
+        punha os lancamentos manuais que apontam para ela fora do relatorio.
+        O que for folha soma direto; o que for grupo soma os filhos, para
+        aparecer como subtotal em negrito no template.
+        """
+        modelo = ContaReceber if tipo == "receita" else ContaPagar
+        coluna_data = ContaReceber.data_recebimento if tipo == "receita" else ContaPagar.data_pagamento
 
-    despesas_sem_class = db.query(sql_func.coalesce(sql_func.sum(ContaPagar.valor), 0)).filter(
-        ContaPagar.status == StatusConta.PAGO,
-        ContaPagar.data_pagamento >= di,
-        ContaPagar.data_pagamento <= df,
-        ContaPagar.plano_conta_id.is_(None)
-    ).scalar() or 0.0
+        direta = dict(db.query(
+            PlanoDeContas.id, _soma(modelo, coluna_data)
+        ).outerjoin(modelo, and_(
+            getattr(modelo, "plano_conta_id") == PlanoDeContas.id,
+            modelo.status == StatusConta.PAGO,
+            coluna_data >= di,
+            coluna_data <= df
+        )).filter(
+            PlanoDeContas.tipo == tipo
+        ).group_by(PlanoDeContas.id).all())
+
+        return direta
+
+    # Mapas de hierarquia, calculados em Python: uma consulta por nivel e mais
+    # simples de manter do que um group by recursivo no SQL e o volume do plano
+    # de contas e pequeno.
+    por_id = {c.id: c for c in db.query(PlanoDeContas).filter(
+        PlanoDeContas.tipo.in_(["receita", "despesa"])
+    ).all()}
+
+    filhos_de = {}
+    for c in por_id.values():
+        filhos_de.setdefault(c.parent_id, []).append(c)
+
+    def _ordenar(cid):
+        return sorted(cid, key=lambda x: x.codigo or "")
+
+    def _linhas(tipo, direta):
+        """Achata a arvore em linhas, marcando grupo/folha e o total da linha."""
+
+        def _total_da_arvore(conta):
+            """Soma direta + soma de todos os descendentes.
+
+            Um grupo pode ter lançamentos direto e tambem filhos; somar so
+            os filhos perderia o que foi lançado no proprio grupo.
+            """
+            total = direta.get(conta.id, 0) or 0
+            for filho in _ordenar(filhos_de.get(conta.id, [])):
+                total += _total_da_arvore(filho)
+            return total
+
+        linhas = []
+
+        def _varrer(conta):
+            sub = _ordenar(filhos_de.get(conta.id, []))
+            e_grupo = bool(sub)
+            valor = _total_da_arvore(conta) if e_grupo else (direta.get(conta.id, 0) or 0)
+            linhas.append(DRELine(conta.codigo, conta.nome, conta.nivel or 1,
+                                 conta.parent_id, valor, e_grupo))
+            for filho in sub:
+                _varrer(filho)
+
+        raizes = _ordenar([c for c in por_id.values()
+                           if c.tipo == tipo and c.parent_id not in por_id])
+        for raiz in raizes:
+            _varrer(raiz)
+        return linhas
+
+    receitas = _linhas("receita", _montar("receita"))
+    despesas = _linhas("despesa", _montar("despesa"))
+
+    def _soma_total(linhas):
+        """Soma apenas as contas de 1o nivel (raizes) e a linha avulsa.
+
+        Somar todas as linhas contaria em dobro: um grupo ja carrega a soma dos
+        filhos, entao 3 + 3.1 + 3.1.1 somaria o mesmo dinheiro tres vezes.
+        """
+        total = 0
+        for linha in linhas:
+            eh_raiz = linha.parent_id not in por_id
+            if eh_raiz or linha.codigo == "--":
+                total += linha.valor
+        return total
+
+    # Contas sem classificacao entram como linha a parte para o DRE fechar.
+    def _sem_class(modelo, coluna_data):
+        return db.query(sql_func.coalesce(sql_func.sum(
+            sql_func.coalesce(modelo.valor_total, modelo.valor)), 0
+        )).filter(
+            modelo.status == StatusConta.PAGO,
+            coluna_data >= di,
+            coluna_data <= df,
+            modelo.plano_conta_id.is_(None)
+        ).scalar() or 0.0
+
+    receitas_sem_class = _sem_class(ContaReceber, ContaReceber.data_recebimento)
+    despesas_sem_class = _sem_class(ContaPagar, ContaPagar.data_pagamento)
 
     if receitas_sem_class > 0:
-        receitas.append((DRELine("--", "Sem Classificação", 0, None), receitas_sem_class))
+        receitas.append(DRELine("--", "Sem Classificação", 0, None, receitas_sem_class, False))
     if despesas_sem_class > 0:
-        despesas.append((DRELine("--", "Sem Classificação", 0, None), despesas_sem_class))
+        despesas.append(DRELine("--", "Sem Classificação", 0, None, despesas_sem_class, False))
 
-    total_receitas = sum(r[1] for r in receitas)
-    total_despesas = sum(d[1] for d in despesas)
+    total_receitas = _soma_total(receitas)
+    total_despesas = _soma_total(despesas)
     saldo = total_receitas - total_despesas
 
     return request.app.state.templates.TemplateResponse(request, 

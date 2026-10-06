@@ -21,6 +21,8 @@ def build_tree(contas, parent_id=None, nivel=0):
 
 @router.get("")
 def listar_planos(request: Request, db: Session = Depends(get_db)):
+    if not verificar_admin(request, db):
+        return RedirectResponse(url="/", status_code=303)
     contas = db.query(PlanoDeContas).order_by(PlanoDeContas.codigo).all()
     tree = build_tree(contas)
     return request.app.state.templates.TemplateResponse(request, 
@@ -102,7 +104,9 @@ def excluir_conta(request: Request, conta_id: int, db: Session = Depends(get_db)
 
 
 @router.get("/json")
-def planos_json(tipo: str = "", db: Session = Depends(get_db)):
+def planos_json(request: Request, tipo: str = "", db: Session = Depends(get_db)):
+    if not verificar_admin(request, db):
+        return JSONResponse({"erro": "Acesso negado"}, status_code=403)
     query = db.query(PlanoDeContas).filter(PlanoDeContas.ativo == True)
     if tipo:
         query = query.filter(PlanoDeContas.tipo == tipo)

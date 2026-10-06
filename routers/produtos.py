@@ -20,6 +20,7 @@ import logging
 from database import get_db
 from models import Produto, Fornecedor, CategoriaProduto, PedidoVenda, MarcaProduto, ProdutoVariacao
 from models import ProdutoComposicao, Empresa, Assinatura, PedidoVendaItem, PedidoConsolidadoItem
+from models import PlanoDeContas
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
 
@@ -103,6 +104,69 @@ def _proximo_codigo_produto(db: Session) -> str:
             return f"{i:05d}"
 
     return f"{inicio + 1:05d}"
+
+
+def _contas_receita(db: Session):
+    """Contas de receita ativas para o select do cadastro de produto.
+
+    Lista plana (sem indentacao) porque o campo e de folha: a receita de um
+    item deve cair em uma conta de resultado, nunca em um grupo.
+    """
+    return (
+        db.query(PlanoDeContas)
+        .filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True)
+        .order_by(PlanoDeContas.codigo)
+        .all()
+    )
+
+
+def _conta_receita_padrao_cadastro(db: Session):
+    """Conta de receita sugerida no cadastro: `empresa.conta_receita_padrao_id`,
+    ou a primeira conta de folha de receita."""
+    empresa = db.query(Empresa).order_by(Empresa.id).first()
+    if empresa and empresa.conta_receita_padrao_id:
+        conta = (
+            db.query(PlanoDeContas)
+            .filter(PlanoDeContas.id == empresa.conta_receita_padrao_id,
+                    PlanoDeContas.ativo == True)
+            .first()
+        )
+        if conta:
+            return conta.id
+    folha = (
+        db.query(PlanoDeContas)
+        .filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True,
+                PlanoDeContas.nivel >= 2)
+        .order_by(PlanoDeContas.codigo)
+        .first()
+    )
+    if folha:
+        return folha.id
+    return None
+
+
+def _validar_conta_receita(db: Session, conta_receita_id):
+    """Valida a conta de receita escolhida no cadastro de produto.
+
+    Retorna `(id_ou_None, erro_ou_None)`. Exigir a conta no cadastro (e nao na
+    emissao da nota) e o que impede contas a receber sem classificacao: o
+    problema nasce aqui, e barrar aqui nunca para o faturamento.
+    """
+    if not conta_receita_id:
+        return None, None
+
+    conta = (
+        db.query(PlanoDeContas)
+        .filter(PlanoDeContas.id == conta_receita_id)
+        .first()
+    )
+    if conta is None:
+        return None, "Conta de receita inválida."
+    if conta.tipo != "receita":
+        return None, "A conta de receita deve ser uma conta do tipo 'receita'."
+    if not conta.ativo:
+        return None, f"A conta {conta.codigo} está inativa."
+    return conta.id, None
 
 
 router = APIRouter(prefix="/produtos", tags=["Produtos"])
@@ -204,7 +268,7 @@ def novo_produto_form(request: Request, db: Session = Depends(get_db)):
     itens_disponiveis = db.query(Produto).options(selectinload(Produto.variacoes)).order_by(Produto.nome).all()
     itens_json = [{"id": i.id, "nome": i.nome, "preco": float(i.preco or 0), "tipo": i.tipo, "descricao": i.descricao or i.nome} for i in itens_disponiveis if i.tipo in ('produto', 'servico')]
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
-    return request.app.state.templates.TemplateResponse(request, "produtos/form.html", {"request": request, "produto": None, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "UNIDADES_COMERCIAIS": UNIDADES_COMERCIAIS, "editar": False, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "proximo_codigo": _proximo_codigo_produto(db), "fornecedores_json": fornecedores_json})
+    return request.app.state.templates.TemplateResponse(request, "produtos/form.html", {"request": request, "produto": None, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "UNIDADES_COMERCIAIS": UNIDADES_COMERCIAIS, "editar": False, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "proximo_codigo": _proximo_codigo_produto(db), "fornecedores_json": fornecedores_json, "contas_receita": _contas_receita(db), "conta_receita_padrao_id": _conta_receita_padrao_cadastro(db)})
 
 
 @router.post("/novo")
@@ -242,11 +306,19 @@ def criar_produto(
     aliquota_cofins: str = Form(""),
     cest: str = Form(""),
     codigo_beneficio_fiscal: str = Form(""),
+    conta_receita_id: int = Form(0),
     foto: UploadFile = File(None),
 ):
     if not codigo:
         codigo = _proximo_codigo_produto(db)
     preco_val = to_decimal(preco, "0.00")
+    conta_receita_val, erro_conta = _validar_conta_receita(db, conta_receita_id)
+    if erro_conta:
+        request.session['error'] = erro_conta
+        return RedirectResponse(url='/produtos/novo', status_code=303)
+    if conta_receita_id and not conta_receita_val:
+        request.session['error'] = 'Conta de receita inválida.'
+        return RedirectResponse(url='/produtos/novo', status_code=303)
     foto_path = None
     if foto and foto.filename:
         ext = foto.filename.split('.')[-1] if '.' in foto.filename else ''
@@ -297,6 +369,7 @@ def criar_produto(
         aliquota_cofins=to_decimal(aliquota_cofins) if aliquota_cofins and aliquota_cofins.strip() else None,
         cest=cest or None,
         codigo_beneficio_fiscal=codigo_beneficio_fiscal or None,
+        conta_receita_id=conta_receita_val,
         situacao=situacao,
         foto=foto_path,
         bling_pending_sync=True,
@@ -379,7 +452,7 @@ def editar_produto(request: Request, produto_id: int, db: Session = Depends(get_
     fornecedores_json = [{"id": f.id, "nome": f.nome, "fantasia": f.fantasia or '', "cpf_cnpj": f.cpf_cnpj} for f in fornecedores]
     return request.app.state.templates.TemplateResponse(request, 
         "produtos/form.html",
-        {"request": request, "produto": produto, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "UNIDADES_COMERCIAIS": UNIDADES_COMERCIAIS, "editar": True, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "fornecedores_json": fornecedores_json}
+        {"request": request, "produto": produto, "fornecedores": fornecedores, "categorias": categorias, "marcas": marcas, "UNIDADES_MEDIDA": UNIDADES_MEDIDA, "UNIDADES_COMERCIAIS": UNIDADES_COMERCIAIS, "editar": True, "variacoes": variacoes, "variacoes_json": variacoes_json, "itens_json": itens_json, "itens_disponiveis": itens_disponiveis, "fornecedores_json": fornecedores_json, "contas_receita": _contas_receita(db), "conta_receita_padrao_id": _conta_receita_padrao_cadastro(db)}
     )
 
 
@@ -418,10 +491,18 @@ def atualizar_produto(
     aliquota_cofins: str = Form(""),
     cest: str = Form(""),
     codigo_beneficio_fiscal: str = Form(""),
+    conta_receita_id: int = Form(0),
     foto: UploadFile = File(None),
 ):
     produto = db.query(Produto).filter(Produto.id == produto_id).first()
     if produto:
+        conta_receita_val, erro_conta = _validar_conta_receita(db, conta_receita_id)
+        if erro_conta:
+            request.session['error'] = erro_conta
+            return RedirectResponse(url=f'/produtos/{produto_id}/editar', status_code=303)
+        if conta_receita_id and not conta_receita_val:
+            request.session['error'] = 'Conta de receita inválida.'
+            return RedirectResponse(url=f'/produtos/{produto_id}/editar', status_code=303)
         preco_val = to_decimal(preco) if preco and preco.strip() else produto.preco
         produto.codigo = codigo if codigo else None
         produto.nome = nome
@@ -465,6 +546,7 @@ def atualizar_produto(
         produto.aliquota_cofins = to_decimal(aliquota_cofins) if aliquota_cofins and aliquota_cofins.strip() else None
         produto.cest = cest or None
         produto.codigo_beneficio_fiscal = codigo_beneficio_fiscal or None
+        produto.conta_receita_id = conta_receita_val
         produto.situacao = situacao
         produto.bling_pending_sync = True
         db.commit()

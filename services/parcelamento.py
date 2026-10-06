@@ -18,6 +18,8 @@ from decimal import Decimal, ROUND_DOWN
 from models import ContaReceber, ContaPagar, StatusConta
 from sqlalchemy import or_
 
+from services.classificacao_contabil import resolver_conta_receita
+
 logger = logging.getLogger(__name__)
 
 # Status considerados "emitidos" para NFe/NFSe ao decidir o numero do documento
@@ -132,12 +134,31 @@ def gerar_contas_receber(
 ):
     """Cria N ContaReceber (parcelas) na sessao. NAO faz commit.
 
+    Quando `plano_conta_id` chega vazio, a conta de receita e resolvida
+    automaticamente (services/classificacao_contabil.py) a partir dos itens do
+    documento de origem (NF-e, NFS-e, pedido ou OS) e, na falta, da conta padrao
+    da empresa. Assim os fluxos automaticos de faturamento nao dependem de
+    informar a conta.
+
     Retorna a lista de contas criadas (adicionadas via db.add).
     """
     try:
         num_parcelas = max(1, int(num_parcelas or 1))
     except (ValueError, TypeError):
         num_parcelas = 1
+
+    if not plano_conta_id:
+        plano_conta_id, revisar = resolver_conta_receita(
+            db,
+            nfe_id=nfe_id,
+            nfse_id=nfse_id,
+            pedido_id=pedido_id,
+            os_id=os_id,
+            cliente_id=cliente_id,
+        )
+    else:
+        revisar = False
+
     parcelas = calcular_parcelas(valor_total, num_parcelas, primeiro_vencimento, intervalo_dias)
     grupo = str(uuid.uuid4()) if num_parcelas > 1 else None
     contas = []
@@ -163,6 +184,8 @@ def gerar_contas_receber(
             parcelamento_grupo=grupo,
             status=StatusConta.PENDENTE,
         )
+        if revisar:
+            conta.classificacao_revisar = True
         db.add(conta)
         contas.append(conta)
     return contas
@@ -172,7 +195,7 @@ def gerar_contas_receber_para_nota(
     db, *, nfe_id=None, nfse_id=None, cliente_id, descricao, valor_total,
     primeiro_vencimento, num_parcelas=1, intervalo_dias=30,
     forma_pagamento=None, numero_documento=None, consolidacao_id=None,
-    pedido_id=None,
+    pedido_id=None, plano_conta_id=None,
 ):
     """Cria as parcelas da cobrança de uma NFe ou NFSe, vinculadas ao documento
     (nfe_id / nfse_id) e, quando aplicável, à consolidação e ao pedido de origem.
@@ -180,6 +203,9 @@ def gerar_contas_receber_para_nota(
     Usado na emissão de consolidações: cada nota (produtos vs serviços) recebe
     sua própria cobrança, evitando misturar os valores e evitando que a NFe
     herde a cobrança da consolidação (cStat 853). Não faz commit.
+
+    `plano_conta_id` é opcional: quando ausente, a conta de receita é resolvida
+    a partir dos itens da nota (services/classificacao_contabil.py).
     """
     try:
         if not valor_total or Decimal(str(valor_total)) <= 0:
@@ -200,6 +226,7 @@ def gerar_contas_receber_para_nota(
         nfe_id=nfe_id,
         nfse_id=nfse_id,
         pedido_id=pedido_id,
+        plano_conta_id=plano_conta_id,
     )
 
 
