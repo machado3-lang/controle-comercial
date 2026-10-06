@@ -10,6 +10,7 @@ from models import Produto, PedidoVenda, PedidoVendaItem, Cliente, StatusPedido,
 from models_nfe import NFSe, NFe
 from app.core.security import confirma_senha_usuario
 from services.audit import registrar_auditoria
+from services.guarda_faturamento import bloqueio_faturamento
 
 logger = logging.getLogger(__name__)
 
@@ -621,8 +622,13 @@ def finalizar_pedido(
     pedido = db.query(PedidoVenda).filter(PedidoVenda.id == pedido_id).first()
     faturar_recibo = (acao == "recibo")
     if pedido:
-        if pedido.consolidacao_id is not None:
-            request.session["error"] = "Este pedido pertence a uma consolidação; fature pela consolidação"
+        # Regra unica de faturamento (services/guarda_faturamento.py): pedido ja
+        # consolidado ou agrupado e faturado pelo documento que o representa.
+        # Sem esta guarda, "Finalizar" neste pedido criava uma segunda cobranca
+        # da mesma venda — receita 2x no financeiro.
+        bloqueio = bloqueio_faturamento(pedido)
+        if bloqueio:
+            request.session["error"] = bloqueio["completa"]
             return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
         pedido.status = StatusPedido.FATURADO
         pedido.tipo_pedido = tipo_pedido

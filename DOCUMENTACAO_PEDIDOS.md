@@ -27,19 +27,24 @@
    ├─ Imprimir (térmica/A4)        ├─ /consolidacoes/nova  (seleciona PRÉ-VENDAs)
    │   pedidos.py:578              │   consolidacoes.py:103
    │                               │
-   ├─ Finalizar (fatura)           ├─ /consolidacoes/criar (agrega itens)
-   │   pedidos.py:492              │   consolidacoes.py:244
-   │   → status FATURADO           │   → PedidoConsolidado (ABERTO→CONCLUIDO)
-   │   → gera ContaReceber         │   → finalizar_consolidacao:661
-   │   → baixa estoque             │   → gera ContaReceber (parcelamento/boleto)
-   │   → (opcional) boleto         │   → imprimir_consolidacao:785
-   │                               │
-   ├─ Emitir NFSe  (serviços)      ├─ Emitir NF (NFSe+NFe) a partir da consolidação
-   │   nfse.py:362                 │   nfse.py:668  /  nfe.py:918
-   │   → gera ContaReceber         │
-   │                               │
-   └─ Emitir NFe (produtos)        └─ (NFe de consolidação SEM geração de cobrança
-       nfe.py:652                     própria; a cobrança vem de finalizar_consolidacao)
+    ├─ Finalizar (fatura)           ├─ /consolidacoes/criar (agrega itens)
+    │   pedidos.py:492              │   consolidacoes.py:244
+    │   → status FATURADO           │   → PedidoConsolidado (ABERTO→CONCLUIDO)
+    │   → NÃO gera ContaReceber     │   → finalizar_consolidacao:661
+    │     (exceto ação "recibo")    │   → NÃO gera ContaReceber
+    │   → baixa estoque             │     (exceto ação "recibo")
+    │                               │
+    ├─ Emitir NFSe  (serviços)      ├─ Emitir NF (NFSe+NFe) a partir da consolidação
+    │   nfse.py:362                 │   nfse.py:668  /  nfe.py:918
+    │   → rascunho (sem cobrança)   │   → rascunhos (sem cobrança)
+    │                               │
+    └─ Emitir NFe (produtos)
+        nfe.py:652
+        → rascunho (sem cobrança)
+
+    Cobrança (ContaReceber) e boleto nascem na TRANSMISSÃO da nota
+    ( _garantir_cobranca_nfe / _garantir_cobranca_nfse ), uma por nota.
+    Exceção: "Gerar recibo (sem NFs)" gera as contas na finalização.
 ```
 
 **Modelos centrais** (`models.py`):
@@ -67,10 +72,40 @@
   preciso mudar o **status** para `PRE_VENDA` (via `atualizar_status`,
   `pedidos.py:437`).
 - Kits: em `salvar_pedido` (`:285-312`) o kit vira um item-pai + itens-
-  filho (composição) persistidos no pedido. O `pedido.total` soma apenas
-  o preço do kit-pai (correto), mas os filhos também ficam gravados com
-  seus próprios `total`. Ao exibir, é preciso tomar cuidado para não
-  somar pai+filhos.
+   filho (composição) persistidos no pedido. O `pedido.total` soma apenas
+   o preço do kit-pai (correto), mas os filhos também ficam gravados com
+   seus próprios `total`. Ao exibir, é preciso tomar cuidado para não
+   somar pai+filhos.
+
+### 2.1. Desconto no resumo (% e R$)
+
+**Regra:** o desconto **não** é "enterrado" no preço unitário. O
+subtotal é a soma dos itens-pai e `total` é o **líquido**
+(`subtotal - valor_desconto`).
+
+- Modelo `PedidoVenda` (`models.py`): `desconto_percentual`
+  (`Numeric(5,2)`), `valor_desconto` (`Numeric(12,2)`) e a property
+  `subtotal` (soma só dos itens sem `item_pai_id`).
+- Migration: `alembic/versions/b7c8d9e0f1a2_desconto_pedido_venda.py`
+  (idempotente; o startup também cria a coluna via `_add_missing_columns`).
+- Tela (`templates/pedidos/form.html`): o card **Resumo** fica fora do
+  `<form>`, por isso os valores viajam nos hidden
+  `desconto_percentual` / `valor_desconto` (mesmo padrão da NFe avulsa,
+  que usa `descontoHidden`). Os dois campos se calculam mutuamente e
+  **nunca** o campo em foco é reescrito (era isso que impedia digitar
+  centavos no R$); o último campo editado é a fonte da verdade quando
+  itens mudam (`reaplicarDesconto`).
+- Backend (`salvar_pedido`): o R$ prevalece quando informado, senão
+  deriva da %; o desconto é limitado ao subtotal e a % é recalculada a
+  partir do valor aplicado.
+- O desconto aparece em `detalhe.html` e `imprimir.html` (Subtotal /
+  Desconto / Total) e o agrupamento de pré-venda (`finalizar_grupo`)
+  transporta a soma dos descontos de origem para o pedido agrupado.
+- Propagação: o desconto do pedido chega à NFe (como `vDesc` por item) e à
+  NFS-e (no valor unitário), rateado proporcionalmente quando o pedido tem
+  produtos e serviços (`services/desconto.py`). Na consolidação, o desconto
+  é a soma dos descontos dos pedidos de origem (ver §6 e
+  `DOCUMENTACAO_NFE.md` §10.2).
 
 ---
 
@@ -91,9 +126,11 @@
 - `finalizar_grupo` (`:157-195`) **não gera ContaReceber nem baixa
   estoque**. O novo pedido FATURADO fica "solto" — só gera cobrança/
   baixa se o usuário depois clicar em "Finalizar" esse pedido agrupado.
-- Os pedidos originais (AGRUPADO) continuam no banco e **não têm guarda
-  contra re-emissão de NF** (ver seção 6). Risco de nota fiscal duplicada
-  e de receita contabilizada 2x (pedido agrupado + original).
+- Os pedidos originais (AGRUPADO) continuam no banco. A receita contabilizada
+  2x foi **CORRIGIDA** — ver "Receita duplicada por faturamento duplo" no fim
+  deste documento. A NF-e e a NFS-e já recusavam pedido agrupado/consolidado;
+  faltava a mesma guarda em "Finalizar pedido", que era o caminho que gerava
+  a segunda cobrança.
 
 ### 3.2. Mecanismo B — Consolidação completa (modelo `PedidoConsolidado`)
 `routers/consolidacoes.py`
@@ -324,19 +361,25 @@ visual idêntico entre "Imprimir/Salvar PDF" no navegador e o download PDF.
    *Correção:* invocar `cancelar_nfe` / cancelamento Betha e só então
    liberar pedidos.
 
-4. **Geração de cobrança assimétrica.**
-   - NFSe de pedido → gera ContaReceber (`nfse.py:461`).
-   - NFe de pedido (`nfe.py:652`) → **não gera** ContaReceber.
-   - NF de consolidação (`nfse.py:668`) → **não gera** ContaReceber
-     (depende de `finalizar_consolidacao`).
-   Resultado: cobrança pode faltar conforme o caminho percorrido.
+4. **Geração de cobrança assimétrica.** *(corrigido em set/2026)*
+   - Antes: NFSe de pedido gerava na emissão, NFe de pedido não gerava, e a
+     consolidação dependia do `finalizar_consolidacao` — a cobrança faltava
+     conforme o caminho.
+   - Agora: **nenhuma conta nasce antes da nota**. NFe e NFSe (pedido ou
+     consolidação) geram a cobrança na **transmissão**, uma por documento
+     (`_garantir_cobranca_nfe` / `_garantir_cobranca_nfse`). A única exceção é o
+     **recibo (sem NFs)**, que gera as contas na finalização.
+   - Detalhe da NFe de pedido: o rascunho chegou a gerar cobrança e quebrava com
+     `gerar_contas_receber_para_nota() got an unexpected keyword 'pedido_id'`
+     (impossibilitando criar o rascunho). Ver `DOCUMENTACAO_BUG_COBRANCA_NOTAS.md`.
 
 5. **Status desacoplado da realidade fiscal.**
-   `finalizar_pedido` (`pedidos.py:492`) marca `FATURADO` e gera
-   cobrança **sem exigir NF**; e a emissão de NF não marca o pedido como
-   FATURADO. É possível "faturar" (cobrar) sem nota e emitir nota sem
-   faturar. Um ERP deve amarrar: NF emitida ⇒ pedido FATURADO; e cobrança
-   derivada da NF (fonte única de verdade).
+   `finalizar_pedido` (`pedidos.py:492`) marca `FATURADO` **sem exigir NF** e sem
+   gerar cobrança (salvo recibo); a emissão de NF não marca o pedido como
+   FATURADO (somente a transmissão o faz, via `nfe.py`). Continua possível
+   "faturar" sem nota — para esse caso existe o botão **"Gerar recibo (sem NFs)"**,
+   que gera a cobrança. Amarração recomendada: NF transmitida ⇒ pedido FATURADO ⇒
+   cobrança derivada da NF (fonte única de verdade).
 
 ---
 
@@ -349,11 +392,25 @@ visual idêntico entre "Imprimir/Salvar PDF" no navegador e o download PDF.
   consolidacao/nfse/nfe já faturados).
 - `emitir_boletos_contas` (`:224`) — boletos Sicoob (ignora já emitidos).
 
-**Gatilhos de cobrança:**
-- `finalizar_pedido` (`pedidos.py:492`) — gera ContaReceber + boleto.
-- `finalizar_consolidacao` (`consolidacoes.py:661`) — gera ContaReceber
-  + boleto.
-- `emitir_nfse` (`nfse.py:362`) — gera ContaReceber vinculada à NFSe.
+**Gatilhos de cobrança (regra vigente — set/2026):**
+- **Transmissão da nota** (`_garantir_cobranca_nfe` / `_garantir_cobranca_nfse`) —
+  caminho normal para pedido e consolidação, uma conta por NFe/NFSe, com
+  `pedido_id` / `consolidacao_id` / `nfe_id` / `nfse_id`.
+- **Recibo (sem NFs)** (`finalizar_pedido` com `acao=recibo`;
+  `finalizar_consolidacao` com `acao=recibo`) — gera as contas na finalização
+  (não haverá nota).
+- **Pedido sem itens** (fechado sem NFs) — `finalizar_pedido` gera as contas
+  quando `gerar_cobranca` está ligado ou a forma é `boleto`.
+- Botão manual **"Gerar Cobrança"** na NFe/NFSe (após autorizada).
+
+**Flags e campos:**
+- `gerar_cobranca` (pedido e consolidação): interruptor mestre. Desligado →
+  nenhuma conta automática.
+- `gerar_boleto`: só vale quando **não haverá nota** (recibo / pedido sem itens).
+  Com nota, o boleto depende de `forma_pagamento == "boleto"` e sai após a
+  autorização (`emitir_boleto_para_nota`).
+- `num_parcelas`, `intervalo_dias`, `primeiro_vencimento`: definem o parcelamento
+  (o 1º vencimento da consolidação passou a ser persistido).
 
 **Pendências:**
 - A cobrança usa `pedido.total` / `consolidacao.total`, mas a NF pode
@@ -480,3 +537,80 @@ e consistência). Destaque:
 7. Auditoria fiscal de emissão/cancelamento.
 8. PDF real de consolucação.
 
+
+
+---
+
+## Receita duplicada por faturamento duplo (corrigido)
+
+### O problema
+
+Um pedido que entra em **agrupamento** (`finalizar_grupo`) ou em
+**consolidação** (`criar_consolidacao`) passa a ser faturado pelo documento que
+o representa: o pedido agrupado ou a consolidação. Se o pedido de origem
+também fosse faturado, a mesma venda entraria duas vezes no financeiro e no
+DRE.
+
+Quem gerava a duplicidade era `POST /pedidos/{id}/finalizar`:
+
+- `nfe.py` e `nfse.py` já recusavam pedido `CONSOLIDADO`/`AGRUPADO` na emissão;
+- `atualizar_status` já bloqueia status terminais;
+- **`finalizar_pedido` só checava `consolidacao_id`** — não checava o
+  agrupamento. E era a única rota que gerava cobrança direta (`acao="recibo"`,
+  ou pedido sem itens).
+
+Com a_group, o caminho era:
+
+```
+finalizar_grupo   -> cria pedido agrupado FATURADO + gera cobrança
+                    (originais marcados AGRUPADO + pedido_agrupado_id)
+finalizar_pedido(ORIGINAL, acao="recibo")
+                  -> SEM guarda de agrupamento -> gera 2ª cobrança  <-- receita 2x
+```
+
+### A correção
+
+A regra foi reunida em **`services/guarda_faturamento.py`**, função
+`bloqueio_faturamento(pedido)`, aplicada nos três pontos de faturamento:
+
+| Ponto | Antes | Agora |
+|---|---|---|
+| `pedidos.py:finalizar_pedido` | só `consolidacao_id` | guarda única (**o buraco**) |
+| `nfe.py` | guarda inline, texto próprio | guarda única |
+| `nfse.py` | guarda inline, texto próprio | guarda única |
+
+A regra bloqueia quando o pedido já tem representação própria, checando **o
+vínculo e o status**:
+
+- `consolidacao_id` preenchido **ou** status `CONSOLIDADO`
+- `pedido_agrupado_id` preenchido **ou** status `AGRUPADO`
+
+Checar os dois porque `status` é uma coluna `String`: pode estar gravado de
+forma inconsistente, e o vínculo é a evidência mais forte. Consolidação tem
+prioridade sobre agrupamento quando ambos existem.
+
+`CANCELADO` e `FATURADO` **não** são bloqueados — cancelar e reverter são
+operações legítimas, tratadas em cada rota.
+
+### Armadilha evitada: comparar Enum com string
+
+`StatusPedido` é um `Enum` comum (não str-based) e `.value` é minúsculo:
+
+```python
+StatusPedido.CONSOLIDADO == "CONSOLIDADO"   # False!
+```
+
+A guarda original comparava direto com string em um ponto e passaria batido.
+Por isso `_eh_status` normaliza Enum, string e caixa.
+
+### Testes
+
+`tests/test_receita_duplicada.py` (11 testes), incluindo a contraprova de que
+pedido normal com recibo **continua** gerando cobrança.
+
+Os 3 testes de regressão foram validados **revertendo a guarda**: sem ela,
+exatamente 3 falham (os que reproduzem a duplicidade). Não são testes vazios.
+
+> Detalhe de teste: o middleware de CSRF barra o POST antes da rota rodar. Sem
+> extrair o token, os testes de "deve bloquear" dariam verde por vazio. O helper
+> `_csrf()` lê o token do próprio form de finalização.

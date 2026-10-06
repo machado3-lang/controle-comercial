@@ -14,6 +14,7 @@ from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsoli
 from models_nfe import NFSe, NFSeItem, NFSeRecebida, NFe, NFeItem
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
 from services.nfse_service import formatar_aviso_nfse
+from services.guarda_faturamento import bloqueio_faturamento
 from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional, NFSE_NACIONAL_NS
 from services.nfe_notaas import explodir_itens_consolidacao, _limpar_doc
 
@@ -606,15 +607,10 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
     if not pedido:
         raise HTTPException(status_code=404, detail="Pedido nÃ£o encontrado")
 
-    if pedido.consolidacao_id is not None:
+    bloqueio = bloqueio_faturamento(pedido)
+    if bloqueio:
         return JSONResponse(
-            {"error": "Este pedido pertence a uma consolidação; fature pela consolidação."},
-            status_code=400,
-        )
-
-    if pedido.status == StatusPedido.AGRUPADO:
-        return JSONResponse(
-            {"error": "Este pedido foi agrupado em outro pedido; a nota fiscal deve ser emitida pelo pedido agrupado para evitar duplicidade."},
+            {"error": bloqueio["completa"]},
             status_code=400,
         )
 

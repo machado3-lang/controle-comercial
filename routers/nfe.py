@@ -23,6 +23,7 @@ from services.nfe_notaas import (
     explodir_itens_consolidacao, consultar_municipios,
     carta_correcao_nfe, _limpar_doc
 )
+from services.guarda_faturamento import bloqueio_faturamento
 
 logger = logging.getLogger(__name__)
 
@@ -704,12 +705,11 @@ def emitir_pedido_submit(
         request.session["error"] = "Pedido não encontrado"
         return RedirectResponse(url="/nfe", status_code=303)
 
-    if pedido.consolidacao_id is not None:
-        request.session["error"] = "Este pedido pertence a uma consolidação; fature pela consolidação."
-        return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
-
-    if pedido.status == StatusPedido.AGRUPADO:
-        request.session["error"] = "Este pedido foi agrupado em outro pedido; a NFe deve ser emitida pelo pedido agrupado para evitar duplicidade."
+    # Regra unica de faturamento (services/guarda_faturamento.py) — mesma que
+    # protege `finalizar_pedido`, `POST /nfse/...` e a consolidacao.
+    bloqueio = bloqueio_faturamento(pedido)
+    if bloqueio:
+        request.session["error"] = bloqueio["completa"]
         return RedirectResponse(url=f"/pedidos/{pedido_id}", status_code=303)
 
     nfe_existente = db.query(NFe).filter(NFe.pedido_id == pedido_id).first()
