@@ -33,10 +33,32 @@ pip install -r requirements.txt
 python -m uvicorn main:app --reload --port 8000
 ```
 
-## Admin Padrão
-- Email: `admin@controle.com`
-- Senha: `admin123`
-- Execute `/auth/setup` para garantir permissões de admin
+## Documentação
+
+| Documento | Assunto |
+|---|---|
+| [DOCUMENTACAO.md](DOCUMENTACAO.md) | Índice geral e visão do sistema. |
+| [MOTOR_CONTABIL.md](MOTOR_CONTABIL.md) | **Próximo passo:** o que falta para contabilidade de verdade (partida dobrada, razão, competência) e os 5 bloqueios a decidir. |
+| [DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md](DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md) | Classificação automática das contas a receber pelo plano de contas. |
+| [DOCUMENTACAO_PEDIDOS.md](DOCUMENTACAO_PEDIDOS.md) | Pedidos de venda, agrupamento, consolidação e a correção da receita duplicada. |
+| [DOCUMENTACAO_FATURAMENTO_COBRANCA.md](DOCUMENTACAO_FATURAMENTO_COBRANCA.md) | Fluxo de faturamento e cobrança. |
+| [DOCUMENTACAO_BOLETOS.md](DOCUMENTACAO_BOLETOS.md) | Boletos Sicoob. |
+| [DOCUMENTACAO_BACKUP.md](DOCUMENTACAO_BACKUP.md) | Backup e restore. |
+
+## Conta administrativa
+
+O usuário inicial é criado em `/auth/setup` com a senha **definida na
+execução** — não existe senha padrão fixa no código.
+
+> ⚠️ **Se `admin@controle.com` ainda responder a `admin123`, troque agora.**
+> Esse par foi a senha padrão de versões anteriores e está publicado neste
+> arquivo. Como o deploy é público, quem ler o repositório consegue entrar.
+>
+> ```bash
+> python scripts/auditar_senhas_padrao.py   # aponta quem ainda usa a padrão
+> ```
+>
+> Troque pela tela "Usuários" e não volte para a senha padrão.
 
 ## Interface
 - Tema dark (cyan, emerald, rose, amber)

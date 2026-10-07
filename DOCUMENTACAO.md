@@ -22,6 +22,7 @@ Sistema web completo para gestão comercial com integração Bling ERP v3.
 | [DOCUMENTACAO_BACKUP.md](DOCUMENTACAO_BACKUP.md) | Backup e restore: agendamento automático, modos `sobrepor`/`limpar`, retenção e UI. |
 | [DOCUMENTACAO_ASSINATURAS.md](DOCUMENTACAO_ASSINATURAS.md) | Assinaturas recorrentes, vencimento e histórico. |
 | [DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md](DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md) | Classificação contábil automática: conta de receita no produto, cascata de resolução, plano de contas e DRE. |
+| [MOTOR_CONTABIL.md](MOTOR_CONTABIL.md) | **Próximo passo:** o que falta para contabilidade de verdade (partida dobrada, razão, competência) e os 5 bloqueios a decidir. |
 | [DOCUMENTACAO_BOLETOS.md](DOCUMENTACAO_BOLETOS.md) | Boletos Sicoob: emissão, reemissão e valor líquido. |
 | [DOCUMENTACAO_ITENS.md](DOCUMENTACAO_ITENS.md) | Produtos/serviços/kits (itens). |
 | [DOCUMENTACAO_NFE.md](DOCUMENTACAO_NFE.md) | NFe: NotaAs, distribuição SEFAZ e importação. |
@@ -459,14 +460,19 @@ Revisão técnica completa do sistema cobrindo segurança, tratamento de erros, 
 - HTML financeiros: Previsão de Recebimentos (`/contas/previsao-recebimentos`), Inadimplência (`/contas/inadimplencia`) e **DRE** (`/contas/dre`, com plano de contas hierárquico, subtotais por grupo e linha de não-classificados).
 - Excel export: Contas a Pagar/Receber (`/pagar/exportar`, `/receber/exportar`).
 
-**Classificação contábil:** as contas a receber passam a ser classificadas automaticamente pela origem do documento — ver [DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md](DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md). A conta de receita mora em `produtos.conta_receita_id` e a resolução acontece em um único ponto (`services/parcelamento.py:gerar_contas_receber`), cobrindo NF-e, NFS-e, OS, pedido, consolidação, assinatura e importação de boleto. Restam como lacuna a **partida dobrada** (lançamentos/razão) e o **regime de competência** — o DRE continua em base de caixa.
+**Classificação contábil:** concluída. Contas a receber classificadas automaticamente pela origem do documento (589/589) e produtos com conta de receita (160/160) — ver [DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md](DOCUMENTACAO_CLASSIFICACAO_CONTABIL.md). A resolução acontece em um único ponto (`services/parcelamento.py:gerar_contas_receber`), cobrindo NF-e, NFS-e, OS, pedido, consolidação, assinatura e importação de boleto.
+
+**Contabilidade:** o sistema **não tem** partida dobrada, lançamentos, razão, balanço nem competência. Não existe nenhuma tabela contábil no banco. O DRE lê `contas_receber` em **base de caixa** e serve para acompanhar resultado, não para fechar exercício. Roteiro, schema proposto e os 5 bloqueios concretos em [MOTOR_CONTABIL.md](MOTOR_CONTABIL.md).
+
+> **Armadilha em qualquer relatório financeiro:** `valor_total` só é preenchido pelo endpoint `baixar`. Quatro outros pontos (sync/webhook Sicoob, importação de boleto, ciclo externo de assinatura) marcam `PAGO` sem preenchê-lo — **94% das contas recebidas** (311 de 341) estão assim. Todo relatório precisa de `COALESCE(valor_total, valor)`; somar só `valor_total` perde 94% da receita.
 
 **Lacunas (sugestões de implementação futura):**
 - Recibo individual de pagamento/recebimento (1 conta) em PDF.
 - Relatório de vendas por período/cliente e extrato por cliente/fornecedor.
 - Razão contábil e fluxo de caixa projetado (além da previsão atual).
-- Partida dobrada: tabelas `lancamentos`/`periodos` e contas correntes por cliente/fornecedor.
-- Ampliar `PlanoDeContas.tipo` (hoje é `String(10)`, só `receita`/`despesa`) para comportar `ativo`/`passivo`/`patrimônio`.
+- **Motor contábil completo** — ver o roteiro faseado em [MOTOR_CONTABIL.md](MOTOR_CONTABIL.md). Bloqueios medidos: `PlanoDeContas.tipo` é `String(10)` só com `receita`/`despesa` (não comporta `ativo`/`passivo`/`patrimônio`); 94% das contas recebidas sem `valor_total` (B2); `ContaReceber` sem rateio por linha, então nota mista não pode ser escriturada (B3); risco de dupla contagem ao migrar o DRE para o razão (B4); sem `periodos` e sem estado de estorno em `StatusConta` (B5).
+- Extrato por cliente e por fornecedor (contas correntes).
+- Custo de mercadoria vendida / CMV.
 
 ### Certificados Digitais no Railway
 

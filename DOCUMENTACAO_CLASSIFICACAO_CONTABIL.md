@@ -8,6 +8,17 @@ NFS-e, OS, pedido, consolidação, assinatura, importação de boleto) nascia co
 `plano_conta_id = NULL`. O usuário tinha que abrir cada conta e escolher a
 conta na mão. O DRE jogava quase tudo na linha sintética "Sem Classificação".
 
+**Estado:** concluído e em produção.
+**Próximo passo:** ver [MOTOR_CONTABIL.md](MOTOR_CONTABIL.md) — o que falta
+para contabilidade de verdade (partida dobrada, razão, competência) e os cinco
+bloqueios que precisam ser decididos antes.
+
+| Métrica | Antes | Depois |
+|---|---|---|
+| Contas a receber classificadas | 289 / 589 | **589 / 589** |
+| Produtos com conta de receita | 0 / 160 | **160 / 160** |
+| Receita em "Sem Classificação" | quase toda | **zero** |
+
 ---
 
 ## O conceito
@@ -225,3 +236,45 @@ O validador cria um usuário descartável próprio
 (`validador_classificacao@local`) e **nunca** redefine a senha de um usuário
 real. Antes ele fazia isso — e quebrou o login do administrador. Não repita o
 erro: **nunca** reescreva a senha de um usuário existente em script de teste.
+
+---
+
+## Armadilha verificada: `valor_total` não é o valor liquidado
+
+Documentado aqui porque afeta qualquer relatório financeiro, não só o DRE.
+
+`valor_total` (`= valor + juros - desconto`) só é calculado no endpoint
+`baixar`. Quatro outros pontos marcam `PAGO` sem preenchê-lo:
+
+| Local | Caminho |
+|---|---|
+| `routers/sicoob.py:929` | sync de pagamentos |
+| `routers/sicoob.py:973` | webhook de liquidação |
+| `routers/sicoob.py:1239` | importação de boleto (conta nasce PAGO) |
+| `routers/assinaturas.py:482` | ciclo externo marcado à mão |
+
+Medição real: de 341 contas PAGO, **311 (94%) têm `valor_total` NULL** e
+somam R$ 75.530,68 em `valor`. Apenas 30 têm `valor_total` preenchido
+(R$ 4.744,17). Das 311, 294 vieram de boleto Sicoob.
+
+Por isso todo relatório financeiro deste projeto **precisa** de:
+
+```sql
+COALESCE(valor_total, valor)
+```
+
+Somar só `valor` perde juros e desconto. Somar só `valor_total` perde 94% da
+receita — no DRE anterior isso daria R$ 4.744 em vez de R$ 80.274.
+
+Um razão contábil precisa de uma função única de "valor liquidado" e de
+backfill dos 311 registros. Ver [MOTOR_CONTABIL.md](MOTOR_CONTABIL.md), bloqueio B2.
+
+## Receita duplicada (bug correlato, corrigido)
+
+Faturar um pedido que já estava agrupado ou consolidado criava uma segunda
+cobrança da mesma venda — receita 2x. Causa, correção e testes em
+[DOCUMENTACAO_PEDIDOS.md](DOCUMENTACAO_PEDIDOS.md), seção "Receita duplicada
+por faturamento duplo".
+
+Regra em `services/guarda_faturamento.py`, consultada pelos três pontos de
+faturamento (`pedidos.py`, `nfe.py`, `nfse.py`).
