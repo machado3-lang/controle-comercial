@@ -63,6 +63,11 @@
         <div class="mb-3">
             <label class="form-label text-cyan-300">Observação</label>
             <textarea class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="3"></textarea>
+            <label class="flex items-center gap-2 text-xs text-slate-300 mt-2 cursor-pointer select-none">
+                <input type="checkbox" name="propagar_observacao" value="1" class="w-4 h-4 rounded border-slate-700 bg-slate-900/60 text-cyan-500 focus:ring-cyan-500/50">
+                Oferecer esta observação nas notas fiscais da OS (NFe/NFSe)
+            </label>
+            <p class="text-xs text-slate-500 mt-1">Só vale para observações que o cliente possa ver no documento. Padrão: não enviar.</p>
         </div>
     </div>
 

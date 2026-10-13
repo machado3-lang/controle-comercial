@@ -235,6 +235,7 @@ def criar_ordem(
     autorizado_por: str = Form(""),
     numero_requisicao: str = Form(""),
     observacao: str = Form(""),
+    propagar_observacao: str = Form(""),
 ):
     marca = None
     if marca_id:
@@ -246,6 +247,7 @@ def criar_ordem(
         defeito_relatado=defeito_relatado, tecnico=tecnico,
         autorizado_por=autorizado_por, numero_requisicao=numero_requisicao,
         observacao=observacao,
+        propagar_observacao=bool(propagar_observacao),
         bling_pending_sync=True
     )
     db.add(ordem)
@@ -428,6 +430,7 @@ def atualizar_ordem(
     autorizado_por: str = Form(""),
     numero_requisicao: str = Form(""),
     observacao: str = Form(""),
+    propagar_observacao: str = Form(""),
     cobranca_separada: str = Form(""),
 ):
     ordem = db.query(OrdemServico).filter(OrdemServico.id == ordem_id).first()
@@ -501,6 +504,7 @@ def atualizar_ordem(
     ordem.autorizado_por = autorizado_por
     ordem.numero_requisicao = numero_requisicao
     ordem.observacao = observacao
+    ordem.propagar_observacao = bool(propagar_observacao)
     ordem.cobranca_separada = bool(cobranca_separada)
     ordem.updated_at = datetime.now()
     ordem.bling_pending_sync = True

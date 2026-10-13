@@ -34,6 +34,11 @@ from app.core.config import settings
 UPLOAD_DIR = os.path.join(settings.UPLOAD_DIR, "nfe")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
+# <infCpl> aceita 5000 caracteres no layout NFe. A observacao da OS e copiada
+# para la junto com o texto de tributos IBPT (services/nfe_notaas.py), entao o
+# corte fica abaixo do limite para os dois caberem.
+_LIMITE_OBSERVACAO_NFE = 4000
+
 
 def _proximo_numero(empresa: Empresa, db: Session) -> int:
     empresa_locked = db.query(Empresa).filter(Empresa.id == empresa.id).with_for_update().first()
@@ -879,7 +884,7 @@ def emitir_os_form(
     return request.app.state.templates.TemplateResponse(request, 
         "nfe/emissao.html",
         {"request": request, "pedido": os, "itens_nfe": itens_nfe,
-         "itens_nfse": [], "empresa": empresa,
+         "itens_nfse": [], "empresa": empresa, "origem_os": True,
          "total_os": os.valor_total,
          "messages": _get_messages(request)}
     )
@@ -890,6 +895,7 @@ def emitir_os_submit(
     request: Request, os_id: int, db: Session = Depends(get_db),
     natureza_operacao: str = Form("Venda de mercadoria"),
     cfop: str = Form(None),
+    incluir_observacao: str = Form(""),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -936,6 +942,12 @@ def emitir_os_submit(
             data_saida=now,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
+            # Vai para <infCpl> (dados complementares). O limite do layout NFe e
+            # 5000 caracteres e a montar_payload_nfe ainda concatena o texto de
+            # tributos IBPT, entao a observacao vem capped para caber com ele.
+            observacoes=(
+                (os.observacao or "").strip()[:_LIMITE_OBSERVACAO_NFE] if incluir_observacao else None
+            ) or None,
         )
         db.add(nfe)
         db.flush()

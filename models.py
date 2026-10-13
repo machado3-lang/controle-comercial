@@ -378,6 +378,13 @@ class OrdemServico(Base):
     num_parcelas = Column(Integer, default=1)
     intervalo_dias = Column(Integer, default=30)
     primeiro_vencimento = Column(Date, nullable=True)
+    # Padrao da OS para a emissao: quando True, a tela de emissao da NFe/NFSe
+    # oferece (e vem marcada) o envio de `observacao` para a nota. Fica False
+    # porque quase toda observacao de OS e interna ("cliente autorizou por
+    # telefone", "peca com garantia de 90 dias") e nao deve virar documento
+    # fiscal. Depois de transmitida a nota o campo e imutavel, entao a decisao
+    # precisa existir na emissao.
+    propagar_observacao = Column(Boolean, default=False)
     data_sincronizacao = Column(DateTime, nullable=True)  # ultima consulta cnpj.ws
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

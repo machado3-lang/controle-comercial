@@ -1539,6 +1539,9 @@ def _esc(valor) -> str:
     from xml.sax.saxutils import escape
     return escape(str(valor), {'"': '&quot;', "'": '&apos;'})
 
+# Limite de <xDescServ> no schema do DPS nacional.
+_LIMITE_XDESCSERV = 2000
+
 
 def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: str = '1',
                 xmlns: str = None, ver_aplic: str = None, numero_dps: int = None) -> str:
@@ -1865,7 +1868,14 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     observacoes = getattr(nfse, 'observacoes', '') or ''
     desc_serv = discriminacao
     if observacoes:
-        desc_serv += f" | {observacoes}"
+        # <xDescServ> aceita 2000 caracteres. A discriminacao dos itens ja ocupa
+        # parte disso, entao a observacao e aparada para o que ainda couber em vez
+        # de deixar a prefeitura rejeitar o DPS inteiro.
+        livre = _LIMITE_XDESCSERV - len(desc_serv) - 3
+        if livre > 0:
+            desc_serv += f" | {observacoes[:livre]}"
+    if len(desc_serv) > _LIMITE_XDESCSERV:
+        desc_serv = desc_serv[:_LIMITE_XDESCSERV]
     desc_serv = _esc(desc_serv)
 
     if op_simp_nac in (2, 3):

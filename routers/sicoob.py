@@ -199,6 +199,38 @@ def get_http_client(db: Session):
     return httpx.Client(timeout=30)
 
 
+def _mensagens_instrucao_boleto(db: Session, conta: ContaReceber) -> list:
+    """Monta `mensagensInstrucao` (max. 5 linhas de 40 caracteres) a partir do
+    `terminos_boleto` do pedido ou consolidacao de origem da cobranca.
+
+    A API do Sicoob nao aceita campo opcional nulo, entao a lista volta vazia
+    (e o campo nao entra no body) quando nao ha termo. O PDF do boleto e gerado
+    pelo proprio banco, entao enviar esse campo na emissao e a unica forma de o
+    termo aparecer no boleto.
+    """
+    from models import PedidoVenda, PedidoConsolidado
+
+    texto = ""
+    if conta.pedido_id:
+        origem = db.query(PedidoVenda).get(conta.pedido_id)
+        texto = (getattr(origem, "terminos_boleto", None) or "") if origem else ""
+    elif conta.consolidacao_id:
+        origem = db.query(PedidoConsolidado).get(conta.consolidacao_id)
+        texto = (getattr(origem, "terminos_boleto", None) or "") if origem else ""
+    if not texto.strip():
+        return []
+
+    linhas = []
+    for linha in texto.replace("\r", "\n").split("\n"):
+        for pedaco in (linha.strip()[i:i + 40] for i in range(0, len(linha.strip()), 40)):
+            pedaco = pedaco.strip()
+            if pedaco:
+                linhas.append(pedaco)
+            if len(linhas) == 5:
+                return linhas
+    return linhas[:5]
+
+
 def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
     emp = get_empresa(db)
     token = refresh_sicoob_token(db, "boletos_inclusao")
@@ -260,6 +292,13 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
             "uf": conta.cliente.estado or "",
         }
     }
+    # `terminos_boleto` do pedido/consolidacao de origem. Era um campo
+    # write-only: salvo na tela ("Termos do Boleto") e nunca lido em lugar
+    # nenhum. A API aceita no maximo 5 mensagens de 40 caracteres, e campo
+    # opcional nao utilizado tem de ser REMOVIDO do corpo (nao pode ir nulo).
+    instrucoes = _mensagens_instrucao_boleto(db, conta)
+    if instrucoes:
+        body["mensagensInstrucao"] = instrucoes
 
     try:
         cert_config = get_cert_config(db)

@@ -85,6 +85,17 @@
                 </table>
             </div>
 
+            {% if origem_os and pedido.observacao %}
+            <div class="mb-4 p-3 bg-amber-950/30 border border-amber-800/50 rounded-xl">
+                <div class="text-xs text-amber-200 mb-2"><strong>Observação da OS:</strong> {{ pedido.observacao }}</div>
+                <label class="flex items-center gap-2 text-sm text-slate-200 cursor-pointer select-none">
+                    <input type="checkbox" name="incluir_observacao" value="1" {% if pedido.propagar_observacao %}checked{% endif %} class="w-4 h-4 rounded border-slate-700 bg-slate-900/60 text-cyan-500 focus:ring-cyan-500/50">
+                    Incluir nas informações complementares desta NFe
+                </label>
+                <p class="text-xs text-slate-400 mt-1">As informações complementares não podem ser alteradas depois da transmissão.</p>
+            </div>
+            {% endif %}
+
             <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-600 hover:to-orange-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-amber-500/10">
                 <i data-lucide="save" class="w-4 h-4 me-1"></i> Salvar Rascunho
             </button>

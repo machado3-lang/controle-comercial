@@ -189,7 +189,7 @@ def test_rascunho_nfse_da_os_herda_condicao_da_os(db_session: Session, test_empr
     os_.forma_pagamento = "boleto"
     db_session.commit()
 
-    emitir_os_nfse_submit(FakeRequest(), os_.id, db_session, forma_pagamento="")
+    emitir_os_nfse_submit(FakeRequest(), os_.id, db_session, forma_pagamento="", incluir_observacao="")
 
     db_session.expire_all()
     rascunhos = (
@@ -201,7 +201,7 @@ def test_rascunho_nfse_da_os_herda_condicao_da_os(db_session: Session, test_empr
     assert len(rascunhos) == 1
     assert rascunhos[0].forma_pagamento == "boleto"
 
-    emitir_os_nfse_submit(FakeRequest(), os_.id, db_session, forma_pagamento="pix")
+    emitir_os_nfse_submit(FakeRequest(), os_.id, db_session, forma_pagamento="pix", incluir_observacao="")
 
     db_session.expire_all()
     rascunhos = (

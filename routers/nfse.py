@@ -21,6 +21,11 @@ from services.nfe_notaas import explodir_itens_consolidacao, _limpar_doc
 
 logger = logging.getLogger(__name__)
 
+# <xDescServ> aceita 2000 caracteres no schema do DPS nacional. A observacao da
+# OS e anexada ao fim da discriminacao dos itens, entao o corte e feito aqui para
+# o conjunto inteiro caber.
+_LIMITE_OBSERVACAO_NFSE = 500
+
 router = APIRouter(prefix="/nfse", tags=["NFSe"])
 
 STATUS_LABELS = {
@@ -724,6 +729,7 @@ def emitir_os_nfse_form(
 def emitir_os_nfse_submit(
     request: Request, os_id: int, db: Session = Depends(get_db),
     forma_pagamento: str = Form(""),
+    incluir_observacao: str = Form(""),
 ):
     os = db.query(OrdemServico).options(
         joinedload(OrdemServico.cliente)
@@ -758,6 +764,13 @@ def emitir_os_nfse_submit(
             # tela de emissao. Sem isso a NFSe da OS nascia sem condicao e a
             # cobranca caia no fallback literal "NFSe".
             forma_pagamento=forma_pagamento or os.forma_pagamento or None,
+            # Mesmo caminho da assinatura: nfse.observacoes e concatenada ao fim
+            # da descricao dos servicos (<xDescServ>) em services/nfse_betha.py,
+            # que e a unica tag de texto livre do DPS.
+            observacoes=(
+                (os.observacao or "").strip()[:_LIMITE_OBSERVACAO_NFSE]
+                if incluir_observacao else ""
+            ),
             iss_retido=iss_retido,
             aliquota_iss=empresa.aliquota_iss or 2.0,
             aliquota_federal=empresa.aliquota_federal or 0.0,
