@@ -14,6 +14,7 @@ from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsoli
 from models_nfe import NFSe, NFSeItem, NFSeRecebida, NFe, NFeItem
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
 from services.nfse_service import formatar_aviso_nfse
+from services.numeracao import reverter_numero_nfse
 from services.guarda_faturamento import bloqueio_faturamento
 from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional, NFSE_NACIONAL_NS
 from services.nfe_notaas import explodir_itens_consolidacao, _limpar_doc
@@ -884,14 +885,23 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
     # Remove rascunhos existentes quando solicitado (somente rascunho/erro; autorizadas sÃ£o mantidas)
     if acao_regerar:
         from models import ContaReceber as _ContaReceber
+        _empresa_rm = db.query(Empresa).first()
         _nfe_ids_rm = []
-        for n in db.query(NFe).filter(NFe.consolidacao_id == consolidacao_id).all():
+        # Maior numero primeiro: o contador volta um a um e os rascunhos regenerados
+        # reaproveitam a mesma numeracao em vez de queimar a seguinte.
+        for n in sorted(
+            db.query(NFe).filter(NFe.consolidacao_id == consolidacao_id).all(),
+            key=lambda n: n.numero or 0,
+            reverse=True,
+        ):
             if (n.status or "").lower() in _RASCUNHO:
+                reverter_numero_nfe(db, _empresa_rm, n)
                 db.query(NFeItem).filter(NFeItem.nfe_id == n.id).delete()
                 _nfe_ids_rm.append(n.id)
                 db.delete(n)
         _nfse_id_rm = None
         if nfse_existente and nfse_rascunho:
+            reverter_numero_nfse(db, _empresa_rm, nfse_existente)
             db.query(NFSeItem).filter(NFSeItem.nfse_id == nfse_existente.id).delete()
             _nfse_id_rm = nfse_existente.id
             db.delete(nfse_existente)
@@ -1744,9 +1754,15 @@ def excluir_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
         db.query(Assinatura).filter(Assinatura.nfse_id == nfse.id).update(
             {Assinatura.nfse_id: None}, synchronize_session=False
         )
+        numero_excluido = nfse.numero
+        numero_liberado = reverter_numero_nfse(db, db.query(Empresa).first(), nfse)
         db.delete(nfse)
         db.commit()
-        request.session["message"] = f"NFSe #{nfse.numero} excluÃ­da"
+        request.session["message"] = f"NFSe #{numero_excluido} excluída"
+        if numero_liberado:
+            request.session["message"] += (
+                f". Numeração liberada: a próxima NFSe será a {numero_liberado + 1}"
+            )
     except Exception:
         db.rollback()
         logger.exception("Erro ao excluir NFSe %s", nfse_id)

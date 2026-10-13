@@ -23,6 +23,7 @@ from services.nfe_notaas import (
     explodir_itens_consolidacao, consultar_municipios,
     carta_correcao_nfe, _limpar_doc
 )
+from services.numeracao import reverter_numero_nfe
 from services.guarda_faturamento import bloqueio_faturamento
 
 logger = logging.getLogger(__name__)
@@ -2192,9 +2193,12 @@ def excluir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
             if prod:
                 prod.estoque = (prod.estoque or 0) + float(item.quantidade)
 
+    numero_liberado = reverter_numero_nfe(db, db.query(Empresa).first(), nfe)
     db.delete(nfe)
     db.commit()
     request.session["message"] = "NFe excluída com sucesso!"
+    if numero_liberado:
+        request.session["message"] += f" Numeração liberada: a próxima NFe será a {numero_liberado + 1}."
     return RedirectResponse(url="/nfe", status_code=303)
 
 
