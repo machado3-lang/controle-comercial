@@ -368,6 +368,16 @@ class OrdemServico(Base):
     # NFe e NFSe separadas). Quando False (padrao), gera-se UMA cobrança única
     # agrupando NFe + NFSe (e um único boleto, se forma_pagamento = boleto).
     cobranca_separada = Column(Boolean, default=False)
+    # Condicao de pagamento acordada com o cliente, escolhida na tela da OS
+    # (POST /ordens-servico/{id}/gerar-cobranca) e herdada pelas notas da OS:
+    # o rascunho de NFSe copia `forma_pagamento` e a cobranca usa o
+    # parcelamento da OS. A OS e o ponto unico de cobranca — as notas
+    # originadas dela nao geram cobranca automatica na transmissao, para nao
+    # duplicar a cobranca agrupada/separada gerada aqui.
+    forma_pagamento = Column(String(20), nullable=True)
+    num_parcelas = Column(Integer, default=1)
+    intervalo_dias = Column(Integer, default=30)
+    primeiro_vencimento = Column(Date, nullable=True)
     data_sincronizacao = Column(DateTime, nullable=True)  # ultima consulta cnpj.ws
     created_at = Column(DateTime, default=datetime.now)
     updated_at = Column(DateTime, default=datetime.now, onupdate=datetime.now)

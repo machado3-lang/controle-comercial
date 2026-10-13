@@ -345,13 +345,24 @@ def contas_receber_existentes(db, *, pedido_id=None, consolidacao_id=None, nfse_
     )
 
 
-def _ids_vinculados(*, pedido=None, consolidacao=None, nfse=None, nfe=None):
+def _ids_vinculados(*, pedido=None, consolidacao=None, nfse=None, nfe=None, os=None):
     """Resolve, a partir das entidades de faturamento, o conjunto de IDs de
-    pedido/consolidacao/notas fiscais relacionados. Usado para detectar cobrancas
-    ja emitidas em QUALQUER um dos fluxos (pedido, consolidacao, NFe, NFSe) e
+    pedido/consolidacao/notas fiscais/OS relacionados. Usado para detectar cobrancas
+    ja emitidas em QUALQUER um dos fluxos (pedido, consolidacao, OS, NFe, NFSe) e
     evitar duplicidade entre eles.
+
+    A OS entra na resolucao porque suas notas (NFe de pecas + NFSe de servicos) sao
+    irma: sem isso, a cobranca da NFe nao era vista quando a NFSe era faturada e cada
+    nota gerava a sua conta.
     """
-    pedido_ids, consolidacao_ids, nfe_ids, nfse_ids = set(), set(), set(), set()
+    pedido_ids, consolidacao_ids, nfe_ids, nfse_ids, os_ids = set(), set(), set(), set(), set()
+
+    if os is not None:
+        os_ids.add(os.id)
+        for n in (os.nfes or []):
+            nfe_ids.add(n.id)
+        for n in (os.nfses or []):
+            nfse_ids.add(n.id)
 
     if pedido is not None:
         pedido_ids.add(pedido.id)
@@ -377,6 +388,8 @@ def _ids_vinculados(*, pedido=None, consolidacao=None, nfse=None, nfe=None):
 
     if nfe is not None:
         nfe_ids.add(nfe.id)
+        if getattr(nfe, "os_id", None):
+            os_ids.add(nfe.os_id)
         pedido = getattr(nfe, "pedido", None)
         if pedido is not None:
             pedido_ids.add(pedido.id)
@@ -385,6 +398,8 @@ def _ids_vinculados(*, pedido=None, consolidacao=None, nfse=None, nfe=None):
 
     if nfse is not None:
         nfse_ids.add(nfse.id)
+        if getattr(nfse, "os_id", None):
+            os_ids.add(nfse.os_id)
         pedido = getattr(nfse, "pedido", None)
         if pedido is not None:
             pedido_ids.add(pedido.id)
@@ -394,19 +409,20 @@ def _ids_vinculados(*, pedido=None, consolidacao=None, nfse=None, nfe=None):
         if consolidacao is not None:
             consolidacao_ids.add(consolidacao.id)
 
-    return pedido_ids, consolidacao_ids, nfe_ids, nfse_ids
+    return pedido_ids, consolidacao_ids, nfe_ids, nfse_ids, os_ids
 
 
-def contas_receber_existentes_para(db, *, pedido=None, consolidacao=None, nfse=None, nfe=None):
+def contas_receber_existentes_para(db, *, pedido=None, consolidacao=None, nfse=None, nfe=None, os=None):
     """Retorna as ContaReceber ja geradas para o documento informado OU para
-    qualquer um de seus vinculos (pedido, consolidacao, NFe, NFSe).
+    qualquer um de seus vinculos (pedido, consolidacao, OS, NFe, NFSe).
 
     Centraliza a regra anti-duplicidade entre os fluxos de faturamento: gerar
-    cobranca pela NFe/NFSe nao deve duplicar a cobranca ja gerada pelo pedido ou
-    pela consolidacao, e vice-versa. Contas canceladas/excluidas nao contam.
+    cobranca pela NFe/NFSe nao deve duplicar a cobranca ja gerada pelo pedido, pela
+    consolidacao ou pela nota irma da mesma OS, e vice-versa. Contas
+    canceladas/excluidas nao contam.
     """
-    p_ids, c_ids, n_ids, s_ids = _ids_vinculados(
-        pedido=pedido, consolidacao=consolidacao, nfse=nfse, nfe=nfe
+    p_ids, c_ids, n_ids, s_ids, o_ids = _ids_vinculados(
+        pedido=pedido, consolidacao=consolidacao, nfse=nfse, nfe=nfe, os=os
     )
     filtros = []
     if p_ids:
@@ -417,6 +433,8 @@ def contas_receber_existentes_para(db, *, pedido=None, consolidacao=None, nfse=N
         filtros.append(ContaReceber.nfe_id.in_(n_ids))
     if s_ids:
         filtros.append(ContaReceber.nfse_id.in_(s_ids))
+    if o_ids:
+        filtros.append(ContaReceber.os_id.in_(o_ids))
     if not filtros:
         return []
     return (

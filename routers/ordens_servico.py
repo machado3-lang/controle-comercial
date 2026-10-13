@@ -622,6 +622,18 @@ def gerar_cobranca_os(
 
     # Persiste a preferencia para futuras emissoes
     ordem.cobranca_separada = bool(cobranca_separada)
+    # A condicao escolhida aqui e a da OS: passa a ser o padrao das telas de
+    # emissao da NFe/NFSe da OS e o parcelamento das cobrancas geradas aqui.
+    # Nao e sobrescrita no fluxo "recibo sem nota" (PIX/dinheiro pontual), em que
+    # a forma e um evento daquela venda e nao uma condicao recorrente da OS.
+    if forma_pagamento and forma_pagamento != "garantia" and not (sem_notas and forma_pagamento in _FORMAS_SEM_NOTA):
+        ordem.forma_pagamento = forma_pagamento
+        ordem.num_parcelas = max(1, int(num_parcelas or 1))
+        ordem.intervalo_dias = int(intervalo_dias or 30)
+        try:
+            ordem.primeiro_vencimento = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else None
+        except ValueError:
+            ordem.primeiro_vencimento = None
     db.flush()
 
     try:

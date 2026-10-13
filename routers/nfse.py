@@ -723,6 +723,7 @@ def emitir_os_nfse_form(
 @router.post("/emitir/os/{os_id}")
 def emitir_os_nfse_submit(
     request: Request, os_id: int, db: Session = Depends(get_db),
+    forma_pagamento: str = Form(""),
 ):
     os = db.query(OrdemServico).options(
         joinedload(OrdemServico.cliente)
@@ -753,6 +754,10 @@ def emitir_os_nfse_submit(
             valor_total=os.valor_servico,
             data_emissao=now,
             origem="os",
+            # Condicao de pagamento: a escolhida na tela da OS, ou a da propria
+            # tela de emissao. Sem isso a NFSe da OS nascia sem condicao e a
+            # cobranca caia no fallback literal "NFSe".
+            forma_pagamento=forma_pagamento or os.forma_pagamento or None,
             iss_retido=iss_retido,
             aliquota_iss=empresa.aliquota_iss or 2.0,
             aliquota_federal=empresa.aliquota_federal or 0.0,
@@ -1204,6 +1209,7 @@ def editar_nfse_salvar(
     itens_json: str = Form(...),
     desconto: float = Form(0.0),
     observacoes: str = Form(""),
+    forma_pagamento: str = Form(""),
 ):
     nfse = db.query(NFSe).options(
         selectinload(NFSe.itens),
@@ -1254,6 +1260,10 @@ def editar_nfse_salvar(
         nfse.municipio_nome = municipio_nome or None
         nfse.iss_retido = getattr(cliente, 'iss_retido', False) or False
         nfse.observacoes = observacoes or ""
+        # So sobrescreve quando o campo veio preenchido: assim um rascunho de OS
+        # (que herda a condicao da OS) nao e apagado por um form que omite o campo.
+        if forma_pagamento:
+            nfse.forma_pagamento = forma_pagamento
         if data_competencia:
             data_antiga = nfse.data_emissao
             nova_data = datetime.strptime(data_competencia, '%Y-%m-%d')
@@ -1623,6 +1633,13 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         request.session["error"] = "Não é possível gerar cobrança de uma NFSe em rascunho. Emita a nota primeiro."
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
+    if nfse.os_id:
+        request.session["error"] = (
+            f"A cobrança da NFSe de OS é gerada na tela da Ordem de Serviço #{nfse.os_id}, "
+            "onde NFe e NFSe podem ser agrupadas em uma única cobrança/boleto."
+        )
+        return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
+
     cobranca_existente = db.query(ContaReceber).filter(
         ContaReceber.nfse_id == nfse.id,
         ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
@@ -1785,6 +1802,12 @@ def _garantir_cobranca_nfse(db, nfse):
     )
     from datetime import date as _date
     try:
+        if nfse.os_id:
+            # OS e o ponto unico de cobranca (routers/ordens_servico.py): a tela da
+            # OS monta UMA cobranca agrupando NFe + NFSe ou uma por nota (flag
+            # cobranca_separada). Cobrar aqui, na transmissao, criaria uma segunda
+            # cobranca e quebraria o agrupamento — e o boleto unico da OS.
+            return
         ped = nfse.pedido
         cons = db.query(PedidoConsolidado).get(nfse.consolidacao_id) if nfse.consolidacao_id else None
         # Forma de pagamento: vem da propria NFSe (quando preenchida na emissao),

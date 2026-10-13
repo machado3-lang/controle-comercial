@@ -168,28 +168,28 @@
             <div class="lg:col-span-2">
                 <label class="block text-xs font-medium text-emerald-400 mb-1">Forma de Pagamento</label>
                 <select id="cobrancaForma" name="forma_pagamento" onchange="atualizarCamposRecibo()" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
-                    <option value="boleto">Boleto (1 boleto agrupado)</option>
-                    <option value="pix">PIX</option>
-                    <option value="dinheiro">Dinheiro</option>
-                    <option value="cartao_credito">Cartão de Crédito</option>
-                    <option value="cartao_debito">Cartão de Débito</option>
-                    <option value="avista">À vista</option>
-                    <option value="aprazo">A prazo</option>
+                    <option value="boleto" {% if ordem.forma_pagamento == 'boleto' %}selected{% endif %}>Boleto (1 boleto agrupado)</option>
+                    <option value="pix" {% if ordem.forma_pagamento == 'pix' %}selected{% endif %}>PIX</option>
+                    <option value="dinheiro" {% if ordem.forma_pagamento == 'dinheiro' %}selected{% endif %}>Dinheiro</option>
+                    <option value="cartao_credito" {% if ordem.forma_pagamento == 'cartao_credito' %}selected{% endif %}>Cartão de Crédito</option>
+                    <option value="cartao_debito" {% if ordem.forma_pagamento == 'cartao_debito' %}selected{% endif %}>Cartão de Débito</option>
+                    <option value="avista" {% if ordem.forma_pagamento == 'avista' %}selected{% endif %}>À vista</option>
+                    <option value="aprazo" {% if ordem.forma_pagamento == 'aprazo' %}selected{% endif %}>A prazo</option>
                     <option value="garantia">Garantia (sem cobrança)</option>
                 </select>
             </div>
             <div id="cobrancaParcelas" class="contents">
                 <div>
                     <label class="block text-xs font-medium text-emerald-400 mb-1">Parcelas</label>
-                    <input type="number" min="1" max="24" name="num_parcelas" value="1" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                    <input type="number" min="1" max="24" name="num_parcelas" value="{{ ordem.num_parcelas or 1 }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-emerald-400 mb-1">1º Vencimento</label>
-                    <input type="date" name="primeiro_vencimento" value="{{ ordem.data_saida.strftime('%Y-%m-%d') if ordem.data_saida else '' }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                    <input type="date" name="primeiro_vencimento" value="{{ (ordem.primeiro_vencimento or ordem.data_saida).strftime('%Y-%m-%d') if (ordem.primeiro_vencimento or ordem.data_saida) else '' }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                 </div>
                 <div>
                     <label class="block text-xs font-medium text-emerald-400 mb-1">Intervalo (dias)</label>
-                    <input type="number" min="1" name="intervalo_dias" value="30" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
+                    <input type="number" min="1" name="intervalo_dias" value="{{ ordem.intervalo_dias or 30 }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                 </div>
             </div>
             <div class="lg:col-span-5 flex flex-wrap items-center gap-3">
@@ -197,6 +197,7 @@
                     <input type="checkbox" name="cobranca_separada" value="1" {% if ordem.cobranca_separada %}checked{% endif %} class="w-4 h-4 rounded border-slate-700 bg-slate-900/60 text-emerald-500 focus:ring-emerald-500/50">
                     Cobrança separada (NFe e NFSe em cobranças distintas)
                 </label>
+                <span class="text-xs text-slate-400">Condição da OS: <strong class="text-slate-200">{{ {'boleto':'Boleto','pix':'PIX','dinheiro':'Dinheiro','cartao_credito':'Cartão de Crédito','cartao_debito':'Cartão de Débito','transferencia':'Transferência','cheque':'Cheque','aprazo':'A prazo','avista':'À vista','outro':'Outro'}.get(ordem.forma_pagamento, ordem.forma_pagamento or 'não definida') }}</strong>{% if ordem.forma_pagamento %} &middot; {{ ordem.num_parcelas or 1 }}x de {{ ordem.intervalo_dias or 30 }}d{% endif %}</span>
                 <button type="submit" class="flex items-center px-4 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white rounded-xl font-medium">
                     <i data-lucide="plus-circle" class="w-4 h-4 me-1"></i> Gerar Cobrança
                 </button>

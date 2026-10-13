@@ -2131,6 +2131,13 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
         request.session["error"] = "Não é possível gerar cobrança de uma NFe em rascunho/não transmitida. Emita a nota primeiro."
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
+    if nfe.os_id:
+        request.session["error"] = (
+            f"A cobrança da NFe de OS é gerada na tela da Ordem de Serviço #{nfe.os_id}, "
+            "onde NFe e NFSe podem ser agrupadas em uma única cobrança/boleto."
+        )
+        return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
+
     cobranca_existente = db.query(ContaReceber).filter(
         ContaReceber.nfe_id == nfe.id,
         ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
@@ -2206,6 +2213,12 @@ def _garantir_cobranca_nfe(db, nfe):
     """Gera ContaReceber para a NFe autorizada se ainda não houver cobrança
     vinculada. Cobre NFe de pedido avulso E de consolidacao (a NFe da
     consolidacao tambem precisa da sua cobranca para nao ficar sem 'a receber')."""
+    if nfe.os_id:
+        # OS e o ponto unico de cobranca (routers/ordens_servico.py): a tela da OS
+        # monta UMA cobranca agrupando NFe + NFSe ou uma por nota (flag
+        # cobranca_separada). Cobrar aqui, na transmissao, criaria uma segunda
+        # cobranca e quebraria o agrupamento — e o boleto unico da OS.
+        return
     if not nfe.pedido_id and not nfe.consolidacao_id:
         return
     from services.parcelamento import (
