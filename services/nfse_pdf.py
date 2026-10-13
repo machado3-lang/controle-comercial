@@ -41,6 +41,21 @@ class FPDFSafe(FPDF):
             return super().normalize_text(safe)
 
 
+def _corta_para_largura(pdf, texto, largura_mm):
+    """Trunca o texto ate caber na largura da celula, medindo a string de verdade.
+
+    Cortar por numero de caracteres (`texto[:30]`) ignora a fonte: em Helvetica 7
+    cabem ~55 caracteres numa coluna de 60mm, e o nome do cliente saia cortado
+    sem necessidade. Deve ser chamada com a fonte da linha ja ativa.
+    """
+    s = str(texto if texto not in (None, "") else "-")
+    if pdf.get_string_width(s) <= largura_mm:
+        return s
+    while s and pdf.get_string_width(s + "...") > largura_mm:
+        s = s[:-1]
+    return (s.rstrip() + "...") if s else "-"
+
+
 def is_xml_nfse_nacional(xml_string: str) -> bool:
     """True se o XML e a NFS-e Nacional completa (grupos infNFSe + DPS).
 
@@ -292,35 +307,116 @@ def gerar_pdf_nfse(nfse, empresa, cliente, itens, status_labels) -> str:
     return f"/static/uploads/nfse/{pdf_filename}"
 
 
-def gerar_pdf_contas(contas, empresa, tipo="receber", filtros=None) -> bytes:
-    pdf = FPDFSafe(orientation="P", unit="mm", format="A4")
-    pdf.set_auto_page_break(auto=True, margin=12)
-    pdf.add_page()
+# Larguras das colunas do relatorio de contas. A soma tem de caber na area util
+# (A4 210mm - 2x15mm de margem = 180mm): com 190mm a ultima coluna saia cortada
+# na borda direita da pagina.
+COL_W_CONTAS = [56, 26, 22, 20, 56]
+
+_CINZA_ESCURO = (31, 41, 55)
+_CINZA_MEDIO = (100, 116, 139)
+_CINZA_CLARO = (226, 232, 240)
+_FUNDO_CINZA = (248, 249, 250)
+_VERDE = (4, 120, 87)
+
+
+def _cabecalho_documento(pdf, empresa, titulo, subtitulo):
+    """Cabecalho no mesmo desenho do recibo da OS (templates/ordens_servico/recibo.html):
+    empresa a esquerda com CNPJ/endereco, bloco do documento a direita, filete no meio."""
+    nome = (getattr(empresa, "nome_fantasia", None) or getattr(empresa, "razao_social", None) or "Empresa") \
+        if empresa else "Empresa"
+    razao = getattr(empresa, "razao_social", None) if empresa else None
+    cnpj = getattr(empresa, "cnpj", None) if empresa else None
+    endereco = getattr(empresa, "endereco", None) if empresa else None
+    cidade = getattr(empresa, "cidade", None) if empresa else None
+    estado = getattr(empresa, "estado", None) if empresa else None
+
+    y0 = pdf.get_y()
+    largura_dir = 80
+
+    pdf.set_xy(pdf.l_margin, y0)
     pdf.set_font("Helvetica", "B", 14)
-    empresa_nome = (empresa.razao_social or empresa.nome_fantasia or "Empresa") if empresa else "Empresa"
-    pdf.cell(0, 8, empresa_nome, align="C", new_x="LMARGIN", new_y="NEXT")
-    pdf.set_font("Helvetica", "B", 12)
-    titulo = "Contas a Receber" if tipo == "receber" else "Contas a Pagar"
-    pdf.cell(0, 7, titulo, align="C", new_x="LMARGIN", new_y="NEXT")
-    if filtros:
+    pdf.set_text_color(*_CINZA_ESCURO)
+    pdf.cell(90, 7, nome, new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*_CINZA_MEDIO)
+    if razao:
+        pdf.cell(90, 4, _corta_para_largura(pdf, razao + (f" — CNPJ {cnpj}" if cnpj else ""), 95),
+                 new_x="LMARGIN", new_y="NEXT")
+    endereco_txt = " — ".join([t for t in (endereco, f"{cidade}/{estado}" if cidade and estado else cidade) if t])
+    if endereco_txt:
+        pdf.cell(90, 4, _corta_para_largura(pdf, endereco_txt, 95), new_x="LMARGIN", new_y="NEXT")
+    y_esq = pdf.get_y()
+
+    x_dir = pdf.w - pdf.r_margin - largura_dir
+    pdf.set_xy(x_dir, y0)
+    pdf.set_font("Helvetica", "B", 16)
+    pdf.set_text_color(*_VERDE)
+    pdf.cell(largura_dir, 8, titulo.upper(), align="R", new_x="LMARGIN", new_y="NEXT")
+
+    # Filtro e data de emissao comecam abaixo do bloco esquerdo: se ficarem na
+    # altura do CNPJ/endereco, o texto do filtro e o da empresa se sobrepoem.
+    y_dir = max(pdf.get_y(), y_esq)
+    pdf.set_xy(x_dir, y_dir)
+    if subtitulo:
         pdf.set_font("Helvetica", "", 8)
-        pdf.cell(0, 5, filtros, align="C", new_x="LMARGIN", new_y="NEXT")
+        pdf.set_text_color(*_CINZA_MEDIO)
+        pdf.multi_cell(largura_dir, 4, _corta_para_largura(pdf, subtitulo, largura_dir),
+                       align="R", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_xy(x_dir, pdf.get_y())
+    pdf.set_font("Helvetica", "", 8)
+    pdf.set_text_color(*_CINZA_MEDIO)
+    pdf.cell(largura_dir, 4, f"Emitido em {datetime.now().strftime('%d/%m/%Y %H:%M')}",
+             align="R", new_x="LMARGIN", new_y="NEXT")
+
+    pdf.set_draw_color(*_CINZA_CLARO)
+    pdf.set_line_width(0.4)
+    y = max(pdf.get_y(), y_esq) + 2
+    pdf.set_xy(pdf.l_margin, y)
+    pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
     pdf.ln(3)
 
-    # Cabeçalho da tabela
+
+def _faixa_tabela(pdf, headers, col_w, y):
+    """Cabecalho da tabela: fundo cinza claro, sem gradeao pesada."""
+    pdf.set_xy(pdf.l_margin, y)
+    pdf.set_fill_color(*_FUNDO_CINZA)
+    pdf.set_text_color(*_CINZA_ESCURO)
     pdf.set_font("Helvetica", "B", 8)
-    col_w = [60, 28, 24, 24, 54]
+    for i, h in enumerate(headers):
+        pdf.cell(col_w[i], 6, h, border=0, fill=True,
+                 align="L" if i in (0, len(headers) - 1) else "R")
+    y += 6
+    pdf.set_draw_color(*_CINZA_CLARO)
+    pdf.set_line_width(0.2)
+    pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
+    return y
+
+
+def gerar_pdf_contas(contas, empresa, tipo="receber", filtros=None) -> bytes:
+    pdf = FPDFSafe(orientation="P", unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.set_margins(15, 15, 15)
+    pdf.add_page()
+    titulo = "Contas a Receber" if tipo == "receber" else "Contas a Pagar"
+    _cabecalho_documento(pdf, empresa, titulo, filtros)
+
+    col_w = COL_W_CONTAS
     parte_label = "Cliente" if tipo == "receber" else "Fornecedor"
     headers = ["Descrição", "Valor", "Vencimento", "Status", parte_label]
-    for i, h in enumerate(headers):
-        pdf.cell(col_w[i], 6, h, border=1, align="C")
-    pdf.ln()
+    aligns = ["L", "R", "R", "R", "L"]
+    y = _faixa_tabela(pdf, headers, col_w, pdf.get_y())
 
-    pdf.set_font("Helvetica", "", 7)
-    linha_alt = 5
+    pdf.set_font("Helvetica", "", 8)
+    linha_alt = 5.5
     total = Decimal("0")
-    for c in contas:
-        # Parte (cliente ou fornecedor) - duck typing seguro
+    x0 = pdf.l_margin
+    borda_pagina = pdf.h - pdf.b_margin
+    for indice, c in enumerate(contas):
+        if y + linha_alt > borda_pagina:
+            pdf.add_page()
+            y = _faixa_tabela(pdf, headers, col_w, pdf.get_y())
+            pdf.set_font("Helvetica", "", 8)
         if tipo == "receber":
             parte = c.cliente.nome if getattr(c, "cliente", None) else "-"
         else:
@@ -328,32 +424,59 @@ def gerar_pdf_contas(contas, empresa, tipo="receber", filtros=None) -> bytes:
         status = c.status.name if hasattr(c.status, "name") else str(c.status)
         valor = c.valor or Decimal("0")
         total += valor
-        descr = (c.descricao or "-")[:60]
         textos = [
-            descr,
-            f"R$ {float(valor):.2f}",
+            _corta_para_largura(pdf, c.descricao or "-", col_w[0] - 2),
+            f"R$ {float(valor):,.2f}".replace(",", "X").replace(".", ",").replace("X", "."),
             c.data_vencimento.strftime('%d/%m/%Y') if c.data_vencimento else "-",
-            status.lower(),
-            parte[:30],
+            status.lower().capitalize(),
+            _corta_para_largura(pdf, parte, col_w[4] - 2),
         ]
-        if pdf.get_y() + linha_alt > pdf.h - pdf.b_margin:
-            pdf.add_page()
-            pdf.set_font("Helvetica", "B", 8)
-            for i, h in enumerate(headers):
-                pdf.cell(col_w[i], 6, h, border=1, align="C")
-            pdf.ln()
-            pdf.set_font("Helvetica", "", 7)
-        x0 = pdf.get_x()
-        y0 = pdf.get_y()
+        if indice % 2 == 1:
+            pdf.set_fill_color(*_FUNDO_CINZA)
+        else:
+            pdf.set_fill_color(255, 255, 255)
+        pdf.set_text_color(*_CINZA_ESCURO)
+        pdf.set_xy(x0, y)
         for i, t in enumerate(textos):
-            pdf.set_xy(x0 + sum(col_w[:i]), y0)
-            pdf.cell(col_w[i], linha_alt, str(t), border=1, align="L" if i in (0, 4) else "C")
+            pdf.cell(col_w[i], linha_alt, str(t), border=0, fill=True, align=aligns[i])
+        y += linha_alt
+        pdf.set_xy(x0, y)
+        pdf.set_draw_color(*_CINZA_CLARO)
+        pdf.set_line_width(0.1)
+        pdf.line(x0, y, pdf.w - pdf.r_margin, y)
 
-    pdf.ln(4)
-    pdf.set_font("Helvetica", "B", 10)
-    pdf.cell(0, 7, f"Total: R$ {float(total):.2f}", align="R", new_x="LMARGIN", new_y="NEXT")
+    if not contas:
+        pdf.set_xy(x0, y + 2)
+        pdf.set_font("Helvetica", "I", 9)
+        pdf.set_text_color(*_CINZA_MEDIO)
+        pdf.cell(0, 6, "Nenhuma conta encontrada para o filtro informado.", new_x="LMARGIN", new_y="NEXT")
+        y = pdf.get_y()
+    else:
+        y += 3
+
+    # Total alinhado a direita, como no recibo da OS.
+    total_txt = f"Total: R$ {float(total):,.2f}".replace(",", "X").replace(".", ",").replace("X", ".")
+    qtd_txt = f"{len(contas)} conta(s)"
+    pdf.set_xy(pdf.l_margin, y)
     pdf.set_font("Helvetica", "", 8)
-    pdf.cell(0, 5, f"Emitido em {datetime.now().strftime('%d/%m/%Y %H:%M')}", align="C", new_x="LMARGIN", new_y="NEXT")
+    pdf.set_text_color(*_CINZA_MEDIO)
+    pdf.cell(80, 6, qtd_txt, align="L")
+    pdf.set_font("Helvetica", "B", 11)
+    pdf.set_text_color(*_VERDE)
+    pdf.cell(pdf.w - pdf.r_margin - pdf.l_margin - 80, 6, total_txt, align="R")
+    y += 8
+    pdf.set_draw_color(*_CINZA_CLARO)
+    pdf.set_line_width(0.3)
+    pdf.set_xy(pdf.l_margin, y)
+    pdf.line(pdf.l_margin, y, pdf.w - pdf.r_margin, y)
+
+    if y + 14 < pdf.h - pdf.b_margin:
+        pdf.set_xy(pdf.l_margin, y + 5)
+        pdf.set_font("Helvetica", "", 7)
+        pdf.set_text_color(*_CINZA_MEDIO)
+        pdf.cell(0, 4, "Documento gerado pelo Controle de Serviços.",
+                 align="C", new_x="LMARGIN", new_y="NEXT")
+
     out = pdf.output()
     return out if isinstance(out, bytes) else bytes(out)
 

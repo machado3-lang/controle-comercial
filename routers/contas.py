@@ -17,6 +17,109 @@ from services.audit import registrar_auditoria
 logger = logging.getLogger(__name__)
 
 
+_ROTULO_STATUS = {
+    "": "Em aberto (pendente, vencido e baixa solicitada)",
+    "pendente": "Pendente",
+    "pago": "Pago",
+    "vencido": "Vencido",
+    "cancelado": "Cancelado",
+    "baixa_solicitada": "Baixa solicitada",
+}
+
+
+def _filtros_conta(model, status_filtro, busca, data_inicio, data_fim,
+                   rel_parte=None, col_nome_parte=None, hoje=None):
+    """Monta os filtros de contas a receber/pagar em um unico lugar.
+
+    Listagem, exportacao e PDF precisam cair exatamente no mesmo conjunto de
+    linhas; antes cada um repetia o recorte e os tres divergiam.
+
+    "Vencido" e DERIVADO (VENCIDO ou PENDENTE com vencimento passado) porque
+    nenhum fluxo grava StatusConta.VENCIDO — ele so e lido. A exportacao usava
+    `status == VENCIDO` puro e saia vazia, enquanto a listagem mostrava as
+    contas: o filtro "Vencidos" gerava um arquivo so com o cabecalho.
+
+    `data_inicio`/`data_fim` chegam ja como date (a validacao e da rota).
+    Retorna (filtros, rotulo) — o rotulo descreve o recorte no PDF/CSV.
+    """
+    hoje = hoje or date.today()
+    filtros = []
+    if status_filtro == "pendente":
+        filtros.append(model.status == StatusConta.PENDENTE)
+    elif status_filtro == "pago":
+        filtros.append(model.status == StatusConta.PAGO)
+    elif status_filtro == "vencido":
+        filtros.append(or_(
+            model.status == StatusConta.VENCIDO,
+            and_(model.status == StatusConta.PENDENTE, model.data_vencimento < hoje),
+        ))
+    elif status_filtro == "cancelado":
+        filtros.append(model.status == StatusConta.CANCELADO)
+    elif status_filtro == "baixa_solicitada":
+        filtros.append(model.status == StatusConta.BAIXA_SOLICITADA)
+    else:
+        filtros.append(model.status.in_(
+            [StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA]
+        ))
+    if busca and rel_parte is not None and col_nome_parte is not None:
+        filtros.append(or_(
+            model.descricao.ilike(f"%{busca}%"),
+            rel_parte.has(col_nome_parte.ilike(f"%{busca}%")),
+        ))
+    if data_inicio:
+        filtros.append(model.data_vencimento >= data_inicio)
+    if data_fim:
+        filtros.append(model.data_vencimento <= data_fim)
+
+    rotulo = _ROTULO_STATUS.get(status_filtro, status_filtro or "Em aberto")
+    if busca:
+        rotulo += f" | busca: {busca}"
+    if data_inicio:
+        rotulo += f" | de {data_inicio.strftime('%d/%m/%Y')}"
+    if data_fim:
+        rotulo += f" | até {data_fim.strftime('%d/%m/%Y')}"
+    return filtros, rotulo
+
+
+def _intervalo_datas(request, data_inicio, data_fim, url_redirect):
+    """Valida o periodo dos filtros. Devolve (inicio, fim) ou redireciona em erro."""
+    inicio = fim = None
+    if data_inicio:
+        try:
+            inicio = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+        except ValueError:
+            request.session["message"] = {"tipo": "danger", "texto": "Data de início inválida. Use o formato AAAA-MM-DD."}
+            return None, RedirectResponse(url=url_redirect, status_code=303)
+    if data_fim:
+        try:
+            fim = datetime.strptime(data_fim, "%Y-%m-%d").date()
+        except ValueError:
+            request.session["message"] = {"tipo": "danger", "texto": "Data de fim inválida. Use o formato AAAA-MM-DD."}
+            return None, RedirectResponse(url=url_redirect, status_code=303)
+    return (inicio, fim), None
+
+
+def _filtros_exportacao(request, model, status_filtro, busca, data_inicio, data_fim,
+                        rel_parte=None, col_nome_parte=None):
+    """Mesmo recorte da listagem, sem redirecionar: data invalida na exportacao
+    vira apenas um aviso no log e o arquivo sai com o resto dos filtros."""
+    inicio = fim = None
+    if data_inicio:
+        try:
+            inicio = datetime.strptime(data_inicio, "%Y-%m-%d").date()
+        except ValueError:
+            logger.warning(f"Data de início inválida no filtro de exportação: {data_inicio}")
+    if data_fim:
+        try:
+            fim = datetime.strptime(data_fim, "%Y-%m-%d").date()
+        except ValueError:
+            logger.warning(f"Data de fim inválida no filtro de exportação: {data_fim}")
+    return _filtros_conta(
+        model, status_filtro, busca, inicio, fim,
+        rel_parte=rel_parte, col_nome_parte=col_nome_parte,
+    )
+
+
 def to_decimal(v, default="0"):
     """Converte para Decimal com segurança; retorna default se vazio/inválido."""
     try:
@@ -107,48 +210,28 @@ def contas_pagar(
     hoje = date.today()
     fornecedores = db.query(Fornecedor).order_by(Fornecedor.nome).all()
     fornecedores_json = [{"id": f.id, "nome": f.nome} for f in fornecedores]
+
+    (data_inicio_dt, data_fim_dt), redirect = _intervalo_datas(
+        request, data_inicio, data_fim, "/contas/pagar"
+    )
+    if redirect:
+        return redirect
+
+    filtros, _rotulo = _filtros_conta(
+        ContaPagar, status_filtro, busca, data_inicio_dt, data_fim_dt,
+        rel_parte=ContaPagar.fornecedor, col_nome_parte=Fornecedor.nome, hoje=hoje,
+    )
     query = db.query(ContaPagar).options(
         joinedload(ContaPagar.fornecedor),
         joinedload(ContaPagar.tipo_documento),
         joinedload(ContaPagar.plano_conta)
-    )
-    if status_filtro == "pendente":
-        query = query.filter(ContaPagar.status == StatusConta.PENDENTE)
-    elif status_filtro == "pago":
-        query = query.filter(ContaPagar.status == StatusConta.PAGO)
-    elif status_filtro == "vencido":
-        query = query.filter(
-            or_(
-                ContaPagar.status == StatusConta.VENCIDO,
-                and_(ContaPagar.status == StatusConta.PENDENTE, ContaPagar.data_vencimento < hoje)
-            )
-        )
-    elif status_filtro == "cancelado":
-        query = query.filter(ContaPagar.status == StatusConta.CANCELADO)
-    else:
-        query = query.filter(ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO]))
-    if busca:
-        query = query.filter(
-            or_(
-                ContaPagar.descricao.ilike(f"%{busca}%"),
-                ContaPagar.fornecedor.has(Fornecedor.nome.ilike(f"%{busca}%"))
-            )
-        )
-    if data_inicio:
-        try:
-            query = query.filter(ContaPagar.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
-        except ValueError:
-            request.session["message"] = {"tipo": "danger", "texto": "Data de início inválida. Use o formato AAAA-MM-DD."}
-            return RedirectResponse(url="/contas/pagar", status_code=303)
-    if data_fim:
-        try:
-            query = query.filter(ContaPagar.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
-        except ValueError:
-            request.session["message"] = {"tipo": "danger", "texto": "Data de fim inválida. Use o formato AAAA-MM-DD."}
-            return RedirectResponse(url="/contas/pagar", status_code=303)
+    ).filter(*filtros)
     if sort == "fornecedor":
         query = query.outerjoin(Fornecedor, ContaPagar.fornecedor_id == Fornecedor.id)
     total_count = query.count()
+    total_filtrado_valor = db.query(
+        sql_func.coalesce(sql_func.sum(ContaPagar.valor), 0)
+    ).filter(*filtros).scalar() or 0
     total_pages = max(1, (total_count + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
     offset = (page - 1) * per_page
@@ -158,15 +241,12 @@ def contas_pagar(
     else:
         sort_col = getattr(ContaPagar, sort, ContaPagar.data_vencimento)
         contas = query.order_by(order_func(sort_col), ContaPagar.id).offset(offset).limit(per_page).all()
-    total_pendente_valor = db.query(sql_func.coalesce(sql_func.sum(ContaPagar.valor), 0)).filter(
-        ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
-    ).scalar() or 0
     tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
     planos_contas_receita = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     planos_contas_despesa = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     return request.app.state.templates.TemplateResponse(request, 
         "contas/pagar.html",
-        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0,
+        {"request": request, "contas": contas, "total_pendente": total_filtrado_valor or 0,
          "fornecedores": fornecedores, "fornecedores_json": fornecedores_json, "messages": get_messages(request),
          "busca": busca, "status_filtro": status_filtro,
          "data_inicio": data_inicio, "data_fim": data_fim,
@@ -330,57 +410,38 @@ def contas_receber(
     hoje = date.today()
     clientes = db.query(Cliente).order_by(Cliente.nome).all()
     clientes_json = [{"id": c.id, "nome": c.nome} for c in clientes]
+
+    (data_inicio_dt, data_fim_dt), redirect = _intervalo_datas(
+        request, data_inicio, data_fim, "/contas/receber"
+    )
+    if redirect:
+        return redirect
+
+    filtros, _rotulo = _filtros_conta(
+        ContaReceber, status_filtro, busca, data_inicio_dt, data_fim_dt,
+        rel_parte=ContaReceber.cliente, col_nome_parte=Cliente.nome, hoje=hoje,
+    )
+    # Filtro de classificacao contábil: sem conta, para revisar, ou por conta.
+    if classificacao == "sem_conta":
+        filtros.append(ContaReceber.plano_conta_id.is_(None))
+    elif classificacao == "revisar":
+        filtros.append(ContaReceber.classificacao_revisar == True)
+    elif classificacao.isdigit():
+        filtros.append(ContaReceber.plano_conta_id == int(classificacao))
+
     query = db.query(ContaReceber).options(
         joinedload(ContaReceber.cliente),
         joinedload(ContaReceber.tipo_documento),
         joinedload(ContaReceber.plano_conta)
-    )
-    if status_filtro == "pendente":
-        query = query.filter(ContaReceber.status == StatusConta.PENDENTE)
-    elif status_filtro == "pago":
-        query = query.filter(ContaReceber.status == StatusConta.PAGO)
-    elif status_filtro == "vencido":
-        query = query.filter(
-            or_(
-                ContaReceber.status == StatusConta.VENCIDO,
-                and_(ContaReceber.status == StatusConta.PENDENTE, ContaReceber.data_vencimento < hoje)
-            )
-        )
-    elif status_filtro == "cancelado":
-        query = query.filter(ContaReceber.status == StatusConta.CANCELADO)
-    elif status_filtro == "baixa_solicitada":
-        query = query.filter(ContaReceber.status == StatusConta.BAIXA_SOLICITADA)
-    else:
-        query = query.filter(ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA]))
-    if busca:
-        query = query.filter(
-            or_(
-                ContaReceber.descricao.ilike(f"%{busca}%"),
-                ContaReceber.cliente.has(Cliente.nome.ilike(f"%{busca}%"))
-            )
-        )
-    if data_inicio:
-        try:
-            query = query.filter(ContaReceber.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
-        except ValueError:
-            request.session["message"] = {"tipo": "danger", "texto": "Data de início inválida. Use o formato AAAA-MM-DD."}
-            return RedirectResponse(url="/contas/receber", status_code=303)
-    if data_fim:
-        try:
-            query = query.filter(ContaReceber.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
-        except ValueError:
-            request.session["message"] = {"tipo": "danger", "texto": "Data de fim inválida. Use o formato AAAA-MM-DD."}
-            return RedirectResponse(url="/contas/receber", status_code=303)
-    # Filtro de classificacao contábil: sem conta, para revisar, ou por conta.
-    if classificacao == "sem_conta":
-        query = query.filter(ContaReceber.plano_conta_id.is_(None))
-    elif classificacao == "revisar":
-        query = query.filter(ContaReceber.classificacao_revisar == True)
-    elif classificacao.isdigit():
-        query = query.filter(ContaReceber.plano_conta_id == int(classificacao))
+    ).filter(*filtros)
     if sort == "cliente":
         query = query.outerjoin(Cliente, ContaReceber.cliente_id == Cliente.id)
     total_count = query.count()
+    # O total da tela e do recorte filtrado, nao de todas as contas em aberto: com o
+    # filtro em "Vencidos" a lista mostrava 20 contas e um valor que nao era delas.
+    total_filtrado_valor = db.query(
+        sql_func.coalesce(sql_func.sum(ContaReceber.valor), 0)
+    ).filter(*filtros).scalar() or 0
     total_pages = max(1, (total_count + per_page - 1) // per_page)
     page = max(1, min(page, total_pages))
     offset = (page - 1) * per_page
@@ -390,9 +451,6 @@ def contas_receber(
     else:
         sort_col = getattr(ContaReceber, sort, ContaReceber.data_vencimento)
         contas = query.order_by(order_func(sort_col), ContaReceber.id).offset(offset).limit(per_page).all()
-    total_pendente_valor = db.query(sql_func.coalesce(sql_func.sum(ContaReceber.valor), 0)).filter(
-        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
-    ).scalar() or 0
     tipos_documento = db.query(TipoDocumento).order_by(TipoDocumento.nome).all()
     planos_contas_receita = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "receita", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
     planos_contas_despesa = db.query(PlanoDeContas).filter(PlanoDeContas.tipo == "despesa", PlanoDeContas.ativo == True).order_by(PlanoDeContas.codigo).all()
@@ -404,7 +462,7 @@ def contas_receber(
     cont_revisar = q_ativa.filter(ContaReceber.classificacao_revisar == True).count()
     return request.app.state.templates.TemplateResponse(request, 
         "contas/receber.html",
-        {"request": request, "contas": contas, "total_pendente": total_pendente_valor or 0,
+        {"request": request, "contas": contas, "total_pendente": total_filtrado_valor or 0,
          "clientes": clientes, "clientes_json": clientes_json, "fornecedores_json": [], "messages": get_messages(request),
          "busca": busca, "status_filtro": status_filtro,
          "data_inicio": data_inicio, "data_fim": data_fim,
@@ -773,14 +831,23 @@ def estornar_conta_receber(request: Request, conta_id: int, db: Session = Depend
 
 
 @router.get("/pagar/pdf")
-def contas_pagar_pdf(request: Request, db: Session = Depends(get_db)):
+def contas_pagar_pdf(
+    request: Request, db: Session = Depends(get_db),
+    busca: str = Query(""), status_filtro: str = Query(""),
+    data_inicio: str = Query(""), data_fim: str = Query(""),
+):
+    """PDF respecting the filter da tela: antes ignorava todos os parametros e
+    imprimia sempre todas as contas em aberto."""
     from services.nfse_pdf import gerar_pdf_contas
     empresa = db.query(Empresa).first()
-    contas = db.query(ContaPagar).options(joinedload(ContaPagar.fornecedor)).filter(
-        ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
-    ).order_by(ContaPagar.data_vencimento).all()
-    pdf_bytes = gerar_pdf_contas(contas, empresa, tipo="pagar", filtros="Filtro: Em aberto (pendente/vencido)")
-    from fastapi.responses import Response
+    filtros, rotulo = _filtros_exportacao(
+        request, ContaPagar, status_filtro, busca, data_inicio, data_fim,
+        rel_parte=ContaPagar.fornecedor, col_nome_parte=Fornecedor.nome,
+    )
+    contas = db.query(ContaPagar).options(
+        joinedload(ContaPagar.fornecedor)
+    ).filter(*filtros).order_by(ContaPagar.data_vencimento).all()
+    pdf_bytes = gerar_pdf_contas(contas, empresa, tipo="pagar", filtros=f"Filtro: {rotulo}")
     return Response(content=pdf_bytes, media_type="application/pdf",
                     headers={"Content-Disposition": "inline; filename=contas_pagar.pdf"})
 
@@ -792,40 +859,19 @@ def exportar_contas_pagar(
     data_inicio: str = Query(""), data_fim: str = Query(""),
     sort: str = Query("data_vencimento"), ordem: str = Query("asc"),
 ):
+    filtros, _rotulo = _filtros_exportacao(
+        request, ContaPagar, status_filtro, busca, data_inicio, data_fim,
+        rel_parte=ContaPagar.fornecedor, col_nome_parte=Fornecedor.nome,
+    )
     query = db.query(ContaPagar).options(
         joinedload(ContaPagar.fornecedor),
-    )
-    if status_filtro == "pendente":
-        query = query.filter(ContaPagar.status == StatusConta.PENDENTE)
-    elif status_filtro == "pago":
-        query = query.filter(ContaPagar.status == StatusConta.PAGO)
-    elif status_filtro == "vencido":
-        query = query.filter(ContaPagar.status == StatusConta.VENCIDO)
-    elif status_filtro == "cancelado":
-        query = query.filter(ContaPagar.status == StatusConta.CANCELADO)
-    elif status_filtro == "baixa_solicitada":
-        query = query.filter(ContaPagar.status == StatusConta.BAIXA_SOLICITADA)
+    ).filter(*filtros)
+    if sort == "fornecedor":
+        query = query.outerjoin(Fornecedor, ContaPagar.fornecedor_id == Fornecedor.id)
+        sort_col = Fornecedor.nome
     else:
-        query = query.filter(ContaPagar.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA]))
-    if busca:
-        query = query.filter(
-            or_(
-                ContaPagar.descricao.ilike(f"%{busca}%"),
-                ContaPagar.fornecedor.has(Fornecedor.nome.ilike(f"%{busca}%"))
-            )
-        )
-    if data_inicio:
-        try:
-            query = query.filter(ContaPagar.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
-        except ValueError:
-            logger.warning(f"Data de início inválida no filtro de exportação: {data_inicio}")
-    if data_fim:
-        try:
-            query = query.filter(ContaPagar.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
-        except ValueError:
-            logger.warning(f"Data de fim inválida no filtro de exportação: {data_fim}")
+        sort_col = getattr(ContaPagar, sort, ContaPagar.data_vencimento)
     order_func = sql_desc if ordem == "desc" else sql_asc
-    sort_col = getattr(ContaPagar, sort, ContaPagar.data_vencimento)
     contas = query.order_by(order_func(sort_col), ContaPagar.id).all()
     output = io.StringIO()
     writer = csv.writer(output)
@@ -839,11 +885,12 @@ def exportar_contas_pagar(
             str(c.data_pagamento) if c.data_pagamento else "-",
             c.status.name.lower() if hasattr(c.status, 'name') else str(c.status),
         ])
-    csv_content = output.getvalue()
+    # BOM UTF-8: sem ele o Excel abre o CSV com os acentos quebrados.
+    csv_content = "\ufeff" + output.getvalue()
     output.close()
     return Response(
         content=csv_content,
-        media_type="text/csv",
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=contas_pagar.csv"}
     )
 
@@ -854,41 +901,27 @@ def exportar_contas_receber(
     busca: str = Query(""), status_filtro: str = Query(""),
     data_inicio: str = Query(""), data_fim: str = Query(""),
     sort: str = Query("data_vencimento"), ordem: str = Query("asc"),
+    classificacao: str = Query(""),
 ):
+    filtros, rotulo = _filtros_exportacao(
+        request, ContaReceber, status_filtro, busca, data_inicio, data_fim,
+        rel_parte=ContaReceber.cliente, col_nome_parte=Cliente.nome,
+    )
+    if classificacao == "sem_conta":
+        filtros.append(ContaReceber.plano_conta_id.is_(None))
+    elif classificacao == "revisar":
+        filtros.append(ContaReceber.classificacao_revisar == True)
+    elif classificacao.isdigit():
+        filtros.append(ContaReceber.plano_conta_id == int(classificacao))
     query = db.query(ContaReceber).options(
         joinedload(ContaReceber.cliente),
-    )
-    if status_filtro == "pendente":
-        query = query.filter(ContaReceber.status == StatusConta.PENDENTE)
-    elif status_filtro == "pago":
-        query = query.filter(ContaReceber.status == StatusConta.PAGO)
-    elif status_filtro == "vencido":
-        query = query.filter(ContaReceber.status == StatusConta.VENCIDO)
-    elif status_filtro == "cancelado":
-        query = query.filter(ContaReceber.status == StatusConta.CANCELADO)
-    elif status_filtro == "baixa_solicitada":
-        query = query.filter(ContaReceber.status == StatusConta.BAIXA_SOLICITADA)
-    else:
-        query = query.filter(ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO, StatusConta.BAIXA_SOLICITADA]))
-    if busca:
-        query = query.filter(
-            or_(
-                ContaReceber.descricao.ilike(f"%{busca}%"),
-                ContaReceber.cliente.has(Cliente.nome.ilike(f"%{busca}%"))
-            )
-        )
-    if data_inicio:
-        try:
-            query = query.filter(ContaReceber.data_vencimento >= datetime.strptime(data_inicio, "%Y-%m-%d").date())
-        except ValueError:
-            logger.warning(f"Data de início inválida no filtro de exportação: {data_inicio}")
-    if data_fim:
-        try:
-            query = query.filter(ContaReceber.data_vencimento <= datetime.strptime(data_fim, "%Y-%m-%d").date())
-        except ValueError:
-            logger.warning(f"Data de fim inválida no filtro de exportação: {data_fim}")
+    ).filter(*filtros)
     order_func = sql_desc if ordem == "desc" else sql_asc
-    sort_col = getattr(ContaReceber, sort, ContaReceber.data_vencimento)
+    if sort == "cliente":
+        query = query.outerjoin(Cliente, ContaReceber.cliente_id == Cliente.id)
+        sort_col = Cliente.nome
+    else:
+        sort_col = getattr(ContaReceber, sort, ContaReceber.data_vencimento)
     contas = query.order_by(order_func(sort_col), ContaReceber.id).all()
     output = io.StringIO()
     writer = csv.writer(output)
@@ -902,11 +935,12 @@ def exportar_contas_receber(
             str(c.data_recebimento) if c.data_recebimento else "-",
             c.status.name.lower() if hasattr(c.status, 'name') else str(c.status),
         ])
-    csv_content = output.getvalue()
+    # BOM UTF-8: sem ele o Excel abre o CSV com os acentos quebrados.
+    csv_content = "\ufeff" + output.getvalue()
     output.close()
     return Response(
         content=csv_content,
-        media_type="text/csv",
+        media_type="text/csv; charset=utf-8",
         headers={"Content-Disposition": "attachment; filename=contas_receber.csv"}
     )
 
@@ -935,14 +969,30 @@ def ver_conta_pagar(request: Request, conta_id: int, db: Session = Depends(get_d
 
 
 @router.get("/receber/pdf")
-def contas_receber_pdf(request: Request, db: Session = Depends(get_db)):
+def contas_receber_pdf(
+    request: Request, db: Session = Depends(get_db),
+    busca: str = Query(""), status_filtro: str = Query(""),
+    data_inicio: str = Query(""), data_fim: str = Query(""),
+    classificacao: str = Query(""),
+):
+    """PDF respecting the filter da tela: antes ignorava todos os parametros e
+    imprimia sempre todas as contas em aberto, com o rotulo fixo."""
     from services.nfse_pdf import gerar_pdf_contas
     empresa = db.query(Empresa).first()
-    contas = db.query(ContaReceber).options(joinedload(ContaReceber.cliente)).filter(
-        ContaReceber.status.in_([StatusConta.PENDENTE, StatusConta.VENCIDO])
-    ).order_by(ContaReceber.data_vencimento).all()
-    pdf_bytes = gerar_pdf_contas(contas, empresa, tipo="receber", filtros="Filtro: Em aberto (pendente/vencido)")
-    from fastapi.responses import Response
+    filtros, rotulo = _filtros_exportacao(
+        request, ContaReceber, status_filtro, busca, data_inicio, data_fim,
+        rel_parte=ContaReceber.cliente, col_nome_parte=Cliente.nome,
+    )
+    if classificacao == "sem_conta":
+        filtros.append(ContaReceber.plano_conta_id.is_(None))
+    elif classificacao == "revisar":
+        filtros.append(ContaReceber.classificacao_revisar == True)
+    elif classificacao.isdigit():
+        filtros.append(ContaReceber.plano_conta_id == int(classificacao))
+    contas = db.query(ContaReceber).options(
+        joinedload(ContaReceber.cliente)
+    ).filter(*filtros).order_by(ContaReceber.data_vencimento).all()
+    pdf_bytes = gerar_pdf_contas(contas, empresa, tipo="receber", filtros=f"Filtro: {rotulo}")
     return Response(content=pdf_bytes, media_type="application/pdf",
                     headers={"Content-Disposition": "inline; filename=contas_receber.pdf"})
 
