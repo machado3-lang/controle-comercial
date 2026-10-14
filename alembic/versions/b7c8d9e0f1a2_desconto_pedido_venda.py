@@ -7,7 +7,7 @@ O app tambem cria colunas faltantes no startup (_add_missing_columns),
 entao a migracao e idempotente.
 
 Revision ID: b7c8d9e0f1a2
-Revises: a2b3c4d5e6f7
+Revises: b3c4d5e6f7a8
 Create Date: 2026-10-01 12:00:00.000000
 
 """
@@ -19,7 +19,7 @@ import sqlalchemy as sa
 
 # revision identifiers, used by Alembic.
 revision: str = "b7c8d9e0f1a2"
-down_revision: Union[str, None] = "a2b3c4d5e6f7"
+down_revision: Union[str, None] = "b3c4d5e6f7a8"
 branch_labels: Sequence[str] | None = None
 depends_on: Sequence[str] | None = None
 
