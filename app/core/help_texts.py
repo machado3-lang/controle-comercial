@@ -13,6 +13,104 @@ esse conteúdo vive nos DOCUMENTACAO_*.md do repo.
 """
 
 TEXTOS_AJUDA = {
+    # ---- Produto / Serviço ----
+    "produto.foto": (
+        "Foto do item. É o que aparece nas telas de pedido, OS e NFS-e. Dá para "
+        "adicionar mais de uma."
+    ),
+    "produto.codigo": (
+        "Código interno. Já vem preenchido com o próximo disponível; pode ser "
+        "trocado por uma numeração própria (ex.: SKU do fornecedor)."
+    ),
+    "produto.nome": "Nome do item. É o texto que sai na NFe/NFS-e e nas listas.",
+    "produto.descricao": (
+        "Complemento do nome. Fica guardado com o item, mas não é impresso na nota."
+    ),
+    "produto.marca": "Fabricante. Ajuda a filtrar e a montar relatórios de peça x serviço.",
+    "produto.categoria": (
+        "Agrupamento do item (ex.: Peças, Serviços). Também é o filtro padrão da "
+        "busca de produtos."
+    ),
+    "produto.tipo": (
+        "Define quais campos aparecem e para onde o item vai. Produto gera NFe; "
+        "Serviço gera NFS-e; Kit soma os insumos e não emite nota própria."
+    ),
+    "produto.conta_receita": (
+        "Para onde a receita deste item entra no DRE. É daqui que a classificação "
+        "das contas a receber fica automática, sem editar cada conta depois."
+    ),
+    "produto.codigo_lc116": (
+        "Item da lista de serviços LC 116/03. Vai como <cTribNac> na NFS-e e é "
+        "obrigatório quando o Tipo é Serviço. Dourados não aceita dois códigos "
+        "diferentes na mesma nota."
+    ),
+    "produto.codigo_tributacao_municipal": (
+        "Código NBS, substituto do LC 116 no novo padrão nacional. Vai como <cNBS> "
+        "na NFS-e quando preenchido."
+    ),
+    "produto.fornecedor": "Fornecedor padrão do item. Ajuda nos relatórios de compra e de giro.",
+    "produto.ncm": (
+        "Nomenclatura Comum do Mercosul (8 dígitos). Vai como NCM na NFe; taxar "
+        "errado aqui é o que mais derruba emissão."
+    ),
+    "produto.unidade": "Unidade comercial (UN, CX, KG...). Sai na NFe como <unidade>.",
+    "produto.origem": (
+        "Origem da mercadoria, 0 a 8. Vai no XML da NFe como <orig> e interfere no "
+        "cálculo de tributos interestaduais. Deixe em 0 para o que é nacional."
+    ),
+    "produto.cst": (
+        "Código de Situação Tributária do ICMS (2 dígitos). Se a empresa é do "
+        "Simples, o campo certo é o CSOSN."
+    ),
+    "produto.csosn": (
+        "CSOSN, só para empresa do Simples Nacional (3 dígitos). Se você não é do "
+        "Simples, deixe vazio."
+    ),
+    "produto.aliquota_icms": "Alíquota de ICMS do item, em %. Vem preenchida pelo cadastro do produto.",
+    "produto.aliquota_pis": "Alíquota de PIS, em %. Vem preenchida pelo cadastro do produto.",
+    "produto.aliquota_cofins": "Alíquota de COFINS, em %. Vem preenchida pelo cadastro do produto.",
+    "produto.cest": (
+        "Código Especificador da Substituição Tributária (7 dígitos). Só para quem "
+        "é substituinte ou pelo substituído; fora disso, vazio."
+    ),
+    "produto.codigo_beneficio_fiscal": (
+        "Código de benefício fiscal da UF (ex.: SP070130). Sai na NFe e na NFC-e; "
+        "é o que dá direito a desconto em operações internas."
+    ),
+    "produto.preco_custo": (
+        "Quanto você paga pelo item. É a base do cálculo de margem e entra na "
+        "tabela de custo. Não vai para a nota."
+    ),
+    "produto.margem": (
+        "Margem sobre o custo, em %. Os três campos (custo, margem e preço) se "
+        "recalculam sozinhos: informe custo e margem, ou custo e preço."
+    ),
+    "produto.preco": "Preço de venda. É o valor que sai na nota e na cobrança.",
+    "produto.altura": "Altura em cm. Usada no cálculo de frete e no relatório de produtos.",
+    "produto.largura": "Largura em cm. Usada no cálculo de frete e no relatório de produtos.",
+    "produto.profundidade": "Profundidade em cm. Usada no cálculo de frete e no relatório de produtos.",
+    "produto.unidade_medida": "Unidade em que as medidas acima são informadas (cm, mm, pol).",
+    "produto.peso_liq": "Peso líquido, sem embalagem.",
+    "produto.peso_bruto": "Peso com embalagem. É o que a transportadora usa para calcular o frete.",
+    "produto.estoque_minimo": (
+        "Abaixo disso o item entra na lista de reposição e fica destacado em "
+        "amber no estoque."
+    ),
+    "produto.estoque": (
+        "Saldo atual. Baixa por nota ou OS e devolve quando a nota é excluída antes "
+        "de ser transmitida."
+    ),
+    "produto.variacao_nome": (
+        "Nome da variação (ex.: \"12GB / RAM\"). Só quando o produto tem variações, "
+        "cada uma com estoque e preço próprios."
+    ),
+    "produto.variacao_sku": "Código da variação. Sugerido automaticamente ao adicionar.",
+    "produto.variacao_preco": "Preço da variação. Some ao preço do produto-pai ao formar a linha da nota.",
+    "produto.variacao_estoque": (
+        "Saldo da variação. Baixa e devolve como o estoque do produto-pai."
+    ),
+    "produto.variacao_estoque_min": "Estoque mínimo da variação, usado no alerta de reposição.",
+
     # ---- Cliente ----
     "cliente.codigo": (
         "Identificador interno do cliente. Já vem preenchido com o próximo número "
