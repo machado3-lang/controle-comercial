@@ -1530,6 +1530,20 @@ def _limpar_codigo(valor) -> str:
     return "".join(c for c in str(valor) if c.isdigit())
 
 
+def _primeiro_email(email) -> str:
+    """O SEFIN/Betha so aceita UM e-mail valido no DPS. Quando o cadastro do
+    cliente tem varios enderecos separados por ';' ou ',', retorna apenas o
+    primeiro valido para a transmissao da NFSe."""
+    import re
+    if not email:
+        return ""
+    for part in re.split(r"[;,\s]+", str(email)):
+        part = part.strip()
+        if part and "@" in part:
+            return part
+    return ""
+
+
 def _esc(valor) -> str:
     """Escapa caracteres especiais XML (& < > " ') em campos de texto.
     Sem isso, um cliente com '&' no nome (ex.: 'X & Y LTDA') gera XML inválido
@@ -1571,7 +1585,7 @@ def gerar_dps_xml(pedido, db, tpAmb: int = 1, numero_nfse: int = None, serie: st
     cli_cep = _limpar_codigo(cli.cep or '')
     cli_cmun = _limpar_codigo(cli.codigo_ibge or '') or cmun
     cli_fone = _limpar_codigo(cli.celular or cli.telefone or '')
-    cli_email = _esc((cli.email or '').strip())
+    cli_email = _esc(_primeiro_email(cli.email))
     cli_im = _limpar_codigo(cli.inscricao_municipal or '')
 
     toma_end = f'''<end>
@@ -1771,7 +1785,7 @@ def gerar_dps_xml_nfse(nfse, db, tpAmb: int = 1, numero_nfse: int = None, serie:
     cli_cep = _limpar_codigo(cli.cep or '') if cli else ''
     cli_cmun = _limpar_codigo(cli.codigo_ibge or '') or cmun if cli else cmun
     cli_fone = _limpar_codigo(cli.celular or cli.telefone or '') if cli else ''
-    cli_email = _esc((cli.email or '').strip()) if cli else ''
+    cli_email = _esc(_primeiro_email(cli.email)) if cli else ''
     cli_im = _limpar_codigo(cli.inscricao_municipal or '') if cli else ''
     cli_nome = _esc(cli.nome or '') if cli else ''
 

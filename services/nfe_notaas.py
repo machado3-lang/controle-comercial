@@ -6,6 +6,7 @@ from datetime import date
 from decimal import Decimal
 from models import Empresa, Produto
 from app.core.config import settings
+from services.nfse_betha import _primeiro_email
 
 
 API_BASE = settings.NOTAAS_API_URL
@@ -185,7 +186,7 @@ def montar_payload_nfe(
             "cpf": dest_cpf,
             "ie": dest_ie,
             "indicadorIE": indicador_ie,
-            "email": cliente.email or None,
+            "email": _primeiro_email(cliente.email) or None,
             "endereco": {
                 "logradouro": cliente.endereco or "",
                 "numero": "SN",
