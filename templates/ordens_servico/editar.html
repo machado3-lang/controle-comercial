@@ -17,7 +17,7 @@
         <div class="glass-card p-4">
             <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="clipboard" class="w-4 h-4 inline me-1"></i> Equipamento</h5>
             <div class="mb-3 relative">
-                <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>{{ ajuda('os.cliente') }}
                 <input type="text" id="clienteSearchEdit" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off" value="{{ ordem.cliente.nome }}">
                 <div id="clienteDropdownEdit" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
                 <select name="cliente_id" id="clienteIdEdit" class="hidden">
@@ -25,12 +25,12 @@
                 </select>
             </div>
             <div class="mb-3">
-                <label class="block text-xs font-medium text-cyan-400 mb-1">Equipamento *</label>
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Equipamento *</label>{{ ajuda('os.equipamento') }}
                 <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="equipamento" required value="{{ ordem.equipamento }}">
             </div>
             <div class="grid grid-cols-2 gap-3 mb-3">
                 <div>
-                    <label class="block text-xs font-medium text-cyan-400 mb-1">Marca</label>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Marca</label>{{ ajuda('os.marca') }}
                     <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="marca_id" id="marcaSelectEdit">
                         <option value="">Selecione...</option>
                         {% for m in marcas %}
@@ -39,17 +39,17 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-cyan-400 mb-1">Modelo</label>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Modelo</label>{{ ajuda('os.modelo') }}
                     <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="modelo" value="{{ ordem.modelo or '' }}">
                 </div>
             </div>
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="block text-xs font-medium text-cyan-400 mb-1">Nº Série</label>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Nº Série</label>{{ ajuda('os.numero_serie') }}
                     <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_serie" value="{{ ordem.numero_serie or '' }}">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-cyan-400 mb-1">Nº Requisição</label>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Nº Requisição</label>{{ ajuda('os.numero_requisicao') }}
                     <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_requisicao" value="{{ ordem.numero_requisicao or '' }}">
                 </div>
             </div>
@@ -59,17 +59,17 @@
             <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="file-text" class="w-4 h-4 inline me-1"></i> Detalhes</h5>
             <div class="grid grid-cols-2 gap-3 mb-3">
                 <div>
-                    <label class="block text-xs font-medium text-cyan-400 mb-1">Técnico</label>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Técnico</label>{{ ajuda('os.tecnico') }}
                     <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tecnico" value="{{ ordem.tecnico or '' }}">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-cyan-400 mb-1">Autorizado por</label>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Autorizado por</label>{{ ajuda('os.autorizado_por') }}
                     <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="autorizado_por" value="{{ ordem.autorizado_por or '' }}">
                 </div>
             </div>
             <div class="grid grid-cols-3 gap-3 mb-3">
                 <div>
-                    <label class="block text-xs font-medium text-cyan-400 mb-1">Status</label>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Status</label>{{ ajuda('os.status') }}
                     <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="status">
                         <option value="aberta" {% if ordem.status.value == 'aberta' %}selected{% endif %}>Aberta</option>
                         <option value="em_andamento" {% if ordem.status.value == 'em_andamento' %}selected{% endif %}>Em Andamento</option>
@@ -79,30 +79,30 @@
                     </select>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-cyan-400 mb-1">Data Entrada</label>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Data Entrada</label>{{ ajuda('os.data_entrada') }}
                     <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_entrada" value="{{ ordem.data_entrada }}">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-cyan-400 mb-1">Data Saída</label>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Data Saída</label>{{ ajuda('os.data_saida') }}
                     <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data_saida" value="{{ ordem.data_saida if ordem.data_saida else '' }}">
                 </div>
             </div>
             <div class="mb-3">
-                <label class="block text-xs font-medium text-cyan-400 mb-1">Defeito Relatado</label>
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Defeito Relatado</label>{{ ajuda('os.defeito_relatado') }}
                 <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="defeito_relatado" rows="3">{{ ordem.defeito_relatado or '' }}</textarea>
             </div>
             <div>
-                <label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
+                <label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>{{ ajuda('os.observacao') }}
                 <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="2">{{ ordem.observacao or '' }}</textarea>
                 <label class="flex items-center gap-2 text-xs text-slate-300 mt-2 cursor-pointer select-none">
                     <input type="checkbox" name="propagar_observacao" value="1" {% if ordem.propagar_observacao %}checked{% endif %} class="w-4 h-4 rounded border-slate-700 bg-slate-900/60 text-cyan-500 focus:ring-cyan-500/50">
-                    Oferecer esta observação nas notas fiscais da OS (NFe/NFSe)
+                    Oferecer esta observação nas notas fiscais da OS (NFe/NFSe){{ ajuda('os.propagar_observacao') }}
                 </label>
             </div>
             <div class="mt-3">
                 <label class="flex items-center gap-2 text-xs font-medium text-cyan-400 cursor-pointer select-none">
                     <input type="checkbox" name="cobranca_separada" value="1" {% if ordem.cobranca_separada %}checked{% endif %} class="w-4 h-4 rounded border-slate-700 bg-slate-900/60 text-cyan-500 focus:ring-cyan-500/50">
-                    Cobrança separada (gerar NFe e NFSe em cobranças/distintas em vez de uma só agrupada)
+                    Cobrança separada (gerar NFe e NFSe em cobranças/distintas em vez de uma só agrupada){{ ajuda('os.cobranca_separada') }}
                 </label>
             </div>
         </div>
@@ -168,11 +168,11 @@
         <div class="glass-card p-4">
             <div class="flex flex-wrap items-end justify-end gap-6">
                 <div>
-                    <label class="block text-xs font-medium text-indigo-400 mb-1">Total Serviços</label>
+                    <label class="block text-xs font-medium text-indigo-400 mb-1">Total Serviços</label>{{ ajuda('os.valor_servico') }}
                     <div class="text-xl font-bold text-indigo-400" id="totalServicosDisplay">R$ 0.00</div>
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-amber-400 mb-1">Total Peças</label>
+                    <label class="block text-xs font-medium text-amber-400 mb-1">Total Peças</label>{{ ajuda('os.valor_pecas') }}
                     <div class="text-xl font-bold text-amber-400" id="totalPecasDisplay">R$ 0.00</div>
                 </div>
                 <div>

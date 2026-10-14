@@ -1015,6 +1015,7 @@ def emitir_consolidacao_submit(
     request: Request, consolidacao_id: int, db: Session = Depends(get_db),
     natureza_operacao: str = Form("Venda de mercadoria"),
     cfop: str = Form(None),
+    observacoes: str = Form(""),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -1096,6 +1097,11 @@ def emitir_consolidacao_submit(
             data_emissao=now,
             data_saida=now,
             forma_pagamento=consolidacao.forma_pagamento or None,
+            # Vai para <infCpl> (dados complementares). Mesmo corte da OS: o
+            # layout aceita 5000 e ainda entra o texto de tributos IBPT.
+            observacoes=(
+                (observacoes or "").strip()[:_LIMITE_OBSERVACAO_NFE]
+            ) or None,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
         )

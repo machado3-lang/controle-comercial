@@ -100,7 +100,7 @@
         <div class="linha"><span class="rot">Equip.:</span><span class="val">{{ ordem.equipamento or '-' }}</span></div>
         <div class="linha"><span class="rot">Marca/Mod.:</span><span class="val">{{ [ordem.marca, ordem.modelo]|select|join(' / ') or '-' }}</span></div>
         <div class="linha"><span class="rot">Nº Série:</span><span class="val">{{ ordem.numero_serie or '-' }}</span></div>
-        <div class="linha"><span class="rot">Req./Prot.:</span><span class="val">{{ ordem.numero_requisicao or '-' }}</span></div>
+        <div class="linha"><span class="rot">Req./OC:</span><span class="val">{{ ordem.numero_requisicao or '-' }}</span></div>
       </div>
     </div>
   </div>

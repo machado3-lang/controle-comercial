@@ -650,6 +650,9 @@ def create_app() -> FastAPI:
     templates.env.filters["fromjson"] = fromjson_filter
 
     templates.env.globals["now"] = date_func.today
+    # Botao de ajuda dos campos: {{ ajuda('os.equipamento') }}.
+    from app.core.help_ui import registra_ajuda
+    registra_ajuda(templates.env)
     app.state.templates = templates
 
     # ---- CSRF + Auth middleware ----

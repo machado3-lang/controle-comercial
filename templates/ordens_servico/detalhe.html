@@ -166,7 +166,7 @@
         <form method="post" action="/ordens-servico/{{ ordem.id }}/gerar-cobranca" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="lg:col-span-2">
-                <label class="block text-xs font-medium text-emerald-400 mb-1">Forma de Pagamento</label>
+                <label class="block text-xs font-medium text-emerald-400 mb-1">Forma de Pagamento</label>{{ ajuda('os.forma_pagamento') }}
                 <select id="cobrancaForma" name="forma_pagamento" onchange="atualizarCamposRecibo()" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                     <option value="boleto" {% if ordem.forma_pagamento == 'boleto' %}selected{% endif %}>Boleto (1 boleto agrupado)</option>
                     <option value="pix" {% if ordem.forma_pagamento == 'pix' %}selected{% endif %}>PIX</option>
@@ -180,15 +180,15 @@
             </div>
             <div id="cobrancaParcelas" class="contents">
                 <div>
-                    <label class="block text-xs font-medium text-emerald-400 mb-1">Parcelas</label>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">Parcelas</label>{{ ajuda('os.num_parcelas') }}
                     <input type="number" min="1" max="24" name="num_parcelas" value="{{ ordem.num_parcelas or 1 }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-emerald-400 mb-1">1º Vencimento</label>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">1º Vencimento</label>{{ ajuda('os.primeiro_vencimento') }}
                     <input type="date" name="primeiro_vencimento" value="{{ (ordem.primeiro_vencimento or ordem.data_saida).strftime('%Y-%m-%d') if (ordem.primeiro_vencimento or ordem.data_saida) else '' }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-emerald-400 mb-1">Intervalo (dias)</label>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">Intervalo (dias)</label>{{ ajuda('os.intervalo_dias') }}
                     <input type="number" min="1" name="intervalo_dias" value="{{ ordem.intervalo_dias or 30 }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                 </div>
             </div>
@@ -210,7 +210,7 @@
         <form method="post" action="/ordens-servico/{{ ordem.id }}/gerar-cobranca" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-3 items-end">
             <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
             <div class="lg:col-span-2">
-                <label class="block text-xs font-medium text-emerald-400 mb-1">Forma de Pagamento</label>
+                <label class="block text-xs font-medium text-emerald-400 mb-1">Forma de Pagamento</label>{{ ajuda('os.forma_pagamento') }}
                 <select id="reciboForma" name="forma_pagamento" onchange="atualizarCamposRecibo()" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                     <option value="dinheiro">Dinheiro</option>
                     <option value="pix">PIX</option>
@@ -224,15 +224,15 @@
             </div>
             <div id="reciboParcelas" class="contents">
                 <div>
-                    <label class="block text-xs font-medium text-emerald-400 mb-1">Parcelas</label>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">Parcelas</label>{{ ajuda('os.num_parcelas') }}
                     <input type="number" min="1" max="24" name="num_parcelas" value="1" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-emerald-400 mb-1">1º Vencimento</label>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">1º Vencimento</label>{{ ajuda('os.primeiro_vencimento') }}
                     <input type="date" name="primeiro_vencimento" value="{{ ordem.data_saida.strftime('%Y-%m-%d') if ordem.data_saida else '' }}" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                 </div>
                 <div>
-                    <label class="block text-xs font-medium text-emerald-400 mb-1">Intervalo (dias)</label>
+                    <label class="block text-xs font-medium text-emerald-400 mb-1">Intervalo (dias)</label>{{ ajuda('os.intervalo_dias') }}
                     <input type="number" min="1" name="intervalo_dias" value="30" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-emerald-500/50">
                 </div>
             </div>
@@ -272,7 +272,7 @@
             <div class="modal-footer border-t border-slate-800/50 flex flex-wrap items-center justify-between gap-3">
                 <div class="flex flex-wrap items-center gap-2 w-full">
                     <div class="flex items-center gap-2 me-2">
-                        <label class="text-xs text-slate-400">Data Saída</label>
+                        <label class="text-xs text-slate-400">Data Saída</label>{{ ajuda('os.data_saida') }}
                         <input type="date" id="dataSaidaConclusao" class="bg-slate-800/60 border border-slate-700 rounded-lg px-2 py-1 text-xs text-slate-100">
                     </div>
                     <button type="button" data-status-os="em_andamento" onclick="definirStatusOS('em_andamento', this)" class="px-3 py-1.5 text-xs font-medium text-amber-300 border border-amber-800/50 rounded-lg hover:bg-amber-950/30 transition">Iniciar</button>

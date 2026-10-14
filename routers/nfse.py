@@ -869,8 +869,9 @@ def pagina_emitir_consolidacao(request: Request, consolidacao_id: int, db: Sessi
 
 @router.post("/emitir/consolidacao/{consolidacao_id}")
 def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session = Depends(get_db),
-                              acao: str = Form("manter"), tipo: str = Form("auto")):
-    """Salva rascunho NFe + NFSe da consolidaÃ§Ã£o"""
+                              acao: str = Form("manter"), tipo: str = Form("auto"),
+                              observacoes: str = Form("")):
+    """Salva rascunho NFe + NFSe da consolidação"""
     consolidacao = db.query(PedidoConsolidado).options(
         selectinload(PedidoConsolidado.itens).selectinload(PedidoConsolidadoItem.produto),
         selectinload(PedidoConsolidado.cliente)
@@ -1119,6 +1120,9 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
                 origem="consolidacao",
                 data_emissao=datetime.now(),
                 forma_pagamento=consolidacao.forma_pagamento or "NFSe",
+                # O form de consolidacao tem um campo "Observacoes" que era
+                # descartado: a rota nao declarava o Form correspondente.
+                observacoes=(observacoes or "").strip()[:_LIMITE_OBSERVACAO_NFSE],
                 iss_retido=iss_retido,
                 aliquota_iss=empresa.aliquota_iss or 2.0,
                 aliquota_federal=empresa.aliquota_federal or 0.0,

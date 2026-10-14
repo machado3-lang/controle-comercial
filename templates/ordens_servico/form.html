@@ -10,7 +10,7 @@
     <div class="glass-card p-4">
         <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="clipboard" class="w-4 h-4 inline me-1"></i> Dados do Equipamento</h5>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Cliente *</label>
+            <label class="form-label text-cyan-300">Cliente *</label>{{ ajuda('os.cliente') }}
             <input type="text" id="clienteSearchOS" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar cliente..." autocomplete="off">
             <div id="clienteDropdownOS" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
             <select class="hidden" name="cliente_id" id="clienteIdOS">
@@ -18,12 +18,12 @@
             </select>
         </div>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Equipamento *</label>
+            <label class="form-label text-cyan-300">Equipamento *</label>{{ ajuda('os.equipamento') }}
             <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="equipamento" required>
         </div>
         <div class="grid grid-cols-2 gap-3 mb-3">
             <div>
-                <label class="form-label text-cyan-300">Marca</label>
+                <label class="form-label text-cyan-300">Marca</label>{{ ajuda('os.marca') }}
                 <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="marca_id" id="marcaSelectOS">
                     <option value="">Selecione...</option>
                     {% for m in marcas %}
@@ -32,12 +32,12 @@
                 </select>
             </div>
             <div>
-                <label class="form-label text-cyan-300">Modelo</label>
+                <label class="form-label text-cyan-300">Modelo</label>{{ ajuda('os.modelo') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="modelo">
             </div>
         </div>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Número de Série</label>
+            <label class="form-label text-cyan-300">Número de Série</label>{{ ajuda('os.numero_serie') }}
             <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_serie">
         </div>
     </div>
@@ -45,27 +45,27 @@
     <div class="glass-card p-4">
         <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="file-text" class="w-4 h-4 inline me-1"></i> Detalhes da OS</h5>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Técnico</label>
+            <label class="form-label text-cyan-300">Técnico</label>{{ ajuda('os.tecnico') }}
             <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="tecnico">
         </div>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Autorizado por</label>
+            <label class="form-label text-cyan-300">Autorizado por</label>{{ ajuda('os.autorizado_por') }}
             <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="autorizado_por" placeholder="Nome de quem autorizou">
         </div>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Nº Requisição do Cliente</label>
-            <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_requisicao" placeholder="Número do protocolo/requisição">
+            <label class="form-label text-cyan-300">Nº Requisição do Cliente</label>{{ ajuda('os.numero_requisicao') }}
+            <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero_requisicao" placeholder="Nº da ordem de compra que autorizou o serviço">
         </div>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Defeito Relatado</label>
+            <label class="form-label text-cyan-300">Defeito Relatado</label>{{ ajuda('os.defeito_relatado') }}
             <textarea class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="defeito_relatado" rows="4"></textarea>
         </div>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Observação</label>
+            <label class="form-label text-cyan-300">Observação</label>{{ ajuda('os.observacao') }}
             <textarea class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="3"></textarea>
             <label class="flex items-center gap-2 text-xs text-slate-300 mt-2 cursor-pointer select-none">
                 <input type="checkbox" name="propagar_observacao" value="1" class="w-4 h-4 rounded border-slate-700 bg-slate-900/60 text-cyan-500 focus:ring-cyan-500/50">
-                Oferecer esta observação nas notas fiscais da OS (NFe/NFSe)
+                Oferecer esta observação nas notas fiscais da OS (NFe/NFSe){{ ajuda('os.propagar_observacao') }}
             </label>
             <p class="text-xs text-slate-500 mt-1">Só vale para observações que o cliente possa ver no documento. Padrão: não enviar.</p>
         </div>

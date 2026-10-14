@@ -67,7 +67,7 @@
   <div>{{ ordem.equipamento or '-' }}</div>
   <div>Marca/Mod: {{ [ordem.marca, ordem.modelo]|select|join(' / ') or '-' }}</div>
   {% if ordem.numero_serie %}<div>Série: {{ ordem.numero_serie }}</div>{% endif %}
-  {% if ordem.numero_requisicao %}<div>Req: {{ ordem.numero_requisicao }}</div>{% endif %}
+  {% if ordem.numero_requisicao %}<div>Req/OC: {{ ordem.numero_requisicao }}</div>{% endif %}
 
   <div class="sep"></div>
   <div class="b">{% if eh_orcamento %}SOLICITAÇÃO{% else %}DEFEITO{% endif %}</div>
