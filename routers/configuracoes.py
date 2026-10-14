@@ -69,6 +69,7 @@ async def salvar_configuracoes(
     telefone: str = Form(""),
     celular: str = Form(""),
     email: str = Form(""),
+    email_arquivo: str = Form(""),
     site: str = Form(""),
     observacao: str = Form(""),
     bling_client_id: str = Form(""),
@@ -286,6 +287,7 @@ async def salvar_configuracoes(
     empresa.smtp_from_email = smtp_from_email or None
     empresa.smtp_from_name = smtp_from_name or None
     empresa.smtp_seguranca = smtp_seguranca or "tls"
+    empresa.email_arquivo = email_arquivo or None
     empresa.email_auto_enviar = (email_auto_enviar == "1")
     empresa.email_mensagem_padrao = email_mensagem_padrao or None
     empresa.sicoob_token = None
@@ -470,6 +472,7 @@ async def testar_email(request: Request, db: Session = Depends(get_db)):
         empresa.smtp_password = pwd
     empresa.smtp_from_email = form.get("smtp_from_email", "") or None
     empresa.smtp_from_name = form.get("smtp_from_name", "") or None
+    empresa.email_arquivo = form.get("email_arquivo", "") or None
     empresa.email_auto_enviar = (form.get("email_auto_enviar", "") == "1")
     db.commit()
 

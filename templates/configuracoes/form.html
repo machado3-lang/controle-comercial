@@ -388,6 +388,11 @@
                         <p class="text-xs text-slate-500 mt-1">Usado como remetente. Se vazio, usa o email cadastrado nos dados da empresa.</p>
                     </div>
                     <div>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Email de Arquivo (cópia dos enviados)</label>
+                        <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="email_arquivo" value="{{ empresa.email_arquivo or '' }}" placeholder="Recebe cópia oculta (BCC) de todos os envios">
+                        <p class="text-xs text-slate-500 mt-1">Recebe uma cópia oculta de todos os e-mails enviados (NFE, NFSe, boletos, notificações e recibos), servindo como arquivo. Pode ser o mesmo do remetente ou outro.</p>
+                    </div>
+                    <div>
                         <label class="block text-xs font-medium text-cyan-400 mb-1">Nome do Remetente</label>
                         <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="smtp_from_name" value="{{ empresa.smtp_from_name or empresa.nome_fantasia or '' }}" placeholder="Nome da empresa">
                     </div>

@@ -28,20 +28,24 @@ def get_smtp_config(db) -> Optional[dict]:
         "seguranca": seguranca,
         "from_email": empresa.smtp_from_email or empresa.email,
         "from_name": empresa.smtp_from_name or empresa.nome_fantasia or empresa.razao_social or "Sistema",
+        "archive_email": getattr(empresa, "email_arquivo", None),
     }
 
 
 def _identidade_email(db):
-    """Retorna (from_email, from_name) configurados na empresa."""
+    """Retorna (from_email, from_name, archive_email) configurados na empresa.
+    archive_email e o endereco que recebe copia oculta (BCC) de todos os envios,
+    usado como "arquivo" dos e-mails enviados."""
     empresa = db.query(Empresa).first() if db is not None else None
     if not empresa:
-        return None, None
+        return None, None, None
     from_email = empresa.smtp_from_email or getattr(empresa, "email", None)
     from_name = (empresa.smtp_from_name
                  or empresa.nome_fantasia
                  or empresa.razao_social
                  or "Sistema")
-    return from_email, from_name
+    archive_email = getattr(empresa, "email_arquivo", None)
+    return from_email, from_name, archive_email
 
 
 def _parse_destinatarios(destinatario) -> list:
@@ -70,6 +74,7 @@ def _enviar_via_brevo(
     from_email: str,
     from_name: str,
     api_key: str,
+    archive_email: Optional[str] = None,
 ) -> dict:
     emails = _parse_destinatarios(destinatario)
     if not emails:
@@ -82,6 +87,8 @@ def _enviar_via_brevo(
         "subject": assunto,
         "htmlContent": corpo_html,
     }
+    if archive_email:
+        payload["bcc"] = [{"email": archive_email}]
     if anexos:
         atts = []
         for filename, content, mime_type in anexos:
@@ -119,10 +126,10 @@ def enviar_email(
     # Quando a variavel BREVO_API_KEY estiver definida, enviamos via API HTTPS.
     brevo_key = os.environ.get("BREVO_API_KEY")
     if brevo_key:
-        from_email, from_name = _identidade_email(db)
+        from_email, from_name, archive_email = _identidade_email(db)
         return _enviar_via_brevo(
             destinatario, assunto, corpo_html, anexos,
-            from_email, from_name, brevo_key,
+            from_email, from_name, brevo_key, archive_email,
         )
 
     config = get_smtp_config(db)
@@ -136,6 +143,9 @@ def enviar_email(
     msg['From'] = f"{config['from_name']} <{config['from_email']}>"
     msg['To'] = ", ".join(emails)
     msg['Subject'] = assunto
+    archive_email = config.get("archive_email")
+    if archive_email:
+        msg['Bcc'] = archive_email
 
     msg_alternative = MIMEMultipart('alternative')
     msg_alternative.attach(MIMEText(corpo_html, 'html', 'utf-8'))

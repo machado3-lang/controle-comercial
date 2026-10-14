@@ -726,6 +726,7 @@ class Empresa(Base):
     telefone = Column(String(20), nullable=True)
     celular = Column(String(20), nullable=True)
     email = Column(String(500), nullable=True)
+    email_arquivo = Column(String(500), nullable=True)
     site = Column(String(200), nullable=True)
     logo = Column(String(300), nullable=True)
     senha_admin = Column(String(100), nullable=True)
