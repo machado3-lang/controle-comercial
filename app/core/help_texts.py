@@ -13,6 +13,88 @@ esse conteúdo vive nos DOCUMENTACAO_*.md do repo.
 """
 
 TEXTOS_AJUDA = {
+    # ---- Cliente ----
+    "cliente.codigo": (
+        "Identificador interno do cliente. Já vem preenchido com o próximo número "
+        "disponível; troque se você quiser outra numeração."
+    ),
+    "cliente.data_cadastro": (
+        "Data em que o cliente entrou no sistema. É por ela que relatórios e listas "
+        "são ordenados; num cadastro novo, normalmente é o dia de hoje."
+    ),
+    "cliente.tipo_pessoa": (
+        "Física ou jurídica. Define se o documento é CPF ou CNPJ e ajusta o tamanho "
+        "do campo. Empresa é sempre jurídica."
+    ),
+    "cliente.situacao": (
+        "Só filtra a listagem de clientes. Não bloqueia a emissão de nota nem a "
+        "cobrança — um cliente inativo ainda pode receber OS, pedido e nota."
+    ),
+    "cliente.nome": (
+        "Nome do cliente ou razão social, exatamente como consta no documento "
+        "fiscal. É este texto que sai impresso na NFe e na NFS-e."
+    ),
+    "cliente.fantasia": (
+        "Ajuda a achar o cliente na busca, que procura por nome e por fantasia. "
+        "A nota fiscal leva a razão social, não a fantasia."
+    ),
+    "cliente.contato": (
+        "Pessoa de referência com quem falar. Fica só no cadastro, não vai para a nota."
+    ),
+    "cliente.cpf_cnpj": (
+        "Documento do cliente. Ao sair do campo o sistema consulta a Receita e abre "
+        "uma tela para você revisar e confirmar o preenchimento. Ao salvar, avisa se "
+        "já existe cliente com o mesmo documento."
+    ),
+    "cliente.inscricao_estadual": (
+        "IE do cliente. Sem ela a NFe é bloqueada — a menos que ele esteja marcado "
+        "como isento de IE ou não contribuinte."
+    ),
+    "cliente.isento_ie": (
+        "Marca que o cliente não tem Inscrição Estadual. Ao marcar, o Tipo "
+        "Contribuinte passa sozinho para '2 - Isento'."
+    ),
+    "cliente.indicador_ie": (
+        "Vai como indicador de IE na NFe: 1 contribute, 2 isento, 9 não contribuinte. "
+        "É este campo que libera — ou barra — a emissão quando o cliente não tem IE."
+    ),
+    "cliente.inscricao_municipal": (
+        "IM do cliente. Hoje é usada apenas na sincronização com o Bling: a NFS-e "
+        "manda o município do emitente, não o do tomador."
+    ),
+    "cliente.iss_retido": (
+        "Para cliente que retém o ISS na fonte. Ligado, a NFS-e nasce com iss_retido "
+        "e a cobrança é gerada pelo valor líquido, já descontado o ISS."
+    ),
+    "cliente.tambem_fornecedor": (
+        "Cria também um cadastro de Fornecedor com os mesmos dados, para o mesmo "
+        "documento aparecer nas contas a pagar."
+    ),
+    "cliente.observacao": (
+        "Anotação interna sobre o cliente. Aparece só na tela; não vai para a nota "
+        "fiscal nem para o boleto."
+    ),
+    "cliente.cep": (
+        "Preencha o CEP e o endereço é completado sozinho quando o campo perde o "
+        "foco. O automático traz o logradouro; número e complemento são seus."
+    ),
+    "cliente.numero": "Número do endereço. Vem em branco pelo CEP — complete à mão.",
+    "cliente.complemento": "Andar, sala, loja. O CEP preenche quando existe.",
+    "cliente.endereco": "Logradouro. Preenchido pelo CEP ou pelos dados do CNPJ.",
+    "cliente.bairro": "Bairro. Preenchido pelo CEP ou pelos dados do CNPJ.",
+    "cliente.cidade": "Município. Preenchido pelo CEP ou pelos dados do CNPJ.",
+    "cliente.estado": "UF. O CEP e o CNPJ preenchem sozinhos; confira o resultado.",
+    "cliente.codigo_ibge": (
+        "Código do município na base do IBGE (7 dígitos). Preenchido pelo CEP e "
+        "usado na sincronização com o Bling."
+    ),
+    "cliente.telefone": "Telefone fixo. A máscara é aplicada sozinha enquanto você digita.",
+    "cliente.celular": "Celular/WhatsApp. A máscara é aplicada sozinha enquanto você digita.",
+    "cliente.email": (
+        "E-mail para envio da NFS-e. Aceita vários separados por ponto e vírgula: "
+        "os documentos vão para todos eles."
+    ),
+
     # ---- Ordem de Serviço ----
     "os.cliente": (
         "Cliente que é dono do equipamento e que receberá a cobrança. A busca aceita "

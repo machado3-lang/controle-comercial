@@ -13,22 +13,22 @@
         <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="user" class="w-4 h-4 inline me-1"></i> Dados Cadastrais</h5>
         <div class="grid grid-cols-4 gap-3 mb-3">
             <div>
-                <label class="form-label text-cyan-300">Código</label>
+                <label class="form-label text-cyan-300">Código</label>{{ ajuda('cliente.codigo') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="codigo" value="{{ cliente.codigo if cliente else proximo_codigo }}" placeholder="Auto">
             </div>
             <div>
-                <label class="form-label text-cyan-300">Data Cadastro</label>
+                <label class="form-label text-cyan-300">Data Cadastro</label>{{ ajuda('cliente.data_cadastro') }}
                 <input type="date" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="data_cadastro" value="{{ cliente.created_at.strftime('%Y-%m-%d') if cliente and cliente.created_at else '' }}">
             </div>
             <div>
-                <label class="form-label text-cyan-300">Tipo de Pessoa</label>
+                <label class="form-label text-cyan-300">Tipo de Pessoa</label>{{ ajuda('cliente.tipo_pessoa') }}
                 <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="tipo_pessoa">
                     <option value="juridica" {{ 'selected' if (not cliente) or cliente.tipo_pessoa == 'juridica' }}>Jurídica</option>
                     <option value="fisica" {{ 'selected' if cliente and cliente.tipo_pessoa == 'fisica' }}>Física</option>
                 </select>
             </div>
             <div>
-                <label class="form-label text-cyan-300">Situação</label>
+                <label class="form-label text-cyan-300">Situação</label>{{ ajuda('cliente.situacao') }}
                 <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="situacao">
                     <option value="A" {{ 'selected' if not cliente or cliente.situacao == 'A' }}>Ativo</option>
                     <option value="I" {{ 'selected' if cliente and cliente.situacao == 'I' }}>Inativo</option>
@@ -37,37 +37,37 @@
             </div>
         </div>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Nome/Razão Social *</label>
+            <label class="form-label text-cyan-300">Nome/Razão Social *</label>{{ ajuda('cliente.nome') }}
             <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="nome" required value="{{ cliente.nome if cliente else '' }}">
         </div>
         <div class="grid grid-cols-2 gap-3 mb-3">
             <div>
-                <label class="form-label text-cyan-300">Fantasia (Nome Fantasia)</label>
+                <label class="form-label text-cyan-300">Fantasia (Nome Fantasia)</label>{{ ajuda('cliente.fantasia') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="fantasia" value="{{ cliente.fantasia if cliente else '' }}">
             </div>
             <div>
-                <label class="form-label text-cyan-300">Contato (pessoa de referência)</label>
+                <label class="form-label text-cyan-300">Contato (pessoa de referência)</label>{{ ajuda('cliente.contato') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="contato" value="{{ cliente.contato if cliente else '' }}">
             </div>
         </div>
         <div class="grid grid-cols-4 gap-3 mb-3">
             <div class="col-span-2">
-                <label class="form-label text-cyan-300">CPF/CNPJ</label>
+                <label class="form-label text-cyan-300">CPF/CNPJ</label>{{ ajuda('cliente.cpf_cnpj') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="cpf_cnpj" value="{{ cliente.cpf_cnpj if cliente else '' }}" maxlength="{{ '14' if (cliente and cliente.tipo_pessoa == 'fisica') else '18' }}">
                 <input type="hidden" name="data_sincronizacao" id="dataSincronizacao" value="{{ cliente.data_sincronizacao.strftime('%Y-%m-%d %H:%M') if cliente and cliente.data_sincronizacao else '' }}">
             </div>
             <div>
-                <label class="form-label text-cyan-300">Inscrição Estadual</label>
+                <label class="form-label text-cyan-300">Inscrição Estadual</label>{{ ajuda('cliente.inscricao_estadual') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="inscricao_estadual" value="{{ cliente.inscricao_estadual if cliente else '' }}">
             </div>
             <div>
                 <label class="form-label text-cyan-300 flex items-center gap-2">
                     <input type="checkbox" name="isento_ie" value="1" id="isentoIeCheck" {{ 'checked' if cliente and cliente.isento_ie }} class="w-4 h-4 rounded bg-slate-900/60 border-slate-800/80 text-cyan-500">
-                    Isento IE
+                    Isento IE{{ ajuda('cliente.isento_ie') }}
                 </label>
             </div>
             <div>
-                <label class="form-label text-cyan-300">Tipo Contribuinte *</label>
+                <label class="form-label text-cyan-300">Tipo Contribuinte *</label>{{ ajuda('cliente.indicador_ie') }}
                 <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="indicador_ie" id="indicadorIeSelect">
                     <option value="contribuidor" {{ 'selected' if not cliente or cliente.indicador_ie == 'contribuidor' }}>1 - Contribuinte ICMS</option>
                     <option value="isento" {{ 'selected' if cliente and cliente.indicador_ie == 'isento' }}>2 - Contribuinte isento de Inscrição</option>
@@ -75,24 +75,24 @@
                 </select>
             </div>
             <div>
-                <label class="form-label text-cyan-300">Inscrição Municipal</label>
+                <label class="form-label text-cyan-300">Inscrição Municipal</label>{{ ajuda('cliente.inscricao_municipal') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="inscricao_municipal" value="{{ cliente.inscricao_municipal if cliente else '' }}">
             </div>
             <div class="flex items-end pb-2">
                 <label class="flex items-center gap-2 text-amber-300 cursor-pointer">
                     <input type="checkbox" name="iss_retido" value="1" {{ 'checked' if cliente and cliente.iss_retido }} class="w-4 h-4 rounded bg-slate-900/60 border-slate-800/80 text-amber-500">
-                    <span class="text-sm">ISS Retido pelo Tomador</span>
+                    <span class="text-sm">ISS Retido pelo Tomador</span>{{ ajuda('cliente.iss_retido') }}
                 </label>
             </div>
             <div class="flex items-end pb-2">
                 <label class="flex items-center gap-2 text-indigo-300 cursor-pointer">
                     <input type="checkbox" name="tambem_fornecedor" value="1" {{ 'checked' if cliente and cliente.tambem_fornecedor }} class="w-4 h-4 rounded bg-slate-900/60 border-slate-800/80 text-indigo-500">
-                    <span class="text-sm">Também cadastrar como Fornecedor</span>
+                    <span class="text-sm">Também cadastrar como Fornecedor</span>{{ ajuda('cliente.tambem_fornecedor') }}
                 </label>
             </div>
         </div>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Observação</label>
+            <label class="form-label text-cyan-300">Observação</label>{{ ajuda('cliente.observacao') }}
             <textarea class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="observacao" rows="3">{{ cliente.observacao if cliente else '' }}</textarea>
         </div>
     </div>
@@ -101,35 +101,35 @@
         <h5 class="text-cyan-400 border-b border-slate-800/50 pb-2 mb-3"><i data-lucide="map-pin" class="w-4 h-4 inline me-1"></i> Endereço</h5>
         <div class="grid grid-cols-3 gap-3 mb-3">
             <div>
-                <label class="form-label text-cyan-300">CEP</label>
+                <label class="form-label text-cyan-300">CEP</label>{{ ajuda('cliente.cep') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="cep" value="{{ cliente.cep if cliente else '' }}" maxlength="9">
             </div>
             <div>
-                <label class="form-label text-cyan-300">Número</label>
+                <label class="form-label text-cyan-300">Número</label>{{ ajuda('cliente.numero') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="numero" value="{{ cliente.numero if cliente and cliente.numero else '' }}" maxlength="20">
             </div>
             <div>
-                <label class="form-label text-cyan-300">Complemento</label>
+                <label class="form-label text-cyan-300">Complemento</label>{{ ajuda('cliente.complemento') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="complemento" value="{{ cliente.complemento if cliente and cliente.complemento else '' }}" maxlength="200">
             </div>
         </div>
         <div class="grid grid-cols-3 gap-3 mb-3">
             <div class="col-span-3">
-                <label class="form-label text-cyan-300">Endereço</label>
+                <label class="form-label text-cyan-300">Endereço</label>{{ ajuda('cliente.endereco') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="endereco" value="{{ cliente.endereco if cliente else '' }}">
             </div>
         </div>
         <div class="grid grid-cols-4 gap-3 mb-3">
             <div>
-                <label class="form-label text-cyan-300">Bairro</label>
+                <label class="form-label text-cyan-300">Bairro</label>{{ ajuda('cliente.bairro') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="bairro" value="{{ cliente.bairro if cliente else '' }}">
             </div>
             <div>
-                <label class="form-label text-cyan-300">Cidade</label>
+                <label class="form-label text-cyan-300">Cidade</label>{{ ajuda('cliente.cidade') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="cidade" value="{{ cliente.cidade if cliente else '' }}">
             </div>
             <div>
-                <label class="form-label text-cyan-300">UF</label>
+                <label class="form-label text-cyan-300">UF</label>{{ ajuda('cliente.estado') }}
                 <select class="form-select bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="estado">
                     <option value="">-</option>
                     <option value="AC" {{ 'selected' if cliente and cliente.estado == 'AC' }}>AC</option>
@@ -162,23 +162,23 @@
                 </select>
             </div>
             <div>
-                <label class="form-label text-cyan-300">Cód. IBGE</label>
+                <label class="form-label text-cyan-300">Cód. IBGE</label>{{ ajuda('cliente.codigo_ibge') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="codigo_ibge" value="{{ cliente.codigo_ibge if cliente and cliente.codigo_ibge else '' }}" maxlength="7" placeholder="Ex: 3550308">
             </div>
         </div>
         <h6 class="text-cyan-400 border-b border-slate-800/30 pb-1 mb-2 mt-3"><i data-lucide="mail" class="w-3 h-3 inline me-1"></i> Contato</h6>
         <div class="grid grid-cols-2 gap-3 mb-3">
             <div>
-                <label class="form-label text-cyan-300">Telefone</label>
+                <label class="form-label text-cyan-300">Telefone</label>{{ ajuda('cliente.telefone') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="telefone" value="{{ cliente.telefone if cliente else '' }}">
             </div>
             <div>
-                <label class="form-label text-cyan-300">WhatsApp / Celular</label>
+                <label class="form-label text-cyan-300">WhatsApp / Celular</label>{{ ajuda('cliente.celular') }}
                 <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="celular" value="{{ cliente.celular if cliente else '' }}">
             </div>
         </div>
         <div class="mb-3">
-            <label class="form-label text-cyan-300">Email</label>
+            <label class="form-label text-cyan-300">Email</label>{{ ajuda('cliente.email') }}
             <input type="text" class="form-control bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 w-full" name="email" value="{{ cliente.email if cliente else '' }}" placeholder="email1@exemplo.com; email2@exemplo.com">
             <small class="text-slate-500">Informe mais de um e-mail separando-os por ponto e vírgula (;). Os documentos serão enviados para todos.</small>
         </div>
