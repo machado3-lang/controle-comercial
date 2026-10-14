@@ -59,17 +59,52 @@ def normalizar_situacao(boleto: dict) -> str:
     return SITUACAO_ABERTA
 
 
-def extrair_data_liquidacao(boleto: dict) -> str | None:
-    """Retorna a data da liquidação do boleto (dt. liquid. do Sicoob).
+# Movimentos da carteira no Sicoob (POST /boletos/movimentacoes):
+#   1 Entrada | 2 Prorrogacao | 3 A vencer | 4 Vencido | 5 Liquidacao | 6 Baixa
+# A LIQUIDACAO (data em que o pagador quitou) e o movimento tipo 5. O tipo 6 e
+# BAIXA e nunca deve ser usada como data de recebimento.
+_TIPO_LIQUIDACAO = "5"
+_DESC_LIQUIDACAO = ("LIQUIDA", "PAGAMENTO", "CREDITO", "PAGTO", "PGTO")
+_DESC_NAO_LIQUIDACAO = ("BAIXA", "CANCEL", "TARIFA", "JUROS", "MULTA", "DESCONTO", "ABATIMENTO", "PROTESTO")
 
-    O Sicoob não devolve a data de pagamento em campo de nível superior; ela
-    fica em 'listaHistorico', no evento de 'tipoHistorico' 6 (LIQUIDAÇÃO ou
-    BAIXA). Tenta também os campos diretos, caso existam.
+
+def _parse_data_api(valor) -> date | None:
+    """Converte 'YYYY-MM-DD...' (ISO) em date; None quando ausente/inválido."""
+    if not valor:
+        return None
+    texto = str(valor).strip()[:10]
+    try:
+        return datetime.strptime(texto, "%Y-%m-%d").date()
+    except (ValueError, TypeError):
+        return None
+
+
+def extrair_data_liquidacao(boleto: dict) -> str | None:
+    """Retorna a data da LIQUIDACAO (pagamento) do boleto, conforme a API Sicoob.
+
+    Correcao set/2026: a liquidacao e o movimento `tipoHistorico` "5"; o "6" e
+    BAIXA (nao e data de recebimento). Antes o codigo aceitava "6", o que podia
+    gravar a data da baixa como se fosse pagamento, e caia em `date.today()`
+    quando a API nao devolvia nenhum campo de topo.
+
+    Ordem: (1) evento de liquidacao em `listaHistorico`, (2) campos de topo
+    quando existirem. Datas invalidas sao descartadas (futura ou anterior a
+    emissao do boleto). Retorna None quando nao houver data confiavel.
     """
-    for campo in ("dataLiquidacao", "dataPagamento", "dataCredito"):
-        valor = boleto.get(campo)
-        if valor:
-            return str(valor)
+    emissao = _parse_data_api(boleto.get("dataEmissao"))
+    hoje = date.today()
+
+    def _valida(d: date | None) -> bool:
+        if d is None:
+            return False
+        if d > hoje:
+            return False
+        if emissao and d < emissao:
+            return False
+        return True
+
+    candidatas = []
+
     historico = boleto.get("listaHistorico") or []
     if isinstance(historico, list):
         for item in historico:
@@ -77,12 +112,23 @@ def extrair_data_liquidacao(boleto: dict) -> str | None:
                 continue
             tipo = str(item.get("tipoHistorico", "")).strip()
             descricao = (item.get("descricaoHistorico") or "").upper()
-            # 6 = LIQUIDAÇÃO ou BAIXA; consideramos liquidação quando não há baixa
-            if tipo == "6" or "LIQUIDA" in descricao:
-                data = item.get("dataHistorico")
-                if data:
-                    return str(data)
-    return None
+            if any(n in descricao for n in _DESC_NAO_LIQUIDACAO):
+                continue
+            eh_liquidacao = tipo == _TIPO_LIQUIDACAO or any(
+                t in descricao for t in _DESC_LIQUIDACAO
+            )
+            if eh_liquidacao:
+                candidatas.append(_parse_data_api(item.get("dataHistorico")))
+
+    for campo in ("dataLiquidacao", "dataPagamento", "dataCredito"):
+        candidatas.append(_parse_data_api(boleto.get(campo)))
+
+    validas = [d for d in candidatas if _valida(d)]
+    if not validas:
+        return None
+    # Em caso de mais de um evento (ex.: pagamento parcial + baixa), vale a
+    # primeira liquidacao — data em que o cliente quitou.
+    return min(validas).isoformat()
 
 def get_empresa(db: Session) -> Empresa | None:
     return db.query(Empresa).first()
@@ -922,6 +968,9 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
     ).all()
     
     atualizados = 0
+    consultados = 0
+    itens = []          # contas alteradas nesta execução
+    sem_data = []       # liquidadas sem data de liquidação (data estimada = hoje)
     erros = []
     for conta in contas:
         nn = conta.api_nosso_numero or conta.nosso_numero
@@ -952,6 +1001,7 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
                     continue
                 break
         if resp is not None and resp.status_code == 200:
+            consultados += 1
             data = resp.json()
             resultado = data.get("resultado", {})
             boletos = resultado.get("boletos", [])
@@ -964,28 +1014,76 @@ def sync_pagamentos(request: Request, db: Session = Depends(get_db)):
             if boletos:
                 boleto_data = boletos[0]
                 situacao = extrair_situacao(boleto_data).upper()
+                status_anterior = conta.status.name if hasattr(conta.status, "name") else str(conta.status)
                 if "LIQUIDADO" in situacao or "PAGO" in situacao:
                     conta.status = StatusConta.PAGO
                     data_pgto = extrair_data_liquidacao(boleto_data)
+                    origem_data = "sicoob"
                     if data_pgto:
                         try:
                             conta.data_recebimento = datetime.strptime(str(data_pgto)[:10], "%Y-%m-%d").date()
                         except (ValueError, TypeError):
                             logger.warning(f"Data de pagamento inválida ao sincronizar boleto {nn}: {data_pgto}")
                             conta.data_recebimento = date.today()
+                            origem_data = "estimada"
                     else:
+                        # Sem data confiavel na resposta do Sicoob: usa hoje, mas
+                        # sinaliza na tela para conference manual.
                         logger.warning(f"Boleto {nn} liquidado sem data de liquidação na resposta do Sicoob; usando data atual")
                         conta.data_recebimento = date.today()
+                        origem_data = "estimada"
                     atualizados += 1
+                    if origem_data == "estimada":
+                        sem_data.append(nn)
+                    itens.append({
+                        "conta_id": conta.id,
+                        "nosso_numero": nn,
+                        "cliente": conta.cliente.nome if conta.cliente else None,
+                        "valor": float(conta.valor or 0),
+                        "status_anterior": status_anterior,
+                        "status_novo": StatusConta.PAGO.name,
+                        "situacao_sicoob": situacao,
+                        "data_recebimento": conta.data_recebimento.isoformat() if conta.data_recebimento else None,
+                        "origem_data": origem_data,
+                    })
                 elif "BAIXADO" in situacao:
                     conta.status = StatusConta.CANCELADO
                     atualizados += 1
+                    itens.append({
+                        "conta_id": conta.id,
+                        "nosso_numero": nn,
+                        "cliente": conta.cliente.nome if conta.cliente else None,
+                        "valor": float(conta.valor or 0),
+                        "status_anterior": status_anterior,
+                        "status_novo": StatusConta.CANCELADO.name,
+                        "situacao_sicoob": situacao,
+                        "data_recebimento": None,
+                        "origem_data": None,
+                    })
         elif resp is not None:
             erros.append(f"{nn}: HTTP {resp.status_code}")
         else:
             erros.append(f"{nn}: falha de conexão")
     db.commit()
-    return {"success": True, "atualizados": atualizados, "erros": erros}
+    # Rastro da execução: permite auditar depois quais boletos foram sincronizados.
+    try:
+        registrar_auditoria(
+            db, request.session.get("user_id"), "sync_pagamentos", "sicoob", 0,
+            f"{atualizados} cobrança(s) atualizada(s) de {consultados} boleto(s) consultado(s); "
+            f"{len(sem_data)} sem data de liquidação (data estimada); {len(erros)} erro(s)",
+            request.client.host if request.client else None,
+        )
+    except Exception:
+        logger.warning("Falha ao registrar auditoria da sincronização de pagamentos")
+    return {
+        "success": True,
+        "atualizados": atualizados,
+        "consultados": consultados,
+        "itens": itens,
+        "sem_data": sem_data,
+        "erros": erros,
+        "executado_em": datetime.now().isoformat(timespec="seconds"),
+    }
 
 
 @router.post("/webhook", response_class=JSONResponse)

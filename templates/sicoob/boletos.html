@@ -186,6 +186,40 @@
     </div>
 </div>
 
+<div class="modal fade" id="syncResultadoModal" tabindex="-1">
+    <div class="modal-dialog modal-xl">
+        <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
+            <div class="modal-header border-b border-slate-800/50">
+                <h5 class="modal-title text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-cyan-400 font-semibold"><i data-lucide="refresh-cw" class="w-5 h-5 text-cyan-400 inline me-1"></i> Resultado da Sincronização</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            </div>
+            <div class="modal-body">
+                <div id="syncResumo" class="mb-3 text-sm text-slate-300"></div>
+                <div id="syncAvisoData" class="hidden mb-3 rounded-xl bg-amber-950/30 border border-amber-800/50 p-3 text-xs text-amber-300"></div>
+                <div class="overflow-x-auto">
+                    <table class="w-full divide-y divide-slate-800/60">
+                        <thead class="bg-slate-950/50">
+                            <tr>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-cyan-400 uppercase">Nosso Número</th>
+                                <th class="px-3 py-2 text-left text-xs font-semibold text-slate-300 uppercase">Cliente</th>
+                                <th class="px-3 py-2 text-right text-xs font-semibold text-emerald-400 uppercase">Valor</th>
+                                <th class="px-3 py-2 text-center text-xs font-semibold text-slate-400 uppercase">Situação (Sicoob)</th>
+                                <th class="px-3 py-2 text-center text-xs font-semibold text-slate-400 uppercase">Status</th>
+                                <th class="px-3 py-2 text-center text-xs font-semibold text-cyan-400 uppercase">Recebimento</th>
+                            </tr>
+                        </thead>
+                        <tbody id="syncItens" class="divide-y divide-slate-800/60"></tbody>
+                    </table>
+                </div>
+                <div id="syncErros" class="hidden mt-3 rounded-xl bg-rose-950/30 border border-rose-800/50 p-3 text-xs text-rose-300"></div>
+            </div>
+            <div class="modal-footer border-t border-slate-800/50">
+                <button class="px-4 py-2 border border-slate-800/80 rounded-xl text-slate-300 hover:bg-slate-800/50 transition" data-bs-dismiss="modal">Fechar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="alterarBoletoModal" tabindex="-1">
     <div class="modal-dialog">
         <div class="modal-content bg-slate-900/80 backdrop-blur-md border border-slate-800/80 rounded-2xl">
@@ -522,12 +556,71 @@ function syncPagamentos() {
             btn.innerHTML = originalHtml;
             btn.disabled = false;
             if (data.success) {
-                showToast(`Sincronizados ${data.atualizados} pagamentos`, "success");
+                abrirResultadoSync(data);
+                const avisos = (data.sem_data || []).length + (data.erros || []).length;
+                showToast(
+                    `Sincronizados ${data.atualizados} de ${data.consultados} boleto(s)` +
+                    (avisos ? ` · ${avisos} aviso(s) — veja o detalhe` : ''),
+                    avisos ? 'warning' : 'success'
+                );
                 carregarBoletos();
             } else {
                 showToast("Erro: " + data.error, "danger");
             }
+        })
+        .catch(e => {
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+            showToast("Erro: " + (e.message || e), "danger");
         });
+}
+
+function abrirResultadoSync(data) {
+    const itens = data.itens || [];
+    document.getElementById('syncResumo').innerHTML =
+        `<b>${data.atualizados}</b> cobrança(s) atualizada(s) de <b>${data.consultados}</b> boleto(s) consultado(s)` +
+        (data.executado_em ? ` · ${fmtData(data.executado_em)}` : '');
+
+    const semData = data.sem_data || [];
+    const avisoData = document.getElementById('syncAvisoData');
+    if (semData.length) {
+        avisoData.classList.remove('hidden');
+        avisoData.innerHTML = '<i data-lucide="alert-triangle" class="w-3 h-3 inline me-1"></i> ' +
+            `<b>${semData.length}</b> boleto(s) sem data de liquidação na resposta do Sicoob — ` +
+            'foi gravada a data da sincronização. Confira e ajuste se necessário: ' +
+            semData.slice(0, 20).join(', ') + (semData.length > 20 ? '…' : '');
+    } else {
+        avisoData.classList.add('hidden');
+    }
+
+    const tbody = document.getElementById('syncItens');
+    tbody.innerHTML = itens.length ? itens.map(i => {
+        const dataPgto = i.data_recebimento ? fmtData(i.data_recebimento) : '-';
+        const badgeData = i.origem_data === 'estimada'
+            ? `<span class="ml-1 px-1.5 py-0.5 text-[10px] rounded bg-amber-950/60 text-amber-300 border border-amber-800/50" title="Data estimada (Sicoob não informou a data de liquidação)">estimada</span>`
+            : '';
+        const cor = i.status_novo === 'PAGO' ? 'emerald' : 'rose';
+        return `<tr class="hover:bg-slate-800/40 transition">
+            <td class="px-3 py-2 text-sm text-cyan-300">${i.nosso_numero}${i.conta_id ? `<span class="text-xs text-slate-500"> (#${i.conta_id})</span>` : ''}</td>
+            <td class="px-3 py-2 text-sm text-slate-100">${i.cliente || '-'}</td>
+            <td class="px-3 py-2 text-right text-sm text-emerald-400 font-medium">R$ ${(i.valor || 0).toFixed(2)}</td>
+            <td class="px-3 py-2 text-center text-sm text-slate-300">${i.situacao_sicoob || '-'}</td>
+            <td class="px-3 py-2 text-center"><span class="px-2 py-1 text-xs font-medium bg-${cor}-950/50 text-${cor}-400 border border-${cor}-800/50 rounded-full">${i.status_anterior} → ${i.status_novo}</span></td>
+            <td class="px-3 py-2 text-center text-sm text-slate-200">${dataPgto}${badgeData}</td>
+        </tr>`;
+    }).join('') : '<tr><td colspan="6" class="px-4 py-6 text-center text-slate-500">Nenhuma cobrança alterada nesta sincronização.</td></tr>';
+
+    const erros = data.erros || [];
+    const boxErros = document.getElementById('syncErros');
+    if (erros.length) {
+        boxErros.classList.remove('hidden');
+        boxErros.innerHTML = '<b>Falhas (' + erros.length + '):</b> ' + erros.slice(0, 30).join(' | ') + (erros.length > 30 ? ' …' : '');
+    } else {
+        boxErros.classList.add('hidden');
+    }
+
+    new bootstrap.Modal(document.getElementById('syncResultadoModal')).show();
+    try { lucide.createIcons(); } catch (e) {}
 }
 
 function abrirAlterar(nossoNumero, dataVencimento) {
