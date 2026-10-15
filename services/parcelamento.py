@@ -37,6 +37,20 @@ _FORMAS_A_VISTA = {
     "dinheiro", "pix",
 }
 
+# Formas SEM PAGAMENTO: a nota documenta circulacao de bem, nao venda — remessa
+# para conserto, bonificacao/amostra, consignacao, remessa para industrializacao.
+# Nao geram conta a receber, parcela, boleto nem <dup>. Ver tPag 90 do grupo de
+# pagamento da NF-e.
+#
+# Estas NAO entram em _FORMAS_A_VISTA de proposito: `quitar_avista` marca a
+# conta como PAGO (recebimento em caixa), o que seria falso aqui — nao houve
+# recebimento nenhum. Por isso sao tratadas por `eh_sem_pagamento`, que nao
+# apenas dispensa a cobranca como impede que ela seja gerada por engano.
+_FORMAS_SEM_PAGAMENTO = {
+    "sem_pagamento", "sem pagamento", "sempagamento",
+    "sem_cobranca", "sem cobranca", "semcobranca",
+}
+
 
 def eh_pagamento_a_vista(forma_pagamento):
     """True para formas de recebimento imediato (avista, debito, dinheiro, pix, cartao).
@@ -46,6 +60,19 @@ def eh_pagamento_a_vista(forma_pagamento):
     if not forma_pagamento:
         return False
     return str(forma_pagamento).strip().lower() in _FORMAS_A_VISTA
+
+
+def eh_sem_pagamento(forma_pagamento):
+    """True para operacoes SEM cobranca (remessa/consignacao/bonificacao).
+
+    Nao confundir com `eh_pagamento_a_vista`: ali o dinheiro entra e a conta
+    nasce quitada; aqui nao ha recebimento nenhum. O valor da NF-e continua
+    sendo o do bem (vNF), mas e circulacao de bem, nao receita -- por isso nada
+    vai para contas a receber, parcela, boleto ou <cobr>/<dup> do XML.
+    """
+    if not forma_pagamento:
+        return False
+    return str(forma_pagamento).strip().lower() in _FORMAS_SEM_PAGAMENTO
 
 
 def quitar_avista(contas, forma_pagamento):

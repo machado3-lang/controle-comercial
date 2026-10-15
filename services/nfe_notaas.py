@@ -158,6 +158,13 @@ def montar_payload_nfe(
         "transferencia": "18",
         "pix": "17",
         "outro": "99",
+        # tPag 90 = Sem Pagamento. E o meio correto para operacoes em que a nota
+        # documenta circulacao de bem mas nao ha cobranca (remessa para conserto,
+        # bonificacao/amostra, consignacao, remessa para industrializacao).
+        # "99 Outros" NAO serve aqui: 99 e lido como pagamento de fato e
+        # rejeitado (865 soma dos pagamentos < vNF, 904 valor de pagamento
+        # indevido, 871 o meio deveria ser 90).
+        "sem_pagamento": "90", "sempagamento": "90", "sem_cobranca": "90",
     }
     tipo_pagamento = _TIPO_PAG.get((forma_pagamento or "").lower(), "01")
 
@@ -166,6 +173,8 @@ def montar_payload_nfe(
     # cartão, pix, transferência, outros) são à vista e NÃO podem levar o
     # grupo <cobr>: a SEFAZ rejeita com cStat 853 ("Dados de cobranca nao
     # devem ser informados para pagamento a vista").
+    # O 90 (Sem Pagamento) tambem fica fora: remessa/consignacao nao tem o que
+    # faturar, e <cobr> seria duplo erro (853 + pagamento indevido).
     _PAGAMENTOS_PRAZO = {"15"}
 
     payload = {
@@ -265,7 +274,13 @@ def montar_payload_nfe(
     # itens. Antes era o bruto, que divergia do vNF quando havia desconto.
     desconto_nota = round(sum(float(i.get("desconto") or 0) for i in payload["items"]), 2)
     total_nota = round(sum(i.get("valorTotal", 0) for i in payload["items"]) - desconto_nota, 2)
-    payload["pagamentos"][0]["valor"] = total_nota
+    # vPag = valor do MEIO DE PAGAMENTO, nao o valor da nota. Em operacao sem
+    # cobranca (tPag 90) a SEFAZ exige 0.00 -- mandar o total do bem como
+    # pagamento e a rejeicao 904 (e, se mandar 0, a 865).
+    if tipo_pagamento == "90":
+        payload["pagamentos"][0]["valor"] = 0.0
+    else:
+        payload["pagamentos"][0]["valor"] = total_nota
 
     # Cobrança / duplicatas (grupo <cobr>/<dup> — obrigatório em venda a prazo).
     # Cada duplicata = uma parcela do contas a receber gerada no faturamento.

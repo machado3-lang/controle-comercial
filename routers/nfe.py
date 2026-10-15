@@ -1433,7 +1433,16 @@ def emitir_avulsa_submit(
                     prod.estoque = (prod.estoque or 0) - float(item["quantidade"])
 
         contas_geradas = []
-        if gerar_cobranca or num_parcelas > 1 or bool(primeiro_vencimento):
+        # Operacao SEM PAGAMENTO (remessa para conserto, consignacao,
+        # bonificacao...): a nota documenta circulacao de bem, nao venda. Nao ha
+        # o que receber, entao nenhuma cobranca e criada -- nem parcela, nem
+        # boleto, mesmo com o "Gerar Cobranca" marcado ou parcelas preenchidas.
+        # A razao e a mesma que zera o vPag no payload (tPag 90): se o financeiro
+        # ficasse de pe, o valor do bem entraria como receita sem ever existir.
+        from services.parcelamento import eh_sem_pagamento
+        sem_pagamento = eh_sem_pagamento(forma_pagamento)
+        quer_cobranca = gerar_cobranca or num_parcelas > 1 or bool(primeiro_vencimento)
+        if quer_cobranca and not sem_pagamento:
             from services.parcelamento import gerar_contas_receber, quitar_avista
             try:
                 venc = datetime.strptime(primeiro_vencimento, '%Y-%m-%d').date() if primeiro_vencimento else (
@@ -1461,6 +1470,10 @@ def emitir_avulsa_submit(
         msg = f"Rascunho NFe #{numero_nfe} salvo! Revise antes de transmitir."
         if contas_geradas:
             msg += f" {len(contas_geradas)} cobrança(s) gerada(s)."
+        elif sem_pagamento:
+            msg += " Sem cobrança (tPag 90 — Sem Pagamento)."
+            if quer_cobranca:
+                msg += " A cobrança foi ignorada: não há o que receber nessa operação."
         # Emissão imediata de TODOS os boletos das parcelas (Sicoob)
         if contas_geradas and forma_pagamento == "boleto":
             from services.parcelamento import emitir_boletos_contas
@@ -1888,6 +1901,7 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
         "aprazo": "A prazo",
         "avista": "À vista",
         "outro": "Outro",
+        "sem_pagamento": "Sem Pagamento (tPag 90)",
     }
     fp = nfe.forma_pagamento
     forma_pagamento_label = FORMA_PAGAMENTO_LABELS.get(fp, "À vista / Dinheiro") if fp else "À vista / Dinheiro"
@@ -2241,11 +2255,16 @@ def _garantir_cobranca_nfe(db, nfe):
         return
     from services.parcelamento import (
         contas_receber_existentes_para, gerar_contas_receber, eh_pagamento_a_vista,
-        quitar_avista,
+        eh_sem_pagamento, quitar_avista,
     )
     pedido = nfe.pedido
     cons = db.query(PedidoConsolidado).get(nfe.consolidacao_id) if nfe.consolidacao_id else None
     _forma = str(nfe.forma_pagamento) if nfe.forma_pagamento else "NFSe"
+    # Operacao sem pagamento (remessa/consignacao/bonificacao): o valor do bem
+    # nao e receita, entao nunca vira conta a receber — nem nesta garantia
+    # automatica da transmissao.
+    if eh_sem_pagamento(_forma):
+        return
     # Flag "Gerar Cobranca" e o interruptor mestre (pedido ou consolidacao):
     # desligada, nenhuma cobranca automatica (mesmo a prazo). A vista ja nao
     # gera <dup> na NFe (evita cStat 853).
@@ -2384,8 +2403,12 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
 
         # Recebimento a vista: NFe nao deve levar <cobr>/<dup> (cStat 853).
         # Mantem as duplicatas somente para formas diferidas (a prazo/boleto).
-        from services.parcelamento import eh_pagamento_a_vista
+        from services.parcelamento import eh_pagamento_a_vista, eh_sem_pagamento
         if contas_nfe and eh_pagamento_a_vista(forma_pag):
+            duplicatas = None
+        # Sem pagamento (tPag 90): nao ha o que faturar. Mesmo que exista
+        # cobranca antiga linkeda a nota, ela nao pode virar <cobr>/<dup> no XML.
+        if eh_sem_pagamento(forma_pag):
             duplicatas = None
 
         payload = montar_payload_nfe(

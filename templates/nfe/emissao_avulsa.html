@@ -180,6 +180,7 @@
                                 <option value="cartao_debito" {% if saved_forma_pagamento == 'cartao_debito' %}selected{% endif %}>Cartão Débito</option>
                                 <option value="transferencia" {% if saved_forma_pagamento == 'transferencia' %}selected{% endif %}>Transferência</option>
                                 <option value="outro" {% if saved_forma_pagamento == 'outro' %}selected{% endif %}>Outro</option>
+                                <option value="sem_pagamento" {% if saved_forma_pagamento == 'sem_pagamento' %}selected{% endif %}>Sem Pagamento (sem cobrança — remessa/consignação)</option>
                             </select>
                         </div>
                         <div>
