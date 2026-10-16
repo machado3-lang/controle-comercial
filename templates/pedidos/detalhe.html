@@ -157,6 +157,15 @@
             <label class="flex items-center gap-2 text-cyan-300 cursor-pointer"><input type="checkbox" name="gerar_boleto" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded"><span>Gerar Boleto</span></label>
             <label class="flex items-center gap-2 text-emerald-300 cursor-pointer"><input type="checkbox" name="gerar_cobranca" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded" checked><span>Gerar Cobrança</span></label>
         </div>
+        <div class="lg:col-span-4 hidden" id="avisoCobranca">
+            <div class="flex items-start gap-2 text-sm text-amber-300 bg-amber-950/30 border border-amber-800/50 rounded-xl p-3">
+                <i data-lucide="alert-triangle" class="w-4 h-4 mt-0.5 shrink-0"></i>
+                <div>
+                    <div id="avisoCobrancaTexto"></div>
+                    <div id="avisoBoletoTexto" class="mt-1 text-slate-300"></div>
+                </div>
+            </div>
+        </div>
         <div class="lg:col-span-4">
             <label class="block text-xs font-medium text-emerald-400 mb-1">Condição de Pagamento (pré-preenche parcelas)</label>
             <select id="condicaoPagamento" data-target-parcelas="numParcelas" data-target-venc="primeiroVencimento" data-target-intervalo="intervaloDias" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
@@ -267,6 +276,49 @@ function confirmarFaturamento(sel) {
     numEl.addEventListener('input', atualizar);
     vencEl.addEventListener('change', atualizar);
     intEl.addEventListener('input', atualizar);
+})();
+
+// Aviso: forma a prazo/boleto sem "Gerar Cobranca" nao leva as parcelas ao XML/DANFE.
+(function() {
+    const forma = document.querySelector('select[name="forma_pagamento"]');
+    const chkCobranca = document.querySelector('input[name="gerar_cobranca"]');
+    const chkBoleto = document.querySelector('input[name="gerar_boleto"]');
+    const box = document.getElementById('avisoCobranca');
+    const txtCobranca = document.getElementById('avisoCobrancaTexto');
+    const txtBoleto = document.getElementById('avisoBoletoTexto');
+    if (!forma || !chkCobranca || !box) return;
+    const A_PRAZO = ['aprazo', 'boleto'];
+    function atualizarAviso() {
+        const aPrazo = A_PRAZO.indexOf(forma.value) !== -1;
+        let mostrar = false;
+        let msg = '';
+        if (aPrazo && !chkCobranca.checked) {
+            mostrar = true;
+            msg = '<strong>Atenção:</strong> sem <em>Gerar Cobrança</em> nenhuma parcela é criada e a condição de pagamento ' +
+                  'não vai para o XML/DANFE da nota (grupo <cobr>/<dup>). Marque a opção para que o parcelamento ' +
+                  'informado abaixo seja levado ao documento fiscal.';
+        }
+        let msgBoleto = '';
+        if (forma.value === 'boleto' && chkBoleto && !chkBoleto.checked) {
+            mostrar = true;
+            msgBoleto = 'Com a forma de pagamento <strong>Boleto</strong>, os boletos são emitidos automaticamente na ' +
+                        'transmissão da nota. A opção <em>Gerar Boleto</em> só se aplica quando o pedido é faturado ' +
+                        'sem nota fiscal (recibo).';
+        }
+        if (!mostrar) {
+            box.classList.add('hidden');
+            return;
+        }
+        txtCobranca.innerHTML = msg;
+        txtBoleto.innerHTML = msgBoleto;
+        txtBoleto.classList.toggle('hidden', !msgBoleto);
+        box.classList.remove('hidden');
+        if (window.lucide) lucide.createIcons();
+    }
+    forma.addEventListener('change', atualizarAviso);
+    chkCobranca.addEventListener('change', atualizarAviso);
+    if (chkBoleto) chkBoleto.addEventListener('change', atualizarAviso);
+    atualizarAviso();
 })();
 </script>
 {% endblock %}
