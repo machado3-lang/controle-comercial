@@ -18,6 +18,7 @@ from services.numeracao import reverter_numero_nfse
 from services.guarda_faturamento import bloqueio_faturamento
 from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional, NFSE_NACIONAL_NS
 from services.nfe_notaas import explodir_itens_consolidacao, _limpar_doc
+from services.parcelamento import forma_pagamento_str
 
 logger = logging.getLogger(__name__)
 
@@ -665,7 +666,7 @@ def emitir_nfse(request: Request, pedido_id: int, db: Session = Depends(get_db),
             valor_total=valor_total,
             origem="pedido",
             data_emissao=pedido.data,
-            forma_pagamento=pedido.forma_pagamento or "NFSe",
+            forma_pagamento=forma_pagamento_str(pedido.forma_pagamento) or "NFSe",
             iss_retido=iss_retido,
             aliquota_iss=empresa.aliquota_iss or 2.0,
             aliquota_federal=empresa.aliquota_federal or 0.0,
@@ -1699,9 +1700,9 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
 
     # Forma de pagamento: propria NFSe, pedido ou consolidacao de origem.
     _forma = (
-        (str(nfse.forma_pagamento) if nfse.forma_pagamento else None)
-        or (str(nfse.pedido.forma_pagamento) if nfse.pedido and nfse.pedido.forma_pagamento else None)
-        or (str(nfse.consolidacao.forma_pagamento) if nfse.consolidacao and nfse.consolidacao.forma_pagamento else None)
+        (forma_pagamento_str(nfse.forma_pagamento) if nfse.forma_pagamento else None)
+        or (forma_pagamento_str(nfse.pedido.forma_pagamento) if nfse.pedido and nfse.pedido.forma_pagamento else None)
+        or (forma_pagamento_str(nfse.consolidacao.forma_pagamento) if nfse.consolidacao and nfse.consolidacao.forma_pagamento else None)
         or "NFSe"
     )
 
@@ -1831,9 +1832,9 @@ def _garantir_cobranca_nfse(db, nfse):
         # senao do pedido/consolidacao de origem. Garante que a vista (incl. cartao)
         # seja detectada mesmo para NFSe de consolidacao (que nao tem pedido).
         _forma = (
-            (str(nfse.forma_pagamento) if nfse.forma_pagamento else None)
-            or (str(ped.forma_pagamento) if ped and ped.forma_pagamento else None)
-            or (str(cons.forma_pagamento) if cons and cons.forma_pagamento else None)
+            (forma_pagamento_str(nfse.forma_pagamento) if nfse.forma_pagamento else None)
+            or (forma_pagamento_str(ped.forma_pagamento) if ped and ped.forma_pagamento else None)
+            or (forma_pagamento_str(cons.forma_pagamento) if cons and cons.forma_pagamento else None)
             or "NFSe"
         )
         # Flag "Gerar Cobranca" e o interruptor mestre (pedido ou consolidacao).

@@ -10,6 +10,7 @@ Regras:
   total_parcelas e um parcelamento_grupo (UUID) comum.
 - A descricao recebe o sufixo " (n/N)" quando ha mais de uma parcela.
 """
+import enum
 import logging
 import uuid
 from datetime import date, timedelta
@@ -52,6 +53,21 @@ _FORMAS_SEM_PAGAMENTO = {
 }
 
 
+def forma_pagamento_str(forma_pagamento):
+    """Normaliza a forma de pagamento para string (o valor, nunca o nome do enum).
+
+    FormaPagamento e um str-Enum: em Python 3.11+ ``str(FormaPagamento.BOLETO)``
+    devolve ``'FormaPagamento.BOLETO'`` e nao ``'boleto'``. Isso quebrava as
+    comparacoes (deteccao de a vista, emissao de boleto) quando o membro do enum
+    ainda estava na sessao. Aqui usamos sempre o valor.
+    """
+    if forma_pagamento is None:
+        return None
+    if isinstance(forma_pagamento, enum.Enum):
+        return str(forma_pagamento.value)
+    return str(forma_pagamento)
+
+
 def eh_pagamento_a_vista(forma_pagamento):
     """True para formas de recebimento imediato (avista, debito, dinheiro, pix, cartao).
 
@@ -59,7 +75,7 @@ def eh_pagamento_a_vista(forma_pagamento):
     """
     if not forma_pagamento:
         return False
-    return str(forma_pagamento).strip().lower() in _FORMAS_A_VISTA
+    return forma_pagamento_str(forma_pagamento).strip().lower() in _FORMAS_A_VISTA
 
 
 def eh_sem_pagamento(forma_pagamento):
@@ -72,7 +88,7 @@ def eh_sem_pagamento(forma_pagamento):
     """
     if not forma_pagamento:
         return False
-    return str(forma_pagamento).strip().lower() in _FORMAS_SEM_PAGAMENTO
+    return forma_pagamento_str(forma_pagamento).strip().lower() in _FORMAS_SEM_PAGAMENTO
 
 
 def quitar_avista(contas, forma_pagamento):

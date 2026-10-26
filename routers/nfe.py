@@ -25,6 +25,7 @@ from services.nfe_notaas import (
 )
 from services.numeracao import reverter_numero_nfe
 from services.guarda_faturamento import bloqueio_faturamento
+from services.parcelamento import forma_pagamento_str
 
 logger = logging.getLogger(__name__)
 
@@ -766,7 +767,7 @@ def emitir_pedido_submit(
             valor_total=total,
             data_emissao=now,
             data_saida=now,
-            forma_pagamento=pedido.forma_pagamento or None,
+            forma_pagamento=forma_pagamento_str(pedido.forma_pagamento),
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
         )
@@ -2259,7 +2260,7 @@ def _garantir_cobranca_nfe(db, nfe):
     )
     pedido = nfe.pedido
     cons = db.query(PedidoConsolidado).get(nfe.consolidacao_id) if nfe.consolidacao_id else None
-    _forma = str(nfe.forma_pagamento) if nfe.forma_pagamento else "NFSe"
+    _forma = forma_pagamento_str(nfe.forma_pagamento) or "NFSe"
     # Operacao sem pagamento (remessa/consignacao/bonificacao): o valor do bem
     # nao e receita, entao nunca vira conta a receber — nem nesta garantia
     # automatica da transmissao.
@@ -2307,6 +2308,61 @@ def _garantir_cobranca_nfe(db, nfe):
     # A vista (incl. cartao): conta gerada JA RECEBIDA (PAGO), para constar nos
     # relatorios de recebimento sem virar 'a receber' pendente.
     quitar_avista(contas, _forma)
+
+
+def _duplicatas_previstas_nfe(db, nfe, forma_pag):
+    """Parcelas previstas (em memoria) para o grupo <cobr>/<dup> da NFe.
+
+    A NFe de pedido/consolidacao costuma ser transmitida ANTES de existirem
+    ContaReceber (elas so nascem na autorizacao, via _garantir_cobranca_nfe).
+    Sem isso, o payload saia sem duplicatas e o XML/DANFE ficava sem as parcelas
+    da venda a prazo. Aqui espelhamos o calculo de gerar_contas_receber apenas
+    para o XML; as contas de verdade continuam sendo criadas so apos autorizar.
+
+    Retorna None quando nao ha parcelamento a prazo a informar (a vista, sem
+    pagamento, "Gerar Cobranca" desligado ou origem sem parcelamento).
+    """
+    from services.parcelamento import (
+        eh_pagamento_a_vista, eh_sem_pagamento, calcular_parcelas,
+    )
+    if not forma_pag:
+        return None
+    forma = forma_pagamento_str(forma_pag)
+    if eh_pagamento_a_vista(forma) or eh_sem_pagamento(forma):
+        return None
+    pedido = nfe.pedido
+    cons = db.query(PedidoConsolidado).get(nfe.consolidacao_id) if nfe.consolidacao_id else None
+    origem = pedido or cons
+    if origem is None:
+        return None
+    # "Gerar Cobranca" continua sendo o interruptor mestre: desligado, nao ha
+    # parcelamento a informar (a nota nao gera cobranca automatica).
+    if (pedido and pedido.gerar_cobranca is False) or (cons and getattr(cons, "gerar_cobranca", None) is False):
+        return None
+    try:
+        num_parcelas = max(1, int(getattr(origem, "num_parcelas", None) or 1))
+    except (TypeError, ValueError):
+        num_parcelas = 1
+    try:
+        intervalo = max(1, int(getattr(origem, "intervalo_dias", None) or 30))
+    except (TypeError, ValueError):
+        intervalo = 30
+    venc = getattr(origem, "primeiro_vencimento", None)
+    if not venc:
+        venc = nfe.data_emissao.date() if nfe.data_emissao else \
+            (getattr(origem, "data", None) or date.today())
+    valor = nfe.valor_total or 0
+    if float(valor) <= 0:
+        return None
+    parcelas = calcular_parcelas(valor, num_parcelas, venc, intervalo)
+    return [
+        {
+            "numero": f"{int(p['numero']):03d}",
+            "vencimento": p["vencimento"].strftime("%Y-%m-%d"),
+            "valor": float(p["valor"]),
+        }
+        for p in parcelas
+    ]
 
 
 @router.post("/{nfe_id}/transmitir")
@@ -2395,11 +2451,11 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         ] if contas_nfe else None
 
         # Forma de pagamento: da NFe; fallback para a do pedido/consolidação
-        forma_pag = getattr(nfe, 'forma_pagamento', None)
+        forma_pag = forma_pagamento_str(getattr(nfe, 'forma_pagamento', None))
         if not forma_pag and nfe.pedido:
-            forma_pag = nfe.pedido.forma_pagamento
+            forma_pag = forma_pagamento_str(nfe.pedido.forma_pagamento)
         if not forma_pag and contas_nfe:
-            forma_pag = contas_nfe[0].forma_pagamento
+            forma_pag = forma_pagamento_str(contas_nfe[0].forma_pagamento)
 
         # Recebimento a vista: NFe nao deve levar <cobr>/<dup> (cStat 853).
         # Mantem as duplicatas somente para formas diferidas (a prazo/boleto).
@@ -2410,6 +2466,12 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         # cobranca antiga linkeda a nota, ela nao pode virar <cobr>/<dup> no XML.
         if eh_sem_pagamento(forma_pag):
             duplicatas = None
+
+        # Sem ContaReceber ainda (caso padrao de NFe de pedido/consolidacao):
+        # calcula as parcelas previstas para que o <cobr>/<dup> ja saia no XML.
+        # As contas de verdade sao criadas so apos a autorizacao.
+        if not duplicatas:
+            duplicatas = _duplicatas_previstas_nfe(db, nfe, forma_pag)
 
         payload = montar_payload_nfe(
             empresa, cliente, itens_nfe,
