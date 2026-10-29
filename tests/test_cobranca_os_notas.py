@@ -241,6 +241,31 @@ def test_nfse_de_pedido_ainda_gera_cobranca_na_transmissao(db_session: Session, 
     assert contas[0].status == StatusConta.PAGO  # pix e' a vista
 
 
+@pytest.mark.asyncio
+async def test_cobranca_da_os_inclui_frete_da_nfe(
+    authenticated_client, db_session: Session, test_empresa
+):
+    """A NFe da OS ja chega com o frete somado em valor_total (informado no
+    rascunho); a cobranca da OS usa esse total, entao o frete entra nela."""
+    os_, nfe, _ = criar_os_com_notas(db_session)
+    nfe.valor_frete = 70
+    db_session.commit()
+
+    resp = await authenticated_client.post(
+        f"/ordens-servico/{os_.id}/gerar-cobranca",
+        data={
+            "csrf_token": await _csrf(authenticated_client, f"/ordens-servico/{os_.id}"),
+            "forma_pagamento": "boleto", "num_parcelas": 1, "intervalo_dias": 30,
+        },
+    )
+    assert resp.status_code == 303
+
+    db_session.expire_all()
+    conta = db_session.query(ContaReceber).one()
+    # NFe 270 (ja com 70 de frete) + NFSe 220
+    assert Decimal(str(conta.valor)) == Decimal("490.00")
+
+
 def _cobranca_mao(cliente_id, **kwargs):
     return ContaReceber(
         cliente_id=cliente_id,

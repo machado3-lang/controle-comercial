@@ -91,7 +91,7 @@
                             <label class="block text-xs font-medium text-cyan-400 mb-1">Transportadora</label>
                             <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="transportadora_id" id="inputTransportadora">
                                 <option value="">Sem transportadora</option>
-                                {% for t in transportadoras %}<option value="{{ t.id }}" {% if saved_transportadora_id == t.id %}selected{% endif %}>{{ t.nome }}{% if t.cpf_cnpj %} ({{ t.cpf_cnpj }}){% endif %}</option>{% endfor %}
+                                {% for t in transportadoras %}<option value="{{ t.id }}" {% if saved_transportadora_id and (saved_transportadora_id|int) == t.id %}selected{% endif %}>{{ t.nome }}{% if t.cpf_cnpj %} ({{ t.cpf_cnpj }}){% endif %}</option>{% endfor %}
                             </select>
                         </div>
                         <div>

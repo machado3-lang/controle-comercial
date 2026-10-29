@@ -1239,6 +1239,8 @@ def emitir_avulsa_form(
     saved_observacoes = request.session.pop("nfe_avulsa_observacoes", None)
     saved_forma_pagamento = request.session.pop("nfe_avulsa_forma_pagamento", None)
     saved_modalidade_frete = request.session.pop("nfe_avulsa_modalidade_frete", None)
+    saved_valor_frete = request.session.pop("nfe_avulsa_valor_frete", None)
+    saved_transportadora_id = request.session.pop("nfe_avulsa_transportadora_id", None)
     erro_ie_cliente_id = request.session.pop("nfe_avulsa_erro_ie", None)
 
     from models import Transportadora
@@ -1266,6 +1268,8 @@ def emitir_avulsa_form(
          "saved_observacoes": saved_observacoes,
           "saved_forma_pagamento": saved_forma_pagamento,
           "saved_modalidade_frete": saved_modalidade_frete,
+          "saved_valor_frete": saved_valor_frete,
+          "saved_transportadora_id": saved_transportadora_id,
           "erro_ie_cliente_id": erro_ie_cliente_id}
     )
 
@@ -1278,6 +1282,65 @@ def _parse_nfe_datetime(data_str: str, hora_str: str) -> datetime:
         except (ValueError, AttributeError):
             return datetime.now()
     return None
+
+
+def _recalcular_total_nfe(nfe) -> Decimal:
+    """Total da NFe = (bruto dos itens - desconto) + frete.
+
+    O frete entra apenas no total da NFe e na sua cobranca; pedido,
+    consolidacao e NFSe continuam sem frete.
+    """
+    total = sum(
+        (Decimal(str(item.total or 0)) - Decimal(str(item.desconto or 0)))
+        for item in nfe.itens
+    )
+    total += Decimal(str(nfe.valor_frete or 0))
+    return total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+
+def _sincronizar_cobranca_frete_nfe(db, nfe, delta) -> tuple:
+    """Aplica o delta de frete nas parcelas da cobranca ja vinculada a NFe.
+
+    Vale para o rascunho da NFe avulsa (que ja cria a cobranca antes de emitir)
+    e para NFe de OS que ja tenha cobranca. Nao mexe em cobranca de pedido ou
+    consolidacao sem vinculo direto com a nota. Nao faz commit.
+
+    Retorna (ok, mensagem_erro).
+    """
+    delta = Decimal(str(delta or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if delta == 0:
+        return True, None
+    contas = db.query(ContaReceber).filter(
+        ContaReceber.nfe_id == nfe.id,
+        ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
+    ).order_by(ContaReceber.numero_parcela).all()
+    if not contas:
+        return True, None
+    if any(c.boleto_emitido for c in contas):
+        return False, (
+            "A cobrança desta NFe já tem boleto emitido. Cancele o boleto "
+            "antes de alterar o frete."
+        )
+    base = sum(Decimal(str(c.valor or 0)) for c in contas)
+    if base <= 0:
+        return False, "A cobrança vinculada está zerada; ajuste o frete manualmente."
+
+    restante = delta
+    for idx, conta in enumerate(contas):
+        atual = Decimal(str(conta.valor or 0))
+        if idx == len(contas) - 1:
+            parte = restante
+        else:
+            parte = (delta * atual / base).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+            restante -= parte
+        novo = atual + parte
+        if novo < 0:
+            return False, "O novo frete deixaria uma parcela da cobrança negativa."
+        conta.valor = novo
+        # Contas a vista ja nascem PAGO; o valor_total guarda o recebido real.
+        if conta.status == StatusConta.PAGO and conta.valor_total is not None:
+            conta.valor_total = novo
+    return True, None
 
 
 @router.post("/emitir/avulsa")
@@ -1324,6 +1387,26 @@ def emitir_avulsa_submit(
         request.session["error"] = "Adicione pelo menos um item"
         return RedirectResponse(url="/nfe/emitir/avulsa", status_code=303)
 
+    from services.parcelamento import eh_sem_pagamento
+    frete = Decimal(str(valor_frete or 0)).quantize(Decimal("0.01"))
+    if frete < 0:
+        request.session["error"] = "O valor do frete não pode ser negativo."
+        return RedirectResponse(url="/nfe/emitir/avulsa", status_code=303)
+    if frete > 0 and eh_sem_pagamento(forma_pagamento):
+        request.session["error"] = (
+            "Não é possível informar frete em operação sem pagamento (tPag 90). "
+            "Altere a forma de pagamento antes."
+        )
+        return RedirectResponse(url="/nfe/emitir/avulsa", status_code=303)
+    try:
+        modalidade_frete = int(modalidade_frete if modalidade_frete is not None else 9)
+    except (TypeError, ValueError):
+        modalidade_frete = 9
+    if modalidade_frete not in (0, 1, 2, 3, 4, 9):
+        modalidade_frete = 9
+    if frete > 0 and modalidade_frete == 9:
+        modalidade_frete = 0
+
     ie = _limpar_doc(cliente.inscricao_estadual) if hasattr(cliente, 'inscricao_estadual') else None
     if not ie and not cliente.isento_ie and cliente.indicador_ie != "nao_contribuinte":
         request.session["nfe_avulsa_cliente_id"] = cliente_id
@@ -1340,6 +1423,8 @@ def emitir_avulsa_submit(
         request.session["nfe_avulsa_indicador_presenca"] = indicador_presenca
         request.session["nfe_avulsa_observacoes"] = observacoes
         request.session["nfe_avulsa_modalidade_frete"] = modalidade_frete
+        request.session["nfe_avulsa_valor_frete"] = float(frete)
+        request.session["nfe_avulsa_transportadora_id"] = transportadora_id
         return RedirectResponse(url="/nfe/emitir/avulsa", status_code=303)
 
     itens_nfe = []
@@ -1382,7 +1467,7 @@ def emitir_avulsa_submit(
 
     try:
         numero_nfe = _proximo_numero(empresa, db)
-        total = bruto - desconto_aplicado
+        total = bruto - desconto_aplicado + frete
         nfe = NFe(
             cliente_id=cliente.id,
             numero=numero_nfe,
@@ -1397,7 +1482,7 @@ def emitir_avulsa_submit(
             indicador_presenca=indicador_presenca,
             forma_pagamento=forma_pagamento or None,
             modalidade_frete=modalidade_frete,
-            valor_frete=Decimal(str(valor_frete or 0)),
+            valor_frete=frete,
             transportadora_id=int(transportadora_id) if transportadora_id else None,
             observacoes=observacoes or None,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
@@ -1516,6 +1601,11 @@ def _validar_rascunho(nfe, cliente, empresa) -> list:
             erros.append(f"Item #{i+1} ({item.descricao}): NCM deve ter 8 dígitos (atual: {ncm})")
         if not item.cfop:
             erros.append(f"Item #{i+1} ({item.descricao}): CFOP é obrigatório")
+    from services.parcelamento import eh_sem_pagamento
+    if float(nfe.valor_frete or 0) > 0 and eh_sem_pagamento(nfe.forma_pagamento):
+        erros.append(
+            "Frete não pode ser informado em operação sem pagamento (tPag 90)."
+        )
     return erros
 
 
@@ -1936,16 +2026,53 @@ def atualizar_transporte_nfe(
     request: Request, nfe_id: int, db: Session = Depends(get_db),
     valor_frete: float = Form(0.0),
     transportadora_id: Optional[str] = Form(None),
+    modalidade_frete: Optional[int] = Form(None),
 ):
-    nfe = db.query(NFe).filter(NFe.id == nfe_id).first()
+    nfe = db.query(NFe).options(joinedload(NFe.itens)).filter(NFe.id == nfe_id).first()
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
     if nfe.status in ("issued", "cancelled", "queued"):
         request.session["error"] = "NFe já transmitida; não é possível alterar o transporte."
         return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
-    nfe.valor_frete = Decimal(str(valor_frete or 0))
+
+    frete_novo = Decimal(str(valor_frete or 0)).quantize(Decimal("0.01"))
+    if frete_novo < 0:
+        request.session["error"] = "O valor do frete não pode ser negativo."
+        return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
+
+    from services.parcelamento import eh_sem_pagamento
+    if frete_novo > 0 and eh_sem_pagamento(nfe.forma_pagamento):
+        request.session["error"] = (
+            "Não é possível informar frete em operação sem pagamento (tPag 90). "
+            "Altere a forma de pagamento antes."
+        )
+        return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
+
+    modalidade = modalidade_frete if modalidade_frete is not None else nfe.modalidade_frete
+    try:
+        modalidade = int(modalidade if modalidade is not None else 9)
+    except (TypeError, ValueError):
+        modalidade = 9
+    if modalidade not in (0, 1, 2, 3, 4, 9):
+        modalidade = 9
+    # Frete > 0 exige ocorrência de transporte. Sem escolha explícita (ou com
+    # "9 - Sem Transporte"), assume CIF (0 - Remetente).
+    if frete_novo > 0 and modalidade == 9:
+        modalidade = 0
+
+    total_antigo = Decimal(str(nfe.valor_total or 0))
+    nfe.valor_frete = frete_novo
+    nfe.modalidade_frete = modalidade
     nfe.transportadora_id = int(transportadora_id) if transportadora_id else None
+    nfe.valor_total = _recalcular_total_nfe(nfe)
+
+    ok, erro = _sincronizar_cobranca_frete_nfe(db, nfe, nfe.valor_total - total_antigo)
+    if not ok:
+        db.rollback()
+        request.session["error"] = erro
+        return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
+
     db.commit()
     request.session["message"] = "Frete/Transportadora atualizados!"
     return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
@@ -1978,10 +2105,11 @@ def editar_nfe_form(request: Request, nfe_id: int, db: Session = Depends(get_db)
 
     # Desconto ja aplicado: vDesc dos itens (criterio atual). Notas antigas
     # tiveram o desconto "enterrado" no preco unitario, entao cai no fallback
-    # (bruto dos itens - valor_total) e o valor reaparece na tela.
+    # (bruto dos itens - (valor_total - frete)) e o valor reaparece na tela.
     total_bruto = float(sum(i.preco_unitario * i.quantidade for i in nfe.itens))
     desconto_itens = sum(float(i.desconto or 0) for i in nfe.itens)
-    desconto = round(desconto_itens if desconto_itens > 0 else max(total_bruto - float(nfe.valor_total or 0), 0), 2)
+    total_sem_frete = float(nfe.valor_total or 0) - float(nfe.valor_frete or 0)
+    desconto = round(desconto_itens if desconto_itens > 0 else max(total_bruto - total_sem_frete, 0), 2)
 
     request.session["nfe_avulsa_cliente_id"] = nfe.cliente_id
     request.session["nfe_avulsa_cfop"] = nfe.cfop
@@ -1996,7 +2124,9 @@ def editar_nfe_form(request: Request, nfe_id: int, db: Session = Depends(get_db)
     request.session["nfe_avulsa_indicador_presenca"] = nfe.indicador_presenca
     request.session["nfe_avulsa_observacoes"] = nfe.observacoes or ""
     request.session["nfe_avulsa_forma_pagamento"] = nfe.forma_pagamento or ""
-    request.session["nfe_avulsa_modalidade_frete"] = nfe.modalidade_frete or 9
+    request.session["nfe_avulsa_modalidade_frete"] = nfe.modalidade_frete if nfe.modalidade_frete is not None else 9
+    request.session["nfe_avulsa_valor_frete"] = float(nfe.valor_frete or 0)
+    request.session["nfe_avulsa_transportadora_id"] = str(nfe.transportadora_id) if nfe.transportadora_id else None
     return RedirectResponse(url=f"/nfe/emitir/avulsa?editar={nfe.id}", status_code=303)
 
 
@@ -2016,7 +2146,9 @@ def editar_nfe_submit(
     indicador_presenca: int = Form(1),
     forma_pagamento: str = Form(""),
     observacoes: str = Form(""),
-    modalidade_frete: int = Form(9),
+    modalidade_frete: Optional[int] = Form(None),
+    valor_frete: Optional[float] = Form(None),
+    transportadora_id: Optional[str] = Form(None),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -2043,6 +2175,34 @@ def editar_nfe_submit(
         request.session["error"] = "Adicione pelo menos um item"
         return RedirectResponse(url=f"/nfe/{nfe_id}/editar", status_code=303)
 
+    from services.parcelamento import eh_sem_pagamento
+    if valor_frete is None:
+        frete = Decimal(str(nfe.valor_frete or 0)).quantize(Decimal("0.01"))
+    else:
+        frete = Decimal(str(valor_frete or 0)).quantize(Decimal("0.01"))
+    if frete < 0:
+        request.session["error"] = "O valor do frete não pode ser negativo."
+        return RedirectResponse(url=f"/nfe/{nfe_id}/editar", status_code=303)
+    if frete > 0 and eh_sem_pagamento(forma_pagamento or nfe.forma_pagamento):
+        request.session["error"] = (
+            "Não é possível informar frete em operação sem pagamento (tPag 90). "
+            "Altere a forma de pagamento antes."
+        )
+        return RedirectResponse(url=f"/nfe/{nfe_id}/editar", status_code=303)
+    if modalidade_frete is None:
+        modalidade_frete = nfe.modalidade_frete
+    try:
+        modalidade_frete = int(modalidade_frete if modalidade_frete is not None else 9)
+    except (TypeError, ValueError):
+        modalidade_frete = 9
+    if modalidade_frete not in (0, 1, 2, 3, 4, 9):
+        modalidade_frete = 9
+    if frete > 0 and modalidade_frete == 9:
+        modalidade_frete = 0
+    # transportadora_id ausente (None) preserva a atual; string vazia limpa.
+    if transportadora_id is None:
+        transportadora_id = nfe.transportadora_id
+
     ie = _limpar_doc(cliente.inscricao_estadual) if hasattr(cliente, 'inscricao_estadual') else None
     if not ie and not cliente.isento_ie and cliente.indicador_ie != "nao_contribuinte":
         request.session["nfe_avulsa_editar_id"] = nfe_id
@@ -2060,6 +2220,8 @@ def editar_nfe_submit(
         request.session["nfe_avulsa_indicador_presenca"] = indicador_presenca
         request.session["nfe_avulsa_observacoes"] = observacoes
         request.session["nfe_avulsa_modalidade_frete"] = modalidade_frete
+        request.session["nfe_avulsa_valor_frete"] = float(frete)
+        request.session["nfe_avulsa_transportadora_id"] = transportadora_id
         return RedirectResponse(url=f"/nfe/emitir/avulsa?editar={nfe_id}", status_code=303)
 
     itens_nfe = []
@@ -2089,7 +2251,8 @@ def editar_nfe_submit(
     desconto_aplicado = distribuir_desconto(itens_nfe, desconto)
 
     try:
-        total = bruto - desconto_aplicado
+        total_antigo = Decimal(str(nfe.valor_total or 0))
+        total = bruto - desconto_aplicado + frete
 
         for old_item in nfe.itens:
             if old_item.produto_id:
@@ -2109,8 +2272,14 @@ def editar_nfe_submit(
         if forma_pagamento:
             nfe.forma_pagamento = forma_pagamento
         nfe.modalidade_frete = modalidade_frete
+        nfe.valor_frete = frete
+        nfe.transportadora_id = int(transportadora_id) if transportadora_id else None
         nfe.observacoes = observacoes or None
         db.flush()
+
+        ok, erro_cobranca = _sincronizar_cobranca_frete_nfe(db, nfe, total - total_antigo)
+        if not ok:
+            raise ValueError(erro_cobranca)
 
         for item in itens_nfe:
             nfe_item = NFeItem(

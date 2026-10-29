@@ -271,9 +271,14 @@ def montar_payload_nfe(
         payload["dataSaida"] = data_saida
 
     # Valor do pagamento = liquido da nota: vProd menos o desconto (vDesc) dos
-    # itens. Antes era o bruto, que divergia do vNF quando havia desconto.
+    # itens, MAIS o frete (que a NotaAS distribui nos itens e soma no vNF).
+    # Antes era o bruto, que divergia do vNF quando havia desconto/frete.
     desconto_nota = round(sum(float(i.get("desconto") or 0) for i in payload["items"]), 2)
-    total_nota = round(sum(i.get("valorTotal", 0) for i in payload["items"]) - desconto_nota, 2)
+    total_itens = round(sum(i.get("valorTotal", 0) for i in payload["items"]) - desconto_nota, 2)
+    frete_nota = round(float(frete_valor or 0), 2)
+    if frete_nota < 0:
+        frete_nota = 0.0
+    total_nota = round(total_itens + frete_nota, 2)
     # vPag = valor do MEIO DE PAGAMENTO, nao o valor da nota. Em operacao sem
     # cobranca (tPag 90) a SEFAZ exige 0.00 -- mandar o total do bem como
     # pagamento e a rejeicao 904 (e, se mandar 0, a 865).
@@ -338,6 +343,10 @@ def montar_payload_nfe(
         mod_frete = 9
     if mod_frete not in (0, 1, 2, 3, 4, 9):
         mod_frete = 9
+    # Frete informado sem modalidade = CIF (0/Remetente), nunca 9 (sem
+    # transporte): a SEFAZ rejeita frete em nota sem ocorrencia de transporte.
+    if frete_nota > 0 and mod_frete == 9:
+        mod_frete = 0
     transporte = {"modalidadeFrete": mod_frete}
     # Transportadora (grupo transp/transportadora)
     if transportadora:
@@ -357,17 +366,18 @@ def montar_payload_nfe(
     payload["transporte"] = transporte
 
     # Valor total do frete da nota (distribuído proporcionalmente pela NotaAS)
-    if frete_valor and float(frete_valor or 0) > 0:
-        payload["valorFrete"] = round(float(frete_valor), 2)
+    if frete_nota > 0:
+        payload["valorFrete"] = frete_nota
 
     # Tributos aproximados IBPT (Lei 12.741/2012)
     # Converte para float: as colunas Numeric vêm como Decimal e 'float * Decimal'
     # (ou 'float + Decimal') quebra em runtime.
     ali_fed = float(empresa.nfe_aliquota_federal or 0.0)
     ali_est = float(empresa.nfe_aliquota_estadual or 0.0)
+    # Base do IBPT = mercadorias/servicos (sem frete).
     if ali_fed > 0 or ali_est > 0:
-        v_fed = total_nota * ali_fed / 100
-        v_est = total_nota * ali_est / 100
+        v_fed = total_itens * ali_fed / 100
+        v_est = total_itens * ali_est / 100
         v_tot = v_fed + v_est
         p_tot = ali_fed + ali_est
         inf_cpl_partes.append(

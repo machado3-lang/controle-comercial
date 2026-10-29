@@ -117,6 +117,17 @@
             <input type="number" step="0.01" min="0" name="valor_frete" value="{{ nfe.valor_frete or 0 }}" class="w-36 px-3 py-2 bg-slate-900/60 border border-slate-700 rounded-xl text-slate-100">
           </div>
           <div>
+            <label class="block text-xs text-cyan-400 mb-1">Modalidade do Frete</label>
+            <select name="modalidade_frete" class="w-56 px-3 py-2 bg-slate-900/60 border border-slate-700 rounded-xl text-slate-100">
+              <option value="0" {% if nfe.modalidade_frete == 0 %}selected{% endif %}>0 - Remetente (CIF)</option>
+              <option value="1" {% if nfe.modalidade_frete == 1 %}selected{% endif %}>1 - Destinatário (FOB)</option>
+              <option value="2" {% if nfe.modalidade_frete == 2 %}selected{% endif %}>2 - Terceiros</option>
+              <option value="3" {% if nfe.modalidade_frete == 3 %}selected{% endif %}>3 - Próprio Remetente</option>
+              <option value="4" {% if nfe.modalidade_frete == 4 %}selected{% endif %}>4 - Próprio Destinatário</option>
+              <option value="9" {% if nfe.modalidade_frete == 9 or not nfe.modalidade_frete %}selected{% endif %}>9 - Sem Transporte</option>
+            </select>
+          </div>
+          <div>
             <label class="block text-xs text-cyan-400 mb-1">Transportadora</label>
             <select name="transportadora_id" class="w-64 px-3 py-2 bg-slate-900/60 border border-slate-700 rounded-xl text-slate-100">
               <option value="">Sem transportadora</option>
