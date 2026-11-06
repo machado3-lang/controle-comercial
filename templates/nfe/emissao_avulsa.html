@@ -39,7 +39,7 @@
                         <div class="grid grid-cols-3 gap-2">
                             <div class="relative">
                                 <label class="block text-xs font-medium text-cyan-400 mb-1">CFOP</label>
-                                <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="cfop" id="inputCfop" value="{{ empresa.cfop_padrao or '5102' }}" maxlength="4" placeholder="5102" oninput="buscarNatureza(this.value)">
+                                <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="cfop" id="inputCfop" value="{{ empresa.cfop_padrao or '5102' }}" maxlength="4" placeholder="5102" oninput="buscarNatureza(this.value); aplicarCfopIbpt(this.value)">
                                 <div id="cfopDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
                             </div>
                             <div class="col-span-2">
@@ -161,6 +161,15 @@
                     <div class="mb-4 pt-3 border-t border-slate-800/60 mt-3">
                         <label class="block text-xs font-medium text-cyan-400 mb-1">Observações (informações complementares da NFe)</label>
                         <textarea name="observacoes" rows="3" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Observações adicionais que sairão na nota...">{{ saved_observacoes or '' }}</textarea>
+                        <label class="flex items-start gap-2 cursor-pointer mt-3">
+                            <input type="hidden" name="suprimir_ibpt" value="0">
+                            <input type="checkbox" name="suprimir_ibpt" id="chkSuprimirIbpt" value="1" {% if saved_suprimir_ibpt %}checked{% endif %} class="mt-0.5 w-4 h-4 rounded border-slate-700 bg-slate-900/60 text-cyan-500 focus:ring-cyan-500/50">
+                            <span class="text-sm text-slate-300">Suprimir o texto "Total aproximado de tributos (IBPT)"</span>
+                        </label>
+                        <div id="avisoSuprimirIbpt" class="hidden mt-2 p-3 bg-amber-950/30 border border-amber-800/50 rounded-xl flex items-start gap-2">
+                            <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400 mt-0.5 shrink-0"></i>
+                            <p class="text-xs text-amber-200" data-ibpt-msg></p>
+                        </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-3 pt-3 border-t border-slate-800/60" id="cobrancaFields">
@@ -543,11 +552,52 @@ function buscarNatureza(cfop) {
         });
 }
 
+// Mesma regra de services/nfe_notaas.cfop_nao_venda: grupos x.2xx
+// (devolucoes), x.9xx (remessas/retornos/outras saidas), x.5xx exceto
+// x.551 (venda de ativo) e x.15x (transferencias) nao sao venda.
+function cfopNaoVenda(cfop) {
+    const c = String(cfop || '').replace(/\D/g, '');
+    if (c.length !== 4 || !'567'.includes(c[0])) return false;
+    const grupo = c[1];
+    const final = c.slice(2);
+    if (grupo === '2' || grupo === '9') return true;
+    if (grupo === '5') return final !== '51';
+    if (grupo === '1' && (final === '51' || final === '52')) return true;
+    return false;
+}
+
+function atualizarAvisoIbpt(cfop) {
+    const chk = document.getElementById('chkSuprimirIbpt');
+    const aviso = document.getElementById('avisoSuprimirIbpt');
+    if (!chk || !aviso) return;
+    const msg = aviso.querySelector('[data-ibpt-msg]');
+    const naoVenda = cfopNaoVenda(cfop);
+    if (chk.checked && naoVenda) {
+        msg.textContent = 'CFOP ' + cfop + ' não é operação de venda. O texto "Total aproximado de tributos (IBPT)" será suprimido das informações complementares desta nota.';
+        aviso.classList.remove('hidden');
+    } else if (chk.checked) {
+        msg.textContent = 'O texto "Total aproximado de tributos (IBPT)" será suprimido desta nota. Atenção: em vendas esse texto é obrigatório (Lei 12.741/2012).';
+        aviso.classList.remove('hidden');
+    } else {
+        aviso.classList.add('hidden');
+    }
+}
+
+// Chamado ao trocar o CFOP: em operacao que nao e venda o checkbox ja vem
+// marcado e o aviso aparece.
+function aplicarCfopIbpt(cfop) {
+    const chk = document.getElementById('chkSuprimirIbpt');
+    if (!chk) return;
+    if (cfopNaoVenda(cfop)) chk.checked = true;
+    atualizarAvisoIbpt(cfop);
+}
+
 document.getElementById('cfopDropdown').addEventListener('click', function(e) {
     const item = e.target.closest('[data-cfop]');
     if (!item) return;
     document.getElementById('inputCfop').value = item.dataset.cfop;
     document.getElementById('inputNatureza').value = item.dataset.natureza;
+    aplicarCfopIbpt(item.dataset.cfop);
     this.classList.add('hidden');
 });
 
@@ -622,6 +672,14 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     })();
     {% endif %}
+
+    const chkIbpt = document.getElementById('chkSuprimirIbpt');
+    if (chkIbpt) {
+        chkIbpt.addEventListener('change', function() {
+            atualizarAvisoIbpt(document.getElementById('inputCfop').value);
+        });
+    }
+    atualizarAvisoIbpt(document.getElementById('inputCfop').value);
 
     const clienteSearch = document.getElementById('clienteSearch');
     const clienteDropdown = document.getElementById('clienteDropdown');

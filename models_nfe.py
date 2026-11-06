@@ -29,6 +29,11 @@ class NFe(Base):
     indicador_presenca = Column(Integer, default=1)
     forma_pagamento = Column(String(20), nullable=True)  # dinheiro/pix/boleto/cartao_credito/...
     observacoes = Column(Text, nullable=True)  # informações complementares (infCpl do XML)
+    # Suprime o texto "Total aproximado de tributos (Lei 12.741/IBPT)" das
+    # informacoes complementares. Remessa/retorno/consignacao nao e venda, entao
+    # o texto nao incide; fica ligado por padrao nesses CFOPs e o usuario pode
+    # desligar nota a nota.
+    suprimir_ibpt = Column(Boolean, default=False, nullable=False)
     # Modalidade de frete (grupo transp/modFrete da NF-e):
     # 0=CIF(Remetente) 1=FOB(Destinatário) 2=Terceiros 3=Próprio remetente
     # 4=Próprio destinatário 9=Sem ocorrência de transporte

@@ -21,7 +21,7 @@ from services.nfe_notaas import (
     emitir_nfe, consultar_status, baixar_pdf, baixar_xml,
     cancelar_nfe, montar_payload_nfe, explodir_itens,
     explodir_itens_consolidacao, consultar_municipios,
-    carta_correcao_nfe, _limpar_doc
+    carta_correcao_nfe, _limpar_doc, cfop_nao_venda
 )
 from services.numeracao import reverter_numero_nfe
 from services.guarda_faturamento import bloqueio_faturamento
@@ -39,6 +39,20 @@ os.makedirs(UPLOAD_DIR, exist_ok=True)
 # para la junto com o texto de tributos IBPT (services/nfe_notaas.py), entao o
 # corte fica abaixo do limite para os dois caberem.
 _LIMITE_OBSERVACAO_NFE = 4000
+
+
+def _resolver_suprimir_ibpt(valor, cfop, empresa) -> bool:
+    """Resolve o checkbox do IBPT para chamada HTTP ou direta.
+
+    Na requisicao o FastAPI entrega None (campo ausente) ou bool. Em chamadas
+    diretas (testes/uso interno) o default pode vir como objeto Form; nesse
+    caso caímos na regra automatica por CFOP.
+    """
+    if isinstance(valor, bool):
+        return valor
+    cfop_str = cfop if isinstance(cfop, str) else None
+    cfop_padrao = getattr(empresa, "cfop_padrao", None)
+    return cfop_nao_venda(cfop_str or cfop_padrao or "5102")
 
 
 def _proximo_numero(empresa: Empresa, db: Session) -> int:
@@ -698,6 +712,7 @@ def emitir_pedido_submit(
     request: Request, pedido_id: int, db: Session = Depends(get_db),
     natureza_operacao: str = Form("Venda de mercadoria"),
     cfop: str = Form(None),
+    suprimir_ibpt: Optional[bool] = Form(None),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -755,6 +770,7 @@ def emitir_pedido_submit(
         valores_nfse = calcular_valores_com_desconto(itens_nfse, desc_nfse)
         total = bruto_nfe - desc_nfe
         now = _agora_local(empresa)
+        suprimir_ibpt = _resolver_suprimir_ibpt(suprimir_ibpt, cfop, empresa)
         nfe = NFe(
             pedido_id=pedido_id,
             origem="pedido",
@@ -768,6 +784,7 @@ def emitir_pedido_submit(
             data_emissao=now,
             data_saida=now,
             forma_pagamento=forma_pagamento_str(pedido.forma_pagamento),
+            suprimir_ibpt=suprimir_ibpt,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
         )
@@ -897,6 +914,7 @@ def emitir_os_submit(
     natureza_operacao: str = Form("Venda de mercadoria"),
     cfop: str = Form(None),
     incluir_observacao: str = Form(""),
+    suprimir_ibpt: Optional[bool] = Form(None),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -929,6 +947,7 @@ def emitir_os_submit(
         numero_nfe = _proximo_numero(empresa, db)
         total = sum(Decimal(str(i.get("preco_unitario", 0) or 0)) * Decimal(str(i.get("quantidade", 0) or 0)) for i in itens_nfe)
         now = _agora_local(empresa)
+        suprimir_ibpt = _resolver_suprimir_ibpt(suprimir_ibpt, cfop, empresa)
         nfe = NFe(
             os_id=os_id,
             origem="os",
@@ -949,6 +968,7 @@ def emitir_os_submit(
             observacoes=(
                 (os.observacao or "").strip()[:_LIMITE_OBSERVACAO_NFE] if incluir_observacao else None
             ) or None,
+            suprimir_ibpt=suprimir_ibpt,
         )
         db.add(nfe)
         db.flush()
@@ -1017,6 +1037,7 @@ def emitir_consolidacao_submit(
     natureza_operacao: str = Form("Venda de mercadoria"),
     cfop: str = Form(None),
     observacoes: str = Form(""),
+    suprimir_ibpt: Optional[bool] = Form(None),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -1085,6 +1106,7 @@ def emitir_consolidacao_submit(
         valores_nfse = calcular_valores_com_desconto(itens_nfse, desc_nfse)
         total = bruto_nfe - desc_nfe
         now = _agora_local(empresa)
+        suprimir_ibpt = _resolver_suprimir_ibpt(suprimir_ibpt, cfop, empresa)
         nfe = NFe(
             consolidacao_id=consolidacao_id,
             origem="consolidacao",
@@ -1105,6 +1127,7 @@ def emitir_consolidacao_submit(
             ) or None,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
+            suprimir_ibpt=suprimir_ibpt,
         )
         db.add(nfe)
         db.flush()
@@ -1241,7 +1264,13 @@ def emitir_avulsa_form(
     saved_modalidade_frete = request.session.pop("nfe_avulsa_modalidade_frete", None)
     saved_valor_frete = request.session.pop("nfe_avulsa_valor_frete", None)
     saved_transportadora_id = request.session.pop("nfe_avulsa_transportadora_id", None)
+    saved_suprimir_ibpt = request.session.pop("nfe_avulsa_suprimir_ibpt", None)
     erro_ie_cliente_id = request.session.pop("nfe_avulsa_erro_ie", None)
+
+    # Sem valor salvo (emissao nova): o padrao vem do CFOP — remessa/retorno
+    # nao e venda, entao o texto IBPT ja nasce suprimido.
+    if saved_suprimir_ibpt is None:
+        saved_suprimir_ibpt = cfop_nao_venda(saved_cfop or empresa.cfop_padrao or "5102")
 
     from models import Transportadora
     transportadoras = db.query(Transportadora).order_by(Transportadora.nome).all()
@@ -1270,6 +1299,7 @@ def emitir_avulsa_form(
           "saved_modalidade_frete": saved_modalidade_frete,
           "saved_valor_frete": saved_valor_frete,
           "saved_transportadora_id": saved_transportadora_id,
+          "saved_suprimir_ibpt": saved_suprimir_ibpt,
           "erro_ie_cliente_id": erro_ie_cliente_id}
     )
 
@@ -1366,6 +1396,7 @@ def emitir_avulsa_submit(
     modalidade_frete: int = Form(9),
     valor_frete: float = Form(0.0),
     transportadora_id: Optional[str] = Form(None),
+    suprimir_ibpt: Optional[bool] = Form(None),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -1425,6 +1456,9 @@ def emitir_avulsa_submit(
         request.session["nfe_avulsa_modalidade_frete"] = modalidade_frete
         request.session["nfe_avulsa_valor_frete"] = float(frete)
         request.session["nfe_avulsa_transportadora_id"] = transportadora_id
+        request.session["nfe_avulsa_suprimir_ibpt"] = _resolver_suprimir_ibpt(
+            suprimir_ibpt, cfop, empresa
+        )
         return RedirectResponse(url="/nfe/emitir/avulsa", status_code=303)
 
     itens_nfe = []
@@ -1468,6 +1502,7 @@ def emitir_avulsa_submit(
     try:
         numero_nfe = _proximo_numero(empresa, db)
         total = bruto - desconto_aplicado + frete
+        suprimir_ibpt = _resolver_suprimir_ibpt(suprimir_ibpt, cfop, empresa)
         nfe = NFe(
             cliente_id=cliente.id,
             numero=numero_nfe,
@@ -1485,6 +1520,7 @@ def emitir_avulsa_submit(
             valor_frete=frete,
             transportadora_id=int(transportadora_id) if transportadora_id else None,
             observacoes=observacoes or None,
+            suprimir_ibpt=suprimir_ibpt,
             aliquota_federal=empresa.nfe_aliquota_federal or 0.0,
             aliquota_estadual=empresa.nfe_aliquota_estadual or 0.0,
         )
@@ -2078,6 +2114,42 @@ def atualizar_transporte_nfe(
     return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
 
 
+@router.post("/{nfe_id}/observacoes")
+def atualizar_observacoes_nfe(
+    request: Request, nfe_id: int, db: Session = Depends(get_db),
+    observacoes: str = Form(""),
+    suprimir_ibpt: bool = Form(False),
+):
+    """Edita as informacoes complementares (infCpl) de um rascunho.
+
+    Existe para nao obrigar o usuario a passar pelo formulario de edicao
+    completo so para ajustar o texto que sai na nota. Sem texto padrao: cada
+    operacao tem a sua observacao.
+    """
+    nfe = db.query(NFe).filter(NFe.id == nfe_id).first()
+    if not nfe:
+        request.session["error"] = "NFe não encontrada"
+        return RedirectResponse(url="/nfe", status_code=303)
+    if nfe.status in ("issued", "cancelled"):
+        request.session["error"] = "NFe já transmitida; não é possível alterar as observações."
+        return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
+
+    texto = (observacoes or "").strip()
+    if len(texto) > _LIMITE_OBSERVACAO_NFE:
+        request.session["error"] = (
+            f"As observações devem ter no máximo {_LIMITE_OBSERVACAO_NFE} caracteres."
+        )
+        return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
+
+    nfe.observacoes = texto or None
+    nfe.suprimir_ibpt = (
+        suprimir_ibpt if isinstance(suprimir_ibpt, bool) else bool(nfe.suprimir_ibpt)
+    )
+    db.commit()
+    request.session["message"] = "Observações atualizadas!"
+    return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
+
+
 @router.get("/{nfe_id}/editar")
 def editar_nfe_form(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     empresa = db.query(Empresa).first()
@@ -2127,6 +2199,7 @@ def editar_nfe_form(request: Request, nfe_id: int, db: Session = Depends(get_db)
     request.session["nfe_avulsa_modalidade_frete"] = nfe.modalidade_frete if nfe.modalidade_frete is not None else 9
     request.session["nfe_avulsa_valor_frete"] = float(nfe.valor_frete or 0)
     request.session["nfe_avulsa_transportadora_id"] = str(nfe.transportadora_id) if nfe.transportadora_id else None
+    request.session["nfe_avulsa_suprimir_ibpt"] = bool(nfe.suprimir_ibpt)
     return RedirectResponse(url=f"/nfe/emitir/avulsa?editar={nfe.id}", status_code=303)
 
 
@@ -2149,6 +2222,7 @@ def editar_nfe_submit(
     modalidade_frete: Optional[int] = Form(None),
     valor_frete: Optional[float] = Form(None),
     transportadora_id: Optional[str] = Form(None),
+    suprimir_ibpt: bool = Form(False),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -2222,6 +2296,9 @@ def editar_nfe_submit(
         request.session["nfe_avulsa_modalidade_frete"] = modalidade_frete
         request.session["nfe_avulsa_valor_frete"] = float(frete)
         request.session["nfe_avulsa_transportadora_id"] = transportadora_id
+        request.session["nfe_avulsa_suprimir_ibpt"] = _resolver_suprimir_ibpt(
+            suprimir_ibpt, cfop, empresa
+        )
         return RedirectResponse(url=f"/nfe/emitir/avulsa?editar={nfe_id}", status_code=303)
 
     itens_nfe = []
@@ -2275,6 +2352,7 @@ def editar_nfe_submit(
         nfe.valor_frete = frete
         nfe.transportadora_id = int(transportadora_id) if transportadora_id else None
         nfe.observacoes = observacoes or None
+        nfe.suprimir_ibpt = _resolver_suprimir_ibpt(suprimir_ibpt, cfop, empresa)
         db.flush()
 
         ok, erro_cobranca = _sincronizar_cobranca_frete_nfe(db, nfe, total - total_antigo)
@@ -2666,6 +2744,7 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
                 "estado": nfe.transportadora.estado,
             } if getattr(nfe, 'transportadora', None) else None,
             crt=getattr(empresa, 'crt', None),
+            suprimir_ibpt=bool(getattr(nfe, 'suprimir_ibpt', False)),
         )
 
         result = emitir_nfe(empresa, payload)

@@ -125,6 +125,7 @@ def montar_payload_nfe(
     frete_valor: float = 0,
     transportadora: dict = None,
     crt: int = None,
+    suprimir_ibpt: bool = False,
 ) -> dict:
     cfop = cfop or empresa.cfop_padrao or "5102"
     destino_operacao = 1
@@ -375,7 +376,9 @@ def montar_payload_nfe(
     ali_fed = float(empresa.nfe_aliquota_federal or 0.0)
     ali_est = float(empresa.nfe_aliquota_estadual or 0.0)
     # Base do IBPT = mercadorias/servicos (sem frete).
-    if ali_fed > 0 or ali_est > 0:
+    # `suprimir_ibpt` vem marcado nas operacoes que nao sao venda (remessa para
+    # conserto etc.). O texto so e omitido — as observacoes do usuario ficam.
+    if not suprimir_ibpt and (ali_fed > 0 or ali_est > 0):
         v_fed = total_itens * ali_fed / 100
         v_est = total_itens * ali_est / 100
         v_tot = v_fed + v_est
@@ -399,6 +402,37 @@ def _to_int(val):
         return int(val)
     except (ValueError, TypeError):
         return None
+
+
+def cfop_nao_venda(cfop) -> bool:
+    """True quando o CFOP de saida NAO representa uma venda.
+
+    A Lei 12.741/2012 (total aproximado de tributos) incide na venda. Remessa
+    para conserto, retorno, consignacao, bonificacao/amostra, demonstracao,
+    industrializacao por encomenda e transferencia apenas movimentam o bem, sem
+    receita — nesses casos o texto IBPT e suprimido por padrao.
+
+    Regra por grupo do CFOP (Anexo II do Convenio SINIEF):
+      x.2xx  devolucoes de compra (saida sem receita)
+      x.9xx  remessas, retornos e outras saidas nao especificadas
+      x.5xx  ativo imobilizado/uso e consumo — exceto x.551 (venda de bem)
+      x.15x  transferencias de producao/mercadoria entre estabelecimentos
+
+    Qualquer outro codigo (vendas x.1xx/x.4xx, servicos x.3xx) e tratado como
+    venda: o padrao seguro e MANTER o texto, ja que a obrigacao e legal. O
+    usuario pode reverter nota a nota pelo campo `suprimir_ibpt`.
+    """
+    c = "".join(ch for ch in str(cfop or "") if ch.isdigit())
+    if len(c) != 4 or c[0] not in "567":
+        return False
+    grupo, final = c[1], c[2:]
+    if grupo in ("2", "9"):
+        return True
+    if grupo == "5":
+        return final != "51"          # 5.551/6.551/7.551 = venda de ativo
+    if grupo == "1" and final in ("51", "52"):
+        return True                   # transferencia entre estabelecimentos
+    return False
 
 
 def _limpar_doc(valor) -> Optional[str]:

@@ -138,6 +138,30 @@
         </form>
       </div>
       <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5">
+        <h5 class="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3"><i data-lucide="message-square" class="w-4 h-4 inline me-1"></i> Observações (informações complementares)</h5>
+        {% if nfe.status in ('rascunho', 'error') %}
+        <form method="post" action="/nfe/{{ nfe.id }}/observacoes" class="space-y-3">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <textarea name="observacoes" rows="3" maxlength="4000" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Informações complementares que sairão na nota...">{{ nfe.observacoes or '' }}</textarea>
+          <label class="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" name="suprimir_ibpt" value="1" {% if nfe.suprimir_ibpt %}checked{% endif %} class="mt-0.5 w-4 h-4 rounded border-slate-700 bg-slate-900/60 text-cyan-500 focus:ring-cyan-500/50">
+            <span class="text-sm text-slate-300">Suprimir o texto "Total aproximado de tributos (IBPT)"</span>
+          </label>
+          <div class="flex items-center gap-3 flex-wrap">
+            <button type="submit" class="px-4 py-2 rounded-xl bg-cyan-500 text-slate-900 text-sm font-semibold">Salvar observações</button>
+            {% if nfe.suprimir_ibpt %}
+            <span class="text-xs text-amber-300"><i data-lucide="eye-off" class="w-3.5 h-3.5 inline me-1"></i> IBPT suprimido nesta nota (CFOP {{ nfe.cfop }})</span>
+            {% else %}
+            <span class="text-xs text-emerald-300"><i data-lucide="eye" class="w-3.5 h-3.5 inline me-1"></i> IBPT será incluído (CFOP {{ nfe.cfop }})</span>
+            {% endif %}
+          </div>
+        </form>
+        {% else %}
+        <p class="text-sm text-slate-100 whitespace-pre-line">{{ nfe.observacoes or 'Nenhuma observação informada.' }}</p>
+        <p class="text-xs text-slate-500 mt-2">A nota já foi enviada; as observações não podem mais ser alteradas.</p>
+        {% endif %}
+      </div>
+      <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-5">
         <h5 class="text-xs font-semibold text-cyan-400 uppercase tracking-wider mb-3"><i data-lucide="credit-card" class="w-4 h-4 inline me-1"></i> Pagamento</h5>
         <div class="text-sm text-slate-100 mb-3">{{ forma_pagamento_label }}</div>
         {% if not cobranca and nfe.status not in ('rascunho', 'pendente', 'queued') %}
