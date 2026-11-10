@@ -16,15 +16,15 @@
                 {% endif %}
                 <div class="grid grid-cols-12 gap-3 mb-4">
                     <div class="col-span-3">
-                        <label class="block text-xs font-medium text-cyan-400 mb-1">Número</label>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Número</label>{{ ajuda('pedido.numero') }}
                         <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="numero" value="{{ pedido.numero if pedido else proximo_numero }}" placeholder="Automático">
                     </div>
                     <div class="col-span-3">
-                        <label class="block text-xs font-medium text-cyan-400 mb-1">Data *</label>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Data *</label>{{ ajuda('pedido.data') }}
                         <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="data" required value="{{ (pedido.data.isoformat() if pedido and pedido.data else hoje) }}">
                     </div>
                     <div class="col-span-6 relative">
-                        <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>{{ ajuda('pedido.cliente') }}
                         <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50 cliente-search" placeholder="Digite para buscar cliente..." autocomplete="off">
                         <div id="clientes-dropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
                         <input type="hidden" name="cliente_id" id="clienteId" value="{{ pedido.cliente_id if pedido else '' }}">
@@ -37,21 +37,21 @@
                 
                 <div class="grid grid-cols-12 gap-2 mb-4 p-3 bg-slate-900/40 rounded-xl sticky top-4 z-10">
                     <div class="col-span-5 relative">
-                        <label class="block text-xs font-medium text-cyan-400 mb-1">Buscar Item *</label>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Buscar Item *</label>{{ ajuda('pedido.buscar_item') }}
                         <input type="text" id="itemSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off">
                         <div id="itemDropdown" class="absolute z-[1000] w-full bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-64 overflow-y-auto shadow-lg"></div>
                         <input type="hidden" id="produtoSelecionado">
                     </div>
                     <div class="col-span-2 variacao-add-container hidden">
-                        <label class="block text-xs font-medium text-cyan-400 mb-1">Variação</label>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Variação</label>{{ ajuda('pedido.variacao') }}
                         <select id="variacaoAddSelect" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50"><option value="">Selecionar...</option></select>
                     </div>
                     <div class="col-span-2">
-                        <label class="block text-xs font-medium text-cyan-400 mb-1">Qtd</label>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Qtd</label>{{ ajuda('pedido.qtd') }}
                         <input type="number" step="0.01" id="qtdAdd" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" value="1">
                     </div>
                     <div class="col-span-2">
-                        <label class="block text-xs font-medium text-emerald-400 mb-1">Preço</label>
+                        <label class="block text-xs font-medium text-emerald-400 mb-1">Preço</label>{{ ajuda('pedido.preco') }}
                         <input type="number" step="0.01" id="precoAdd" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-emerald-400 focus:border-emerald-500/50" value="0">
                     </div>
                     <div class="col-span-1 flex items-end">
@@ -91,7 +91,7 @@
                 <input type="hidden" name="itens" id="itensJson">
                 
                 <div class="mt-4">
-                    <label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>
+                    <label class="block text-xs font-medium text-cyan-400 mb-1">Observação</label>{{ ajuda('pedido.observacao') }}
                     <textarea class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" name="observacao" rows="2">{{ pedido.observacao if pedido else '' }}</textarea>
                 </div>
                 {# Os campos de desconto ficam no card Resumo (fora do form), por
@@ -115,11 +115,11 @@
                     </div>
                     <div class="grid grid-cols-2 gap-2 mb-2">
                         <div>
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Desc. %</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Desc. %</label>{{ ajuda('pedido.desconto_pct') }}
                             <input type="number" step="0.01" min="0" max="100" id="descontoPct" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" value="{{ (pedido.desconto_percentual or 0) if pedido else 0 }}">
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-emerald-400 mb-1">Desc. R$</label>
+                            <label class="block text-xs font-medium text-emerald-400 mb-1">Desc. R$</label>{{ ajuda('pedido.desconto_valor') }}
                             <input type="number" step="0.01" min="0" id="descontoValor" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-emerald-400 focus:border-emerald-500/50" value="{{ (pedido.valor_desconto or 0) if pedido else 0 }}">
                         </div>
                     </div>

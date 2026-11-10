@@ -261,6 +261,253 @@ TEXTOS_AJUDA = {
     "os.num_parcelas": "Em quantas parcelas a cobrança é dividida. Boletos de parcelas diferentes são emitidos separadamente.",
     "os.intervalo_dias": "Dias entre o vencimento de uma parcela e o da seguinte.",
     "os.primeiro_vencimento": "Vencimento da 1ª parcela. Vazio usa a data de saída da OS.",
+
+    # ---- NFe (emissão avulsa e edição) ----
+    "nfe.cliente": (
+        "Cliente que recebe a mercadoria. A busca aceita nome ou CPF/CNPJ; o "
+        "cadastro precisa existir antes. A nota é bloqueada se ele não tiver "
+        "Inscrição Estadual, salvo se estiver marcado como isento ou não contribuinte."
+    ),
+    "nfe.cfop": (
+        "Código Fiscal de Operações e Prestações (4 dígitos). Define a natureza da "
+        "operação e o tratamento fiscal: 5xxx é operação interna e 6xxx interestadual. "
+        "Ao digitar, a natureza é preenchida pela tabela de CFOPs e o IBPT é suprimido "
+        "sozinho nos CFOPs que não são venda (remessa, consignação, devolução)."
+    ),
+    "nfe.natureza_operacao": (
+        "Descrição que sai na nota ao lado do CFOP (ex.: Venda de mercadoria). Vem "
+        "preenchida pelo CFOP, mas pode ser ajustada para o texto que a SEFAZ espera "
+        "na sua operação."
+    ),
+    "nfe.finalidade": (
+        "Tipo da nota. Normal é a venda do dia a dia; complementar, ajuste e devolução "
+        "dependem de uma nota anterior; crédito e débito são usados em operações "
+        "financeiras. É o campo <finNFe> do XML."
+    ),
+    "nfe.indicador_presenca": (
+        "Como a operação aconteceu: presencial, pela internet, teleatendimento etc. "
+        "É o campo <indPres>; para venda de balcão, use \"1 - Operação presencial\"."
+    ),
+    "nfe.modalidade_frete": (
+        "Quem paga o transporte: 0 Remetente (CIF), 1 Destinatário (FOB), 2 Terceiros, "
+        "3 ou 4 frete próprio e 9 sem transporte. Com valor de frete maior que zero, "
+        "\"Sem transporte\" vira CIF automaticamente."
+    ),
+    "nfe.valor_frete": (
+        "Frete cobrado nesta nota. Entra no total, no <vFrete> e no valor da "
+        "cobrança/boleto — não no pedido nem na NFS-e. Em operação sem pagamento "
+        "(remessa/consignação) o frete não é aceito."
+    ),
+    "nfe.transportadora": (
+        "Transportadora que leva a mercadoria. Nome, CNPJ, IE e endereço vão no grupo "
+        "<transp> da nota. Pode ficar vazia quando não há transporte."
+    ),
+    "nfe.data_emissao": (
+        "Data e hora em que a nota é emitida (dhEmi). Vêm preenchidas com o momento "
+        "atual e definem a competência e a chave de acesso. Só altere para registrar "
+        "uma emissão retroativa."
+    ),
+    "nfe.data_saida": (
+        "Data e hora em que a mercadoria saiu do estabelecimento (dhSaiEnt). Não pode "
+        "ser anterior à emissão: se for, o sistema iguala à data/hora da emissão para "
+        "a SEFAZ não rejeitar (erro 506)."
+    ),
+    "nfe.buscar_produto": (
+        "Busca por nome ou código. Só entram produtos cadastrados; serviços vão na "
+        "NFS-e. O item precisa de NCM válido para a nota ser autorizada."
+    ),
+    "nfe.qtd": (
+        "Quantidade vendida. Aceita até três casas decimais. O estoque é baixado ao "
+        "salvar o rascunho; se o saldo ficar negativo, a tela pede confirmação antes "
+        "de incluir o item."
+    ),
+    "nfe.valor_unitario": (
+        "Preço unitário do produto, puxado do cadastro. Pode ser ajustado só nesta "
+        "nota; a alteração não mexe no preço do produto."
+    ),
+    "nfe.observacoes": (
+        "Texto livre que sai nas informações complementares (infCpl) da nota. Quando "
+        "a nota vem de uma OS, a observação dela entra aqui se a opção \"Incluir nas "
+        "notas\" estiver marcada."
+    ),
+    "nfe.suprimir_ibpt": (
+        "Remove o texto \"Total aproximado de tributos (IBPT)\" das informações "
+        "complementares. É marcado sozinho quando o CFOP não é venda (remessa, "
+        "consignação, devolução) e pode ser alterado antes de transmitir."
+    ),
+    "nfe.condicao_pagamento": (
+        "Preenche número de parcelas, primeiro vencimento e intervalo a partir de uma "
+        "condição cadastrada. Depois disso os campos continuam editáveis; \"Manual\" "
+        "deixa tudo por sua conta."
+    ),
+    "nfe.forma_pagamento": (
+        "Como o cliente paga. Define o código de pagamento (tPag) na nota e o tipo de "
+        "cobrança: dinheiro, PIX e cartão nascem quitados; boleto emite os boletos no "
+        "Sicoob; \"Sem Pagamento\" (tPag 90) não gera cobrança — remessa, consignação "
+        "e bonificação."
+    ),
+    "nfe.num_parcelas": (
+        "Divide o total em parcelas. Cada parcela vira uma conta a receber com "
+        "vencimento próprio; com forma Boleto, cada uma recebe um boleto separado no "
+        "Sicoob."
+    ),
+    "nfe.primeiro_vencimento": (
+        "Vencimento da primeira parcela. Vazio usa a data de emissão da nota. As "
+        "demais parcelas somam o intervalo informado."
+    ),
+    "nfe.intervalo_dias": "Dias entre um vencimento e o seguinte. Ex.: 30 para parcelas mensais.",
+    "nfe.gerar_cobranca": (
+        "Interruptor mestre da cobrança: desmarcado, nenhuma conta a receber ou boleto "
+        "é gerado por esta nota, mesmo a prazo. Em operação sem pagamento não há "
+        "cobrança de qualquer forma."
+    ),
+    "nfe.desconto": (
+        "Desconto sobre o total dos itens, em % ou em R$. É distribuído "
+        "proporcionalmente entre os itens como desconto (vDesc); o valor total da nota "
+        "e da cobrança já sai líquido."
+    ),
+
+    # ---- NFSe (emissão avulsa e edição) ----
+    "nfse.cliente": (
+        "Tomador dos serviços. A busca aceita nome ou CPF/CNPJ; o cadastro precisa "
+        "existir. Cliente marcado como ISS retido tem o ISS descontado do valor a receber."
+    ),
+    "nfse.data_competencia": (
+        "Data da prestação do serviço. Serve de vencimento padrão da cobrança quando o "
+        "primeiro vencimento não é informado; ao editar a nota, também ajusta a data "
+        "de emissão/competência do DPS."
+    ),
+    "nfse.natureza_operacao": (
+        "Descrição da operação (ex.: Prestação de Serviço). Aparece no DANFSE; a "
+        "tributação do DPS vem dos códigos do serviço, não deste texto."
+    ),
+    "nfse.regime_especial": (
+        "Regime especial do prestador (MEI, ME, EPP, cooperativa, sociedade de "
+        "profissionais...). Fica registrado na nota e não altera o cálculo do ISS."
+    ),
+    "nfse.codigo_municipio": (
+        "Código IBGE do município do tomador (7 dígitos). Fica registrado e impresso "
+        "no DANFSE; o DPS usa o município do emitente configurado no sistema."
+    ),
+    "nfse.buscar_servico": (
+        "Busca por nome. Só entram itens do tipo Serviço. A prefeitura de Dourados não "
+        "aceita dois códigos LC 116 diferentes na mesma nota, então confira o código "
+        "do serviço."
+    ),
+    "nfse.qtd": (
+        "Quantidade do serviço. Aceita até três casas decimais e compõe o valor total "
+        "junto com o valor unitário."
+    ),
+    "nfse.valor_unitario": (
+        "Preço unitário do serviço, puxado do cadastro. Pode ser ajustado só nesta "
+        "nota; o desconto global é aplicado depois, proporcionalmente."
+    ),
+    "nfse.observacoes": (
+        "Texto que entra na discriminação dos serviços da NFS-e. O DPS não tem campo "
+        "próprio de observação; por isso o texto é anexado à descrição."
+    ),
+    "nfse.condicao_pagamento": (
+        "Preenche número de parcelas, primeiro vencimento e intervalo a partir de uma "
+        "condição cadastrada. Os campos continuam editáveis depois."
+    ),
+    "nfse.forma_pagamento": (
+        "Como o cliente paga. Com Boleto, os boletos das parcelas são emitidos no "
+        "Sicoob logo que a nota é salva; as demais formas geram a cobrança com o "
+        "vencimento informado."
+    ),
+    "nfse.num_parcelas": (
+        "Divide o valor líquido da nota em parcelas, cada uma com vencimento e boleto "
+        "próprios."
+    ),
+    "nfse.primeiro_vencimento": (
+        "Vencimento da primeira parcela. Vazio usa a data de competência ou o dia de "
+        "hoje."
+    ),
+    "nfse.intervalo_dias": "Dias entre um vencimento e o seguinte. Ex.: 30 para parcelas mensais.",
+    "nfse.gerar_cobranca": (
+        "Desmarcado, salva a nota sem criar conta a receber nem boleto. Marcado "
+        "(padrão), a cobrança nasce junto com o rascunho."
+    ),
+    "nfse.desconto": (
+        "Desconto sobre o total dos serviços, em % ou R$. O desconto é rateado entre "
+        "os itens antes de emitir, e a cobrança sai pelo valor líquido."
+    ),
+
+    # ---- Pedidos ----
+    "pedido.numero": (
+        "Número do orçamento/pedido. Já vem com o próximo livre; pode ser trocado por "
+        "um número próprio (letras e números são aceitos), mas não pode repetir."
+    ),
+    "pedido.data": (
+        "Data do pedido. É o filtro de período das listas e a data usada quando a "
+        "cobrança não tem primeiro vencimento definido."
+    ),
+    "pedido.cliente": (
+        "Cliente do pedido. A busca aceita nome ou CPF/CNPJ; o cadastro precisa "
+        "existir. Um pedido pertence a um único cliente."
+    ),
+    "pedido.buscar_item": (
+        "Busca por nome ou código no catálogo. Produtos vão para a NFe, serviços para "
+        "a NFS-e e kits são abertos nos insumos na hora de faturar."
+    ),
+    "pedido.variacao": (
+        "Aparece só para produto com variações. Escolha a variação vendida: ela tem "
+        "preço e estoque próprios."
+    ),
+    "pedido.qtd": (
+        "Quantidade do item. Aceita duas casas decimais. O estoque não é baixado ao "
+        "salvar o orçamento — a baixa ocorre ao finalizar o pedido sem nota ou ao "
+        "emitir a nota."
+    ),
+    "pedido.preco": (
+        "Preço unitário do item. Vem do cadastro e pode ser ajustado neste pedido; não "
+        "altera o preço do produto."
+    ),
+    "pedido.observacao": (
+        "Anotação do pedido. Fica no pedido e no impresso; não vai automaticamente "
+        "para a nota fiscal."
+    ),
+    "pedido.desconto_pct": (
+        "Desconto em % sobre o subtotal. Os dois campos de desconto são espelhados: "
+        "informar um recalcula o outro."
+    ),
+    "pedido.desconto_valor": (
+        "Desconto em reais sobre o subtotal. O valor em R$ prevalece e a porcentagem é "
+        "recalculada; o total salvo é o líquido."
+    ),
+
+    # ---- Consolidações ----
+    "consolidacao.cliente": (
+        "Filtra os pré-pedidos de um cliente. A consolidação deve ser criada com "
+        "pedidos de um mesmo cliente — se selecionar clientes diferentes, o "
+        "faturamento sai no nome do primeiro."
+    ),
+    "consolidacao.periodo_inicio": (
+        "Data inicial do filtro dos pré-pedidos. Só entram pedidos com status "
+        "Pré-venda dentro do período."
+    ),
+    "consolidacao.periodo_fim": "Data final do filtro dos pré-pedidos exibidos para seleção.",
+    "consolidacao.selecionar_cliente": (
+        "Marca ou desmarca de uma vez todos os pedidos deste cliente listados abaixo."
+    ),
+    "consolidacao.observacao": (
+        "Anotação da consolidação. Aparece no detalhe e no impresso; não é a "
+        "observação que vai para a nota — essa é preenchida na tela de emissão."
+    ),
+    "consolidacao.forma_pagamento": (
+        "Condição de pagamento da consolidação. É herdada pelas notas geradas e define "
+        "se a cobrança nasce quitada (à vista/cartão) ou a receber (prazo/boleto)."
+    ),
+    "consolidacao.gerar_boleto": (
+        "Sinaliza que a cobrança desta consolidação deve ser emitida como boleto no "
+        "Sicoob. A emissão de fato acontece na finalização, depois das notas "
+        "autorizadas (ou na hora, no recibo sem nota)."
+    ),
+    "consolidacao.termos_boleto": (
+        "Mensagens de instrução impressas no boleto. O Sicoob imprime até 5 linhas de "
+        "40 caracteres; o excesso é quebrado automaticamente. Só vale quando \"Gerar "
+        "Boleto\" está marcado."
+    ),
 }
 
 

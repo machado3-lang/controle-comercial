@@ -31,26 +31,26 @@
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
                         <div class="relative">
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Cliente *</label>{{ ajuda('nfe.cliente') }}
                             <input type="text" id="clienteSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Digite para buscar..." autocomplete="off">
                             <div id="clienteDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
                             <input type="hidden" name="cliente_id" id="clienteId" value="">
                         </div>
                         <div class="grid grid-cols-3 gap-2">
                             <div class="relative">
-                                <label class="block text-xs font-medium text-cyan-400 mb-1">CFOP</label>
+                                <label class="block text-xs font-medium text-cyan-400 mb-1">CFOP</label>{{ ajuda('nfe.cfop') }}
                                 <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="cfop" id="inputCfop" value="{{ empresa.cfop_padrao or '5102' }}" maxlength="4" placeholder="5102" oninput="buscarNatureza(this.value); aplicarCfopIbpt(this.value)">
                                 <div id="cfopDropdown" class="absolute z-[1000] w-full bg-slate-900/90 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-60 overflow-y-auto"></div>
                             </div>
                             <div class="col-span-2">
-                                <label class="block text-xs font-medium text-cyan-400 mb-1">Natureza da Operação</label>
+                                <label class="block text-xs font-medium text-cyan-400 mb-1">Natureza da Operação</label>{{ ajuda('nfe.natureza_operacao') }}
                                 <input type="text" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="natureza_operacao" id="inputNatureza" value="Venda de mercadoria" required>
                             </div>
                         </div>
                     </div>
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
                         <div class="col-span-1">
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Finalidade</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Finalidade</label>{{ ajuda('nfe.finalidade') }}
                             <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="finalidade" id="inputFinalidade">
                                 <option value="normal" {{ 'selected' if saved_finalidade == 'normal' or (nfe and nfe.finalidade == 'normal') }}>NF-e normal</option>
                                 <option value="complementar" {{ 'selected' if saved_finalidade == 'complementar' or (nfe and nfe.finalidade == 'complementar') }}>NF-e complementar</option>
@@ -61,7 +61,7 @@
                             </select>
                         </div>
                         <div class="col-span-1">
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Indicador de Presença</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Indicador de Presença</label>{{ ajuda('nfe.indicador_presenca') }}
                             <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="indicador_presenca" id="inputPresenca">
                                 <option value="0" {{ 'selected' if (saved_indicador_presenca == '0') or (nfe and nfe.indicador_presenca == 0) }}>0 - Não se aplica</option>
                                 <option value="1" {{ 'selected' if (saved_indicador_presenca == '1' or saved_indicador_presenca is none) and not (nfe and nfe.indicador_presenca) or (nfe and nfe.indicador_presenca == 1) }}>1 - Operação presencial</option>
@@ -73,7 +73,7 @@
                             </select>
                         </div>
                         <div class="col-span-1">
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Modalidade de Frete</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Modalidade de Frete</label>{{ ajuda('nfe.modalidade_frete') }}
                             <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="modalidade_frete" id="inputModalidadeFrete">
                                 <option value="0" {{ 'selected' if saved_modalidade_frete == 0 }}>0 - Remetente (CIF)</option>
                                 <option value="1" {{ 'selected' if saved_modalidade_frete == 1 }}>1 - Destinatário (FOB)</option>
@@ -84,30 +84,30 @@
                             </select>
                         </div>
                         <div class="col-span-1">
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Valor do Frete (R$)</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Valor do Frete (R$)</label>{{ ajuda('nfe.valor_frete') }}
                             <input type="number" step="0.01" min="0" name="valor_frete" id="inputValorFrete" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" value="{{ saved_valor_frete or 0 }}">
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Transportadora</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Transportadora</label>{{ ajuda('nfe.transportadora') }}
                             <select class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="transportadora_id" id="inputTransportadora">
                                 <option value="">Sem transportadora</option>
                                 {% for t in transportadoras %}<option value="{{ t.id }}" {% if saved_transportadora_id and (saved_transportadora_id|int) == t.id %}selected{% endif %}>{{ t.nome }}{% if t.cpf_cnpj %} ({{ t.cpf_cnpj }}){% endif %}</option>{% endfor %}
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Data Emissão</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Data Emissão</label>{{ ajuda('nfe.data_emissao') }}
                             <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="data_emissao" id="inputDataEmissao" value="{{ saved_data_emissao or '' }}">
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Hora Emissão</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Hora Emissão</label>{{ ajuda('nfe.data_emissao') }}
                             <input type="time" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="hora_emissao" id="inputHoraEmissao" value="{{ saved_hora_emissao or '' }}">
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Data Saída</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Data Saída</label>{{ ajuda('nfe.data_saida') }}
                             <input type="date" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="data_saida" id="inputDataSaida" value="{{ saved_data_saida or '' }}">
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Hora Saída</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Hora Saída</label>{{ ajuda('nfe.data_saida') }}
                             <input type="time" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100" name="hora_saida" id="inputHoraSaida" value="{{ saved_hora_saida or '' }}">
                         </div>
                     </div>
@@ -118,17 +118,17 @@
 
                     <div class="grid grid-cols-12 gap-2 mb-4 p-3 bg-slate-900/40 rounded-xl sticky top-4 z-10">
                         <div class="col-span-7 relative">
-                            <label class="block text-xs font-medium text-amber-400 mb-1">Buscar Produto *</label>
+                            <label class="block text-xs font-medium text-amber-400 mb-1">Buscar Produto *</label>{{ ajuda('nfe.buscar_produto') }}
                             <input type="text" id="produtoSearch" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-amber-500/50" placeholder="Digite o nome ou código..." autocomplete="off">
                             <div id="produtoDropdown" class="absolute z-[1000] w-full bg-slate-900/95 backdrop-blur-md border border-slate-700/50 rounded-xl mt-1 hidden max-h-64 overflow-y-auto shadow-lg"></div>
                             <input type="hidden" id="produtoSelecionado">
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Qtd</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Qtd</label>{{ ajuda('nfe.qtd') }}
                             <input type="number" step="0.001" id="qtdAdd" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" value="1" min="0.001">
                         </div>
                         <div class="col-span-2">
-                            <label class="block text-xs font-medium text-emerald-400 mb-1">Valor Unit.</label>
+                            <label class="block text-xs font-medium text-emerald-400 mb-1">Valor Unit.</label>{{ ajuda('nfe.valor_unitario') }}
                             <input type="text" id="precoDisplay" class="w-full px-3 py-2 bg-slate-800/50 border border-slate-700/50 rounded-xl text-emerald-400" readonly placeholder="R$ 0,00">
                         </div>
                         <div class="col-span-1 flex items-end">
@@ -159,12 +159,12 @@
                     <input type="hidden" name="desconto" id="descontoHidden" value="0">
 
                     <div class="mb-4 pt-3 border-t border-slate-800/60 mt-3">
-                        <label class="block text-xs font-medium text-cyan-400 mb-1">Observações (informações complementares da NFe)</label>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Observações (informações complementares da NFe)</label>{{ ajuda('nfe.observacoes') }}
                         <textarea name="observacoes" rows="3" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50" placeholder="Observações adicionais que sairão na nota...">{{ saved_observacoes or '' }}</textarea>
                         <label class="flex items-start gap-2 cursor-pointer mt-3">
                             <input type="hidden" name="suprimir_ibpt" value="0">
                             <input type="checkbox" name="suprimir_ibpt" id="chkSuprimirIbpt" value="1" {% if saved_suprimir_ibpt %}checked{% endif %} class="mt-0.5 w-4 h-4 rounded border-slate-700 bg-slate-900/60 text-cyan-500 focus:ring-cyan-500/50">
-                            <span class="text-sm text-slate-300">Suprimir o texto "Total aproximado de tributos (IBPT)"</span>
+                            <span class="text-sm text-slate-300">Suprimir o texto "Total aproximado de tributos (IBPT)"</span>{{ ajuda('nfe.suprimir_ibpt') }}
                         </label>
                         <div id="avisoSuprimirIbpt" class="hidden mt-2 p-3 bg-amber-950/30 border border-amber-800/50 rounded-xl flex items-start gap-2">
                             <i data-lucide="alert-triangle" class="w-4 h-4 text-amber-400 mt-0.5 shrink-0"></i>
@@ -174,13 +174,13 @@
 
                     <div class="grid grid-cols-1 md:grid-cols-4 gap-3 pt-3 border-t border-slate-800/60" id="cobrancaFields">
                         <div class="md:col-span-4">
-                            <label class="block text-xs font-medium text-emerald-400 mb-1">Condição de Pagamento (pré-preenche parcelas)</label>
+                            <label class="block text-xs font-medium text-emerald-400 mb-1">Condição de Pagamento (pré-preenche parcelas)</label>{{ ajuda('nfe.condicao_pagamento') }}
                             <select id="condicaoPagamento" data-target-parcelas="numParcelasNfe" data-target-venc="primeiroVencNfe" data-target-intervalo="intervaloDiasNfe" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
                                 <option value="">-- Manual --</option>
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Forma de Pagamento</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Forma de Pagamento</label>{{ ajuda('nfe.forma_pagamento') }}
                             <select name="forma_pagamento" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
                                 <option value="dinheiro" {% if saved_forma_pagamento == 'dinheiro' %}selected{% endif %}>Dinheiro</option>
                                 <option value="pix" {% if saved_forma_pagamento == 'pix' %}selected{% endif %}>PIX</option>
@@ -193,15 +193,15 @@
                             </select>
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Nº de Parcelas</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Nº de Parcelas</label>{{ ajuda('nfe.num_parcelas') }}
                             <input type="number" min="1" max="60" value="1" name="num_parcelas" id="numParcelasNfe" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">1º Vencimento</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">1º Vencimento</label>{{ ajuda('nfe.primeiro_vencimento') }}
                             <input type="date" name="primeiro_vencimento" id="primeiroVencNfe" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
                         </div>
                         <div>
-                            <label class="block text-xs font-medium text-cyan-400 mb-1">Intervalo (dias)</label>
+                            <label class="block text-xs font-medium text-cyan-400 mb-1">Intervalo (dias)</label>{{ ajuda('nfe.intervalo_dias') }}
                             <input type="number" min="1" max="365" value="30" name="intervalo_dias" id="intervaloDiasNfe" class="w-full px-3 py-2 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 focus:border-cyan-500/50">
                         </div>
                         <div class="md:col-span-4 hidden" id="previewParcelasNfe">
@@ -213,7 +213,7 @@
                     <div class="flex items-center justify-between pt-3">
                         <label class="flex items-center gap-2 text-emerald-300 cursor-pointer">
                             <input type="checkbox" name="gerar_cobranca" id="gerarCobrancaChk" class="w-4 h-4 bg-slate-900/60 border border-slate-800/80 rounded">
-                            <span class="text-sm">Gerar Cobrança</span>
+                            <span class="text-sm">Gerar Cobrança</span>{{ ajuda('nfe.gerar_cobranca') }}
                         </label>
                         <div class="flex justify-end">
                             <button type="submit" id="btnSalvar" class="flex items-center px-4 py-2 bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700 text-white rounded-xl font-medium transition-all shadow-lg shadow-cyan-500/10 disabled:opacity-50">
@@ -257,7 +257,7 @@
                         <span class="text-slate-200 font-medium">R$ <span id="subtotal">0.00</span></span>
                     </div>
                     <div class="border-t border-slate-700 pt-3">
-                        <label class="block text-xs font-medium text-cyan-400 mb-1">Desconto</label>
+                        <label class="block text-xs font-medium text-cyan-400 mb-1">Desconto</label>{{ ajuda('nfe.desconto') }}
                         <div class="flex items-center gap-2">
                             <div class="flex items-center gap-1 w-1/2">
                                 <input type="number" id="descontoPct" class="w-full px-2 py-1.5 bg-slate-800/60 border border-slate-700/50 rounded-lg text-xs text-slate-200 text-right" placeholder="%" value="0" min="0" max="100" step="0.5">
