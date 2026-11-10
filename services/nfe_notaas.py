@@ -2,7 +2,7 @@ import json
 import time
 import httpx
 from typing import Optional
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from models import Empresa, Produto
 from app.core.config import settings
@@ -10,6 +10,35 @@ from services.nfse_betha import _primeiro_email
 
 
 API_BASE = settings.NOTAAS_API_URL
+
+
+def normalizar_datas_nfe(data_emissao, data_saida):
+    """Garante que dhSaiEnt nunca seja anterior a dhEmi (Rejeicao 506).
+
+    Aceita os valores como o router envia ("YYYY-MM-DDTHH:MM:SS"). Quando a
+    saida vem sem hora, o Postgres antigo (coluna DATE) entregava meia-noite e a
+    SEFAZ rejeitava a nota do mesmo dia. Nesse caso a saida assume o horario da
+    emissao. Valores que nao parseiam sao devolvidos como vieram.
+    """
+    if not data_emissao or not data_saida:
+        return data_emissao, data_saida
+
+    def _parse(valor):
+        if isinstance(valor, datetime):
+            return valor
+        try:
+            return datetime.fromisoformat(str(valor)[:19])
+        except (TypeError, ValueError):
+            return None
+
+    emissao = _parse(data_emissao)
+    saida = _parse(data_saida)
+    if emissao is not None and saida is not None and saida < emissao:
+        if isinstance(data_emissao, datetime):
+            return data_emissao, emissao
+        return data_emissao, emissao.strftime("%Y-%m-%dT%H:%M:%S")
+    return data_emissao, data_saida
+
 
 
 def _http_retry(method: str, url: str, empresa: Empresa, json_body: dict = None, params: dict = None, timeout: int = 30, retries: bool = True):
@@ -265,6 +294,8 @@ def montar_payload_nfe(
             item_payload["desconto"] = round(float(v_desc), 2)
 
         payload["items"].append(item_payload)
+
+    data_emissao, data_saida = normalizar_datas_nfe(data_emissao, data_saida)
 
     if data_emissao:
         payload["dataEmissao"] = data_emissao

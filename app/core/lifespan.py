@@ -112,6 +112,14 @@ def run_migrations():
     except Exception as e:
         print(f"[MIGRATION] Warning: could not fix float columns: {e}")
 
+    # Auto-migrate: converte colunas DATE para TIMESTAMP quando o modelo declara
+    # DateTime (ex.: nfe.data_saida). Sem isso o Postgres trunca a hora em
+    # meia-noite e a SEFAZ rejeita com 506 (dhSaiEnt < dhEmi).
+    try:
+        _fix_datetime_columns()
+    except Exception as e:
+        print(f"[MIGRATION] Warning: could not fix datetime columns: {e}")
+
     # Backfill: corrige origem de NFe/NFSe já existentes (default 'avulsa')
     try:
         _backfill_origem()
@@ -406,6 +414,83 @@ def _fix_float_columns():
                         print(f"[MIGRATION] Converted {table_name}.{col.name} from {db_type} to NUMERIC({p},{s})")
             except Exception as e:
                 print(f"[MIGRATION] Could not convert {table_name}.{col.name}: {e}")
+
+
+def _fix_datetime_columns():
+    """Converte colunas DATE para TIMESTAMP quando o modelo declara DateTime.
+
+    Ex.: `nfe.data_saida` nasceu Date no banco (baseline antiga) mas o modelo
+    declara DateTime. O Postgres truncava `data_saida=now` para 00:00 e o XML
+    saia com `dhSaiEnt` anterior ao `dhEmi` do mesmo dia (Rejeicao 506).
+    Idempotente: so age quando o tipo do banco ainda e DATE.
+    """
+    if engine.dialect.name != "postgresql":
+        return
+    from sqlalchemy import inspect as sa_inspect
+    from sqlalchemy import text as sa_text
+    from sqlalchemy.types import DateTime
+
+    inspector = sa_inspect(engine)
+    tabelas = set(inspector.get_table_names())
+    for table_name, table in Base.metadata.tables.items():
+        if table_name not in tabelas:
+            continue
+        cols = {c["name"]: c for c in inspector.get_columns(table_name)}
+        for col in table.columns:
+            if not isinstance(col.type, DateTime):
+                continue
+            db_col = cols.get(col.name)
+            if not db_col:
+                continue
+            db_type = str(db_col["type"]).upper()
+            if "TIMESTAMP" in db_type or "DATETIME" in db_type:
+                continue
+            if "DATE" not in db_type:
+                continue
+            try:
+                with engine.connect() as conn:
+                    conn.execute(sa_text(
+                        f"ALTER TABLE {table_name} ALTER COLUMN {col.name} "
+                        f"TYPE TIMESTAMP USING {col.name}::timestamp"
+                    ))
+                    conn.commit()
+                    print(
+                        f"[MIGRATION] Converted {table_name}.{col.name} "
+                        f"from {db_type} to TIMESTAMP"
+                    )
+            except Exception as e:
+                print(f"[MIGRATION] Could not convert {table_name}.{col.name}: {e}")
+
+    _normalizar_data_saida_rascunhos()
+
+
+def _normalizar_data_saida_rascunhos():
+    """Corrige rascunhos com `data_saida` a meia-noite do mesmo dia da emissao.
+
+    E o residuo da coluna DATE antiga: o horario real se perdeu e o valor ficou
+    anterior ao `dhEmi` (506). So mexe em rascunhos ainda nao transmitidos.
+    """
+    if engine.dialect.name != "postgresql":
+        return
+    from sqlalchemy import text as sa_text
+
+    try:
+        with engine.connect() as conn:
+            res = conn.execute(sa_text(
+                "UPDATE nfe SET data_saida = data_emissao "
+                "WHERE status = 'rascunho' "
+                "AND data_saida IS NOT NULL AND data_emissao IS NOT NULL "
+                "AND data_saida::date = data_emissao::date "
+                "AND data_saida::time = '00:00:00'"
+            ))
+            conn.commit()
+            if res.rowcount and res.rowcount > 0:
+                print(
+                    f"[MIGRATION] Normalized data_saida of {res.rowcount} "
+                    "NFe draft(s) to data_emissao"
+                )
+    except Exception as e:
+        print(f"[MIGRATION] Could not normalize nfe.data_saida drafts: {e}")
 
 
 def _add_missing_enum_values():

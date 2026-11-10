@@ -14,7 +14,7 @@ from models import Cliente, Empresa, PedidoVenda, PedidoVendaItem, PedidoConsoli
 from models_nfe import NFSe, NFSeItem, NFSeRecebida, NFe, NFeItem
 from services.nfse_betha import emitir_completa, emitir_rascunho, NFSeBethaError, BethaNfseService
 from services.nfse_service import formatar_aviso_nfse
-from services.numeracao import reverter_numero_nfse
+from services.numeracao import proximo_numero_nfe, reverter_numero_nfse
 from services.guarda_faturamento import bloqueio_faturamento
 from services.nfse_pdf import gerar_pdf_nfse, gerar_danfse_pdf, is_xml_nfse_nacional, NFSE_NACIONAL_NS
 from services.nfe_notaas import explodir_itens_consolidacao, _limpar_doc
@@ -1021,10 +1021,7 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
         # NFe
         nfe = None
         if gerar_nfe:
-            from sqlalchemy import func
-            empresa_locked = db.query(Empresa).filter(Empresa.id == empresa.id).with_for_update().first()
-            numero_nfe = (empresa_locked.ultimo_numero_nfe or 0) + 1
-            empresa_locked.ultimo_numero_nfe = numero_nfe
+            numero_nfe = proximo_numero_nfe(db, empresa, commit=False)
             total_nfe = bruto_nfe - desc_nfe
             now = datetime.now()
             

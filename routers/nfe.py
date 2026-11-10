@@ -23,7 +23,9 @@ from services.nfe_notaas import (
     explodir_itens_consolidacao, consultar_municipios,
     carta_correcao_nfe, _limpar_doc, cfop_nao_venda
 )
-from services.numeracao import reverter_numero_nfe
+from services.numeracao import (
+    proximo_numero_nfe, reconciliar_numero_nfe, reverter_numero_nfe,
+)
 from services.guarda_faturamento import bloqueio_faturamento
 from services.parcelamento import forma_pagamento_str
 
@@ -56,11 +58,7 @@ def _resolver_suprimir_ibpt(valor, cfop, empresa) -> bool:
 
 
 def _proximo_numero(empresa: Empresa, db: Session) -> int:
-    empresa_locked = db.query(Empresa).filter(Empresa.id == empresa.id).with_for_update().first()
-    numero = (empresa_locked.ultimo_numero_nfe or 0) + 1
-    empresa_locked.ultimo_numero_nfe = numero
-    db.commit()
-    return numero
+    return proximo_numero_nfe(db, empresa)
 
 
 def _get_messages(request):
@@ -135,6 +133,56 @@ def _salvar_xml_nfe(empresa, nfe, db):
         db.commit()
     except Exception as e:
         logger.warning(f"Erro ao salvar XML NFe #{nfe.id}: {e}")
+
+
+def _parse_datetime_sefaz(texto):
+    """Converte dhEmi/dhSaiEnt ("2026-11-05T16:53:00-03:00") em datetime naive local."""
+    if not texto:
+        return None
+    valor = str(texto).strip().replace("Z", "+00:00")
+    try:
+        return datetime.fromisoformat(valor).replace(tzinfo=None)
+    except (TypeError, ValueError):
+        return None
+
+
+def _aplicar_datas_do_xml(nfe) -> bool:
+    """Grava dhEmi/dhSaiEnt autorizados no XML na NFe (banco = documento fiscal)."""
+    xml = nfe.xml_text or ""
+    if not xml:
+        return False
+    alterou = False
+    m_emi = re.search(r"<dhEmi>([^<]+)</dhEmi>", xml)
+    if m_emi:
+        dt = _parse_datetime_sefaz(m_emi.group(1))
+        if dt and nfe.data_emissao != dt:
+            nfe.data_emissao = dt
+            alterou = True
+    m_sai = re.search(r"<dhSaiEnt>([^<]+)</dhSaiEnt>", xml)
+    if m_sai:
+        dt = _parse_datetime_sefaz(m_sai.group(1))
+        if dt and nfe.data_saida != dt:
+            nfe.data_saida = dt
+            alterou = True
+    return alterou
+
+
+def _sincronizar_nfe_autorizada(db: Session, empresa, nfe):
+    """Apos autorizar, alinha numero/serie/datas com a chave e o XML da SEFAZ.
+
+    O numero e reconciliado ANTES de salvar o XML (o arquivo leva o numero
+    correto) e antes de gerar cobranca/boleto, para o documento do boleto sair
+    com o numero que a SEFAZ autorizou.
+    """
+    try:
+        reconciliar_numero_nfe(db, empresa, nfe)
+    except Exception as e:
+        logger.warning("Falha ao reconciliar numero da NFe #%s: %s", nfe.id, e)
+    _salvar_xml_nfe(empresa, nfe, db)
+    try:
+        _aplicar_datas_do_xml(nfe)
+    except Exception as e:
+        logger.warning("Falha ao aplicar datas do XML da NFe #%s: %s", nfe.id, e)
 
 
 STATUS_LABELS = {
@@ -1314,6 +1362,17 @@ def _parse_nfe_datetime(data_str: str, hora_str: str) -> datetime:
     return None
 
 
+def _ajustar_data_saida(data_emissao, data_saida):
+    """dhSaiEnt nao pode ser anterior a dhEmi (Rejeicao 506).
+
+    Corrige o caso classico de saida no mesmo dia gravada como meia-noite:
+    assume o horario da emissao.
+    """
+    if data_emissao and data_saida and data_saida < data_emissao:
+        return data_emissao
+    return data_saida
+
+
 def _recalcular_total_nfe(nfe) -> Decimal:
     """Total da NFe = (bruto dos itens - desconto) + frete.
 
@@ -1503,6 +1562,7 @@ def emitir_avulsa_submit(
         numero_nfe = _proximo_numero(empresa, db)
         total = bruto - desconto_aplicado + frete
         suprimir_ibpt = _resolver_suprimir_ibpt(suprimir_ibpt, cfop, empresa)
+        _dt_emissao = _parse_nfe_datetime(data_emissao, hora_emissao)
         nfe = NFe(
             cliente_id=cliente.id,
             numero=numero_nfe,
@@ -1511,8 +1571,10 @@ def emitir_avulsa_submit(
             natureza_operacao=natureza_operacao,
             cfop=cfop or empresa.cfop_padrao,
             valor_total=total,
-            data_emissao=_parse_nfe_datetime(data_emissao, hora_emissao),
-            data_saida=_parse_nfe_datetime(data_saida, hora_saida),
+            data_emissao=_dt_emissao,
+            data_saida=_ajustar_data_saida(
+                _dt_emissao, _parse_nfe_datetime(data_saida, hora_saida)
+            ),
             finalidade=finalidade,
             indicador_presenca=indicador_presenca,
             forma_pagamento=forma_pagamento or None,
@@ -2342,8 +2404,11 @@ def editar_nfe_submit(
         nfe.natureza_operacao = natureza_operacao
         nfe.cfop = cfop or empresa.cfop_padrao
         nfe.valor_total = total
-        nfe.data_emissao = _parse_nfe_datetime(data_emissao, hora_emissao)
-        nfe.data_saida = _parse_nfe_datetime(data_saida, hora_saida)
+        _dt_emissao = _parse_nfe_datetime(data_emissao, hora_emissao)
+        nfe.data_emissao = _dt_emissao
+        nfe.data_saida = _ajustar_data_saida(
+            _dt_emissao, _parse_nfe_datetime(data_saida, hora_saida)
+        )
         nfe.finalidade = finalidade
         nfe.indicador_presenca = indicador_presenca
         if forma_pagamento:
@@ -2669,6 +2734,9 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
     db.commit()
 
     try:
+        # dhSaiEnt nunca pode ser anterior a dhEmi (Rejeicao 506). Persiste a
+        # correcao para o XML, o DANFE e a previa usarem o mesmo horario.
+        nfe.data_saida = _ajustar_data_saida(nfe.data_emissao, nfe.data_saida)
         data_emissao_str = nfe.data_emissao.strftime("%Y-%m-%dT%H:%M:%S") if nfe.data_emissao else None
         data_saida_str = nfe.data_saida.strftime("%Y-%m-%dT%H:%M:%S") if nfe.data_saida else None
 
@@ -2772,6 +2840,9 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
                     nfe.protocolo = status_data.get("nProt") or nfe.protocolo
                     nfe.chave_acesso = status_data.get("chaveAcesso") or nfe.chave_acesso
                     nfe.mensagem_retorno = None
+                    # Numero/serie/datas passam a vir da chave/XML autorizados
+                    # ANTES de gerar cobranca (boleto usa o numero da SEFAZ).
+                    _sincronizar_nfe_autorizada(db, empresa, nfe)
                     _garantir_cobranca_nfe(db, nfe)
                     # NF emitida => pedido FATURADO (amarra estado fiscal)
                     if nfe.pedido and nfe.pedido.status != StatusPedido.FATURADO:
@@ -2857,13 +2928,14 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
                 nfe.status = "issued"
                 nfe.chave_acesso = status_data.get("chaveAcesso") or nfe.chave_acesso
                 nfe.protocolo = status_data.get("nProt") or nfe.protocolo
-                nfe.data_emissao = _agora_local(empresa)
+                if not nfe.data_emissao:
+                    nfe.data_emissao = _agora_local(empresa)
                 nfe.mensagem_retorno = None
+                _sincronizar_nfe_autorizada(db, empresa, nfe)
                 _garantir_cobranca_nfe(db, nfe)
                 # NF emitida => pedido FATURADO (amarra estado fiscal)
                 if nfe.pedido and nfe.pedido.status != StatusPedido.FATURADO:
                     nfe.pedido.status = StatusPedido.FATURADO
-                _salvar_xml_nfe(empresa, nfe, db)
                 db.commit()
                 # Boleto: somente apos a nota autorizada, usando o numero da NFe.
                 try:
@@ -3138,9 +3210,10 @@ def poll_status(
                 nfe.status = "issued"
                 nfe.chave_acesso = data.get("chaveAcesso") or nfe.chave_acesso
                 nfe.protocolo = data.get("nProt") or nfe.protocolo
-                nfe.data_emissao = _agora_local(empresa)
+                if not nfe.data_emissao:
+                    nfe.data_emissao = _agora_local(empresa)
                 nfe.mensagem_retorno = None
-                _salvar_xml_nfe(empresa, nfe, db)
+                _sincronizar_nfe_autorizada(db, empresa, nfe)
             elif novo_status and novo_status != nfe.status:
                 # Não retrocede uma NFe já autorizada para 'error' por uma
                 # resposta transitória da NotaAs.
@@ -3149,9 +3222,10 @@ def poll_status(
                     nfe.chave_acesso = data.get("chaveAcesso") or nfe.chave_acesso
                     nfe.protocolo = data.get("nProt") or nfe.protocolo
                     if novo_status == "issued":
-                        nfe.data_emissao = _agora_local(empresa)
+                        if not nfe.data_emissao:
+                            nfe.data_emissao = _agora_local(empresa)
                         nfe.mensagem_retorno = None
-                        _salvar_xml_nfe(empresa, nfe, db)
+                        _sincronizar_nfe_autorizada(db, empresa, nfe)
                     else:
                         erro = _extrair_erro_nfe(data)
                         if erro:
@@ -3189,7 +3263,12 @@ def sincronizar_status_nfe(request: Request, nfe_id: int, db: Session = Depends(
             cstat_val = data.get("cStat") or data.get("cstat")
             if cstat_val in (100, "100"):
                 nfe.status = "issued"
+                nfe.chave_acesso = data.get("chaveAcesso") or nfe.chave_acesso
+                nfe.protocolo = data.get("nProt") or nfe.protocolo
+                if not nfe.data_emissao:
+                    nfe.data_emissao = _agora_local(empresa)
                 nfe.mensagem_retorno = None
+                _sincronizar_nfe_autorizada(db, empresa, nfe)
             else:
                 novo = data.get("status")
                 if novo:
@@ -3294,9 +3373,10 @@ async def webhook_nfe(request: Request, db: Session = Depends(get_db)):
             nfe.chave_acesso = data.get("chaveAcesso") or nfe.chave_acesso
             nfe.protocolo = data.get("nProt") or nfe.protocolo
             empresa = db.query(Empresa).first()
-            nfe.data_emissao = _agora_local(empresa)
+            if not nfe.data_emissao:
+                nfe.data_emissao = _agora_local(empresa)
             if empresa:
-                _salvar_xml_nfe(empresa, nfe, db)
+                _sincronizar_nfe_autorizada(db, empresa, nfe)
             # Boleto: somente apos a nota autorizada, usando o numero da NFe.
             try:
                 from services.parcelamento import emitir_boleto_para_nota

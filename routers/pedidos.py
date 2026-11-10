@@ -495,9 +495,15 @@ def excluir_pedido(
                 else:
                     _rebuild_itens_consolidacao(db, cons)
         if excluir_contas == "1":
+            from services.numeracao import reverter_numero_nfe, reverter_numero_nfse
+            _empresa_num = db.query(Empresa).first()
             for nfse in db.query(NFSe).filter(NFSe.pedido_id == pedido_id).all():
+                # Só devolve número de rascunho nunca autorizado (a função recusa
+                # nota com chave/protocolo); evita queimar numeração ao apagar.
+                reverter_numero_nfse(db, _empresa_num, nfse)
                 db.delete(nfse)
             for nfe in db.query(NFe).filter(NFe.pedido_id == pedido_id).all():
+                reverter_numero_nfe(db, _empresa_num, nfe)
                 db.delete(nfe)
             for orig in db.query(PedidoConsolidadoItemOrigem).filter(PedidoConsolidadoItemOrigem.pedido_origem_id == pedido_id).all():
                 db.delete(orig)
