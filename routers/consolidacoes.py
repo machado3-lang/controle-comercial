@@ -755,6 +755,7 @@ def gerar_cobranca_consolidacao(
     primeiro_vencimento: str = Form(""),
     intervalo_dias: int = Form(30),
     nota: str = Form(""),
+    emitir_boleto: bool | None = Form(None),
 ):
     """Ponto único de cobrança da consolidação (espelha a OS).
 
@@ -908,16 +909,38 @@ def gerar_cobranca_consolidacao(
     db.commit()
 
     msg = f"{len(contas)} cobrança(s) gerada(s) para a consolidação."
-    if consolidacao.gerar_boleto and forma == "boleto":
+    # Boleto so existe quando a forma de pagamento escolhida eh boleto. O
+    # checkbox da tela permite decidir na hora; quando ele nao vem no formulario
+    # (chamadas antigas), respeita a configuracao "Gerar Boleto" da consolidacao.
+    quer_boleto = (
+        consolidacao.gerar_boleto if emitir_boleto is None else bool(emitir_boleto)
+    )
+    if forma == "boleto" and quer_boleto:
         from services.parcelamento import emitir_boletos_contas
-        ok, erros = emitir_boletos_contas(db, contas)
+        try:
+            ok, erros = emitir_boletos_contas(db, contas)
+        except Exception as e:
+            # A conta ja foi commitada: nunca desfazer a cobranca por causa do
+            # boleto. Sem o rollback, a sessao fica invalida e a resposta vira
+            # HTTP 500, escondendo a mensagem real.
+            db.rollback()
+            logger.exception(
+                "Erro ao emitir boleto da cobranca da consolidacao %s", consolidacao_id
+            )
+            request.session["error"] = (
+                f"{msg} A cobrança foi criada, mas o boleto não pôde ser emitido: {e}"
+            )
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
         if erros:
             request.session["error"] = (
-                f"{msg} {ok} boleto(s) emitido(s), mas houve erro(s): " + "; ".join(erros)
+                f"{msg} A cobrança foi criada, mas houve erro ao emitir o boleto: "
+                + "; ".join(erros)
             )
             return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
         if ok:
             msg += f" {ok} boleto(s) emitido(s)."
+    elif forma != "boleto" and emitir_boleto:
+        msg += " A forma de pagamento não é boleto: nenhum boleto foi emitido."
     request.session["message"] = msg
     return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
@@ -1031,9 +1054,17 @@ def finalizar_consolidacao(
     msg = "Consolidação finalizada com sucesso!"
     if gerar_recibo:
         msg = f"Consolidação finalizada como recibo (sem NFs)! {len(contas_recibo)} conta(s) gerada(s)."
-        if contas_recibo and gerar_boleto:
+        if contas_recibo and gerar_boleto and (forma_pagamento or "").lower() == "boleto":
             from services.parcelamento import emitir_boletos_contas
-            ok, erros = emitir_boletos_contas(db, contas_recibo)
+            try:
+                ok, erros = emitir_boletos_contas(db, contas_recibo)
+            except Exception as e:
+                db.rollback()
+                logger.exception(
+                    "Erro ao emitir boleto do recibo da consolidacao %s",
+                    consolidacao_id,
+                )
+                ok, erros = 0, [str(e)]
             if erros:
                 request.session["error"] = (
                     f"{ok} boleto(s) emitido(s), mas houve erro(s): " + "; ".join(erros)

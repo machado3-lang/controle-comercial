@@ -277,8 +277,45 @@ def _mensagens_instrucao_boleto(db: Session, conta: ContaReceber) -> list:
     return linhas[:5]
 
 
+def _nosso_numero_unico(db: Session, conta: ContaReceber, base: str) -> str:
+    """Escolhe um nosso_numero livre para a conta.
+
+    `nosso_numero` tem indice unico. Uma cobranca cancelada/excluida pode ter
+    ficado com o numero do documento (ex.: 4494) e impedir a emissao da nova
+    cobranca do mesmo documento: o commit estourava IntegrityError, a sessao
+    ficava invalida e o erro seguinte virava HTTP 500.
+
+    Quando o numero ja pertence a OUTRA conta (ativa ou cancelada), a nova
+    recebe um sufixo com o proprio id. Nao limpamos o numero antigo para nao
+    perder o rastro do boleto ja emitido no Sicoob; o numero bancario continua
+    em `api_nosso_numero`.
+    """
+    ocupante = (
+        db.query(ContaReceber.id)
+        .filter(ContaReceber.nosso_numero == base, ContaReceber.id != conta.id)
+        .first()
+    )
+    if not ocupante:
+        return base
+
+    sufixo = str(conta.id or "1")
+    candidato = f"{base[:max(1, 28 - len(sufixo))]}-{sufixo}"
+    contador = 2
+    while db.query(ContaReceber.id).filter(
+        ContaReceber.nosso_numero == candidato,
+        ContaReceber.id != conta.id,
+    ).first():
+        tail = f"{sufixo}-{contador}"
+        candidato = f"{base[:max(1, 29 - len(tail))]}-{tail}"
+        contador += 1
+    return candidato
+
+
 def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
     emp = get_empresa(db)
+    if not emp:
+        return {"success": False, "error": "Empresa não configurada"}
+    conta_id = conta.id
     token = refresh_sicoob_token(db, "boletos_inclusao")
     if not token:
         return {"success": False, "error": "Token Sicoob não configurado"}
@@ -300,10 +337,25 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
     if doc:
         # parcelas da mesma nota recebem sufixo para garantir unicidade (evita
         # colisao no campo unico nosso_numero e no seuNumero da API do Sicoob)
-        nosso_numero = f"{doc}{numero_parcela:02d}" if total_parcelas > 1 else doc
+        base_nosso_numero = f"{doc}{numero_parcela:02d}" if total_parcelas > 1 else doc
     else:
         # fallback sem documento: id da conta (curto e unico), sem prefixo de data
-        nosso_numero = str(conta.id)
+        base_nosso_numero = str(conta.id)
+
+    # Reserva o numero ANTES de chamar o Sicoob: uma colisao com cobranca
+    # cancelada/excluida era detectada so no commit, depois do boleto ja criado
+    # no banco, e derrubava a requisicao com PendingRollbackError.
+    try:
+        nosso_numero = _nosso_numero_unico(db, conta, base_nosso_numero)
+        conta.nosso_numero = nosso_numero
+        db.flush()
+    except Exception as e:
+        logger.exception("Falha ao reservar nosso_numero da conta %s", conta_id)
+        db.rollback()
+        return {
+            "success": False,
+            "error": f"Não foi possível reservar o nosso número: {e}",
+        }
     seu_numero = nosso_numero
     cpf_cnpj = ''.join(filter(str.isdigit, conta.cliente.cpf_cnpj or ''))
 
@@ -416,7 +468,21 @@ def emitir_boleto(db: Session, conta: ContaReceber) -> dict:
             conta.boleto_emitido = True
             conta.boleto_url = resultado.get("codigoBarras") or resultado.get("linhaDigitavel") or "Boleto emitido"
             conta.boleto_txid = resultado.get("txid")
-            db.commit()
+            try:
+                db.commit()
+            except Exception as e:
+                logger.exception(
+                    "Boleto da conta %s criado no Sicoob, mas falhou ao salvar no banco",
+                    conta_id,
+                )
+                db.rollback()
+                return {
+                    "success": False,
+                    "error": (
+                        "O boleto foi criado no Sicoob, mas não foi possível gravá-lo "
+                        f"no sistema ({e}). Confira o boleto no banco antes de reemitir."
+                    ),
+                }
             return {"success": True, "boleto_url": conta.boleto_url}
         else:
             return {"success": False, "error": f"HTTP {resp.status_code}: {resp.text}", "details": resp.headers}
@@ -495,7 +561,13 @@ async def emitir_boleto_route(request: Request, conta_id: int, db: Session = Dep
 
     if numero_documento:
         conta.numero_documento = numero_documento
-    result = emitir_boleto(db, conta)
+    try:
+        result = emitir_boleto(db, conta)
+    except Exception as e:
+        # A conta ja existe/esta commitada: devolver erro amigavel, nunca 500.
+        db.rollback()
+        logger.exception("Erro inesperado ao emitir boleto da conta %s", conta_id)
+        result = {"success": False, "error": str(e)}
     if result["success"]:
         request.session["message"] = {"tipo": "success", "texto": f"Boleto emitido: {result.get('boleto_url', '')}"}
         if background_tasks:
@@ -692,14 +764,23 @@ def emitir_em_lote(request: Request, db: Session = Depends(get_db), background_t
     sucessos = 0
     erros = []
     for c in contas:
-        result = emitir_boleto(db, c)
+        conta_id = c.id
+        try:
+            result = emitir_boleto(db, c)
+        except Exception as e:
+            db.rollback()
+            logger.exception("Erro inesperado ao emitir boleto da conta %s", conta_id)
+            result = {"success": False, "error": str(e)}
+        finally:
+            if not db.is_active:
+                db.rollback()
         if result["success"]:
             sucessos += 1
             if background_tasks:
                 from services.email_service import enviar_notificacao_conta
-                background_tasks.add_task(enviar_notificacao_conta, c.id)
+                background_tasks.add_task(enviar_notificacao_conta, conta_id)
         else:
-            erros.append(f"Conta #{c.id}: {result['error']}")
+            erros.append(f"Conta #{conta_id}: {result['error']}")
 
     msg = f"{sucessos} boletos emitidos"
     if erros:
@@ -937,7 +1018,12 @@ async def reemitir_boleto_route(request: Request, conta_id: int, db: Session = D
     db.commit()
 
     # 4) Emite o novo boleto na mesma ContaReceber
-    resultado = emitir_boleto(db, conta)
+    try:
+        resultado = emitir_boleto(db, conta)
+    except Exception as e:
+        db.rollback()
+        logger.exception("Erro inesperado ao reemitir boleto da conta %s", conta_id)
+        resultado = {"success": False, "error": str(e)}
     if resultado.get("success"):
         registrar_auditoria(
             db, request.session.get("user_id"), "reemitir",

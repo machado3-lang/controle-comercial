@@ -282,6 +282,9 @@ async def test_cobranca_agrupada_consolidacao_soma_nfe_e_nfse_liquido(
     assert conta.nfe_id is not None
     assert conta.nfse_id is not None
     assert abs(float(conta.valor) - 275.0) < 0.01
+    # A forma escolhida fica gravada na cobranca; sem boleto, nada e emitido.
+    assert conta.forma_pagamento == "aprazo"
+    assert not conta.boleto_emitido
 
     # Gerar de novo nao duplica.
     resp = await authenticated_client.post(
@@ -293,6 +296,87 @@ async def test_cobranca_agrupada_consolidacao_soma_nfe_e_nfse_liquido(
     assert db_session.query(ContaReceber).filter(
         ContaReceber.consolidacao_id == consolidacao_id
     ).count() == 1
+
+
+@pytest.mark.asyncio
+async def test_falha_no_boleto_nao_derruba_cobranca_da_consolidacao(
+    authenticated_client: AsyncClient, db_session: Session, test_empresa, monkeypatch
+):
+    """Se o Sicoob falhar, a cobranca ja criada continua e a resposta nao e 500."""
+    cliente = criar_cliente_teste(db_session)
+    consolidacao_id, csrf = await _finalizar_consolidacao_mista(
+        authenticated_client, db_session, cliente
+    )
+    _notas_autorizadas(db_session, consolidacao_id)
+
+    consolidacao = db_session.get(PedidoConsolidado, consolidacao_id)
+    consolidacao.gerar_boleto = True
+    consolidacao.forma_pagamento = "boleto"
+    db_session.commit()
+
+    def _falha_sicoob(db, contas, forcar=False):
+        raise RuntimeError("falha simulada na emissao do boleto")
+
+    monkeypatch.setattr(
+        "services.parcelamento.emitir_boletos_contas", _falha_sicoob
+    )
+
+    resp = await authenticated_client.post(
+        f"/consolidacoes/{consolidacao_id}/gerar-cobranca",
+        data={
+            "csrf_token": csrf, "nota": "auto", "forma_pagamento": "boleto",
+            "emitir_boleto": "true", "num_parcelas": "1",
+            "primeiro_vencimento": "2030-01-10", "intervalo_dias": "30",
+        },
+    )
+    assert resp.status_code == 303, "falha do boleto nao pode virar HTTP 500"
+
+    db_session.expire_all()
+    contas = db_session.query(ContaReceber).filter(
+        ContaReceber.consolidacao_id == consolidacao_id
+    ).all()
+    assert len(contas) == 1
+    assert contas[0].forma_pagamento == "boleto"
+    assert not contas[0].boleto_emitido
+
+
+@pytest.mark.asyncio
+async def test_nao_emite_boleto_quando_forma_nao_e_boleto(
+    authenticated_client: AsyncClient, db_session: Session, test_empresa, monkeypatch
+):
+    """Boleto so roda quando a forma de pagamento escolhida e boleto."""
+    cliente = criar_cliente_teste(db_session)
+    consolidacao_id, csrf = await _finalizar_consolidacao_mista(
+        authenticated_client, db_session, cliente
+    )
+    _notas_autorizadas(db_session, consolidacao_id)
+
+    chamadas = []
+
+    def _registra(db, contas, forcar=False):
+        chamadas.append(contas)
+        return len(contas), []
+
+    monkeypatch.setattr(
+        "services.parcelamento.emitir_boletos_contas", _registra
+    )
+
+    resp = await authenticated_client.post(
+        f"/consolidacoes/{consolidacao_id}/gerar-cobranca",
+        data={
+            "csrf_token": csrf, "nota": "auto", "forma_pagamento": "pix",
+            "emitir_boleto": "true", "num_parcelas": "1",
+            "primeiro_vencimento": "2030-01-10", "intervalo_dias": "30",
+        },
+    )
+    assert resp.status_code == 303
+    assert chamadas == [], "boleto nao pode ser emitido para PIX"
+
+    db_session.expire_all()
+    conta = db_session.query(ContaReceber).filter(
+        ContaReceber.consolidacao_id == consolidacao_id
+    ).one()
+    assert conta.forma_pagamento == "pix"
 
 
 @pytest.mark.asyncio

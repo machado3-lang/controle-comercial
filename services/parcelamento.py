@@ -535,24 +535,42 @@ def emitir_boletos_contas(db, contas, forcar=False):
     ok = 0
     erros = []
     for conta in contas:
-        if conta.boleto_emitido and not forcar:
-            logger.info(
-                "Boleto da conta %s ja emitido (nosso_numero=%s); emissao ignorada",
-                conta.id, conta.nosso_numero,
-            )
-            continue
+        # Os dados da conta sao lidos DENTRO do try: se a sessao ja estiver
+        # invalida (PendingRollback), o acesso a qualquer atributo ORM dispara um
+        # refresh que, fora do try, viraria HTTP 500.
+        conta_id = None
+        rotulo = "Parcela"
         try:
+            conta_id = conta.id
+            rotulo = (
+                f"Parcela {conta.numero_parcela or 1}/{conta.total_parcelas or 1}"
+            )
+            if conta.boleto_emitido and not forcar:
+                logger.info(
+                    "Boleto da conta %s ja emitido (nosso_numero=%s); emissao ignorada",
+                    conta_id, conta.nosso_numero,
+                )
+                continue
             resultado = emitir_boleto(db, conta)
             if resultado.get("success"):
                 ok += 1
             else:
-                erros.append(
-                    f"Parcela {conta.numero_parcela or 1}/{conta.total_parcelas or 1}: "
-                    f"{resultado.get('error')}"
-                )
+                erros.append(f"{rotulo}: {resultado.get('error')}")
         except Exception as e:
-            logger.exception("Erro ao emitir boleto da conta %s", conta.id)
-            erros.append(f"Parcela {conta.numero_parcela or 1}/{conta.total_parcelas or 1}: {e}")
+            logger.exception("Erro ao emitir boleto da conta %s", conta_id)
+            erros.append(f"{rotulo}: {e}")
+        finally:
+            # Uma conta com erro nao pode contaminar as seguintes: sem rollback a
+            # sessao fica invalida e qualquer query (inclusive a proxima conta)
+            # levanta PendingRollbackError.
+            if not db.is_active:
+                try:
+                    db.rollback()
+                except Exception:
+                    logger.exception(
+                        "Falha ao reverter sessao apos erro no boleto da conta %s",
+                        conta_id,
+                    )
     return ok, erros
 
 
