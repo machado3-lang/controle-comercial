@@ -85,8 +85,13 @@ def _extrair_erro_nfe(data):
     if cstat in (100, "100"):
         return None
     status = data.get("status")
-    msg = (data.get("message") or data.get("motivo") or data.get("xMotivo")
-           or data.get("mensagem") or data.get("xMotivoAutorizacao"))
+    # xMotivo/motivo são a mensagem real da SEFAZ (ex.: "Data de vencimento da
+    # parcela ... menor que Data de Emissao"). `message`/`errorMessage` costumam
+    # ser textos genéricos do NotaAS ("A emissão desta NF-e falhou...") e só
+    # devem ser usados quando não houver o motivo específico.
+    msg = (data.get("xMotivo") or data.get("motivo") or data.get("xMotivoAutorizacao")
+           or data.get("errorMessage") or data.get("message")
+           or data.get("mensagem"))
     protocolo = (data.get("protocolo") or data.get("nProt")
                 or data.get("nProtAutorizacao") or data.get("chaveAcesso"))
     partes = []
@@ -1086,6 +1091,9 @@ def emitir_consolidacao_submit(
     cfop: str = Form(None),
     observacoes: str = Form(""),
     suprimir_ibpt: Optional[bool] = Form(None),
+    primeiro_vencimento: str = Form(""),
+    num_parcelas: int = Form(1),
+    intervalo_dias: int = Form(30),
 ):
     empresa = db.query(Empresa).first()
     if not empresa or not empresa.notaas_api_key:
@@ -1105,6 +1113,17 @@ def emitir_consolidacao_submit(
         return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
     itens_nfe, itens_nfse = explodir_itens_consolidacao(consolidacao=consolidacao, db=db)
+
+    # Vencimento/parcelamento informados na tela de emissão passam a valer para
+    # os rascunhos (<cobr>/<dup>) e para a cobrança agrupada da consolidação.
+    from services.parcelamento import aplicar_condicao_pagamento
+    aplicar_condicao_pagamento(
+        consolidacao,
+        primeiro_vencimento=primeiro_vencimento,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
+    )
+
     if not itens_nfe:
         if itens_nfse:
             request.session["message"] = "Consolidação contém apenas serviços. Redirecionando para emissão de NFSe."
@@ -2098,14 +2117,16 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     erros = _validar_rascunho(nfe, nfe.cliente or (nfe.pedido.cliente if nfe.pedido else None), empresa)
     from models import Transportadora, StatusConta as _StatusConta
     transportadoras = db.query(Transportadora).order_by(Transportadora.nome).all()
-    # Cobrancas vinculadas a esta NFe (por nfe_id) OU ao pedido de origem.
+    # Cobrancas vinculadas a esta NFe (por nfe_id), ao pedido de origem ou a
+    # consolidacao (cobranca agrupada NFe + NFSe).
     _status_ativos = ~ContaReceber.status.in_([_StatusConta.EXCLUIDO, _StatusConta.CANCELADO])
+    _filtros_cobranca = [ContaReceber.nfe_id == nfe.id]
+    if nfe.pedido_id:
+        _filtros_cobranca.append(ContaReceber.pedido_id == nfe.pedido_id)
+    if nfe.consolidacao_id:
+        _filtros_cobranca.append(ContaReceber.consolidacao_id == nfe.consolidacao_id)
     cobrancas = db.query(ContaReceber).filter(
-        or_(
-            ContaReceber.nfe_id == nfe.id,
-            ContaReceber.pedido_id == nfe.pedido_id,
-        ) if nfe.pedido_id else ContaReceber.nfe_id == nfe.id,
-        _status_ativos,
+        or_(*_filtros_cobranca), _status_ativos,
     ).order_by(ContaReceber.numero_parcela).all()
     cobranca = cobrancas[0] if cobrancas else None
     return request.app.state.templates.TemplateResponse(request, 
@@ -2115,6 +2136,7 @@ def ver_previa(request: Request, nfe_id: int, db: Session = Depends(get_db)):
          "forma_pagamento_label": forma_pagamento_label,
          "erros": erros, "STATUS_LABELS": STATUS_LABELS,
          "cobranca": cobranca,
+         "vencimento_sugerido": _vencimento_previsto_nfe(db, nfe),
          "messages": _get_messages(request)}
     )
 
@@ -2224,8 +2246,9 @@ def editar_nfe_form(request: Request, nfe_id: int, db: Session = Depends(get_db)
     if not nfe:
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
-    if nfe.status in ("issued", "cancelled"):
-        request.session["error"] = "NFe já foi transmitida"
+    from services.numeracao import nota_rejeitada_nfe
+    if nfe.status != "rascunho" and not nota_rejeitada_nfe(nfe):
+        request.session["error"] = "Só é possível editar NFe em rascunho ou rejeitada pela SEFAZ"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
     itens_json = json.dumps([{
@@ -2292,9 +2315,15 @@ def editar_nfe_submit(
         return RedirectResponse(url="/nfe/config", status_code=303)
 
     nfe = db.query(NFe).options(joinedload(NFe.itens)).filter(NFe.id == nfe_id).first()
-    if not nfe or nfe.status != "rascunho":
-        request.session["error"] = "NFe não encontrada ou já transmitida"
+    if not nfe:
+        request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
+    if nfe.status != "rascunho":
+        # Nota rejeitada sem protocolo pode ser corrigida e reenviada; a
+        # tentativa recusada não consumiu número na SEFAZ.
+        if not _preparar_nfe_rejeitada(db, empresa, nfe):
+            request.session["error"] = "NFe não encontrada ou já transmitida"
+            return RedirectResponse(url="/nfe", status_code=303)
 
     cliente = db.query(Cliente).filter(Cliente.id == cliente_id).first()
     if not cliente:
@@ -2472,14 +2501,22 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
 
-    if nfe.status in ("rascunho", "pendente", "queued"):
-        request.session["error"] = "Não é possível gerar cobrança de uma NFe em rascunho/não transmitida. Emita a nota primeiro."
+    if nfe.status in ("rascunho", "pendente", "queued", "error"):
+        request.session["error"] = "Não é possível gerar cobrança de uma NFe em rascunho/rejeitada. Emita a nota primeiro."
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
     if nfe.os_id:
         request.session["error"] = (
             f"A cobrança da NFe de OS é gerada na tela da Ordem de Serviço #{nfe.os_id}, "
             "onde NFe e NFSe podem ser agrupadas em uma única cobrança/boleto."
+        )
+        return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
+
+    if nfe.consolidacao_id:
+        request.session["error"] = (
+            f"A cobrança da NFe da consolidação #{nfe.consolidacao_id} é gerada na tela "
+            "da consolidação, onde NFe e NFSe são agrupadas em uma única conta/boleto "
+            "(ou cobradas separadamente, se necessário)."
         )
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
@@ -2505,10 +2542,16 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
 
     from services.parcelamento import gerar_contas_receber, contas_receber_existentes_para
     try:
-        venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (
-            nfe.data_emissao.date() if nfe.data_emissao else date.today())
+        venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else \
+            _vencimento_previsto_nfe(db, nfe)
     except ValueError:
-        venc = date.today()
+        venc = _vencimento_previsto_nfe(db, nfe)
+    if nfe.data_emissao and venc < nfe.data_emissao.date():
+        request.session["error"] = (
+            f"O vencimento {venc.strftime('%d/%m/%Y')} não pode ser anterior à "
+            f"emissão da NFe ({nfe.data_emissao.strftime('%d/%m/%Y')})."
+        )
+        return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
     contas = gerar_contas_receber(
         db,
         cliente_id=cliente_id,
@@ -2522,7 +2565,9 @@ def gerar_cobranca_nfe(request: Request, nfe_id: int, db: Session = Depends(get_
         numero_documento=str(nfe.numero),
         nfe_id=nfe.id,
         pedido_id=nfe.pedido_id,
-        consolidacao_id=nfe.pedido.consolidacao_id if (nfe.pedido and nfe.pedido.consolidacao_id) else None,
+        consolidacao_id=nfe.consolidacao_id or (
+            nfe.pedido.consolidacao_id if (nfe.pedido and nfe.pedido.consolidacao_id) else None
+        ),
     )
     db.commit()
     request.session["message"] = f"{len(contas)} cobrança(s) gerada(s) com sucesso para NFe #{nfe.numero}!"
@@ -2554,15 +2599,83 @@ def excluir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
     return RedirectResponse(url="/nfe", status_code=303)
 
 
+def _origem_cobranca_nfe(db, nfe):
+    """Pedido ou consolidação que define o parcelamento da NFe."""
+    if getattr(nfe, "pedido", None) is not None:
+        return nfe.pedido
+    if getattr(nfe, "consolidacao_id", None):
+        return db.query(PedidoConsolidado).get(nfe.consolidacao_id)
+    return None
+
+
+def _vencimento_previsto_nfe(db, nfe):
+    """1º vencimento efetivo: origem (pedido/consolidação) ou data de emissão."""
+    origem = _origem_cobranca_nfe(db, nfe)
+    venc = getattr(origem, "primeiro_vencimento", None) if origem else None
+    if venc:
+        return venc
+    if nfe.data_emissao:
+        return nfe.data_emissao.date()
+    return getattr(origem, "data", None) or date.today()
+
+
+def _erro_vencimento_nfe(db, nfe):
+    """Impede <dVenc> anterior ao <dhEmi> (rejeição SEFAZ cStat 900 / nOcor 001)."""
+    from services.parcelamento import eh_pagamento_a_vista, eh_sem_pagamento
+    forma = forma_pagamento_str(nfe.forma_pagamento)
+    origem = _origem_cobranca_nfe(db, nfe)
+    if not forma and origem is not None:
+        forma = forma_pagamento_str(getattr(origem, "forma_pagamento", None))
+    if forma and (eh_pagamento_a_vista(forma) or eh_sem_pagamento(forma)):
+        return None
+    venc = _vencimento_previsto_nfe(db, nfe)
+    if nfe.data_emissao and venc and venc < nfe.data_emissao.date():
+        return (
+            f"Vencimento {venc.strftime('%d/%m/%Y')} é anterior à emissão "
+            f"{nfe.data_emissao.strftime('%d/%m/%Y')}. Altere o 1º vencimento "
+            "na consolidação/pedido antes de transmitir."
+        )
+    return None
+
+
+def _preparar_nfe_rejeitada(db, empresa, nfe):
+    """Libera uma NFe rejeitada (sem protocolo) para nova transmissão.
+
+    A tentativa recusada não consumiu número na SEFAZ. Limpa a invoice/chave da
+    tentativa e aloca o próximo número, que é o mesmo que o NotaAS usará na nova
+    emissão (ele numera pela sequência autorizada, não pelo payload).
+    Retorna True quando preparou a nota.
+    """
+    from services.numeracao import nota_rejeitada_nfe
+    if not nota_rejeitada_nfe(nfe):
+        return False
+    nfe.invoice_id = None
+    nfe.chave_acesso = None
+    nfe.protocolo = None
+    nfe.mensagem_retorno = None
+    nfe.status = "rascunho"
+    # A nova tentativa e uma emissao nova: dhEmi passa a ser agora. Manter a data
+    # da tentativa recusada faria o XML sair com emissao no passado.
+    nfe.data_emissao = _agora_local(empresa)
+    nfe.numero = proximo_numero_nfe(db, empresa, commit=False)
+    return True
+
+
 def _garantir_cobranca_nfe(db, nfe):
     """Gera ContaReceber para a NFe autorizada se ainda não houver cobrança
-    vinculada. Cobre NFe de pedido avulso E de consolidacao (a NFe da
-    consolidacao tambem precisa da sua cobranca para nao ficar sem 'a receber')."""
+    vinculada. Cobre NFe de pedido avulso. NFe de consolidação NÃO cobra aqui:
+    a consolidação é o ponto único de cobrança (NFe + NFSe em uma conta/boleto),
+    assim como a OS."""
     if nfe.os_id:
         # OS e o ponto unico de cobranca (routers/ordens_servico.py): a tela da OS
         # monta UMA cobranca agrupando NFe + NFSe ou uma por nota (flag
         # cobranca_separada). Cobrar aqui, na transmissao, criaria uma segunda
         # cobranca e quebraria o agrupamento — e o boleto unico da OS.
+        return
+    if nfe.consolidacao_id:
+        # Consolidacao tambem e ponto unico de cobranca (routers/consolidacoes.py):
+        # agrupa NFe + NFSe em uma unica conta, com um unico boleto. A cobranca
+        # individual de uma nota so e feita manualmente pela tela da consolidacao.
         return
     if not nfe.pedido_id and not nfe.consolidacao_id:
         return
@@ -2578,11 +2691,9 @@ def _garantir_cobranca_nfe(db, nfe):
     # automatica da transmissao.
     if eh_sem_pagamento(_forma):
         return
-    # Flag "Gerar Cobranca" e o interruptor mestre (pedido ou consolidacao):
+    # Flag "Gerar Cobranca" e o interruptor mestre do pedido:
     # desligada, nenhuma cobranca automatica (mesmo a prazo). A vista ja nao
     # gera <dup> na NFe (evita cStat 853).
-    # PedidoConsolidado nao possui a coluna gerar_cobranca (so o pedido tem);
-    # getattr evita AttributeError ao gerar a cobranca de uma consolidacao.
     if (pedido and pedido.gerar_cobranca is False) or (cons and getattr(cons, "gerar_cobranca", None) is False):
         return
     if contas_receber_existentes_para(db, nfe=nfe):
@@ -2590,19 +2701,23 @@ def _garantir_cobranca_nfe(db, nfe):
     cliente_id = nfe.cliente_id or (pedido.cliente_id if pedido else None) or (cons.cliente_id if cons else None)
     if not cliente_id:
         return
-    # Respeita o parcelamento informado no faturamento (pedido ou consolidacao,
-    # se houver), em vez de fixar 1 parcela com vencimento = data de hoje.
+    # Respeita o parcelamento informado no faturamento (pedido, se houver), em
+    # vez de fixar 1 parcela com vencimento = data de hoje.
     num_parcelas = 1
     intervalo_dias = 30
     _origem = pedido or cons
     if _origem:
         num_parcelas = getattr(_origem, "num_parcelas", None) or 1
         intervalo_dias = getattr(_origem, "intervalo_dias", None) or 30
-    if _origem and getattr(_origem, "primeiro_vencimento", None):
-        venc = _origem.primeiro_vencimento
-    else:
-        venc = nfe.data_emissao.date() if nfe.data_emissao else \
-            (getattr(_origem, "data", None) or date.today())
+    venc = _vencimento_previsto_nfe(db, nfe)
+    # Nunca cria conta com vencimento anterior à emissão: além de gerar boleto
+    # vencido, o mesmo valor iria para o <dVenc> da NFe e seria rejeitado.
+    if nfe.data_emissao and venc < nfe.data_emissao.date():
+        logger.warning(
+            "NFe #%s: vencimento %s anterior à emissão %s; ajustado para a emissão",
+            nfe.id, venc, nfe.data_emissao.date(),
+        )
+        venc = nfe.data_emissao.date()
     contas = gerar_contas_receber(
         db,
         cliente_id=cliente_id,
@@ -2659,10 +2774,16 @@ def _duplicatas_previstas_nfe(db, nfe, forma_pag):
         intervalo = max(1, int(getattr(origem, "intervalo_dias", None) or 30))
     except (TypeError, ValueError):
         intervalo = 30
-    venc = getattr(origem, "primeiro_vencimento", None)
-    if not venc:
-        venc = nfe.data_emissao.date() if nfe.data_emissao else \
-            (getattr(origem, "data", None) or date.today())
+    venc = _vencimento_previsto_nfe(db, nfe)
+    # O grupo <dup><dVenc> tem que ser >= <dhEmi>, senão a SEFAZ rejeita
+    # ("Data de vencimento da parcela ... menor que Data de Emissao"). Não
+    # silencia o problema: o usuário precisa escolher um vencimento válido.
+    if nfe.data_emissao and venc < nfe.data_emissao.date():
+        raise ValueError(
+            f"Vencimento {venc.strftime('%d/%m/%Y')} é anterior à emissão "
+            f"{nfe.data_emissao.strftime('%d/%m/%Y')}. Altere o 1º vencimento "
+            "na consolidação/pedido antes de transmitir."
+        )
     valor = nfe.valor_total or 0
     if float(valor) <= 0:
         return None
@@ -2697,8 +2818,11 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
         request.session["error"] = "NFe não encontrada"
         return RedirectResponse(url="/nfe", status_code=303)
     # Guarda atômica: with_for_update() serializa submissões concorrentes
-    # (duplo clique). Só emitimos se ainda for rascunho e sem invoice_id.
-    if nfe.status != "rascunho" or nfe.invoice_id is not None:
+    # (duplo clique). Só emitimos se ainda for rascunho e sem invoice_id — ou se
+    # for uma rejeição da SEFAZ (sem protocolo), que pode ser reenviada.
+    from services.numeracao import nota_rejeitada_nfe
+    rejeitada = nota_rejeitada_nfe(nfe)
+    if not rejeitada and (nfe.status != "rascunho" or nfe.invoice_id is not None):
         request.session["error"] = "NFe já transmitida ou em processamento"
         return RedirectResponse(url=f"/nfe/{nfe_id}", status_code=303)
 
@@ -2706,6 +2830,14 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
     erros = _validar_rascunho(nfe, cliente, empresa)
     if erros:
         request.session["error"] = "Corrija os erros antes de transmitir: " + "; ".join(erros)
+        return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
+
+    # dVenc nunca pode ser anterior a dhEmi (rejeição SEFAZ: "Data de vencimento
+    # da parcela ... menor que Data de Emissao"). Valida ANTES de marcar como
+    # enviada, para a nota continuar em rascunho e o usuário ajustar a data.
+    erro_vencimento = _erro_vencimento_nfe(db, nfe)
+    if erro_vencimento:
+        request.session["error"] = erro_vencimento
         return RedirectResponse(url=f"/nfe/{nfe_id}/previa", status_code=303)
 
     itens_nfe = [{
@@ -2730,6 +2862,11 @@ def transmitir_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db))
     # Marca como em processamento ANTES da chamada à API. O with_for_update()
     # acima serializa o duplo clique: a 2ª transação espera o commit e então
     # vê status="queued", sendo barrada pelo guarda.
+    # Rejeitada: aloca o próximo número e limpa a invoice/chave da tentativa
+    # recusada (que não consumiu numeração) antes de reenviar.
+    if rejeitada:
+        _preparar_nfe_rejeitada(db, empresa, nfe)
+        db.flush()
     nfe.status = "queued"
     db.commit()
 
@@ -2961,16 +3098,19 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
             logger.warning(f"Falha ao consultar status da NFe #{nfe_id}: {e}")
     from models import StatusConta as _StatusConta
     _status_ativos = ~ContaReceber.status.in_([_StatusConta.EXCLUIDO, _StatusConta.CANCELADO])
-    # Cobrancas vinculadas a esta NFe (por nfe_id) OU ao pedido de origem
-    # (quando geradas no faturamento do pedido). Exclui canceladas/excluidas.
+    # Cobranças vinculadas a esta NFe (por nfe_id), ao pedido de origem ou à
+    # consolidação (cobrança agrupada NFe + NFSe). Exclui canceladas/excluídas.
+    _filtros_cobranca = [ContaReceber.nfe_id == nfe.id]
+    if nfe.pedido_id:
+        _filtros_cobranca.append(ContaReceber.pedido_id == nfe.pedido_id)
+    if nfe.consolidacao_id:
+        _filtros_cobranca.append(ContaReceber.consolidacao_id == nfe.consolidacao_id)
     cobrancas = db.query(ContaReceber).filter(
-        or_(
-            ContaReceber.nfe_id == nfe.id,
-            ContaReceber.pedido_id == nfe.pedido_id,
-        ) if nfe.pedido_id else ContaReceber.nfe_id == nfe.id,
-        _status_ativos,
+        or_(*_filtros_cobranca), _status_ativos,
     ).order_by(ContaReceber.numero_parcela).all()
     cobranca = cobrancas[0] if cobrancas else None
+
+    vencimento_sugerido = _vencimento_previsto_nfe(db, nfe)
 
     return request.app.state.templates.TemplateResponse(request, 
         "nfe/detalhe.html",
@@ -2980,6 +3120,7 @@ def ver_nfe(request: Request, nfe_id: int, db: Session = Depends(get_db)):
          "messages": _get_messages(request),
          "cobranca": cobranca,
          "cobrancas": cobrancas,
+         "vencimento_sugerido": vencimento_sugerido,
          "cartas": nfe.cartas_correcao}
     )
 

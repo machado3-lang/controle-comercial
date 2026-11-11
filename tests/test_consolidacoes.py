@@ -8,6 +8,7 @@ ArgumentError -> HTTP 500.
 """
 import json
 import re
+from datetime import datetime
 
 import pytest
 from httpx import AsyncClient
@@ -128,12 +129,35 @@ async def test_rota_pedidos_disponiveis_nao_e_capturada_pela_rota_dinamica(
     assert "clientes_agrupados" in resp.json()
 
 
+def _criar_pre_venda_mista(db_session, cliente_id, produto_id, servico_id):
+    """Pedido de pre-venda com um produto (NFe) e um servico (NFSe)."""
+    pedido = PedidoVenda(
+        cliente_id=cliente_id, numero="PV-MISTA", status=StatusPedido.PRE_VENDA,
+        total=40, tipo_pedido="pre_venda",
+    )
+    db_session.add(pedido)
+    db_session.flush()
+    db_session.add(PedidoVendaItem(
+        pedido_id=pedido.id, produto_id=produto_id, descricao="Produto A",
+        quantidade=1, preco_unitario=20, total=20,
+    ))
+    db_session.add(PedidoVendaItem(
+        pedido_id=pedido.id, produto_id=servico_id, descricao="Servico A",
+        quantidade=1, preco_unitario=20, total=20,
+    ))
+    db_session.commit()
+    return pedido.id
+
+
 @pytest.mark.asyncio
-async def test_emitir_consolidacao_gera_cobranca_por_nota(
+async def test_transmissao_nao_gera_cobranca_individual_na_consolidacao(
     authenticated_client: AsyncClient, db_session: Session, test_empresa
 ):
-    """A cobranca nao e mais gerada no finalizar; e criada na EMISSAO, uma por
-    nota (vinculada a nfe_id/nfse_id), e nunca duplicada ao reemitir."""
+    """A transmissao das notas da consolidacao NAO cobra por nota.
+
+    O ponto unico de cobranca e a propria consolidacao (uma conta agrupada),
+    como na OS. Cobrar em _garantir_cobranca_* duplicaria a conta/boleto.
+    """
     cliente = criar_cliente_teste(db_session)
     produto = Produto(nome="Servico A", preco=10, tipo="servico")
     db_session.add(produto)
@@ -157,12 +181,6 @@ async def test_emitir_consolidacao_gera_cobranca_por_nota(
     )
     assert resp.status_code == 303
 
-    # Finalizar NAO gera cobranca vinculada a consolidacao
-    db_session.expire_all()
-    assert db_session.query(ContaReceber).filter(
-        ContaReceber.consolidacao_id == consolidacao_id
-    ).count() == 0
-
     # Emitir (rascunho) NAO cria cobranca: nenhuma conta nasce antes da nota.
     resp = await authenticated_client.post(
         f"/nfse/emitir/consolidacao/{consolidacao_id}", data={"csrf_token": csrf}
@@ -172,35 +190,201 @@ async def test_emitir_consolidacao_gera_cobranca_por_nota(
     db_session.expire_all()
     consolidacao = db_session.get(PedidoConsolidado, consolidacao_id)
     assert consolidacao.status == StatusConsolidacao.CONCLUIDO
+    nfse = consolidacao.nfse
+    assert nfse is not None
+
+    # Transmissao respeita o ponto unico de cobranca: nada e gerado.
+    from routers.nfse import _garantir_cobranca_nfse
+    _garantir_cobranca_nfse(db_session, nfse)
+    db_session.commit()
+    db_session.expire_all()
     assert db_session.query(ContaReceber).filter(
         ContaReceber.consolidacao_id == consolidacao_id
     ).count() == 0
 
-    # A cobranca nasce na transmissao (_garantir_cobranca_nfse), uma por nota:
-    # aqui apenas a NFSe (servico); num_parcelas=3 vira 3 parcelas vinculadas
-    # a nfse_id (e nao a nfe_id), somando o valor total da consolidacao.
-    from routers.nfse import _garantir_cobranca_nfse
-    nfse = consolidacao.nfse
-    assert nfse is not None
-    _garantir_cobranca_nfse(db_session, nfse)
-    db_session.commit()
 
+async def _finalizar_consolidacao_mista(authenticated_client, db_session, cliente):
+    produto = Produto(nome="Produto A", preco=20, tipo="produto")
+    servico = Produto(nome="Servico A", preco=20, tipo="servico")
+    db_session.add_all([produto, servico])
+    db_session.commit()
+    pedido_id = _criar_pre_venda_mista(db_session, cliente.id, produto.id, servico.id)
+
+    csrf = await _csrf(authenticated_client)
+    resp = await authenticated_client.post("/consolidacoes/criar", data={
+        "csrf_token": csrf, "pedido_ids": [str(pedido_id)],
+    })
+    consolidacao_id = int(resp.headers["location"].rstrip("/").split("/")[-1])
+    resp = await authenticated_client.post(
+        f"/consolidacoes/{consolidacao_id}/finalizar",
+        data={
+            "csrf_token": csrf, "forma_pagamento": "aprazo",
+            "num_parcelas": "1", "primeiro_vencimento": "2030-01-10",
+            "intervalo_dias": "30", "gerar_cobranca": "on",
+        },
+    )
+    assert resp.status_code == 303
+    db_session.expire_all()
+    return consolidacao_id, csrf
+
+
+def _notas_autorizadas(db_session, consolidacao_id, *, nfe=True, nfse=True):
+    from models_nfe import NFe, NFSe
+    notas = []
+    if nfe:
+        nota_nfe = NFe(
+            consolidacao_id=consolidacao_id, numero=4495, serie=1, status="issued",
+            origem="consolidacao", valor_total=180,
+            data_emissao=datetime(2026, 11, 11, 9, 0),
+        )
+        db_session.add(nota_nfe)
+        notas.append(nota_nfe)
+    if nfse:
+        nota_nfse = NFSe(
+            consolidacao_id=consolidacao_id, numero="900", status="autorizada",
+            origem="consolidacao", valor_total=100, aliquota_iss=5, iss_retido=True,
+            data_emissao=datetime(2026, 11, 11, 10, 0),
+        )
+        db_session.add(nota_nfse)
+        notas.append(nota_nfse)
+    db_session.commit()
+    return notas
+
+
+@pytest.mark.asyncio
+async def test_cobranca_agrupada_consolidacao_soma_nfe_e_nfse_liquido(
+    authenticated_client: AsyncClient, db_session: Session, test_empresa
+):
+    """Uma unica ContaReceber: NFe 180 + NFSe liquida 95 (ISS 5% retido) = 275."""
+    cliente = criar_cliente_teste(db_session)
+    consolidacao_id, csrf = await _finalizar_consolidacao_mista(
+        authenticated_client, db_session, cliente
+    )
+    _notas_autorizadas(db_session, consolidacao_id)
+
+    resp = await authenticated_client.post(
+        f"/consolidacoes/{consolidacao_id}/gerar-cobranca",
+        data={
+            "csrf_token": csrf, "nota": "auto", "forma_pagamento": "aprazo",
+            "num_parcelas": "1", "primeiro_vencimento": "2030-01-10",
+            "intervalo_dias": "30",
+        },
+    )
+    assert resp.status_code == 303
+
+    db_session.expire_all()
+    contas = db_session.query(ContaReceber).filter(
+        ContaReceber.consolidacao_id == consolidacao_id,
+        ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
+    ).all()
+    assert len(contas) == 1
+    conta = contas[0]
+    assert conta.nfe_id is not None
+    assert conta.nfse_id is not None
+    assert abs(float(conta.valor) - 275.0) < 0.01
+
+    # Gerar de novo nao duplica.
+    resp = await authenticated_client.post(
+        f"/consolidacoes/{consolidacao_id}/gerar-cobranca",
+        data={"csrf_token": csrf, "nota": "auto", "forma_pagamento": "aprazo"},
+    )
+    assert resp.status_code == 303
+    db_session.expire_all()
+    assert db_session.query(ContaReceber).filter(
+        ContaReceber.consolidacao_id == consolidacao_id
+    ).count() == 1
+
+
+@pytest.mark.asyncio
+async def test_cobranca_agrupada_bloqueia_sem_as_duas_notas(
+    authenticated_client: AsyncClient, db_session: Session, test_empresa
+):
+    """Sem a NFSe autorizada, a cobranca agrupada fica bloqueada."""
+    cliente = criar_cliente_teste(db_session)
+    consolidacao_id, csrf = await _finalizar_consolidacao_mista(
+        authenticated_client, db_session, cliente
+    )
+    _notas_autorizadas(db_session, consolidacao_id, nfse=False)
+
+    resp = await authenticated_client.post(
+        f"/consolidacoes/{consolidacao_id}/gerar-cobranca",
+        data={"csrf_token": csrf, "nota": "auto", "forma_pagamento": "aprazo"},
+    )
+    assert resp.status_code == 303
+    db_session.expire_all()
+    assert db_session.query(ContaReceber).filter(
+        ContaReceber.consolidacao_id == consolidacao_id
+    ).count() == 0
+
+
+@pytest.mark.asyncio
+async def test_cobranca_somente_nfe_quando_irma_nao_autorizada(
+    authenticated_client: AsyncClient, db_session: Session, test_empresa
+):
+    """Caso de cancelamento da irma: cobra manualmente apenas a NF-e valida."""
+    cliente = criar_cliente_teste(db_session)
+    consolidacao_id, csrf = await _finalizar_consolidacao_mista(
+        authenticated_client, db_session, cliente
+    )
+    _notas_autorizadas(db_session, consolidacao_id, nfse=False)
+
+    resp = await authenticated_client.post(
+        f"/consolidacoes/{consolidacao_id}/gerar-cobranca",
+        data={
+            "csrf_token": csrf, "nota": "nfe", "forma_pagamento": "aprazo",
+            "primeiro_vencimento": "2030-01-10",
+        },
+    )
+    assert resp.status_code == 303
     db_session.expire_all()
     contas = db_session.query(ContaReceber).filter(
         ContaReceber.consolidacao_id == consolidacao_id
     ).all()
-    assert len(contas) == 3
-    assert all(c.nfse_id is not None for c in contas)
-    assert all(c.nfe_id is None for c in contas)
-    assert abs(sum(float(c.valor) for c in contas) - 40.0) < 0.01
+    assert len(contas) == 1
+    assert contas[0].nfe_id is not None
+    assert contas[0].nfse_id is None
+    assert abs(float(contas[0].valor) - 180.0) < 0.01
 
-    # Reemitir/chamar de novo nao duplica a cobranca existente
-    _garantir_cobranca_nfse(db_session, nfse)
-    db_session.commit()
+
+@pytest.mark.asyncio
+async def test_detalhe_consolidacao_renderiza_cobranca_agrupada(
+    authenticated_client: AsyncClient, db_session: Session, test_empresa
+):
+    cliente = criar_cliente_teste(db_session)
+    consolidacao_id, csrf = await _finalizar_consolidacao_mista(
+        authenticated_client, db_session, cliente
+    )
+    _notas_autorizadas(db_session, consolidacao_id)
+
+    resp = await authenticated_client.get(f"/consolidacoes/{consolidacao_id}")
+    assert resp.status_code == 200
+    assert "Emitir Cobrança da Consolidação" in resp.text
+    assert "275.00" in resp.text
+    assert "NF-e da Consolidação" in resp.text
+
+
+@pytest.mark.asyncio
+async def test_cobranca_consolidacao_recusa_vencimento_antes_da_emissao(
+    authenticated_client: AsyncClient, db_session: Session, test_empresa
+):
+    cliente = criar_cliente_teste(db_session)
+    consolidacao_id, csrf = await _finalizar_consolidacao_mista(
+        authenticated_client, db_session, cliente
+    )
+    _notas_autorizadas(db_session, consolidacao_id)
+
+    resp = await authenticated_client.post(
+        f"/consolidacoes/{consolidacao_id}/gerar-cobranca",
+        data={
+            "csrf_token": csrf, "nota": "auto", "forma_pagamento": "aprazo",
+            "primeiro_vencimento": "2026-11-01",
+        },
+    )
+    assert resp.status_code == 303
     db_session.expire_all()
     assert db_session.query(ContaReceber).filter(
         ContaReceber.consolidacao_id == consolidacao_id
-    ).count() == 3
+    ).count() == 0
 
 
 @pytest.mark.asyncio

@@ -28,6 +28,36 @@ logger = logging.getLogger(__name__)
 _STATUS_EMITIDOS_NFE = {"issued", "queued", "pendente"}
 _STATUS_EMITIDOS_NFSE = {"autorizada", "pendente", "em_processamento"}
 
+
+def aplicar_condicao_pagamento(origem, *, primeiro_vencimento=None,
+                               num_parcelas=None, intervalo_dias=None,
+                               forma_pagamento=None):
+    """Persiste a condicao de pagamento escolhida na emissao/cobranca.
+
+    Usado por pedido/consolidacao para que o vencimento e o parcelamento
+    informados na tela valham para as notas (grupo <cobr>/<dup>) e para a
+    cobranca agrupada. Ignora valores invalidos em vez de quebrar o fluxo.
+    """
+    if origem is None:
+        return
+    if primeiro_vencimento:
+        try:
+            origem.primeiro_vencimento = date.fromisoformat(str(primeiro_vencimento))
+        except (TypeError, ValueError):
+            logger.warning("Vencimento invalido ignorado: %r", primeiro_vencimento)
+    if num_parcelas is not None:
+        try:
+            origem.num_parcelas = max(1, int(num_parcelas))
+        except (TypeError, ValueError):
+            pass
+    if intervalo_dias is not None:
+        try:
+            origem.intervalo_dias = max(1, int(intervalo_dias))
+        except (TypeError, ValueError):
+            pass
+    if forma_pagamento:
+        origem.forma_pagamento = forma_pagamento
+
 # Formas de recebimento IMEDIATO: nao geram conta a receber a vencer nem duplicata
 # na NFe (enviar <cobr> em nota a vista causa cStat 853 na SEFAZ). So nao criamos
 # cobranca para elas -- o valor e reconhecido como recebido (caixa).
@@ -433,6 +463,10 @@ def _ids_vinculados(*, pedido=None, consolidacao=None, nfse=None, nfe=None, os=N
         nfe_ids.add(nfe.id)
         if getattr(nfe, "os_id", None):
             os_ids.add(nfe.os_id)
+        # NFe de consolidacao aponta direto para ela (sem pedido): precisa
+        # entrar no conjunto para a cobranca agrupada ser vista pela NFSe irma.
+        if getattr(nfe, "consolidacao_id", None):
+            consolidacao_ids.add(nfe.consolidacao_id)
         pedido = getattr(nfe, "pedido", None)
         if pedido is not None:
             pedido_ids.add(pedido.id)

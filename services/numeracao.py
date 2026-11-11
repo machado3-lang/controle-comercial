@@ -56,12 +56,50 @@ def _reverter(db: Session, empresa: Empresa, campo: str, modelo, nota_id, numero
     return numero - 1
 
 
+def nota_rejeitada_nfe(nfe) -> bool:
+    """True quando a NFe foi recusada pela SEFAZ e NAO consumiu numero.
+
+    Uma tentativa rejeitada (status "error") pode ter invoice_id/chave gerados
+    pelo NotaAS, mas nao tem protocolo de autorizacao. Esse numero continua livre
+    na SEFAZ e nao pode bloquear a reconciliacao de outra nota que o autorizou.
+    Nota cancelada tem protocolo e, portanto, ocupa o numero.
+    """
+    status = str(getattr(nfe, "status", "") or "").lower()
+    return status in ("error", "erro", "rejeitada") and not getattr(nfe, "protocolo", None)
+
+
+def _maior_numero_nfe_ocupado(db: Session, serie: int, ignorar_id=None) -> int:
+    consulta = db.query(NFe.numero).filter(NFe.serie == serie, NFe.numero.isnot(None))
+    if ignorar_id is not None:
+        consulta = consulta.filter(NFe.id != ignorar_id)
+    # Sessoes com autoflush desligado (testes) mantem na consulta as notas ja
+    # marcadas para exclusao; elas nao ocupam mais o numero.
+    removidos = {
+        obj.id for obj in getattr(db, "deleted", set())
+        if isinstance(obj, NFe) and obj.id is not None
+    }
+    if removidos:
+        consulta = consulta.filter(~NFe.id.in_(removidos))
+    return max((numero for (numero,) in consulta.all() if numero is not None), default=0)
+
+
 def reverter_numero_nfe(db: Session, empresa: Empresa, nfe: NFe):
-    """Devolve o numero de um rascunho de NFe ao contador. Chamar ANTES de `db.delete(nfe)`."""
-    if nfe.invoice_id or nfe.chave_acesso or nfe.protocolo:
+    """Devolve o numero de um rascunho/rejeitado de NFe ao contador.
+
+    Chamar ANTES de `db.delete(nfe)`. Nota rejeitada sem protocolo pode ser
+    excluida mesmo tendo invoice_id/chave da tentativa (eles nao autorizam nada).
+    Nunca reduz o contador abaixo de um numero ainda usado por outra nota.
+    """
+    rejeitada = nota_rejeitada_nfe(nfe)
+    if not rejeitada and (nfe.invoice_id or nfe.chave_acesso or nfe.protocolo):
+        return None
+    numero = _para_int(nfe.numero)
+    if numero is not None and numero <= _maior_numero_nfe_ocupado(
+        db, nfe.serie or 1, ignorar_id=nfe.id
+    ):
         return None
     return _reverter(
-        db, empresa, "ultimo_numero_nfe", NFe, nfe.id, _para_int(nfe.numero), nfe.numero
+        db, empresa, "ultimo_numero_nfe", NFe, nfe.id, numero, nfe.numero
     )
 
 
@@ -133,20 +171,23 @@ def reconciliar_numero_nfe(
     alterou = False
     serie_alvo = serie or nfe.serie
     if numero is not None and numero != nfe.numero:
-        conflito = (
-            db.query(NFe.id)
+        candidatos = (
+            db.query(NFe)
             .filter(
                 NFe.id != nfe.id,
                 NFe.numero == numero,
                 NFe.serie == serie_alvo,
             )
-            .first()
+            .all()
         )
+        # Nota rejeitada sem protocolo nao ocupa o numero na SEFAZ: pode ser
+        # rebaixada para dar lugar ao numero que a chave autorizada confirma.
+        conflito = next((c for c in candidatos if not nota_rejeitada_nfe(c)), None)
         if conflito is not None:
             logger.warning(
                 "NFe #%s: numero local %s diverge da chave (%s), mas a NFe #%s "
                 "ja usa esse numero na serie %s; reconciliacao ignorada",
-                nfe.id, nfe.numero, numero, conflito[0], serie_alvo,
+                nfe.id, nfe.numero, numero, conflito.id, serie_alvo,
             )
         else:
             logger.warning(

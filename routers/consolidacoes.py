@@ -663,6 +663,27 @@ def detalhe_consolidacao(
             "consolidacao": consolidacao,
             "itens_json": itens_json,
             "pedidos_disponiveis": pedidos_disponiveis,
+            "cobrancas_ativas": [
+                c for c in consolidacao.contas_receber
+                if c.status not in (StatusConta.CANCELADO, StatusConta.EXCLUIDO)
+            ],
+            "nfe_autorizada": next(
+                (n for n in consolidacao.nfes if (n.status or "").lower() == "issued"),
+                None,
+            ),
+            "nfse_autorizada": (
+                consolidacao.nfse
+                if consolidacao.nfse
+                and (consolidacao.nfse.status or "").lower()
+                in ("autorizada", "emitida", "issued")
+                else None
+            ),
+            "espera_nfe": any(
+                i.produto and i.produto.tipo == "produto" for i in consolidacao.itens
+            ),
+            "espera_nfse": any(
+                i.produto and i.produto.tipo == "servico" for i in consolidacao.itens
+            ),
             "STATUS_LABELS": STATUS_CONSOLIDACAO_LABELS,
             "FORMAS_PAGAMENTO": {
                 FormaPagamento.AVISTA: "À Vista",
@@ -673,6 +694,232 @@ def detalhe_consolidacao(
             },
         },
     )
+
+
+@router.post("/{consolidacao_id}/condicao-pagamento")
+def atualizar_condicao_pagamento_consolidacao(
+    request: Request,
+    consolidacao_id: int,
+    db: Session = Depends(get_db),
+    primeiro_vencimento: str = Form(""),
+    num_parcelas: int = Form(1),
+    intervalo_dias: int = Form(30),
+    forma_pagamento: str = Form(""),
+):
+    """Permite alterar vencimento/parcelas depois de finalizar e antes de cobrar.
+
+    O vencimento da consolidação é o padrão do <cobr>/<dup> das notas e da
+    cobrança agrupada. Como a emissão pode ocorrer dias depois do fechamento,
+    o usuário precisa poder corrigi-lo sem reabrir a consolidação.
+    """
+    consolidacao = db.query(PedidoConsolidado).filter(
+        PedidoConsolidado.id == consolidacao_id
+    ).first()
+    if not consolidacao:
+        return RedirectResponse(url="/consolidacoes/", status_code=303)
+    if consolidacao.status != StatusConsolidacao.CONCLUIDO:
+        request.session["error"] = "Só é possível alterar a condição de consolidação finalizada"
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    ativas = [
+        c for c in consolidacao.contas_receber
+        if c.status not in (StatusConta.CANCELADO, StatusConta.EXCLUIDO)
+    ]
+    if ativas:
+        request.session["error"] = (
+            "Já existe cobrança ativa para esta consolidação. Altere o vencimento "
+            "diretamente na conta a receber."
+        )
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    from services.parcelamento import aplicar_condicao_pagamento
+    aplicar_condicao_pagamento(
+        consolidacao,
+        primeiro_vencimento=primeiro_vencimento,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
+        forma_pagamento=forma_pagamento or None,
+    )
+    db.commit()
+    request.session["message"] = "Condição de pagamento da consolidação atualizada."
+    return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+
+@router.post("/{consolidacao_id}/gerar-cobranca")
+def gerar_cobranca_consolidacao(
+    request: Request,
+    consolidacao_id: int,
+    db: Session = Depends(get_db),
+    forma_pagamento: str = Form(""),
+    num_parcelas: int = Form(1),
+    primeiro_vencimento: str = Form(""),
+    intervalo_dias: int = Form(30),
+    nota: str = Form(""),
+):
+    """Ponto único de cobrança da consolidação (espelha a OS).
+
+    - nota vazia/"auto": UMA ContaReceber com NFe + NFSe autorizadas e um único
+      boleto. Bloqueia se alguma das notas esperadas ainda não foi autorizada.
+    - nota="nfe"/"nfse": cobra somente a nota indicada. Serve para o caso de a
+      nota irmã ser cancelada e só a válida precisar ser cobrada.
+    Valor: NFe.valor_total + NFSe.valor_liquido (ISS retido descontado).
+    """
+    consolidacao = db.query(PedidoConsolidado).options(
+        selectinload(PedidoConsolidado.cliente),
+        selectinload(PedidoConsolidado.itens).selectinload(PedidoConsolidadoItem.produto),
+        selectinload(PedidoConsolidado.nfes),
+        selectinload(PedidoConsolidado.nfse),
+        selectinload(PedidoConsolidado.contas_receber),
+    ).filter(PedidoConsolidado.id == consolidacao_id).first()
+    if not consolidacao:
+        return RedirectResponse(url="/consolidacoes/", status_code=303)
+    if consolidacao.status != StatusConsolidacao.CONCLUIDO:
+        request.session["error"] = "Apenas consolidações finalizadas podem gerar cobrança"
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+    if consolidacao.gerar_cobranca is False:
+        request.session["error"] = (
+            "A cobrança automática está desligada nesta consolidação. "
+            "Ligue 'Gerar Cobrança' antes de gerar a conta."
+        )
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    from services.nfe_notaas import explodir_itens_consolidacao
+    from services.parcelamento import (
+        aplicar_condicao_pagamento, contas_receber_existentes_para,
+        forma_pagamento_str, gerar_contas_receber,
+    )
+
+    itens_nfe, itens_nfse = explodir_itens_consolidacao(consolidacao=consolidacao, db=db)
+    nfe = next(
+        (n for n in consolidacao.nfes if (n.status or "").lower() == "issued"), None
+    )
+    nfse = (
+        consolidacao.nfse
+        if consolidacao.nfse
+        and (consolidacao.nfse.status or "").lower()
+        in ("autorizada", "emitida", "issued")
+        else None
+    )
+
+    alvo = (nota or "auto").lower()
+    if alvo == "nfe":
+        nfse = None
+    elif alvo == "nfse":
+        nfe = None
+    else:
+        if itens_nfe and not nfe:
+            request.session["error"] = (
+                "A NF-e desta consolidação ainda não foi autorizada. Transmita a "
+                "NF-e primeiro (ou escolha 'Somente NFSe', se for o caso)."
+            )
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+        if itens_nfse and not nfse:
+            request.session["error"] = (
+                "A NFSe desta consolidação ainda não foi autorizada. Transmita a "
+                "NFSe primeiro (ou escolha 'Somente NF-e', se for o caso)."
+            )
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    if not nfe and not nfse:
+        request.session["error"] = "Não há nota autorizada para gerar a cobrança."
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    if contas_receber_existentes_para(db, consolidacao=consolidacao):
+        request.session["error"] = (
+            "Já existe cobrança ativa para esta consolidação. Cancele a cobrança "
+            "anterior antes de gerar outra."
+        )
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    valor = Decimal("0")
+    if nfe:
+        valor += Decimal(str(nfe.valor_total or 0))
+    if nfse:
+        valor += Decimal(str(nfse.valor_liquido or 0))
+    if valor <= 0:
+        request.session["error"] = "O valor da cobrança é zero. Verifique as notas."
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    forma = (
+        forma_pagamento_str(forma_pagamento)
+        or forma_pagamento_str(consolidacao.forma_pagamento)
+        or "boleto"
+    )
+    try:
+        venc = date.fromisoformat(primeiro_vencimento) if primeiro_vencimento else (
+            consolidacao.primeiro_vencimento or date.today()
+        )
+    except ValueError:
+        venc = consolidacao.primeiro_vencimento or date.today()
+
+    emissoes = [
+        n.data_emissao.date() for n in (nfe, nfse) if n and n.data_emissao
+    ]
+    if emissoes and venc < max(emissoes):
+        request.session["error"] = (
+            f"O vencimento {venc.strftime('%d/%m/%Y')} não pode ser anterior à "
+            f"emissão da nota ({max(emissoes).strftime('%d/%m/%Y')}). "
+            "Escolha uma data igual ou posterior."
+        )
+        return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+
+    aplicar_condicao_pagamento(
+        consolidacao,
+        primeiro_vencimento=venc,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
+        forma_pagamento=forma,
+    )
+
+    if nfe and nfse:
+        descricao = (
+            f"Cobrança Consolidação {consolidacao.numero or '#' + str(consolidacao.id)} "
+            f"(NFe #{nfe.numero or nfe.id} + NFSe #{nfse.numero or nfse.id})"
+        )
+        observacao = f"Cobrança agrupada da consolidação #{consolidacao.id} (NFe + NFSe)"
+    elif nfe:
+        descricao = f"NFe #{nfe.numero or nfe.id} (Consolidação {consolidacao.numero or '#' + str(consolidacao.id)})"
+        observacao = f"Cobrança da NFe da consolidação #{consolidacao.id} (sem a NFSe)"
+    else:
+        descricao = f"NFSe #{nfse.numero or nfse.id} (Consolidação {consolidacao.numero or '#' + str(consolidacao.id)})"
+        observacao = f"Cobrança da NFSe da consolidação #{consolidacao.id} (sem a NFe)"
+
+    numero_documento = (
+        str(nfe.numero) if nfe and nfe.numero
+        else (str(nfse.numero) if nfse and nfse.numero
+              else str(consolidacao.numero or consolidacao.id))
+    )
+
+    contas = gerar_contas_receber(
+        db,
+        cliente_id=consolidacao.cliente_id,
+        descricao=descricao,
+        valor_total=valor,
+        primeiro_vencimento=venc,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
+        forma_pagamento=forma,
+        numero_documento=numero_documento,
+        observacao=observacao,
+        nfe_id=nfe.id if nfe else None,
+        nfse_id=nfse.id if nfse else None,
+        consolidacao_id=consolidacao.id,
+    )
+    db.commit()
+
+    msg = f"{len(contas)} cobrança(s) gerada(s) para a consolidação."
+    if consolidacao.gerar_boleto and forma == "boleto":
+        from services.parcelamento import emitir_boletos_contas
+        ok, erros = emitir_boletos_contas(db, contas)
+        if erros:
+            request.session["error"] = (
+                f"{msg} {ok} boleto(s) emitido(s), mas houve erro(s): " + "; ".join(erros)
+            )
+            return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
+        if ok:
+            msg += f" {ok} boleto(s) emitido(s)."
+    request.session["message"] = msg
+    return RedirectResponse(url=f"/consolidacoes/{consolidacao_id}", status_code=303)
 
 
 @router.post("/{consolidacao_id}/finalizar")

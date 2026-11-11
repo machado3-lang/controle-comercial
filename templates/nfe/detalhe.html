@@ -126,7 +126,7 @@
             {% endif %}
             {% elif nfe.status == 'issued' %}
             {% endif %}
-            {% if not cobranca and nfe.status not in ('rascunho', 'pendente', 'queued') %}
+            {% if not cobranca and not nfe.consolidacao_id and nfe.status not in ('rascunho', 'pendente', 'queued', 'error') %}
             <form method="post" action="/nfe/{{ nfe.id }}/gerar-cobranca" class="inline-flex items-end gap-2 flex-wrap">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div>
@@ -141,7 +141,7 @@
                 </div>
                 <div>
                     <label class="block text-[10px] font-medium text-amber-400 mb-0.5">1º Venc.</label>
-                    <input type="date" name="primeiro_vencimento" id="primeiroVencNfeDet" value="{{ (nfe.pedido.primeiro_vencimento.strftime('%Y-%m-%d') if nfe.pedido and nfe.pedido.primeiro_vencimento else (nfe.data_emissao.strftime('%Y-%m-%d') if nfe.data_emissao else '')) }}" class="px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
+                    <input type="date" name="primeiro_vencimento" id="primeiroVencNfeDet" value="{{ vencimento_sugerido.strftime('%Y-%m-%d') if vencimento_sugerido else '' }}" class="px-2 py-1.5 bg-slate-900/60 border border-slate-800/80 rounded-xl text-slate-100 text-sm">
                 </div>
                 <div>
                     <label class="block text-[10px] font-medium text-amber-400 mb-0.5">Intervalo</label>
@@ -151,6 +151,11 @@
                     <i data-lucide="banknote" class="w-4 h-4 me-1"></i> Gerar Cobrança
                 </button>
             </form>
+            {% endif %}
+            {% if nfe.consolidacao_id %}
+            <a href="/consolidacoes/{{ nfe.consolidacao_id }}" class="flex items-center px-3 py-2 text-sm text-indigo-300 border border-indigo-800/50 rounded-xl hover:bg-indigo-950/30 transition">
+                <i data-lucide="layers" class="w-4 h-4 me-1"></i> Cobrança na consolidação
+            </a>
             {% endif %}
             {% if nfe.invoice_id and nfe.status == 'issued' %}
             <a href="/nfe/{{ nfe.id }}/pdf" target="_blank" class="flex items-center px-3 py-2 text-sm text-emerald-400 border border-emerald-800/50 rounded-xl hover:bg-emerald-950/30 transition">

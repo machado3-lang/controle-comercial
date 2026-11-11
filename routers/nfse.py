@@ -871,7 +871,10 @@ def pagina_emitir_consolidacao(request: Request, consolidacao_id: int, db: Sessi
 @router.post("/emitir/consolidacao/{consolidacao_id}")
 def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session = Depends(get_db),
                               acao: str = Form("manter"), tipo: str = Form("auto"),
-                              observacoes: str = Form("")):
+                              observacoes: str = Form(""),
+                              primeiro_vencimento: str = Form(""),
+                              num_parcelas: int = Form(1),
+                              intervalo_dias: int = Form(30)):
     """Salva rascunho NFe + NFSe da consolidação"""
     consolidacao = db.query(PedidoConsolidado).options(
         selectinload(PedidoConsolidado.itens).selectinload(PedidoConsolidadoItem.produto),
@@ -884,7 +887,16 @@ def emitir_consolidacao_nfse(request: Request, consolidacao_id: int, db: Session
         return RedirectResponse(url=f"/nfe/emitir/consolidacao/{consolidacao_id}", status_code=303)
     itens_nfe, itens_nfse = explodir_itens_consolidacao(consolidacao=consolidacao, db=db)
 
-    # --- Rascunhos jÃ¡ existentes (NFe e NFSe) ---
+    # Vencimento/parcelamento informados na tela de emissão passam a valer para
+    # os rascunhos (<cobr>/<dup>) e para a cobrança agrupada da consolidação.
+    from services.parcelamento import aplicar_condicao_pagamento
+    aplicar_condicao_pagamento(
+        consolidacao,
+        primeiro_vencimento=primeiro_vencimento,
+        num_parcelas=num_parcelas,
+        intervalo_dias=intervalo_dias,
+    )
+    # --- Rascunhos já existentes (NFe e NFSe) ---
     _RASCUNHO = {"rascunho", "erro"}
     nfe_existente = db.query(NFe).filter(NFe.consolidacao_id == consolidacao_id).order_by(NFe.id.desc()).first()
     nfse_existente = consolidacao.nfse
@@ -1340,9 +1352,21 @@ def detalhe_nfse(request: Request, nfse_id: int, db: Session = Depends(get_db)):
     ).order_by(ContaReceber.numero_parcela).first()
 
     vencimento_sugerido = None
-    if nfse.assinatura_id and nfse.assinatura and not cobranca:
-        from routers.assinaturas import proximo_vencimento_para_cobranca
-        vencimento_sugerido = proximo_vencimento_para_cobranca(db, nfse.assinatura)
+    if not cobranca:
+        if nfse.assinatura_id and nfse.assinatura:
+            from routers.assinaturas import proximo_vencimento_para_cobranca
+            vencimento_sugerido = proximo_vencimento_para_cobranca(db, nfse.assinatura)
+        else:
+            _origem_nfse = nfse.pedido or nfse.consolidacao
+            vencimento_sugerido = (
+                getattr(_origem_nfse, "primeiro_vencimento", None) if _origem_nfse else None
+            )
+        if vencimento_sugerido is None and nfse.data_emissao:
+            vencimento_sugerido = nfse.data_emissao.date()
+        # A tela nunca sugere vencimento anterior à emissão (boleto inválido).
+        if (nfse.data_emissao and vencimento_sugerido
+                and vencimento_sugerido < nfse.data_emissao.date()):
+            vencimento_sugerido = nfse.data_emissao.date()
 
     return request.app.state.templates.TemplateResponse(request, 
         "nfse/detalhe.html",
@@ -1655,6 +1679,14 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         )
         return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
+    if nfse.consolidacao_id:
+        request.session["error"] = (
+            f"A cobrança da NFSe da consolidação #{nfse.consolidacao_id} é gerada na tela "
+            "da consolidação, onde NFe e NFSe são agrupadas em uma única conta/boleto "
+            "(ou cobradas separadamente, se necessário)."
+        )
+        return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
+
     cobranca_existente = db.query(ContaReceber).filter(
         ContaReceber.nfse_id == nfse.id,
         ContaReceber.status.notin_([StatusConta.CANCELADO, StatusConta.EXCLUIDO]),
@@ -1693,7 +1725,17 @@ def gerar_cobranca_nfse(request: Request, nfse_id: int, db: Session = Depends(ge
         from routers.assinaturas import proximo_vencimento_para_cobranca
         venc = proximo_vencimento_para_cobranca(db, nfse.assinatura)
     if venc is None:
-        venc = date.today()
+        _origem_nfse = nfse.pedido or nfse.consolidacao
+        venc = (getattr(_origem_nfse, "primeiro_vencimento", None)
+                if _origem_nfse else None)
+    if venc is None:
+        venc = nfse.data_emissao.date() if nfse.data_emissao else date.today()
+    if nfse.data_emissao and venc < nfse.data_emissao.date():
+        request.session["error"] = (
+            f"O vencimento {venc.strftime('%d/%m/%Y')} não pode ser anterior à "
+            f"emissão da NFSe ({nfse.data_emissao.strftime('%d/%m/%Y')})."
+        )
+        return RedirectResponse(url=f"/nfse/detalhe/{nfse_id}", status_code=303)
 
     # Forma de pagamento: propria NFSe, pedido ou consolidacao de origem.
     _forma = (
@@ -1823,6 +1865,12 @@ def _garantir_cobranca_nfse(db, nfse):
             # cobranca_separada). Cobrar aqui, na transmissao, criaria uma segunda
             # cobranca e quebraria o agrupamento — e o boleto unico da OS.
             return
+        if nfse.consolidacao_id:
+            # Consolidacao tambem e ponto unico de cobranca
+            # (routers/consolidacoes.py): agrupa NFe + NFSe em uma unica conta,
+            # com um unico boleto. A cobranca individual so e feita manualmente
+            # pela tela da consolidacao.
+            return
         ped = nfse.pedido
         cons = db.query(PedidoConsolidado).get(nfse.consolidacao_id) if nfse.consolidacao_id else None
         # Forma de pagamento: vem da propria NFSe (quando preenchida na emissao),
@@ -1874,7 +1922,15 @@ def _garantir_cobranca_nfse(db, nfse):
         if not cliente_id:
             return
         _origem = ped or cons
-        venc = (_origem.primeiro_vencimento if _origem and getattr(_origem, "primeiro_vencimento", None) else _date.today())
+        venc = (_origem.primeiro_vencimento if _origem and getattr(_origem, "primeiro_vencimento", None)
+                else (nfse.data_emissao.date() if nfse.data_emissao else _date.today()))
+        # Nunca gera boleto/cobranca com vencimento anterior a emissao da nota.
+        if nfse.data_emissao and venc < nfse.data_emissao.date():
+            logger.warning(
+                "NFSe #%s: vencimento %s anterior à emissão %s; ajustado para a emissão",
+                nfse.id, venc, nfse.data_emissao.date(),
+            )
+            venc = nfse.data_emissao.date()
         num_parc = int(_origem.num_parcelas or 1) if _origem and getattr(_origem, "num_parcelas", None) else 1
         intervalo = int(_origem.intervalo_dias or 30) if _origem and getattr(_origem, "intervalo_dias", None) else 30
         contas = gerar_contas_receber_para_nota(

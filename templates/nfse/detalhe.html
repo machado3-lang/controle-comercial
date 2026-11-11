@@ -155,7 +155,7 @@
         {% endif %}
 
         <div class="border-t border-slate-800/60 pt-4 flex flex-wrap gap-2">
-            {% if not cobranca and nfse.status != 'rascunho' %}
+            {% if not cobranca and not nfse.consolidacao_id and nfse.status != 'rascunho' %}
             <form method="post" action="/nfse/{{ nfse.id }}/gerar-cobranca" class="inline-flex items-end gap-2 flex-wrap">
     <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
     <div>
@@ -178,6 +178,10 @@
             </div>
             <button type="submit" class="flex items-center px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl transition"><i data-lucide="banknote" class="w-4 h-4 me-1"></i> Gerar Cobrança</button>
             </form>
+            {% elif nfse.consolidacao_id and not cobranca %}
+            <a href="/consolidacoes/{{ nfse.consolidacao_id }}" class="flex items-center px-4 py-2 text-sm text-indigo-300 border border-indigo-800/50 rounded-xl hover:bg-indigo-950/30 transition">
+                <i data-lucide="layers" class="w-4 h-4 me-1"></i> Cobrança na consolidação
+            </a>
             {% endif %}
         </div>
     </div>
