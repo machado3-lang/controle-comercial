@@ -349,7 +349,15 @@ async def upload_restore(request: Request, arquivo: UploadFile = File(...), modo
             raise ValueError("Arquivo vazio ou não recebido (falha no upload multipart)")
         backup = json.loads(content)
         import asyncio
+        from services.backup import validate_backup
+        # Confere cobertura de tabelas/colunas antes de gravar qualquer coisa.
+        relatorio = validate_backup(backup)
         stats = await asyncio.to_thread(restore_backup, backup, modo=modo)
+        stats["validacao"] = relatorio
+        if relatorio.get("avisos"):
+            stats["detalhes"] = [
+                f"Validação: {aviso}" for aviso in relatorio["avisos"]
+            ] + stats.get("detalhes", [])
         # Auditoria em sessão nova (a anterior foi fechada antes do restore).
         db2 = next(get_db())
         try:
