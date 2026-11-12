@@ -10,6 +10,7 @@ IMPORTANTE:
 - O serviço LC116 deve estar cadastrado no portal Betha
 """
 import os
+import re
 import logging
 import warnings
 import tempfile
@@ -19,7 +20,7 @@ from requests import Session
 from requests.auth import HTTPBasicAuth
 from datetime import datetime, timezone, timedelta
 
-from services.cert_store import load_certificate, extract_cert_info, create_temp_pfx
+from services.cert_store import extract_cert_info
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -38,6 +39,79 @@ ADN_NFSE_URL = os.getenv('ADN_NFSE_URL', 'https://sefin.nfse.gov.br/SefinNaciona
 ADN_DFE_URL = os.getenv('ADN_DFE_URL', 'https://adn.nfse.gov.br/contribuintes/dfe')
 # Portal Nacional da NFS-e (consulta por chave de acesso; exige mTLS)
 PORTAL_NFSE_URL = os.getenv('PORTAL_NFSE_URL', 'https://nfse.gov.br')
+
+
+def _normalizar_inscricao(doc: str) -> str:
+    """Mantém letras e números: o CNPJ alfanumérico (IN RFB 2.229/2024) tem
+    12 posições alfanuméricas e 2 dígitos verificadores."""
+    return re.sub(r'[^A-Za-z0-9]', '', doc or '').upper()
+
+
+def parametros_consulta_adn(inscricao: str = None) -> dict:
+    """Monta os parâmetros da distribuição DF-e do ADN.
+
+    Desde 01/11/2026 o ADN passou a aceitar a alternância de perfis e
+    procurações e a exigir que a consulta informe de qual inscrição são os
+    documentos. Sem `cnpjConsulta`/`cpfConsulta`, a resposta é HTTP 400 com
+    `StatusProcessamento: REJEICAO` e `Erros` vazio — foi o que fez a listagem
+    voltar zero notas a partir daquela data.
+
+    O manual (item 1.1.1) exige CNPJ completo com 14 posições; CPF tem 11.
+    """
+    doc = _normalizar_inscricao(inscricao)
+    if len(doc) == 14:
+        return {'lote': 'true', 'cnpjConsulta': doc}
+    if len(doc) == 11 and doc.isdigit():
+        return {'lote': 'true', 'cpfConsulta': doc}
+    return {'lote': 'true'}
+
+
+def mensagem_rejeicao_adn(data: dict) -> str:
+    """Extrai uma mensagem legível dos `Erros`/`Alertas` do ADN."""
+    partes = []
+    for chave in ('Erros', 'Alertas'):
+        for item in (data.get(chave) or []):
+            if not isinstance(item, dict):
+                continue
+            codigo = item.get('Codigo') or item.get('codigo') or ''
+            descricao = item.get('Descricao') or item.get('descricao') or ''
+            texto = f"{codigo}: {descricao}".strip(': ').strip()
+            if texto:
+                partes.append(texto)
+    if partes:
+        return '; '.join(dict.fromkeys(partes))
+    tipo = data.get('TipoConsulta') or 'InscricaoCertificado'
+    status = data.get('StatusProcessamento') or 'REJEICAO'
+    return (f"ADN recusou a consulta ({status}; tipo {tipo}). "
+            "Confira o CNPJ da empresa e, para outra inscrição, a procuração "
+            "cadastrada no Portal de Serviços da Receita Federal.")
+
+
+def inscricao_consulta_adn(empresa_cnpj: str = None) -> str:
+    """Retorna o CNPJ/CPF a informar como cnpjConsulta/cpfConsulta.
+
+    Prioriza o CNPJ da empresa recebido por parâmetro; senão usa BETHA_CNPJ do
+    .env; por último consulta a Empresa no banco.
+    """
+    doc = _normalizar_inscricao(empresa_cnpj)
+    if doc:
+        return doc
+    doc = _normalizar_inscricao(os.getenv('BETHA_CNPJ', ''))
+    if doc:
+        return doc
+    try:
+        from database import SessionLocal
+        from models import Empresa
+        db = SessionLocal()
+        try:
+            emp = db.query(Empresa).first()
+            return _normalizar_inscricao(emp.cnpj if emp else '')
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"Não foi possível obter o CNPJ da empresa para o ADN: {e}")
+        return ''
+
 
 # ---------------------------------------------------------------------------
 # Ambiente Nacional (Emissor Nacional / webservice empresarial)
@@ -159,34 +233,27 @@ class BethaNfseService:
 
     def load_cert_from_empresa(self, empresa):
         """
-        Carrega certificado A1 do armazenamento seguro (arquivo criptografado).
-        Fallback para base64 no banco (compatibilidade).
-        """
-        # Tenta carregar do armazenamento seguro
-        if getattr(empresa, 'cert_id', None):
-            pfx_data = load_certificate('empresa', empresa.cert_id)
-            if pfx_data:
-                self._temp_pfx_path = create_temp_pfx('empresa', empresa.cert_id)
-                self.cert_path = self._temp_pfx_path
-                self.cert_password = empresa.cert_password or os.getenv('CERT_PASSWORD', '')
-                info = extract_cert_info(pfx_data, empresa.cert_password or '')
-                if info.get('valida'):
-                    logger.info(f"Certificado NFSe carregado do armazenamento seguro. Válido até: {info['valida']}")
-                return
+        Carrega o certificado A1 da empresa.
 
-        # Fallback: base64 no banco (modo legado)
-        import base64
-        if empresa.cert_base64:
-            pfx = base64.b64decode(empresa.cert_base64)
-            tmp = os.path.join(tempfile.gettempdir(), 'certificado.pfx')
-            with open(tmp, 'wb') as f:
-                f.write(pfx)
-            self.cert_path = tmp
-            self.cert_password = empresa.cert_password or ''
-            logger.warning("Certificado carregado do banco (base64) - modo legado. Migre para armazenamento seguro.")
-        elif empresa.cert_path:
-            self.cert_path = empresa.cert_path
-            self.cert_password = empresa.cert_password or os.getenv('CERT_PASSWORD', '')
+        O cofre criptografado do banco é a fonte principal; se ele não puder ser
+        aberto (banco restaurado de outro ambiente, certificado recadastrado com
+        outra chave etc.), o `resolver_certificado_empresa` cai para o base64
+        legado, para o caminho da empresa e, por fim, para o CERT_PATH do .env —
+        sempre validando o PFX antes de usá-lo.
+        """
+        from services.cert_store import resolver_certificado_empresa
+        resolvido = resolver_certificado_empresa(empresa)
+        if not resolvido:
+            return
+        pfx_data, senha = resolvido
+        with tempfile.NamedTemporaryFile(suffix='.pfx', delete=False) as tmp:
+            tmp.write(pfx_data)
+            self._temp_pfx_path = tmp.name
+        self.cert_path = self._temp_pfx_path
+        self.cert_password = senha
+        info = extract_cert_info(pfx_data, senha)
+        if info.get('valida'):
+            logger.info(f"Certificado NFSe carregado. Válido até: {info['valida']}")
 
     def _get_pem_combined(self) -> str:
         from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
@@ -688,39 +755,60 @@ class BethaNfseService:
     def listar_nfse_adn(self, data_inicio: str = None, data_fim: str = None,
                         max_paginas: int = 50, empresa_cnpj: str = None) -> list[dict]:
         """Lista NFS-e do ADN via API de distribuição (DF-e) por período.
-        Endpoint: GET /contribuintes/dfe/{ultNSU}
+        Endpoint: GET /contribuintes/dfe/{ultNSU}?lote=true&cnpjConsulta=...
 
         Retorna lista de dicts com chaveAcesso, dhEmi, valor, tomador, xml, etc.
         """
-        import base64, gzip, re, time
+        import base64, gzip, time
         session = self._get_adn_session()
+        inscricao = inscricao_consulta_adn(empresa_cnpj)
+        params = parametros_consulta_adn(inscricao)
         resultados = []
         notas_brutas = []
         cancelamentos = set()
         ultNSU = 0
         pagina = 0
-        logger.info(f"Listando NFS-e do ADN de {data_inicio} a {data_fim}...")
+        logger.info(f"Listando NFS-e do ADN de {data_inicio} a {data_fim} "
+                    f"(consulta={inscricao or 'titular do certificado'})...")
 
         while pagina < max_paginas:
             try:
                 url = f"{ADN_DFE_URL}/{ultNSU}"
                 logger.info(f"ADN DFE req (pag {pagina + 1}): NSU={ultNSU}")
                 time.sleep(1)  # rate limit
-                r = session.get(url, timeout=60)
+                r = session.get(url, params=params, timeout=60)
                 if r.status_code == 429:
                     logger.warning("ADN 429 rate limit, aguardando 5s...")
                     time.sleep(5)
-                    r = session.get(url, timeout=60)
+                    r = session.get(url, params=params, timeout=60)
                 if r.status_code == 404:
                     logger.info("ADN DFE 404 — fim da distribuição")
                     break
                 if r.status_code != 200:
+                    try:
+                        rejeicao = r.json()
+                    except Exception:
+                        rejeicao = {}
+                    if r.status_code == 400 and rejeicao:
+                        msg = mensagem_rejeicao_adn(rejeicao)
+                        if notas_brutas:
+                            logger.warning(f"ADN recusou página {pagina + 1}; "
+                                           f"mantendo {len(notas_brutas)} notas já lidas: {msg}")
+                            break
+                        raise NFSeBethaError(msg)
                     logger.warning(f"ADN DFE HTTP {r.status_code}: {r.text[:300]}")
                     break
 
                 data = r.json()
                 status = data.get('StatusProcessamento', '')
                 if status != 'DOCUMENTOS_LOCALIZADOS':
+                    if status == 'REJEICAO':
+                        msg = mensagem_rejeicao_adn(data)
+                        if notas_brutas:
+                            logger.warning(f"ADN REJEICAO na página {pagina + 1}; "
+                                           f"mantendo {len(notas_brutas)} notas já lidas: {msg}")
+                            break
+                        raise NFSeBethaError(msg)
                     logger.info(f"ADN status: {status}")
                     break
 
@@ -858,6 +946,8 @@ class BethaNfseService:
                 ultNSU = nsu_max
                 pagina += 1
 
+            except NFSeBethaError:
+                raise
             except Exception as e:
                 logger.error(f"Erro ADN DFE: {e}")
                 import traceback
@@ -876,14 +966,17 @@ class BethaNfseService:
         return resultados
 
     def _varrer_dfe_adn(self, chave: str, max_paginas: int = 80,
-                        nsu_inicial: int = 0) -> Optional[str]:
+                        nsu_inicial: int = 0,
+                        cnpj_consulta: str = None) -> Optional[str]:
         """Varre a distribuição DF-e do Ambiente Nacional (adn.nfse.gov.br),
         retornando o XML autorizado (infNFSe) da chave informada ou None.
         `nsu_inicial` permite varredura incremental (a partir do último NSU já
         visto), muito mais rápida para notas recém-autorizadas (NSU recente).
+        `cnpj_consulta` é o cnpjConsulta exigido pelo ADN desde 01/11/2026.
         Erros transitórios (429/5xx) são retentados em vez de abortar."""
         import base64, gzip, time
         session = self._get_adn_session()
+        params = parametros_consulta_adn(cnpj_consulta or inscricao_consulta_adn())
         ultNSU = int(nsu_inicial or 0)
         erros_seguidos = 0
         docs_vistos = 0
@@ -893,7 +986,7 @@ class BethaNfseService:
             url = f"{ADN_DFE_URL}/{ultNSU}"
             try:
                 time.sleep(0.3)  # rate limit
-                r = session.get(url, timeout=60)
+                r = session.get(url, params=params, timeout=60)
                 if r.status_code == 429:
                     logger.info(f"ADN DF-e 429 (NSU {ultNSU}); aguardando 5s...")
                     time.sleep(5)
@@ -951,7 +1044,8 @@ class BethaNfseService:
                     f"{docs_vistos} docs, NSU inicial {nsu_inicial}, NSU final {ultNSU})")
         return None
 
-    def _verificar_cancelamento_adn(self, chave: str, max_paginas: int = 200) -> bool:
+    def _verificar_cancelamento_adn(self, chave: str, max_paginas: int = 200,
+                                    cnpj_consulta: str = None) -> bool:
         """Verifica se há evento de cancelamento (tipoEvento 101101 / descEvento
         Cancel) para a chave na distribuição DF-e do ADN.
 
@@ -959,10 +1053,11 @@ class BethaNfseService:
         indisponível/403) para detectar cancelamentos feitos pelo portal Betha
         ou por outros meios — inclusive aqueles que o SOAP ConsultarStatusDps
         não reflete (pois reporta apenas a situação do envio da DPS)."""
-        import base64, gzip, re, time
+        import base64, gzip, time
         if not chave:
             return False
         session = self._get_adn_session()
+        params = parametros_consulta_adn(cnpj_consulta or inscricao_consulta_adn())
         ultNSU = 0
         erros_seguidos = 0
         pagina = 0
@@ -971,7 +1066,7 @@ class BethaNfseService:
             url = f"{ADN_DFE_URL}/{ultNSU}"
             try:
                 time.sleep(0.3)  # rate limit
-                r = session.get(url, timeout=60)
+                r = session.get(url, params=params, timeout=60)
                 if r.status_code == 429:
                     logger.info("ADN DF-e 429 (verificar cancelamento); aguardando 5s...")
                     time.sleep(5)
@@ -1101,19 +1196,26 @@ class BethaNfseService:
 
     def _obter_xml_adn_por_chave(self, chave: str) -> Optional[str]:
         """Busca direta do DF-e no ADN por chave de acesso:
-        GET /contribuintes/NFSe/{chaveAcesso} (e /nfse/ como fallback) — sem
+        GET /contribuintes/NFSe/{chaveAcesso}/Eventos (e variações) — sem
         varredura de NSU. Retorna o XML nacional (infNFSe) ou None.
         Trata 429 com backoff para não provocar tempestade de rate limit."""
         import base64, gzip, time
         base = ADN_DFE_URL.rsplit('/', 1)[0]  # .../contribuintes
         session = self._get_adn_session()
-        # 'NFSe' (S maiúsculo) é a rota que efetivamente responde no ADN.
-        for rota in (f"{base}/NFSe/{chave}", f"{base}/nfse/{chave}"):
+        # A rota documentada é /NFSe/{chave}/Eventos; as demais são fallback de
+        # versões anteriores da API. Todas são por chave, sem cnpjConsulta.
+        rotas = (
+            f"{base}/NFSe/{chave}/Eventos",
+            f"{base}/nfse/{chave}/Eventos",
+            f"{base}/NFSe/{chave}",
+            f"{base}/nfse/{chave}",
+        )
+        for rota in rotas:
             try:
                 data = None
                 for _ in range(3):
                     r = session.get(rota, timeout=30)
-                    logger.info(f"ADN por chave {rota.rsplit('/', 2)[-2]}/(chave) => HTTP {r.status_code}")
+                    logger.info(f"ADN por chave {rota.replace(base, '')} => HTTP {r.status_code}")
                     if r.status_code == 429:
                         logger.info("ADN 429; aguardando 10s para retry...")
                         time.sleep(10)
@@ -1158,12 +1260,12 @@ class BethaNfseService:
                                     tentativas: int = 1, intervalo: float = 0) -> Optional[str]:
         """Obtém o XML da NFS-e Nacional (infNFSe+DPS) de UMA nota pela chave de
         acesso. Estratégia (da mais direta para a mais custosa):
-        1) Portal Nacional nfse.gov.br/{chave}/xml — direto, mTLS, sem varredura;
-        2) ADN GET /contribuintes/NFSe/{chave} — direto, mTLS, sem varredura;
-        3) Varredura incremental do DF-e a partir do último NSU em cache
+        1) SEFIN GET /SefinNacional/nfse/{chave} — direto, mTLS, sem varredura;
+        2) Portal Nacional nfse.gov.br/{chave}/xml — direto, mTLS;
+        3) ADN GET /contribuintes/NFSe/{chave}/Eventos — direto, mTLS;
+        4) Varredura incremental do DF-e a partir do último NSU em cache
            (rápida — notas novas têm NSU recente);
-        4) Varredura completa do DF-e desde o NSU 0 (último recurso).
-        O SEFIN não é usado aqui (apenas recebe/envia eventos, não retorna XML).
+        5) Varredura completa do DF-e desde o NSU 0 (último recurso).
         Esta é a única fonte válida do XML padrão nacional usado para gerar o
         DANFSe (brazilfiscalreport). Não usa XML da Betha.
 
@@ -1175,21 +1277,25 @@ class BethaNfseService:
             return None
         logger.info(f"Buscando XML nacional para chave {chave[:20]}...")
         for tent in range(max(tentativas, 1)):
-            # 1) Portal Nacional nfse.gov.br por chave (direto, mTLS)
+            # 1) SEFIN por chave (direto, mTLS) — hoje retorna o XML completo
+            xml = self._obter_xml_sefin(chave)
+            if xml:
+                return xml
+            # 2) Portal Nacional nfse.gov.br por chave (direto, mTLS)
             xml = self._obter_xml_portal_por_chave(chave)
             if xml:
                 return xml
-            # 2) ADN direto por chave de acesso (sem varredura; trata 429)
+            # 3) ADN direto por chave de acesso (sem varredura; trata 429)
             xml = self._obter_xml_adn_por_chave(chave)
             if xml:
                 return xml
-            # 3) Varredura incremental (a partir do último NSU visto neste processo)
+            # 4) Varredura incremental (a partir do último NSU visto neste processo)
             nsu_cache = _ADN_NSU_CACHE.get('ultNSU', 0)
             if nsu_cache > 0:
                 xml = self._varrer_dfe_adn(chave, max_paginas, nsu_inicial=nsu_cache)
                 if xml:
                     return xml
-            # 4) Varredura completa desde o NSU 0 (último recurso)
+            # 5) Varredura completa desde o NSU 0 (último recurso)
             xml = self._varrer_dfe_adn(chave, max_paginas)
             if xml:
                 return xml

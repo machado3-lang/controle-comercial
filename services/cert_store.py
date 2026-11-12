@@ -381,6 +381,78 @@ def extract_cert_info(pfx_data: bytes, password: str) -> dict:
         return {}
 
 
+def _pfx_abre(pfx_data: bytes, password: str) -> bool:
+    """Confere se o PFX abre com a senha informada."""
+    if not pfx_data:
+        return False
+    try:
+        load_pfx_robust(pfx_data, password or "")
+        return True
+    except Exception:
+        return False
+
+
+def resolver_certificado_empresa(empresa) -> Optional[Tuple[bytes, str]]:
+    """Devolve (pfx, senha) de um certificado A1 utilizável da empresa.
+
+    Tenta, nesta ordem: cofre criptografado do banco (cert_id), base64 legado,
+    caminho cadastrado na empresa e, por fim, o arquivo CERT_PATH do .env.
+    Cada origem é validada abrindo o PFX, para nunca usar blob cifrado ou
+    arquivo corrompido como se fosse certificado.
+
+    O fallback importa quando o banco foi restaurado de outro ambiente (o blob
+    foi cifrado com outra CERT_MASTER_KEY/SECRET_KEY) ou quando o certificado
+    do cofre ficou indisponível.
+    """
+    if empresa is None:
+        return None
+
+    senha_padrao = os.getenv("CERT_PASSWORD") or ""
+    senha_empresa = getattr(empresa, "cert_password", None) or senha_padrao
+    candidatos: list[Tuple[object, str, str]] = []
+
+    if getattr(empresa, "cert_id", None):
+        pfx = load_certificate("empresa", empresa.cert_id)
+        if pfx:
+            candidatos.append((pfx, senha_empresa, "cofre do banco"))
+
+    blob = getattr(empresa, "cert_base64", None)
+    if blob:
+        try:
+            candidatos.append((base64.b64decode(blob), senha_empresa, "base64 do banco"))
+        except Exception:
+            logger.warning("cert_base64 da empresa não é um base64 válido; ignorando.")
+
+    caminho_empresa = getattr(empresa, "cert_path", None)
+    if caminho_empresa:
+        candidatos.append((caminho_empresa, senha_empresa, "caminho da empresa"))
+
+    candidatos.append((os.getenv("CERT_PATH", "./certs/certificado.pfx"), senha_padrao, "CERT_PATH/.env"))
+
+    for fonte, senha, rotulo in candidatos:
+        if isinstance(fonte, str):
+            if not os.path.exists(fonte):
+                continue
+            try:
+                with open(fonte, "rb") as f:
+                    pfx = f.read()
+            except OSError as e:
+                logger.warning(f"Não foi possível ler o certificado em {fonte}: {e}")
+                continue
+        else:
+            pfx = fonte
+        if _pfx_abre(pfx, senha):
+            if rotulo != "cofre do banco":
+                logger.warning(
+                    f"Certificado A1 carregado de {rotulo} (fallback). "
+                    "Recadastre o certificado para voltar a usar o cofre do banco."
+                )
+            return pfx, senha
+
+    logger.error("Nenhum certificado A1 utilizável encontrado para a empresa.")
+    return None
+
+
 def create_temp_pfx(cert_type: str, cert_id: int) -> Optional[str]:
     """Create a temporary decrypted PFX/PEM file for external tools (zeep, requests)."""
     pfx_data = load_certificate(cert_type, cert_id)

@@ -5,7 +5,7 @@ import logging
 import xml.etree.ElementTree as ET
 from decimal import Decimal, ROUND_HALF_UP
 from datetime import datetime, date
-from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException, BackgroundTasks
+from fastapi import APIRouter, Depends, Request, Form, Query, HTTPException, BackgroundTasks, UploadFile, File
 from fastapi.responses import RedirectResponse, JSONResponse, Response, FileResponse
 from sqlalchemy.orm import Session, joinedload, selectinload
 from sqlalchemy import desc, asc, or_
@@ -196,6 +196,7 @@ def listar_nfse_recebidas(
                 NFSeRecebida.numero.ilike(like),
                 NFSeRecebida.emitente_nome.ilike(like),
                 NFSeRecebida.emitente_cnpj.ilike(like),
+                NFSeRecebida.chave_acesso.ilike(like),
             )
         )
     if data_inicio:
@@ -223,6 +224,352 @@ def listar_nfse_recebidas(
 def _normalizar_doc(doc):
     """Remove caracteres nao alfanumericos (pontos, barra, traco, espacos)."""
     return re.sub(r'[^A-Za-z0-9]', '', doc or '').upper()
+
+
+def _parse_valor_nfse(txt):
+    """Converte valores monetarios do XML (12.34 / 12,34 / 1.234,56)."""
+    if txt is None:
+        return None
+    raw = str(txt).strip()
+    if not raw:
+        return None
+    try:
+        if ',' in raw:
+            raw = raw.replace('.', '').replace(',', '.')
+        return Decimal(raw)
+    except Exception:
+        return None
+
+
+def _parse_data_nfse(txt):
+    """Converte datas do XML (ISO com fuso, data pura ou dd/mm/aaaa)."""
+    raw = (txt or '').strip()
+    if not raw:
+        return None
+    raw = raw.replace(' ', 'T', 1) if ' ' in raw[:11] else raw
+    for fmt in ('%Y-%m-%dT%H:%M:%S', '%Y-%m-%d', '%d/%m/%Y', '%Y%m%d'):
+        try:
+            return datetime.strptime(raw[:19] if 'T' in fmt else raw[:10], fmt)
+        except Exception:
+            continue
+    return None
+
+
+def _extrair_dados_nfse_recebida(xml_text: str) -> dict:
+    """Extrai os campos da lista de NFSe recebidas a partir do XML.
+
+    Tolera namespaces e leiautes distintos (Padrão Nacional, ABRASF, Betha e
+    prefeituras), procurando as tags pelo nome local. Retorna dict vazio quando
+    o conteúdo não parece ser uma NFS-e (ex.: XML de evento ou de NF-e).
+    """
+    if not xml_text:
+        return {}
+    texto = xml_text.lstrip('\ufeff \t\r\n')
+    # Remove a declaração XML: o conteúdo já está em str e declarações com
+    # encoding diferente do UTF-8 atrapalham o parser.
+    texto = re.sub(r'^\s*<\?xml[^>]*\?>', '', texto, count=1)
+    try:
+        root = ET.fromstring(texto)
+    except Exception:
+        return {}
+
+    def local(tag):
+        return tag.rsplit('}', 1)[-1]
+
+    def texto_de(nome, no=None):
+        for e in (no if no is not None else root).iter():
+            if local(e.tag) == nome:
+                val = (e.text or '').strip()
+                if val:
+                    return val
+        return None
+
+    def bloco(*nomes):
+        for e in root.iter():
+            if local(e.tag) in nomes and len(list(e)) > 0:
+                return e
+        return None
+
+    # Chave de acesso: Id do infNFSe ("NFS" + 50 dígitos), chNFSe ou sequência
+    # de 44/50 dígitos em qualquer campo (leiautes municipais).
+    chave = None
+    inf = bloco('infNFSe')
+    if inf is not None:
+        chave = re.sub(r'\D', '', inf.get('Id') or '') or None
+    if not chave:
+        for nome in ('chNFSe', 'chaveAcesso', 'ChaveAcesso', 'chave_acesso'):
+            val = texto_de(nome)
+            if val:
+                chave = re.sub(r'\D', '', val) or None
+                if chave:
+                    break
+    if not chave:
+        m = re.search(r'(?<!\d)(\d{50}|\d{44})(?!\d)', texto)
+        if m:
+            chave = m.group(1)
+
+    numero = texto_de('nNFSe') or texto_de('numero') or texto_de('numeroNFSe')
+
+    # XML de evento (cancelamento etc.) também traz a chave da nota, mas não é
+    # a NFS-e em si: sem infNFSe e sem número, não deve ser importado aqui.
+    if inf is None and not numero:
+        return {}
+
+    emit = bloco('emit', 'emitente', 'prest', 'prestador', 'PrestadorServico',
+                 'Prestador')
+    emitente_cnpj = None
+    emitente_nome = None
+    if emit is not None:
+        emitente_cnpj = (texto_de('CNPJ', emit) or texto_de('Cpf', emit)
+                         or texto_de('CPF', emit))
+        emitente_nome = (texto_de('xNome', emit) or texto_de('RazaoSocial', emit)
+                         or texto_de('razaoSocial', emit) or texto_de('Nome', emit))
+    if not emitente_cnpj:
+        emitente_cnpj = texto_de('CNPJ')
+    if not emitente_nome:
+        emitente_nome = (texto_de('xNome') or texto_de('RazaoSocial')
+                         or texto_de('razaoSocial'))
+
+    toma = bloco('toma', 'tomador', 'TomadorServico', 'Tomador')
+    tomador_cnpj = None
+    tomador_nome = None
+    if toma is not None:
+        tomador_cnpj = (texto_de('CNPJ', toma) or texto_de('CPF', toma)
+                        or texto_de('Cpf', toma))
+        tomador_nome = texto_de('xNome', toma) or texto_de('RazaoSocial', toma)
+
+    valor = None
+    for nome in ('vServ', 'vServico', 'vNFSe', 'vNF', 'vTotal', 'vLiquido',
+                 'vLiq', 'vPrestacao', 'vBC'):
+        valor = _parse_valor_nfse(texto_de(nome))
+        if valor is not None:
+            break
+
+    data = None
+    for nome in ('dhEmi', 'dEmi', 'dhProc', 'dCompet', 'dataEmissao'):
+        data = _parse_data_nfse(texto_de(nome))
+        if data is not None:
+            break
+
+    # XML de evento de cancelamento não é uma NFS-e e não deve ser importado
+    # como recebida; a nota em si precisa ser importada.
+    if not chave and not numero:
+        return {}
+
+    if not chave:
+        # Leiautes municipais antigos podem não trazer a chave. Gera um
+        # identificador determinístico para permitir a importação e evitar
+        # duplicidade ao subir o mesmo arquivo novamente.
+        base = re.sub(r'\D', '', emitente_cnpj or '')
+        data_txt = data.strftime('%Y%m%d') if data else 'semdata'
+        chave = f"SEMCHAVE-{base or 'X'}-{numero or 'X'}-{data_txt}"
+
+    cancelada = bool(
+        re.search(r'<[^:>]*:?tpEvento[^>]*>\s*(110111|101101)\s*</', texto)
+        or re.search(r'<[^:>]*:?tipoEvento[^>]*>[^<]*101101', texto)
+        or re.search(r'<[^:>]*:?descEvento[^>]*>[^<]*Cancel', texto, re.IGNORECASE)
+    )
+
+    return {
+        'chave_acesso': chave,
+        'numero': numero,
+        'data_emissao': data,
+        'valor_total': valor,
+        'emitente_nome': emitente_nome,
+        'emitente_cnpj': re.sub(r'\D', '', emitente_cnpj or '') or None,
+        'tomador_cnpj': re.sub(r'\D', '', tomador_cnpj or '') or None,
+        'tomador_nome': tomador_nome,
+        'cancelada': cancelada,
+    }
+
+
+def _salvar_nfse_recebida_xml(db, xml_text: str, origem: str = 'importada',
+                              chave_esperada: str = None) -> dict:
+    """Importa/atualiza uma NFSe recebida a partir do XML.
+
+    Retorna {"registro": NFSeRecebida, "novo": bool, "aviso": str|None}.
+    Levanta ValueError com mensagem amigável quando o XML não serve.
+    """
+    if not xml_text or not xml_text.strip():
+        raise ValueError("Arquivo XML vazio.")
+    dados = _extrair_dados_nfse_recebida(xml_text)
+    if not dados:
+        raise ValueError(
+            "O arquivo não parece ser um XML de NFS-e. Se for um XML de "
+            "cancelamento, importe o XML da nota (autorizada) correspondente."
+        )
+
+    empresa = db.query(Empresa).first()
+    cnpj_empresa = re.sub(r'\D', '', empresa.cnpj or '') if empresa else ''
+    cnpj_emitente = re.sub(r'\D', '', dados.get('emitente_cnpj') or '')
+
+    if cnpj_empresa and cnpj_emitente and cnpj_empresa == cnpj_emitente:
+        raise ValueError(
+            "Esta NFS-e foi emitida pela própria empresa. Ela pertence à lista "
+            "de NFS-e emitidas, não à de recebidas."
+        )
+
+    chave = dados.get('chave_acesso') or (chave_esperada or '').strip()
+    if not chave:
+        raise ValueError("Não foi possível identificar a chave de acesso da NFS-e no XML.")
+    if chave_esperada and dados.get('chave_acesso') and chave != chave_esperada:
+        raise ValueError(
+            f"A chave do XML ({chave}) não confere com a chave informada "
+            f"({chave_esperada})."
+        )
+
+    aviso = None
+    cnpj_tomador = re.sub(r'\D', '', dados.get('tomador_cnpj') or '')
+    if cnpj_empresa and cnpj_tomador and cnpj_tomador != cnpj_empresa:
+        aviso = ("O tomador do XML não é o CNPJ da empresa; a nota foi "
+                 "importada mesmo assim. Confira se é a nota correta.")
+
+    existente = db.query(NFSeRecebida).filter(
+        NFSeRecebida.chave_acesso == chave
+    ).first()
+
+    novo = existente is None
+    rec = existente or NFSeRecebida(chave_acesso=chave, origem=origem)
+
+    # Nunca sobrescreve dados já preenchidos manualmente; só completa lacunas
+    # e prefere o XML nacional ao municipal quando ambos existirem.
+    if (not rec.xml_text
+            or (is_xml_nfse_nacional(xml_text) and not is_xml_nfse_nacional(rec.xml_text))):
+        rec.xml_text = xml_text
+    if not rec.numero and dados.get('numero'):
+        rec.numero = dados['numero']
+    if not rec.codigo_verificacao:
+        rec.codigo_verificacao = chave
+    if not rec.data_emissao and dados.get('data_emissao'):
+        rec.data_emissao = dados['data_emissao']
+    if (not rec.valor_total or float(rec.valor_total or 0) == 0) and dados.get('valor_total') is not None:
+        rec.valor_total = dados['valor_total']
+    if not rec.emitente_nome and dados.get('emitente_nome'):
+        rec.emitente_nome = dados['emitente_nome']
+    if not rec.emitente_cnpj and dados.get('emitente_cnpj'):
+        rec.emitente_cnpj = dados['emitente_cnpj']
+    if dados.get('cancelada'):
+        rec.status = 'cancelada'
+    elif not rec.status or not existente:
+        rec.status = 'autorizada'
+    if existente and not rec.origem:
+        rec.origem = origem
+
+    if novo:
+        db.add(rec)
+        db.flush()
+
+    fornecedor = _resolver_fornecedor_nfse_recebida(db, rec)
+    if fornecedor and not rec.fornecedor_id:
+        rec.fornecedor_id = fornecedor.id
+    elif fornecedor and rec.fornecedor_id != fornecedor.id:
+        rec.fornecedor_id = fornecedor.id
+
+    db.commit()
+    db.refresh(rec)
+    return {'registro': rec, 'novo': novo, 'aviso': aviso}
+
+
+@router.post("/recebidas/importar-xml")
+def importar_nfse_recebida_xml(
+    request: Request, db: Session = Depends(get_db),
+    xml_file: UploadFile = File(...),
+):
+    """Importa uma NFSe recebida (somos tomador) a partir de um arquivo XML.
+
+    Serve para os casos em que a distribuição do ADN não devolve a nota (prazo
+    de retenção, indisponibilidade, nota municipal fora do padrão nacional ou
+    emitida antes da adesão ao Ambiente Nacional).
+    """
+    try:
+        conteudo = xml_file.file.read()
+        if not conteudo:
+            raise ValueError("Arquivo XML vazio.")
+        if len(conteudo) > 10 * 1024 * 1024:
+            raise ValueError("Arquivo XML muito grande (limite de 10 MB).")
+        xml_text = None
+        for encoding in ('utf-8-sig', 'utf-8', 'latin-1'):
+            try:
+                xml_text = conteudo.decode(encoding)
+                break
+            except UnicodeDecodeError:
+                continue
+        if not xml_text:
+            raise ValueError("Não foi possível ler o arquivo. Envie um XML em UTF-8.")
+
+        resultado = _salvar_nfse_recebida_xml(db, xml_text, origem='importada')
+        rec = resultado['registro']
+        if resultado['novo']:
+            msg = f"NFSe {rec.numero or rec.chave_acesso} importada como recebida."
+        else:
+            msg = f"NFSe {rec.numero or rec.chave_acesso} já existia; dados complementados."
+        if resultado.get('aviso'):
+            request.session["message"] = {"tipo": "warning", "texto": f"{msg} {resultado['aviso']}"}
+        else:
+            request.session["message"] = msg
+    except ValueError as e:
+        request.session["error"] = str(e)
+    except Exception as e:
+        logger.warning("Erro ao importar XML de NFSe recebida", exc_info=True)
+        request.session["error"] = f"Erro ao importar XML: {str(e)[:200]}"
+    return RedirectResponse(url="/nfse/recebidas", status_code=303)
+
+
+@router.post("/recebidas/importar-chave")
+def importar_nfse_recebida_por_chave(
+    request: Request, db: Session = Depends(get_db),
+    chave_acesso: str = Form(...),
+):
+    """Busca e importa uma NFSe recebida pela chave de acesso.
+
+    Consulta o SEFIN/Portal/ADN (com certificado) e grava na lista de recebidas.
+    É a alternativa quando a busca por período no ADN não localiza a nota.
+    """
+    chave = re.sub(r'\D', '', chave_acesso or '')
+    if len(chave) != 50:
+        request.session["error"] = (
+            "Informe a chave de acesso da NFS-e com 50 dígitos "
+            "(padrão nacional). Para leiautes municipais, importe o XML."
+        )
+        return RedirectResponse(url="/nfse/recebidas", status_code=303)
+
+    existente = db.query(NFSeRecebida).filter(
+        NFSeRecebida.chave_acesso == chave
+    ).first()
+    if existente:
+        request.session["message"] = (
+            f"NFSe {existente.numero or chave} já está na lista de recebidas."
+        )
+        return RedirectResponse(url="/nfse/recebidas", status_code=303)
+
+    empresa = db.query(Empresa).first()
+    if not empresa:
+        request.session["error"] = "Empresa não configurada."
+        return RedirectResponse(url="/nfse/recebidas", status_code=303)
+    try:
+        service = BethaNfseService(empresa=empresa)
+        xml_text = service.obter_xml_nacional_por_chave(chave, max_paginas=10)
+        if not xml_text:
+            request.session["error"] = (
+                "NFSe não localizada no SEFIN/ADN para esta chave. Confira a "
+                "chave ou importe o arquivo XML da nota."
+            )
+            return RedirectResponse(url="/nfse/recebidas", status_code=303)
+        resultado = _salvar_nfse_recebida_xml(
+            db, xml_text, origem='adn', chave_esperada=chave
+        )
+        rec = resultado['registro']
+        msg = f"NFSe {rec.numero or rec.chave_acesso} importada como recebida."
+        if resultado.get('aviso'):
+            request.session["message"] = {"tipo": "warning", "texto": f"{msg} {resultado['aviso']}"}
+        else:
+            request.session["message"] = msg
+    except ValueError as e:
+        request.session["error"] = str(e)
+    except Exception as e:
+        logger.warning("Erro ao importar NFSe recebida por chave", exc_info=True)
+        request.session["error"] = f"Erro ao buscar NFSe pela chave: {str(e)[:200]}"
+    return RedirectResponse(url="/nfse/recebidas", status_code=303)
 
 
 def _resolver_fornecedor_nfse_recebida(db, rec, criar=False):
@@ -2523,23 +2870,47 @@ def adn_danfse(request: Request, chave_acesso: str, db: Session = Depends(get_db
 
 @router.get("/adn-xml/{chave_acesso}")
 def adn_xml(request: Request, chave_acesso: str, db: Session = Depends(get_db)):
-    """Proxy para baixar XML do ADN pelo servidor (com certificado)"""
-    from fastapi.responses import Response
-    from services.nfse_betha import ADN_NFSE_URL
-    import httpx
+    """Baixa o XML da NFSe pela chave de acesso.
+
+    Prioriza o XML já armazenado (inclusive o importado manualmente); se não
+    houver, consulta o SEFIN/Ambiente Nacional com o certificado da empresa.
+    """
+    chave = re.sub(r'\D', '', chave_acesso or '')
+
+    def _resposta(xml: str):
+        return Response(
+            content=xml, media_type="application/xml",
+            headers={"Content-Disposition": f"attachment; filename=nfse_{chave or chave_acesso}.xml"},
+        )
+
+    # 1) XML já salvo (emitida ou recebida)
+    nfse = db.query(NFSe).filter(
+        or_(NFSe.chave_acesso == chave_acesso, NFSe.chave_acesso == chave,
+            NFSe.codigo_verificacao == chave_acesso)
+    ).first()
+    if nfse and nfse.xml_text:
+        return _resposta(nfse.xml_text)
+    rec = db.query(NFSeRecebida).filter(
+        or_(NFSeRecebida.chave_acesso == chave_acesso,
+            NFSeRecebida.chave_acesso == chave)
+    ).first()
+    if rec and rec.xml_text:
+        return _resposta(rec.xml_text)
+
+    # 2) Busca no SEFIN/Portal/ADN (com certificado)
     try:
         empresa = db.query(Empresa).first()
         service = BethaNfseService(empresa=empresa)
-        session = service._get_adn_session()
-        r = session.get(f"{ADN_NFSE_URL}/nfse/{chave_acesso}", timeout=30)
-        if r.status_code == 200:
-            data = r.json()
-            xml_b64 = data.get('nfseXmlGZipB64')
-            if xml_b64:
-                import base64, gzip
-                xml = gzip.decompress(base64.b64decode(xml_b64)).decode('utf-8')
-                return Response(content=xml, media_type="application/xml",
-                                headers={"Content-Disposition": f"attachment; filename=nfse_{chave_acesso}.xml"})
-        return Response(status_code=404, content="XML nÃ£o encontrado no ADN")
+        xml = service.obter_xml_nacional_por_chave(chave or chave_acesso, max_paginas=10)
+        if xml:
+            if rec:
+                rec.xml_text = xml
+            elif nfse:
+                nfse.xml_text = xml
+            db.commit()
+            return _resposta(xml)
     except Exception as e:
-        return Response(status_code=500, content=str(e))
+        logger.warning(f"Erro ao buscar XML da NFSe {chave_acesso}: {e}")
+
+    return Response(status_code=404, content="XML não encontrado")
+

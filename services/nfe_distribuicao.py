@@ -32,40 +32,32 @@ class NFeDistribuicaoService:
 
     def _load_cert(self, empresa: Empresa):
         import tempfile
-        # Try secure cert_store first
-        if getattr(empresa, 'cert_id', None):
-            from services.cert_store import load_certificate
-            pfx_data = load_certificate("empresa", empresa.cert_id)
-            if pfx_data:
-                tmp = os.path.join(tempfile.gettempdir(), 'certificado_nfe.pfx')
-                with open(tmp, 'wb') as f:
-                    f.write(pfx_data)
-                self.cert_path = tmp
-                self.cert_password = empresa.cert_password or os.getenv('CERT_PASSWORD', '')
-                return
-        # Fallback: base64 legacy
-        if empresa.cert_base64:
-            pfx = base64.b64decode(empresa.cert_base64)
+        from services.cert_store import resolver_certificado_empresa
+
+        # Cofre do banco, base64 legado, caminho da empresa ou CERT_PATH do
+        # .env — sempre com o PFX validado antes do uso.
+        resolvido = resolver_certificado_empresa(empresa)
+        if resolvido:
+            pfx_data, senha = resolvido
             tmp = os.path.join(tempfile.gettempdir(), 'certificado_nfe.pfx')
             with open(tmp, 'wb') as f:
-                f.write(pfx)
+                f.write(pfx_data)
             self.cert_path = tmp
-            self.cert_password = empresa.cert_password or ''
-        elif empresa.cert_path:
-            self.cert_path = empresa.cert_path
-            self.cert_password = empresa.cert_password or ''
-        else:
-            self.cert_path = os.getenv('CERT_PATH', './certs/certificado.pfx')
-            self.cert_password = os.getenv('CERT_PASSWORD')
+            self.cert_password = senha
+            return
+
+        # Último recurso: mantém o comportamento antigo (o erro aparecerá ao
+        # abrir o PFX, com mensagem mais clara do que "sem certificado").
+        self.cert_path = os.getenv('CERT_PATH', './certs/certificado.pfx')
+        self.cert_password = os.getenv('CERT_PASSWORD')
 
     def _get_pem_combined(self) -> str:
-        from cryptography.hazmat.primitives.serialization import pkcs12, Encoding, PrivateFormat, NoEncryption
+        from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption
+        from services.cert_store import load_pfx_robust
         import tempfile
         with open(self.cert_path, 'rb') as f:
             pfx_data = f.read()
-        private_key, cert, _ = pkcs12.load_key_and_certificates(
-            pfx_data, password=self.cert_password.encode() if self.cert_password else None
-        )
+        private_key, cert, _ = load_pfx_robust(pfx_data, self.cert_password or "")
         combined = private_key.private_bytes(
             encoding=Encoding.PEM,
             format=PrivateFormat.TraditionalOpenSSL,
